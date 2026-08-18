@@ -41,10 +41,27 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   display:flex;align-items:center;justify-content:space-around;padding:0 6px;
   padding-top:env(safe-area-inset-top,0px);
 }
+/* flex-shrink:0 — sans contenu, ces espaceurs se feraient sinon écraser
+   avant les .ri (qui résistent grâce à leur texte) sur un écran très
+   étroit, ce qui replacerait le bouton pause / le badge inactifs par-
+   dessus les ressources qu'ils sont censés éviter. */
+.tb-spacer { flex-shrink:0; }
 .ri { display:flex;align-items:center;gap:3px;font-family:'Cinzel',serif;font-size:13px;border-radius:6px;padding:1px 3px; }
 .ri .ico { font-size:15px; }
 .ri .val { color:var(--gold-l);font-weight:600;min-width:30px;text-align:right; }
 .pi { display:flex;align-items:center;gap:3px;font-family:'Cinzel',serif;font-size:12px;color:#999;border-radius:6px;padding:1px 3px; }
+/* Petits écrans (téléphones bas de gamme/anciens, ≤360px) : la barre du
+   haut doit encore tenir entre les deux espaceurs réservés (bouton pause à
+   gauche, badge villageois inactifs à droite) sans que rien ne chevauche.
+   On resserre juste les ressources ; les espaceurs, eux, ne bougent pas. */
+@media (max-width:360px) {
+  .ri, .pi { gap:1px;padding:1px 2px; }
+  .ri { font-size:11px; }
+  .ri .ico { font-size:13px; }
+  .ri .val { min-width:22px; }
+  .ri .rate { display:none; }
+  .pi { font-size:10px; }
+}
 /* ── FLASH « ressources insuffisantes » ── */
 @keyframes resFlash {
   0%,100% { background:transparent; }
@@ -157,8 +174,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 #deselbtn .x { font-size:17px;line-height:1; }
 
 /* ── ZOOM BTN ── */
-#zoombtn {
-  position:fixed;top:calc(var(--topH)+28px);left:8px;z-index:99;
+#sidebtn {
+  position:fixed;top:calc(var(--topH) + 28px);left:8px;z-index:99;
   display:flex;flex-direction:column;gap:5px;
 }
 .zbtn {
@@ -305,7 +322,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   background:rgba(0,0,0,.88);
   flex-direction:column;align-items:center;gap:10px;
   padding:20px 14px;overflow-y:auto;
-  padding-top:calc(env(safe-area-inset-top,0px)+20px);
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);
 }
 #rpanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px; }
 .ritem {
@@ -364,7 +381,19 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   -webkit-tap-highlight-color:transparent;transition:transform .1s,opacity .1s;
 }
 .pmenu-btn:active { transform:scale(.96);opacity:.85; }
+/* Ligne de réglage (vitesse de jeu) : même largeur/gabarit que les boutons
+   du menu, mais un contrôle à plusieurs états plutôt qu'une action unique. */
+.pmenu-row {
+  width:100%;max-width:260px;padding:8px 14px;border-radius:12px;
+  background:rgba(20,12,0,.5);border:1.5px solid var(--gold-d);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.pmenu-row-label {
+  font-family:'Cinzel',serif;font-size:13px;color:var(--parch2);white-space:nowrap;
+}
+.pmenu-row .spd-ctrl { background:rgba(0,0,0,.3); }
 .pmenu-resume { background:linear-gradient(180deg,var(--gold),var(--gold-d));color:var(--bg);border-color:var(--gold-l); }
+.pmenu-sound  { background:rgba(93,173,226,.12);color:#5dade2;border-color:#5dade2; }
 .pmenu-save   { background:rgba(46,204,113,.12);color:#2ecc71;border-color:#2ecc71; }
 .pmenu-load   { background:rgba(52,152,219,.12);color:#3498db;border-color:#3498db; }
 .pmenu-quit   { background:rgba(231,76,60,.10);color:#e74c3c;border-color:#e74c3c; }
@@ -420,12 +449,13 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 <!-- ── TOP BAR ── -->
 <div id="topbar">
+  <div class="tb-spacer" style="width:44px"></div><!-- espace réservé bouton pause (gauche) -->
   <div class="ri" id="ri-food" title="Nourriture"><span class="ico" id="ico-food">🍖</span><span class="val" id="vfood">200</span><span class="rate" id="rfood"></span></div>
   <div class="ri" id="ri-wood" title="Bois"><span class="ico" id="ico-wood">🪵</span><span class="val" id="vwood">150</span><span class="rate" id="rwood"></span></div>
   <div class="ri" id="ri-stone" title="Pierre"><span class="ico" id="ico-stone">🪨</span><span class="val" id="vstone">0</span><span class="rate" id="rstone"></span></div>
   <div class="ri" id="ri-gold" title="Or"><span class="ico" id="ico-gold">💰</span><span class="val" id="vgold">0</span><span class="rate" id="rgold"></span></div>
   <div class="pi" id="ri-pop" title="Population"><span id="ico-pop">👥</span><span id="vpop">0</span>/<span id="vmaxpop">5</span></div>
-  <div style="width:56px"></div><!-- espace réservé badge droite -->
+  <div class="tb-spacer" style="width:56px"></div><!-- espace réservé badge villageois inactifs (droite) -->
 </div>
 
 <!-- ── BADGE VILLAGEOIS INACTIFS ── -->
@@ -448,6 +478,15 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   <div id="save-status"></div>
   <div class="pmenu-sep"></div>
   <button class="pmenu-btn pmenu-resume" onclick="closePause()">▶️ Reprendre</button>
+  <button class="pmenu-btn pmenu-sound"  id="zsound" onclick="toggleSfx()">🔊 Son : Activé</button>
+  <div class="pmenu-row">
+    <span class="pmenu-row-label">⏱️ Vitesse</span>
+    <div class="spd-ctrl">
+      <div class="spd-btn on" data-spd="1" onclick="setSpeed(1)">▶</div>
+      <div class="spd-btn" data-spd="2" onclick="setSpeed(2)">▶▶</div>
+      <div class="spd-btn" data-spd="3" onclick="setSpeed(3)">▶▶▶</div>
+    </div>
+  </div>
   <button class="pmenu-btn pmenu-save"   onclick="saveGame()">💾 Sauvegarder</button>
   <button class="pmenu-btn pmenu-load"   onclick="loadGame()">📂 Charger</button>
   <button class="pmenu-btn pmenu-load"   id="autoloadbtn" onclick="loadAutoSave()" style="display:none;">⏱️ Charger l'auto-sauvegarde</button>
@@ -458,14 +497,9 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 <!-- ── WAVE BAR ── -->
 <div id="wavebar">⚔️ Vague <span id="wnum">0</span>/<span id="wtarget">20</span> &nbsp;|&nbsp; <span id="wtimer">10m00</span> <span id="wdiff" title="Difficulté"></span></div>
 
-<!-- ── BARRE ÂGE + VITESSE ── -->
+<!-- ── BARRE ÂGE ── (la vitesse de jeu a rejoint le menu pause) -->
 <div id="agebar">
   <div id="agebtn" onclick="tryAgeUp()">🌑 Âge Sombre</div>
-  <div class="spd-ctrl">
-    <div class="spd-btn on" data-spd="1" onclick="setSpeed(1)">▶</div>
-    <div class="spd-btn" data-spd="2" onclick="setSpeed(2)">▶▶</div>
-    <div class="spd-btn" data-spd="3" onclick="setSpeed(3)">▶▶▶</div>
-  </div>
 </div>
 
 <!-- ── GRANDE BANNIÈRE ── -->
@@ -474,13 +508,12 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 <!-- ── MINIMAP ── -->
 <div id="minimap"><canvas id="mm" width="88" height="88"></canvas></div>
 
-<!-- ── ZOOM ── -->
-<div id="zoombtn">
-  <div class="zbtn" id="zin" title="Zoom avant">+</div>
-  <div class="zbtn" id="zout" title="Zoom arrière">−</div>
+<!-- ── RACCOURCIS RAPIDES ──
+     Le zoom se fait à la molette/au pincement (déjà supporté) : plus besoin
+     de boutons +/− dédiés ici. Le son a rejoint le menu pause. -->
+<div id="sidebtn">
   <div class="zbtn" id="zhome" title="Retour à la base">🏠</div>
   <div class="zbtn" id="zarmy" title="Toute l'armée">⚔️</div>
-  <div class="zbtn" id="zsound" title="Son" onclick="toggleSfx()">🔊</div>
   <div class="zbtn" id="zrepair" title="Réparation auto : les villageois inactifs répareront seuls" onclick="toggleAutoRepair()">🔧</div>
 </div>
 
@@ -541,8 +574,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 // ── CONSTANTES ────────────────────────────────────────────
 const BASE_TILE = 38;       // taille de tuile de base (px CSS)
 let   TILE      = 38;       // taille courante (avec zoom)
-const COLS      = 90;
-const ROWS      = 90;
+const COLS      = 240;
+const ROWS      = 240;
 const DPR       = Math.min(window.devicePixelRatio || 1, 2);
 
 // Tuiles
@@ -731,7 +764,7 @@ window.pickDifficulty=pickDifficulty;
 const RDEF = {
   iron_sword: { nom:'Épée de Fer',    ico:'⚔️', cost:{gold:80,wood:40},    time:30,  desc:'+25% ATK Miliciens et Piquiers',     cat:'forge' },
   bow_craft:  { nom:'Arc Renforcé',   ico:'🏹', cost:{gold:60,wood:50},    time:30,  desc:'+25% ATK Archers et Arbalétriers',   cat:'forge' },
-  cavalry:    { nom:'Cavalerie',      ico:'🐴', cost:{gold:100,food:80},   time:45,  desc:'+20% PV Chevaliers et Paladins',     cat:'forge' },
+  cavalry:    { nom:'Cavalerie',      ico:'🐴', cost:{gold:100,food:80},   time:45,  desc:'+20% PV Chevaliers, Paladins et Éclaireurs', cat:'forge' },
   iron_armor: { nom:'Armure de Fer',  ico:'🛡️', cost:{gold:120,stone:80},  time:45,  desc:'+30% PV aux unités militaires',      cat:'forge' },
   masonry:    { nom:'Maçonnerie',     ico:'🧱', cost:{stone:120,food:80},  time:40,  desc:'+25% PV aux bâtiments',              cat:'forge' },
   longbow:    { nom:'Arc Long',       ico:'🎯', cost:{gold:150,wood:80},   time:60,  desc:'+50% portée des Archers',            cat:'univ'  },
@@ -914,6 +947,17 @@ function poiCanPlaceTower(tx,ty){
 }
 function spawnPOIs(){
   const diff=DIFFS[G.difficulty]||DIFFS.normal;
+  const isEasy=G.difficulty==='easy';
+  // En Facile, ce mode s'adresse aux débutants : un point d'intérêt ne doit
+  // pas y être un mur infranchissable. On adoucit nettement la garnison
+  // (effectif ET PV) et on pose des tours moins dangereuses, au-delà du
+  // multiplicateur générique enemyCount/enemyHp déjà appliqué aux vagues.
+  const campCountMult=isEasy?0.5:1;
+  const campHpMult=isEasy?0.55:1;
+  const towerLevel=isEasy?2:3;
+  // Emplacements aux quatre coins, à ~23% du bord (donc ~77% du centre) —
+  // proportionnel à COLS/ROWS via SC(), et laisse une immense marge avec le
+  // camp de départ (toujours au centre) quelle que soit la taille de carte.
   const spots=[[SC(14),SC(14)],[COLS-SC(15),SC(14)],[SC(14),ROWS-SC(15)],[COLS-SC(15),ROWS-SC(15)]];
   let camp=0;
   for(const[cx,cy] of spots){
@@ -924,14 +968,14 @@ function spawnPOIs(){
     if(G.nodes.length===before) continue; // aucune case libre ici (relief/eau) : on saute ce camp
     for(let i=before;i<G.nodes.length;i++) G.nodes[i].infinite=true;
 
-    // tours de guet (Donjon niv.3) encadrant le filon
+    // tours de guet encadrant le filon (Donjon niv.3, ou Tour de Garde niv.2 en Facile)
     for(const[ox,oy] of [[-5,-2],[5,2]]){
       let tx=cx+ox, ty=cy+oy;
       for(let tries=0;tries<14;tries++){
         if(poiCanPlaceTower(tx,ty)){
           const tw=mkBuilding(BT.TOWER,tx,ty,'enemy');
-          tw.level=3;
-          tw.hp=tw.maxHp=Math.round(BDEF[BT.TOWER].hp*TOWER_LEVELS[3].hpMult);
+          tw.level=towerLevel;
+          tw.hp=tw.maxHp=Math.round(BDEF[BT.TOWER].hp*TOWER_LEVELS[towerLevel].hpMult);
           placeBuilding(tw);
           break;
         }
@@ -940,8 +984,9 @@ function spawnPOIs(){
     }
 
     // garnison mixte, nettement plus robuste qu'une vague de début de partie
+    // (sauf en Facile, où elle est délibérément adoucie — voir plus haut)
     const campWX=cx*TILE+TILE/2, campWY=cy*TILE+TILE/2;
-    const n=Math.round(11*diff.enemyCount);
+    const n=Math.max(4,Math.round(11*diff.enemyCount*campCountMult));
     const comp=[[UT.ENEMI,Math.ceil(n*0.4)],[UT.ENEMIA,Math.ceil(n*0.25)],
                 [UT.ENEMI_C,Math.ceil(n*0.25)],[UT.ENEMI_G,Math.max(1,Math.round(n*0.1))]];
     for(const[type,count] of comp){
@@ -952,7 +997,7 @@ function spawnPOIs(){
           x=(cx+Math.cos(a)*r)*TILE+TILE/2; y=(cy+Math.sin(a)*r)*TILE+TILE/2;
         } while(++tries<20 && tileBlocked((x/TILE)|0,(y/TILE)|0));
         const u=mkUnit(type,x,y,'enemy');
-        u.hp=Math.round(u.hp*2.0*diff.enemyHp); u.maxHp=u.hp;
+        u.hp=Math.round(u.hp*2.0*campHpMult*diff.enemyHp); u.maxHp=u.hp;
         u.atk=Math.round(u.atk*1.5*diff.enemyAtk);
         u.camp=camp; // exclu des vagues (updateWaves) — garde permanente
         // Point de garde : la garnison ne réagit qu'aux intrus proches de
@@ -1577,12 +1622,15 @@ function buildBuildings(T){
       drawBuildingSprite(cxoe,type,d,pw,ph,T,true,1,0,true);
       SPR.bld[type+'_OPEN_E']={c:coe,cx:cxoe,oy,dw,dh};
     }
-    // Centre Ville et Caserne : habillage qui s'enrichit avec les âges du
-    // joueur (renforts de pierre, tourelles, dorures...), pour que la
+    // Centre Ville, Caserne et Mur : habillage qui s'enrichit avec les âges
+    // du joueur (renforts de pierre, tourelles, dorures...), pour que la
     // progression d'âge se voie sur la carte et pas seulement dans les
     // chiffres de la topbar. Même géométrie de clic/collision, seul
     // l'habillage change — comme pour les niveaux de la Tour Défensive.
-    if(type===BT.TC||type===BT.BARRACKS){
+    // Le Mur passe ainsi de palissade de bois (Âge Sombre) à mur de pierre
+    // fortifié (Âge Impérial), sans palier d'amélioration séparé à acheter :
+    // ses PV suivent déjà le bonus d'âge générique (voir updateAgeUp).
+    if(type===BT.TC||type===BT.BARRACKS||type===BT.WALL){
       for(const age of [1,2,3]){
         const{c:ca,cx:cxa}=offCanvas(pw,ph+T*0.5);
         drawBuildingSprite(cxa,type,d,pw,ph,T,false,1,age);
@@ -1984,16 +2032,57 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
     }
     break; }
 
-  // ── MUR : rondins pointus ──
+  // ── MUR : palissade de bois (Âge Sombre) → pierre → fortifié (Impérial) ──
+  // Pas de palier payant séparé : le PV suit déjà le bonus d'âge générique
+  // (voir updateAgeUp) ; ici seul l'habillage visuel change, pour que la
+  // montée en âge se VOIE sur les remparts et pas seulement dans les PV.
   case BT.WALL: {
-    const n2=Math.max(3,Math.round(pw/(T*0.3))), lw2=pw/n2;
-    for(let k=0;k<n2;k++){
-      const x=k*lw2;
-      fill(x,bodyTop-T*0.16,lw2*0.92,bodyH+T*0.16, k%2?wallCol:lighten(wallCol,10));
-      fill(x+lw2*0.18,bodyTop-T*0.26,lw2*0.56,T*0.11,lighten(wallCol,16));
+    const stoneCol=ec('#8a8a92'), stoneDk=darken(stoneCol,24), stoneLt=lighten(stoneCol,16);
+    const woodPosts=(topY)=>{
+      const n2=Math.max(3,Math.round(pw/(T*0.3))), lw2=pw/n2;
+      for(let k=0;k<n2;k++){
+        const x=k*lw2;
+        fill(x,topY,lw2*0.92,H-topY, k%2?wallCol:lighten(wallCol,10));
+        fill(x+lw2*0.18,topY-T*0.1,lw2*0.56,T*0.11,lighten(wallCol,16));
+      }
+    };
+    if(age>=2){
+      // Mur de Pierre (Châteaux) / Fortifié (Impérial) : blocs pleins
+      fill(0,bodyTop-T*0.06,pw,bodyH+T*0.06,stoneCol);
+      fill(0,bodyTop-T*0.06,pw,Math.max(2,T*0.05),lighten(stoneCol,18));
+      fill(0,H-Math.max(3,bodyH*0.12),pw,Math.max(3,bodyH*0.12),stoneDk);
+      const rng=srnd(Math.round(pw*7+bodyH*5+1));
+      const bw=Math.max(4,T*0.22), bh=Math.max(3,T*0.13);
+      let row=0;
+      for(let yy=bodyTop+bh*0.4;yy<H-bh*0.3;yy+=bh){
+        const off=(row++%2)*bw*0.5;
+        for(let xx=off;xx<pw-1;xx+=bw){
+          fill(xx,yy,Math.max(1,bw*0.9),1,'rgba(0,0,0,.22)');           // joint horizontal
+          if(rng()<0.4) fill(xx+bw*0.15,yy-bh*0.5,bw*0.3,bh*0.35,stoneLt); // reflet de bloc
+        }
+      }
+      for(let xx=0;xx<pw;xx+=bw) fill(xx,bodyTop-T*0.02,Math.max(1,T*0.02),bodyH+T*0.06,'rgba(0,0,0,.14)'); // joints verticaux
+      if(age>=3){
+        // Mur Fortifié : créneaux + liseré doré impérial
+        const n3=Math.max(2,Math.round(pw/(T*0.4))), cw3=pw/n3;
+        fill(0,bodyTop-T*0.18,pw,T*0.14,stoneDk);
+        for(let k=0;k<n3;k++) if(k%2===0) fill(k*cw3,bodyTop-T*0.3,Math.ceil(cw3),T*0.16,stoneCol);
+        fill(0,bodyTop-T*0.06,pw,Math.max(1,T*0.02),'#caa83a');
+      }
+    } else if(age>=1){
+      // Palissade renforcée (Féodal) : socle de pierre + rondins au-dessus
+      const baseH=bodyH*0.26;
+      fill(0,H-baseH,pw,baseH,stoneDk);
+      fill(0,H-baseH,pw,Math.max(1,T*0.03),lighten(stoneDk,14));
+      woodPosts(bodyTop-T*0.16);
+      fill(0,H-baseH,pw,baseH,stoneDk); // repasse le socle par-dessus le pied des rondins
+      fill(0,H-baseH,pw,Math.max(1,T*0.03),lighten(stoneDk,14));
+    } else {
+      // Palissade (Âge Sombre) : rondins pointus
+      woodPosts(bodyTop-T*0.16);
+      fill(0,bodyTop+bodyH*0.28,pw,Math.max(2,T*0.07),darken(wallCol,25));
+      fill(0,bodyTop+bodyH*0.72,pw,Math.max(2,T*0.07),darken(wallCol,25));
     }
-    fill(0,bodyTop+bodyH*0.28,pw,Math.max(2,T*0.07),darken(wallCol,25));
-    fill(0,bodyTop+bodyH*0.72,pw,Math.max(2,T*0.07),darken(wallCol,25));
     break; }
 
   // ── MAISON et par défaut : toit de chaume + cheminée ──
@@ -2600,8 +2689,8 @@ function iconImg(emoji,size){
 }
 
 // Injecte les icônes dessinées dans l'UI persistante (topbar, badges,
-// contrôles de zoom, écran de titre). Idempotent : peut être rappelée
-// sans effet de bord (ex. à chaque buildSprites()).
+// raccourcis rapides, menu pause, écran de titre). Idempotent : peut être
+// rappelée sans effet de bord (ex. à chaque buildSprites()).
 function applyStaticIcons(){
   if(!SPR.iconsBuilt) return;
   const set=(id,emoji,size)=>{ const el=document.getElementById(id); if(el) el.innerHTML=iconImg(emoji,size); };
@@ -2612,7 +2701,10 @@ function applyStaticIcons(){
   set('zhome','🏠',19);
   set('zarmy','⚔️',19);
   const zs=document.getElementById('zsound');
-  if(zs) zs.innerHTML=iconImg((typeof SFX!=='undefined'&&SFX.on===false)?'🔇':'🔊',19);
+  if(zs){
+    const on=!(typeof SFX!=='undefined'&&SFX.on===false);
+    zs.innerHTML=`${iconImg(on?'🔊':'🔇',18)} Son : ${on?'Activé':'Coupé'}`;
+  }
   const pb=document.getElementById('pausebtn-inner');
   if(pb) pb.innerHTML=iconImg((typeof G!=='undefined'&&G.paused)?'▶':'⏸',16);
 }
@@ -2814,7 +2906,7 @@ function drawBuildings(){
     const bx=sx-pw/2, by=sy-ph/2;
     const isEn=b.owner==='enemy';
     const lvlSuffix=(b.type===BT.TOWER&&(b.level||1)>=2)?'_L'+b.level
-                   :((b.type===BT.TC||b.type===BT.BARRACKS)&&G.age>0)?'_A'+G.age
+                   :((b.type===BT.TC||b.type===BT.BARRACKS||b.type===BT.WALL)&&G.age>0)?'_A'+G.age
                    :(b.type===BT.GATE&&b.open)?'_OPEN'
                    :'';
     const spr=SPR.bld[b.type+lvlSuffix+(isEn?'_E':'')]||SPR.bld[b.type+(isEn?'_E':'')];
@@ -4276,11 +4368,15 @@ function updateResearchQ(dt){
         }
     }
     if(r.type==='tactics'){
+      // Alignée sur mkUnit (isMilitary), plutôt que "tout sauf Villageois" :
+      // les deux chemins doivent viser exactement les mêmes unités, sans
+      // quoi une unité déjà en jeu et une unité formée après la recherche
+      // ne reçoivent pas le même bonus.
       for(const u of G.units)
-        if(u.owner==='player'&&u.type!==UT.VIL){
+        if(u.owner==='player'&&isMilitary(u.type)){
           u.atk=Math.round(u.atk*1.2);
         }
-      notify('⚔️ +20% ATK sur toutes vos unités !','#f0c040');
+      notify('⚔️ +20% ATK sur toutes vos unités militaires !','#f0c040');
     }
     if(r.type==='iron_sword'){
       for(const u of G.units) if(u.owner==='player'&&[UT.MIL,UT.PIKE].includes(u.type)) u.atk=Math.round(u.atk*1.25);
@@ -4291,7 +4387,10 @@ function updateResearchQ(dt){
       notify('🏹 Archers renforcés !','#e67e22');
     }
     if(r.type==='cavalry'){
-      for(const u of G.units) if(u.owner==='player'&&[UT.KNIGHT,UT.PALADIN].includes(u.type)){
+      // Éclaireur inclus : c'est de la cavalerie légère, et mkUnit lui
+      // applique déjà ce bonus à la création (voir CAV dans mkUnit) — sans
+      // ça, un Éclaireur déjà formé avant la recherche ne recevait rien.
+      for(const u of G.units) if(u.owner==='player'&&[UT.KNIGHT,UT.PALADIN,UT.SCOUT].includes(u.type)){
         u.maxHp=Math.round(u.maxHp*1.2); u.hp=Math.min(u.hp+15,u.maxHp);
       }
       notify('🐴 Cavalerie renforcée !','#9b59b6');
@@ -5227,10 +5326,13 @@ function drawBuildAct(bar,b){
 
   // ── Mur (info) ──
   if(b.type===BT.WALL){
-    addCommonBuildingBtns(bar,b);
+    // Le nom et l'icône suivent l'habillage visuel de la case précédente
+    // (palissade → pierre → fortifié) : pas de palier séparé à acheter,
+    // le mur se renforce tout seul avec chaque montée d'âge du joueur.
+    const wallNames=['🪵 Palissade de Bois','🪵 Palissade Renforcée','🧱 Mur de Pierre','🏯 Mur Fortifié'];
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:11px;padding:5px 8px;text-align:center;';
-    info.innerHTML=`🪵 Mur de Palissade<br>PV: ${b.hp}/${b.maxHp}`;
+    info.innerHTML=`${wallNames[G.age]||wallNames[0]}<br>PV: ${b.hp}/${b.maxHp}`;
     bar.appendChild(info);
   }
 
@@ -5450,7 +5552,7 @@ function toggleSfx(){
   SFX.on=!SFX.on;
   try{ localStorage.setItem('adc_sfx',SFX.on?'1':'0'); }catch(e){}
   const el=document.getElementById('zsound');
-  if(el){ el.innerHTML=iconImg(SFX.on?'🔊':'🔇',19); el.style.opacity=SFX.on?'1':'.5'; }
+  if(el){ el.innerHTML=`${iconImg(SFX.on?'🔊':'🔇',18)} Son : ${SFX.on?'Activé':'Coupé'}`; el.style.opacity=SFX.on?'1':'.7'; }
   if(SFX.on){ SFX.unlock(); sfx('tap'); }
   notify(SFX.on?'🔊 Son activé':'🔇 Son coupé','#95a5a6');
 }
@@ -5713,15 +5815,6 @@ function applyZoomToTile(targetT,anchorSX,anchorSY){
   return true;
 }
 
-// Paliers des boutons +/-
-function zoomStep(dir){
-  const changed=applyZoomToTile(TILE*(dir>0?1.25:0.8),null,null);
-  if(SPR.refT!==TILE) buildSprites();
-  if(!changed) notify(dir>0?'Zoom maximal':'Zoom minimal','#95a5a6');
-  else notify('Zoom ×'+zoomScaleNow().toFixed(2),'#95a5a6');
-  return changed;
-}
-
 document.getElementById('zhome').addEventListener('click',()=>{
   const tc=G.buildings.find(b=>b.owner==='player'&&b.type===BT.TC)||G.buildings.find(b=>b.owner==='player');
   if(!tc){ notify('Aucun bâtiment','#e67e22'); return; }
@@ -5740,8 +5833,8 @@ document.getElementById('deselbtn').addEventListener('click',()=>{
   clearSelection();
   notify('Sélection annulée','#95a5a6');
 });
-document.getElementById('zin').addEventListener('click',()=>{zoomStep(1);buzz(5);});
-document.getElementById('zout').addEventListener('click',()=>{zoomStep(-1);buzz(5);});
+// Pas de boutons +/− dans le HUD : le zoom se fait à la molette ou au
+// pincement, directement via applyZoomToTile (voir plus haut).
 
 // Minimap navigation
 document.getElementById('minimap').addEventListener('click',e=>{

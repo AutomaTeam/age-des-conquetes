@@ -589,12 +589,13 @@ const BT = { TC:'TC', HOUSE:'HO', LUMBER:'LU', MINE:'MI', FARM:'FA',
              FORGE:'FO', BARRACKS:'BA', TOWER:'TW',
              MILL:'ML', MARKET:'MK', STABLE:'ST', CASTLE:'CS',
              MONASTERY:'MO', WALL:'WL', UNIV:'UV',
-             SIEGE:'SG', OUTPOST:'OP', GATE:'GT' };
+             SIEGE:'SG', OUTPOST:'OP', GATE:'GT', HLM:'HL' };
 
 // Définitions bâtiments
 const BDEF = {
   [BT.TC]:       { nom:'Centre Ville',   w:2,h:2, hp:1500, cost:{},                          col:'#7a5018',cld:'#503410', drops:true, popBonus:5 },
   [BT.HOUSE]:    { nom:'Maison',         w:1,h:1, hp:180,  cost:{wood:25},                   col:'#8B6914',cld:'#5a4010', popBonus:5 },
+  [BT.HLM]:      { nom:'Immeuble HLM',   w:2,h:2, hp:560,  cost:{wood:150,stone:100},         col:'#8a8f96',cld:'#565b62', popBonus:25 },
   [BT.LUMBER]:   { nom:'Camp Forestier', w:2,h:1, hp:260,  cost:{wood:80},                   col:'#5a3810',cld:'#3a2008', drops:true },
   [BT.MINE]:     { nom:'Camp Minier',    w:2,h:1, hp:260,  cost:{wood:80},                   col:'#6a6a6a',cld:'#444',    drops:true },
   [BT.FARM]:     { nom:'Ferme',          w:2,h:2, hp:180,  cost:{wood:60},                    col:'#7ab840',cld:'#4a8018' },
@@ -805,7 +806,7 @@ const BICO = {
   [BT.FARM]:'🌾',[BT.MILL]:'💨',[BT.MARKET]:'🏪',[BT.FORGE]:'⚒️',
   [BT.BARRACKS]:'⚔️',[BT.STABLE]:'🐴',[BT.MONASTERY]:'⛪',[BT.UNIV]:'🎓',
   [BT.TOWER]:'🗼',[BT.CASTLE]:'🏯',[BT.WALL]:'🪵',
-  [BT.SIEGE]:'🛠️',[BT.OUTPOST]:'🚩',[BT.GATE]:'🚪',
+  [BT.SIEGE]:'🛠️',[BT.OUTPOST]:'🚩',[BT.GATE]:'🚪',[BT.HLM]:'🏢',
 };
 
 // ── ÉTAT GLOBAL ───────────────────────────────────────────
@@ -824,7 +825,7 @@ function initState() {
     sel:[],
     mode:'select',
     buildType:null, ghost:null,
-    buildTab:0, // 0=Économie 1=Militaire
+    buildTab:0, // 0=Économie 1=Militaire 2=Défense 3=Amélioration
     research:{ iron_sword:false, bow_craft:false, iron_armor:false, masonry:false,
                cavalry:false, longbow:false, tactics:false, faith:false, engineering:false },
     researchQ:[],
@@ -2083,6 +2084,43 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
       fill(0,bodyTop+bodyH*0.28,pw,Math.max(2,T*0.07),darken(wallCol,25));
       fill(0,bodyTop+bodyH*0.72,pw,Math.max(2,T*0.07),darken(wallCol,25));
     }
+    break; }
+
+  // ── IMMEUBLE HLM : bloc de béton, façade en grille de fenêtres, toit plat +
+  // château d'eau — anachronisme assumé au milieu du village médiéval : la
+  // silhouette doit détonner d'un coup d'œil face aux maisons de bois. ──
+  case BT.HLM: {
+    const concrete=ec('#8a8f96'), concreteDk=darken(concrete,22), concreteLt=lighten(concrete,14);
+    // déborde dans la marge de toit (oy) : pas de toit pointu, juste deux
+    // étages de façade en plus, pour paraître plus haut qu'une maison.
+    const topY=oy*0.12;
+    fill(0,topY,pw,H-topY,concrete);
+    fill(0,topY,Math.max(2,pw*0.08),H-topY,concreteLt);              // biseau clair à gauche
+    fill(pw-Math.max(2,pw*0.08),topY,Math.max(2,pw*0.08),H-topY,concreteDk); // biseau sombre à droite
+    fill(0,topY,pw,Math.max(2,T*0.05),lighten(concrete,20));         // liseré de toit plat
+    fill(0,H-Math.max(3,T*0.08),pw,Math.max(3,T*0.08),concreteDk);   // pied ombré
+    // grille de fenêtres sur plusieurs étages
+    const cols4=3, rows4=5;
+    const cellW=pw/cols4, cellH=(H-topY-T*0.14)/rows4;
+    const fw=cellW*0.6, fh=cellH*0.55;
+    const lit=enemy?'#ffcc44':'#9fd8ff';
+    for(let r=0;r<rows4;r++){
+      const fy=topY+T*0.08+r*cellH;
+      for(let c=0;c<cols4;c++){
+        const fx=c*cellW+(cellW-fw)/2;
+        fill(fx-1,fy-1,fw+2,fh+2,'rgba(0,0,0,.32)');                 // cadre
+        fill(fx,fy,fw,fh,lit);
+        fill(fx+fw*0.12,fy+fh*0.12,fw*0.32,fh*0.3,'#fff');           // reflet
+        fill(fx+fw*0.46,fy,Math.max(1,fw*0.08),fh,'rgba(0,0,0,.25)');// croisillon
+        if(r%2===1) fill(fx-fw*0.15,fy+fh+Math.max(1,T*0.02),fw*1.3,Math.max(2,T*0.035),concreteDk); // balconnet
+      }
+    }
+    door(0.24);
+    // château d'eau sur le toit : détail signature, lisible même de loin
+    const tankW=pw*0.16, tankH=T*0.18;
+    fill(pw*0.5-tankW/2,topY-tankH,tankW,tankH,concreteDk);
+    fill(pw*0.5-tankW*0.5,topY-tankH,tankW,Math.max(1,T*0.03),concreteLt);
+    fill(pw*0.5-Math.max(1,T*0.02),topY-tankH-T*0.06,Math.max(2,T*0.04),T*0.06,concreteDk); // pied du réservoir
     break; }
 
   // ── MAISON et par défaut : toit de chaume + cheminée ──
@@ -5034,6 +5072,7 @@ function updateActBar(){
 
 const BICO_ECO = [
   [BT.HOUSE,    '🏠','Maison',       {wood:25}],
+  [BT.HLM,      '🏢','Immeuble HLM', {wood:150,stone:100}],
   [BT.MILL,     '💨','Moulin',        {wood:100}],
   [BT.FARM,     '🌾','Ferme',         {wood:60}],
   [BT.LUMBER,   '🪵','Camp Bois',     {wood:80}],
@@ -5041,17 +5080,21 @@ const BICO_ECO = [
   [BT.MARKET,   '🏪','Marché',        {wood:150,gold:50}],
 ];
 const BICO_MIL = [
-  [BT.FORGE,    '⚒️','Forge',         {wood:150,stone:100}],
   [BT.BARRACKS, '⚔️','Caserne',       {wood:200,stone:80}],
   [BT.STABLE,   '🐴','Écurie',        {wood:175,stone:60}],
   [BT.MONASTERY,'⛪','Monastère',     {wood:175,stone:50}],
-  [BT.UNIV,     '🎓','Université',    {wood:200,stone:150}],
+  [BT.SIEGE,    '🛠️','Atelier Siège', {wood:220,stone:140}],
+];
+const BICO_DEF = [
   [BT.TOWER,    '🗼','Tour',          {wood:60,stone:180}],
   [BT.CASTLE,   '🏯','Château Fort',  {wood:300,stone:300,gold:100}],
-  [BT.SIEGE,    '🛠️','Atelier Siège', {wood:220,stone:140}],
   [BT.OUTPOST,  '🚩','Avant-poste',   {wood:50}],
   [BT.WALL,     '🪵','Mur',           {wood:20}],
   [BT.GATE,     '🚪','Portail',       {wood:40,stone:20}],
+];
+const BICO_UPG = [
+  [BT.FORGE,    '⚒️','Forge',         {wood:150,stone:100}],
+  [BT.UNIV,     '🎓','Université',    {wood:200,stone:150}],
 ];
 
 function fmtCost(cost){
@@ -5060,14 +5103,17 @@ function fmtCost(cost){
 
 function drawUnitAct(bar,u){
   if(u.type===UT.VIL){
-    // ── Tabs ──
+    // ── Tabs ── (4 catégories : les bâtiments défensifs et de recherche ont
+    // chacun leur propre onglet, séparés de la Caserne/Écurie/Monastère qui
+    // ne font qu'entraîner des troupes — plus facile à retrouver à mesure
+    // que la liste de bâtiments s'est allongée)
     const tabRow=document.createElement('div');
-    tabRow.style.cssText='width:100%;display:flex;gap:5px;justify-content:center;margin-bottom:5px;flex-shrink:0;';
-    for(const[label,idx] of [['🏗️ Économie',0],['⚔️ Militaire',1]]){
+    tabRow.style.cssText='width:100%;display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-bottom:5px;flex-shrink:0;';
+    for(const[label,idx] of [['🏗️ Économie',0],['⚔️ Militaire',1],['🛡️ Défense',2],['🔬 Amélioration',3]]){
       const tb=document.createElement('button');
       const active=G.buildTab===idx;
-      tb.style.cssText=`flex:1;max-width:140px;padding:5px 8px;border-radius:7px;
-        font-family:Cinzel,serif;font-size:11px;border:1.5px solid;cursor:pointer;
+      tb.style.cssText=`flex:1 1 105px;max-width:120px;padding:5px 6px;border-radius:7px;
+        font-family:Cinzel,serif;font-size:10.5px;border:1.5px solid;cursor:pointer;
         background:${active?'#5a3000':'#1e0e00'};
         border-color:${active?'#f0c040':'#6b4510'};
         color:${active?'#f0c040':'#888'};`;
@@ -5076,7 +5122,7 @@ function drawUnitAct(bar,u){
       tabRow.appendChild(tb);
     }
     bar.appendChild(tabRow);
-    const list=G.buildTab===0?BICO_ECO:BICO_MIL;
+    const list=[BICO_ECO,BICO_MIL,BICO_DEF,BICO_UPG][G.buildTab]||BICO_ECO;
     for(const[bt,ico,nom,cost] of list){
       // Le Château Fort n'était jusqu'ici verrouillé par aucun âge malgré
       // ce que sa description prétendait — on tape juste le bouton, il se
@@ -5085,9 +5131,10 @@ function drawUnitAct(bar,u){
         mkBtn(bar,ico,nom+'\n🔒 Âge Châteaux',()=>{},true);
         continue;
       }
-      // cost (BICO_ECO/BICO_MIL) = tarif de base ; le coût réellement prélevé
-      // (voir confirmBuild) est mis à l'échelle par la difficulté — le bouton
-      // doit toujours afficher ce montant final, jamais le tarif de base.
+      // cost (BICO_ECO/BICO_MIL/BICO_DEF/BICO_UPG) = tarif de base ; le coût
+      // réellement prélevé (voir confirmBuild) est mis à l'échelle par la
+      // difficulté — le bouton doit toujours afficher ce montant final,
+      // jamais le tarif de base.
       const realCost=scaleCost(cost);
       mkBtn(bar,ico,nom+'\n'+fmtCost(realCost),()=>enterBuild(bt),false,realCost);
     }
@@ -5322,6 +5369,14 @@ function drawBuildAct(bar,b){
       bar.appendChild(maxed);
     }
     addCommonBuildingBtns(bar,b);
+  }
+
+  // ── Immeuble HLM (info) ──
+  if(b.type===BT.HLM){
+    const info=document.createElement('div');
+    info.style.cssText='color:#888;font-size:11px;padding:5px 8px;text-align:center;';
+    info.innerHTML=`🏢 Immeuble HLM : +25 population<br>PV: ${b.hp}/${b.maxHp}`;
+    bar.appendChild(info);
   }
 
   // ── Mur (info) ──

@@ -5659,6 +5659,11 @@ function rescaleWorld(oldT,newT){
     // un changement de zoom enverrait l'unité sur d'anciennes coordonnées.
     if(u.path) for(const wp of u.path){ wp.x*=k; wp.y*=k; }
     if(u.pathGoal){ u.pathGoal.x*=k; u.pathGoal.y*=k; }
+    // ancre de poste d'une garde de point d'intérêt (voir spawnPOIs /
+    // updateEnemyAI) : coordonnée monde elle aussi, sans quoi un zoom la
+    // désynchronise de la vraie position du camp et la garde finit par
+    // "rentrer" n'importe où sur la carte — y compris vers le joueur.
+    if(u.campX!=null){ u.campX*=k; u.campY*=k; }
   }
   for(const b of G.buildings) if(b.rally){ b.rally.x*=k; b.rally.y*=k; }
   for(const p of G.projs){ p.x*=k; p.y*=k; if(p.tx!=null){p.tx*=k;p.ty*=k;} }

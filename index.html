@@ -875,6 +875,8 @@ function genMap() {
   place(COLS>>1,ROWS>>1+5,3,7,RT.BERRY,340);
   place(8,8,2,6,RT.BERRY,280);   place(COLS-10,ROWS-10,2,6,RT.BERRY,280);
   place(COLS-20,8,2,5,RT.BERRY,260); place(10,ROWS-10,2,5,RT.BERRY,260);
+
+  spawnPOIs(); // points d'intérêt : filons infinis gardés
 }
 
 function place(cx,cy,rx,cnt,type,amt){
@@ -885,6 +887,67 @@ function place(cx,cy,rx,cnt,type,amt){
       G.bmap[y][x]=2;
       const a2=Math.round(amt*NODE_RICHNESS);
       G.nodes.push({id:G.nid++,type,tx:x,ty:y,x:x*TILE+TILE/2,y:y*TILE+TILE/2,amt:a2,max:a2,gatherers:[]});
+    }
+  }
+}
+
+// ── POINTS D'INTÉRÊT : filons infinis gardés ──────────────
+// Un filon d'or qui ne s'épuise jamais (voir doGather), posté aux quatre
+// coins de la carte et défendu par une garnison ennemie permanente + des
+// tours de guet — indépendant du système de vagues (u.camp les exclut de
+// la détection de fin de vague, voir updateWaves). Récompense l'exploration
+// et l'offensive : l'or y coule à volonté pour qui ose nettoyer le camp.
+function poiCanPlaceTower(tx,ty){
+  const d=BDEF[BT.TOWER];
+  if(tx<0||ty<0||tx+d.w>COLS||ty+d.h>ROWS) return false;
+  for(let dy=0;dy<d.h;dy++) for(let dx=0;dx<d.w;dx++)
+    if(G.bmap[ty+dy][tx+dx]!==0) return false;
+  return true;
+}
+function spawnPOIs(){
+  const diff=DIFFS[G.difficulty]||DIFFS.normal;
+  const spots=[[14,14],[COLS-15,14],[14,ROWS-15],[COLS-15,ROWS-15]];
+  let camp=0;
+  for(const[cx,cy] of spots){
+    camp++;
+    // gisement d'or inépuisable
+    const before=G.nodes.length;
+    place(cx,cy,3,9,RT.GOLD,600);
+    if(G.nodes.length===before) continue; // aucune case libre ici (relief/eau) : on saute ce camp
+    for(let i=before;i<G.nodes.length;i++) G.nodes[i].infinite=true;
+
+    // tours de guet (Donjon niv.3) encadrant le filon
+    for(const[ox,oy] of [[-5,-2],[5,2]]){
+      let tx=cx+ox, ty=cy+oy;
+      for(let tries=0;tries<14;tries++){
+        if(poiCanPlaceTower(tx,ty)){
+          const tw=mkBuilding(BT.TOWER,tx,ty,'enemy');
+          tw.level=3;
+          tw.hp=tw.maxHp=Math.round(BDEF[BT.TOWER].hp*TOWER_LEVELS[3].hpMult);
+          placeBuilding(tw);
+          break;
+        }
+        tx+=(Math.random()<0.5?1:-1); ty+=(Math.random()<0.5?1:-1);
+      }
+    }
+
+    // garnison mixte, nettement plus robuste qu'une vague de début de partie
+    const n=Math.round(11*diff.enemyCount);
+    const comp=[[UT.ENEMI,Math.ceil(n*0.4)],[UT.ENEMIA,Math.ceil(n*0.25)],
+                [UT.ENEMI_C,Math.ceil(n*0.25)],[UT.ENEMI_G,Math.max(1,Math.round(n*0.1))]];
+    for(const[type,count] of comp){
+      for(let i=0;i<count;i++){
+        let x,y,tries=0;
+        do{
+          const a=Math.random()*Math.PI*2, r=1+Math.random()*4;
+          x=(cx+Math.cos(a)*r)*TILE+TILE/2; y=(cy+Math.sin(a)*r)*TILE+TILE/2;
+        } while(++tries<20 && tileBlocked((x/TILE)|0,(y/TILE)|0));
+        const u=mkUnit(type,x,y,'enemy');
+        u.hp=Math.round(u.hp*2.0*diff.enemyHp); u.maxHp=u.hp;
+        u.atk=Math.round(u.atk*1.5*diff.enemyAtk);
+        u.camp=camp; // exclu des vagues (updateWaves) — garde permanente
+        G.units.push(u);
+      }
     }
   }
 }
@@ -3593,10 +3656,14 @@ function doGather(u,dt){
   u.gTimer+=dt*gatherMult();
   if(u.gTimer>=1/GRATE[n.type]){
     u.gTimer=0;
-    const a=Math.min(1,n.amt); n.amt-=a; u.inv+=a; u.invT=n.type;
+    // Gisement infini (point d'intérêt gardé) : jamais épuisé, se récolte
+    // indéfiniment tant que le camp ennemi ne repousse pas le villageois.
+    const a=n.infinite?1:Math.min(1,n.amt);
+    if(!n.infinite) n.amt-=a;
+    u.inv+=a; u.invT=n.type;
     addFText(u.x,u.y-14,'+1','#f1c40f');
     sfx(n.type===RT.TREE?'chop':n.type===RT.BERRY?'pick':'mine');
-    if(u.inv>=GCAP||n.amt<=0){
+    if(u.inv>=GCAP||(!n.infinite&&n.amt<=0)){
       n.gatherers=n.gatherers.filter(id=>id!==u.id);
       u.dropoff=findDropoff(u);
       u.state='return';
@@ -3868,15 +3935,17 @@ function updateBuildings(dt){
         }
       }
     }
-    // Tour défensive + Château (auto-attaque)
-    if((b.type===BT.TOWER||b.type===BT.CASTLE)&&b.owner==='player'){
+    // Tour défensive + Château (auto-attaque) — vaut aussi bien pour les
+    // tours du joueur (ciblent les ennemis) que pour les tours de garde
+    // ennemies postées sur un point d'intérêt (ciblent les unités du joueur).
+    if(b.type===BT.TOWER||b.type===BT.CASTLE){
       b.atkCd-=dt;
       let range,atk,cd;
       if(b.type===BT.CASTLE){ range=9*TILE; atk=30; cd=1.2; }
       else { const lv=TOWER_LEVELS[b.level||1]; range=lv.range*TILE; atk=lv.atk; cd=lv.cd; }
       if(b.atkCd<=0){
-        const e=nearEnemyAll(b.x,b.y,range);
-        if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:'player'},e,false); }
+        const e=b.owner==='player'?nearEnemyAll(b.x,b.y,range):nearPlayerUnit(b.x,b.y,range);
+        if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:b.owner},e,b.owner==='enemy'); }
       }
     }
   }
@@ -4072,7 +4141,11 @@ function addFText(x,y,txt,col){
 
 function updateWaves(dt){
   if(G.waveActive){
-    if(G.units.filter(u=>u.owner==='enemy').length===0){
+    // Les gardes de point d'intérêt (u.camp) sont des ennemis permanents,
+    // indépendants des vagues : ils ne doivent jamais compter comme "vague
+    // repoussée", sans quoi une garnison encore vivante bloquerait à jamais
+    // la détection de fin de vague.
+    if(G.units.filter(u=>u.owner==='enemy'&&!u.camp).length===0){
       const diff=DIFFS[G.difficulty]||DIFFS.normal;
       G.waveActive=false;
       const reward=Math.round((50+G.wave*20)*diff.rewardMult);
@@ -5971,6 +6044,7 @@ function startGame(){
   setTimeout(()=>notify('Sélectionnez un villageois, puis tapez une ressource !','#f0c040'),600);
   setTimeout(()=>notify('🪵 Récoltez du bois puis construisez des Maisons !','#e8d5a0'),3200);
   setTimeout(()=>notify(`⏳ ${peaceLabel()} avant la 1ère attaque — montez les âges !`,'#2ecc71'),6200);
+  setTimeout(()=>notify('🏆 Des points d\'intérêt (or illimité, lourdement gardés) sont dispersés sur la carte !','#f0c040'),9200);
   setTimeout(()=>bigBanner('🌑 Âge Sombre'),900);
 }
 window.startGame=startGame;

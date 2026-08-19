@@ -555,6 +555,42 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 #save-info    { font-family:'Crimson Text',serif;font-size:12px;color:#9a8a6a;text-align:center;line-height:1.5;margin-bottom:2px; }
 #save-info b  { color:var(--gold-l);font-weight:600; }
 
+/* ── Multijoueur : robustesse (P7) ── */
+.spd-ctrl.locked { opacity:.4;pointer-events:none;position:relative; }
+.spd-ctrl.locked::after {
+  content:'verrouillée en ligne';font-family:'Crimson Text',serif;font-size:10px;color:#9a8a6a;
+  position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;margin-top:2px;
+}
+#mp-adv-bar {
+  position:fixed;top:54px;left:50%;transform:translateX(-50%);z-index:120;display:none;
+  align-items:center;gap:7px;padding:4px 12px;border-radius:0 0 10px 10px;
+  background:rgba(10,6,0,.82);border:1px solid #4a3a20;border-top:none;
+  font-family:'Cinzel',serif;font-size:12px;color:var(--parch2);
+}
+#mp-adv-bar .mpa-teinte { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
+#mp-adv-bar .mpa-nom { font-weight:600;color:var(--gold-l); }
+#mp-adv-bar .mpa-age, #mp-adv-bar .mpa-pop { color:#9a8a6a;font-size:11px; }
+#mp-pause-voile, #mp-reco-bandeau {
+  position:fixed;inset:0;z-index:540;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  background:rgba(0,0,0,.72);text-align:center;padding:20px;
+}
+#mp-pause-voile .mpv-ico, #mp-reco-bandeau .mpv-ico { font-size:42px; }
+.mpv-qui { font-family:'Cinzel',serif;font-size:16px;color:var(--gold-l); }
+#mp-reco-bandeau .mpv-sub { font-family:'Crimson Text',serif;font-size:13px;color:#9a8a6a;max-width:300px; }
+#mp-decision-hote {
+  position:fixed;inset:0;z-index:560;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  background:rgba(0,0,0,.88);text-align:center;padding:24px;
+}
+#mp-decision-hote h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px;margin:0; }
+#mp-decision-hote p { font-family:'Crimson Text',serif;font-size:13px;color:#9a8a6a;max-width:320px; }
+.mp-emoterow { display:flex;gap:6px;justify-content:center;width:100%; }
+.mp-emoterow button {
+  flex:1;padding:8px 4px;font-size:18px;cursor:pointer;border-radius:8px;
+  background:rgba(20,12,0,.7);border:1.5px solid #5a4a2a;
+}
+
 /* ── GRANDE BANNIÈRE ── */
 #bigbanner {
   position:fixed;top:38%;left:50%;transform:translateX(-50%);z-index:250;
@@ -619,6 +655,38 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   </div>
 </div>
 
+<!-- ── BANDEAU ADVERSE (multijoueur) ── -->
+<div id="mp-adv-bar">
+  <span class="mpa-teinte"></span>
+  <span class="mpa-nom"></span>
+  <span class="mpa-age"></span>
+  <span class="mpa-pop"></span>
+  <span class="mpa-etat"></span>
+</div>
+
+<!-- ── VOILE DE PAUSE PARTAGEE ── -->
+<div id="mp-pause-voile">
+  <div class="mpv-ico">⏸</div>
+  <div class="mpv-qui">Pause</div>
+  <button class="bigbtn" onclick="mpLeverPauseDepuisVoile()" style="max-width:220px;">▶️ Reprendre</button>
+</div>
+
+<!-- ── BANDEAU DE RECONNEXION ── -->
+<div id="mp-reco-bandeau">
+  <div class="mpv-ico">🔌</div>
+  <div class="mpv-qui">Reconnexion…</div>
+  <div class="mpv-sub">La partie est en pause le temps de rétablir la connexion (jusqu'à 60 s).</div>
+</div>
+
+<!-- ── DECISION DE L'HOTE (l'invité ne revient pas) ── -->
+<div id="mp-decision-hote">
+  <div style="font-size:42px">🔌</div>
+  <h2>Connexion perdue</h2>
+  <p><span class="mpd-nom">Votre adversaire</span> n'a pas pu être reconnecté après 60 secondes.</p>
+  <button class="bigbtn" style="background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:2px solid #2ecc71;" onclick="mpDecisionContinuerIA()">🤖 Continuer (l'IA prend le relais)</button>
+  <button class="bigbtn" style="background:linear-gradient(180deg,#4a1a1a,#2a0d0d);color:#e74c3c;border:2px solid #e74c3c;" onclick="mpDecisionTerminer()">🏁 Terminer, victoire par abandon</button>
+</div>
+
 <!-- ── BOUTON PAUSE ── -->
 <div id="pausebtn">
   <div id="pausebtn-inner" onclick="openPause()" title="Pause">⏸</div>
@@ -647,6 +715,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   <button class="pmenu-btn pmenu-load"   onclick="loadGame()">📂 Charger</button>
   <button class="pmenu-btn pmenu-load"   id="autoloadbtn" onclick="loadAutoSave()" style="display:none;">⏱️ Charger l'auto-sauvegarde</button>
   <div class="pmenu-sep"></div>
+  <button class="pmenu-btn pmenu-quit" id="mpbtn-abandon" style="display:none;" onclick="mpAbandonner()">🏳️ Abandonner la partie</button>
   <button class="pmenu-btn pmenu-quit"   onclick="quitGame()">🏠 Quitter la partie</button>
 </div>
 
@@ -766,6 +835,12 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
   <div id="mpetat">Multijoueur non configuré</div>
 
+  <div class="mp-emoterow" id="mp-emoterow" style="display:none;">
+    <button type="button" onclick="mpEmote('attaque')" title="1">⚔️</button>
+    <button type="button" onclick="mpEmote('aide')" title="2">🛡</button>
+    <button type="button" onclick="mpEmote('ok')" title="3">👍</button>
+    <button type="button" onclick="mpEmote('rire')" title="4">😄</button>
+  </div>
   <div id="mpchat"></div>
   <div style="display:flex;gap:6px;width:100%;max-width:360px;">
     <input class="mpin" id="mpmsg" type="text" maxlength="120" placeholder="Message…" onkeydown="if(event.key==='Enter')mpEnvoyerChat()">
@@ -6534,6 +6609,7 @@ function updateHUD(){
   btn.className=idleCount>0?'active':'zero';
   // Barre d'âge
   updateAgeBar();
+  updateBandeauAdverse();
 }
 
 function updateActBar(){
@@ -7382,6 +7458,7 @@ function finishGame(won){
 // ── VICTOIRE ──────────────────────────────────────────────
 function showVictory(){
   G.running=false;
+  envoyerBilanReseau();
   const fresh=finishGame(true);
   const ov=document.getElementById('overlay');
   ov.style.display='flex';
@@ -7397,6 +7474,7 @@ function showVictory(){
     <p>${exploit}<br>Âge atteint : <strong>${AGES[G.age].nom}</strong> · ${MODES[G.gmode].ico} ${MODES[G.gmode].nom} · ${DIFFS[G.difficulty].ico} ${DIFFS[G.difficulty].nom}</p>
     <p class="lore">Durée de la partie : ${fmtDuration(G.gameTime)}</p>
     ${statsBlock()}
+    ${bilanDeuxColonnes()}
     ${freshAchBlock(fresh)}
     <button class="bigbtn" onclick="location.reload()">🔄 Nouvelle partie</button>
     ${G.gmode!=='survival'?'':`<button class="bigbtn" id="contBtn" style="background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:2px solid #2ecc71;" onclick="continuePlay()">⚔️ Continuer (sans fin)</button>`}
@@ -7415,6 +7493,7 @@ window.continuePlay=continuePlay;
 // ── GAME OVER ─────────────────────────────────────────────
 function showGameOver(){
   G.running=false;
+  envoyerBilanReseau();
   const fresh=finishGame(false);
   const cause=G.gmode!=='survival'
     ? `Le seigneur rival a rasé votre Centre Ville.`
@@ -7427,6 +7506,7 @@ function showGameOver(){
     <p>${cause}<br>Âge atteint : <strong>${AGES[G.age].nom}</strong> · ${MODES[G.gmode].ico} ${MODES[G.gmode].nom} · ${DIFFS[G.difficulty].ico} ${DIFFS[G.difficulty].nom}</p>
     <p class="lore">Durée de la partie : ${fmtDuration(G.gameTime)}</p>
     ${statsBlock()}
+    ${bilanDeuxColonnes()}
     ${freshAchBlock(fresh)}
     <button class="bigbtn" onclick="location.reload()">🔄 Recommencer</button>
     <button class="bigbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Voir tous les succès</button>
@@ -7435,6 +7515,7 @@ function showGameOver(){
 
 // ── VITESSE DE JEU ────────────────────────────────────────
 function setSpeed(s){
+  if(reseauActif()) s=1; // vitesse verrouillee en ligne : les deux camps doivent voir le meme temps
   G.speed=s;
   document.querySelectorAll('.spd-btn').forEach(b=>{
     b.classList.toggle('on', +b.dataset.spd===s);
@@ -7575,8 +7656,16 @@ document.getElementById('minimap').addEventListener('click',e=>{
 // ── PAUSE ─────────────────────────────────────────────────
 function openPause(){
   if(!G.running) return;
+  // En ligne, ouvrir CE menu partage aussi la pause avec l'adversaire (voir
+  // mpDemanderPause) : le panneau reste le meme (sauvegarde, son, abandon),
+  // seule sa consequence reseau change. Si la partie est DEJA en pause (a
+  // l'initiative de l'adversaire), on ouvre juste les reglages sans
+  // consommer mon propre budget ni ré-annoncer une pause qui existe deja.
+  if(reseauActif()&&!G.paused&&!mpDemanderPause()) return; // plus de pause disponible : le menu ne s'ouvre pas
   G.paused=true;
+  afficherVoilePause(false); // le menu complet remplace le voile leger, le cas echeant
   document.getElementById('pausemenu').style.display='flex';
+  document.getElementById('mpbtn-abandon').style.display=reseauActif()?'block':'none';
   refreshSaveInfo();
   document.getElementById('pausebtn-inner').innerHTML=iconImg('▶',16);
   checkSaveExists().then(exists=>{
@@ -7587,6 +7676,7 @@ function openPause(){
 }
 
 function closePause(){
+  if(reseauActif()) mpLeverPause();
   G.paused=false;
   document.getElementById('pausemenu').style.display='none';
   document.getElementById('pausebtn-inner').innerHTML=iconImg('⏸',16);
@@ -7661,6 +7751,19 @@ const RESEAU = {
   connusU:new Set(), connusB:new Set(),
   attente:new Map(),  // seq -> ordre en attente d'acquittement (client)
   latence:0,
+  // Robustesse (P7)
+  dernierRecu:0,            // horodatage du dernier message recu, tous types
+  enAttenteReconnexion:false,
+  decisionRequise:false,    // hote : la fenetre de reconnexion a expire, il doit choisir
+  finRecue:null,            // bilan de fin de partie envoye par l'hote
+  pausesRestantes:3, pauseMinuteur:null,
+  // Crochets fournis par le TRANSPORT (Firebase en prod, no-op en test) :
+  // la logique de reconnexion elle-meme (renegociation WebRTC) est
+  // specifique au transport ; ce qui se passe cote jeu (geler, afficher,
+  // decider) ne l'est pas et vit entierement ici.
+  tenterReconnexion:null,   // ()=>void, appele une fois en entrant en attente
+  onSalonSupprime:null,     // callback pose par le transport ; appele quand
+                            // l'hote a explicitement ferme le salon
 };
 window.RESEAU=RESEAU;
 
@@ -7948,6 +8051,10 @@ function updateVisuel(dt){
 // ── ROUTAGE DES MESSAGES ───────────────────────────────────────
 function recevoirReseau(m){
   if(!m||!m.t) return;
+  RESEAU.dernierRecu=Date.now();
+  // Tout message reçu prouve que le lien est vivant : sortir immédiatement
+  // de l'attente de reconnexion plutôt que d'attendre le prochain battement.
+  if(RESEAU.enAttenteReconnexion&&m.t!=='PAUSE'&&m.t!=='REPRISE') sortirAttenteReconnexion();
   switch(m.t){
     case 'SALUT':  demarrerPartieClient(m); break;
     case 'PRET':   if(RESEAU.role==='hote'){ RESEAU.pret=true; envoyerReseau(construireSnap()); } break;
@@ -7956,6 +8063,11 @@ function recevoirReseau(m){
     case 'ORDRE':  traiterOrdreDistant(m); break;
     case 'REJ':    traiterRejet(m); break;
     case 'CHAT':   break; // gere par le panneau de salon
+    case 'PAUSE':  appliquerPauseDistante(true,m.par,m.nom); break;
+    case 'REPRISE':appliquerPauseDistante(false,m.par,m.nom); break;
+    case 'ABANDON':traiterAbandon(m); break;
+    case 'EMOTE':  afficherEmote(m.par,m.code,false); break;
+    case 'FIN':    RESEAU.finRecue=m; break;
   }
 }
 
@@ -7988,7 +8100,10 @@ function demarrerPartieHote(adversaire){
   RESEAU.actif=true; RESEAU.role='hote';
   RESEAU.adversaire={id:FAC.P2, nom:adversaire&&adversaire.nom||'Adversaire'};
   RESEAU.tick=0; RESEAU.accDelta=0; RESEAU.pret=false;
+  RESEAU.pausesRestantes=3; RESEAU.finRecue=null;
   startGame();
+  mpVerrouillerVitesse();
+  demarrerVeilleReseau();
   envoyerReseau({
     t:'SALUT', proto:PROTO_VERSION,
     seed:G.seed, gmode:G.gmode, difficulty:G.difficulty,
@@ -8026,6 +8141,9 @@ function demarrerPartieClient(m){
   rebuildIndex();
   applyDifficultyBadge();
   refreshUI();
+  RESEAU.pausesRestantes=3; RESEAU.finRecue=null;
+  mpVerrouillerVitesse();
+  demarrerVeilleReseau();
   envoyerReseau({t:'PRET'});
   requestAnimationFrame(loop);
   notify('Partie en ligne — en attente de l\'etat initial…','#3498db');
@@ -8039,6 +8157,287 @@ function pousserReseau(dt){
   RESEAU.accDelta=0;
   RESEAU.tick++;
   envoyerReseau(construireDelta());
+}
+
+
+// \u2500\u2500 PAUSE PARTAGEE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// N'importe qui peut mettre en pause ou reprendre ; cote hote, c'est cette
+// pause qui gele reellement la simulation (loop() respecte G.paused quel
+// que soit le role). Limite anti-abus : 3 pauses de 90 s par joueur et par
+// partie, pour eviter qu'un camp ne fige la partie a volonte.
+// Appele par openPause() AVANT d'afficher le menu : decompte le budget,
+// previent l'adversaire, arme la reprise automatique a 90 s. Le menu
+// pause LUI-MEME sert d'indicateur visuel pour qui l'a ouvert ; le voile
+// leger (#mp-pause-voile) n'est montre qu'a l'AUTRE camp, voir plus bas.
+function mpDemanderPause(){
+  if(RESEAU.pausesRestantes<=0){ notify('Plus de pause disponible pour cette partie','#e67e22'); return false; }
+  RESEAU.pausesRestantes--;
+  envoyerReseau({t:'PAUSE', par:G.me, nom:(moi()&&moi().nom)||'Joueur'});
+  RESEAU.pauseMinuteur=setTimeout(()=>closePause(),90000);
+  return true;
+}
+// Appele par closePause() apres avoir referme le menu localement.
+function mpLeverPause(){
+  if(RESEAU.pauseMinuteur){ clearTimeout(RESEAU.pauseMinuteur); RESEAU.pauseMinuteur=null; }
+  envoyerReseau({t:'REPRISE', par:G.me});
+}
+// Reaction a une pause/reprise decidee par l'AUTRE camp. La pause est un
+// etat PARTAGE et symetrique ("n'importe qui peut mettre en pause, n'importe
+// qui peut reprendre") : peu importe qui a initie, un REPRISE recu leve
+// TOUJOURS la pause ici, y compris en refermant mon propre menu s'il etait
+// ouvert \u2014 sans quoi l'hote (seul a faire tourner la simulation) resterait
+// gele meme apres que l'adversaire ait explicitement repris.
+function appliquerPauseDistante(actif,par,nom){
+  if(actif){
+    if(G.paused) return;
+    G.paused=true;
+    // Si MON propre menu est deja ouvert (pause quasi simultanee des deux
+    // cotes), il fait deja office d'indicateur : pas besoin du voile en plus.
+    if(document.getElementById('pausemenu').style.display!=='flex') afficherVoilePause(true,nom||'Votre adversaire');
+  } else {
+    G.paused=false;
+    afficherVoilePause(false);
+    if(RESEAU.pauseMinuteur){ clearTimeout(RESEAU.pauseMinuteur); RESEAU.pauseMinuteur=null; }
+    const pm=document.getElementById('pausemenu');
+    if(pm.style.display==='flex'){
+      pm.style.display='none';
+      document.getElementById('pausebtn-inner').innerHTML=iconImg('\u23f8',16);
+    }
+    requestAnimationFrame(loop);
+  }
+}
+function afficherVoilePause(visible,nom){
+  const el=document.getElementById('mp-pause-voile');
+  if(!el) return;
+  el.style.display=visible?'flex':'none';
+  if(visible) el.querySelector('.mpv-qui').textContent='Pause demand\u00e9e par '+nom;
+}
+// Bouton "Reprendre" du voile leger : n'importe qui peut lever la pause,
+// que ce soit la sienne ou celle de l'adversaire (voir appliquerPauseDistante
+// pour la symetrie du cote reception).
+function mpLeverPauseDepuisVoile(){
+  G.paused=false;
+  afficherVoilePause(false);
+  if(RESEAU.pauseMinuteur){ clearTimeout(RESEAU.pauseMinuteur); RESEAU.pauseMinuteur=null; }
+  envoyerReseau({t:'REPRISE', par:G.me});
+  requestAnimationFrame(loop);
+}
+window.mpLeverPauseDepuisVoile=mpLeverPauseDepuisVoile;
+
+// \u2500\u2500 ABANDON \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+function mpAbandonner(){
+  if(!reseauActif()) return;
+  if(!confirm('Abandonner la partie ? Votre adversaire remportera la victoire.')) return;
+  envoyerReseau({t:'ABANDON', par:G.me});
+  const f=G.factions[G.me]; if(f) f.vaincu=true;
+  if(!G.gameOver){ G.gameOver=true; showGameOver(); }
+}
+window.mpAbandonner=mpAbandonner;
+function traiterAbandon(m){
+  const f=G.factions[m.par]; if(!f) return;
+  f.vaincu=true; // le controle habituel de fin de partie (update()) tranche a la prochaine image
+  notify('\uD83C\uDFF3\uFE0F '+f.nom+' a abandonn\u00e9','#f0c040');
+}
+
+// \u2500\u2500 SIGNAUX RAPIDES (chat 1 clic, touches 1-4) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+const EMOTES=[
+  {code:'attaque', ico:'\u2694\uFE0F', texte:"J'attaque !"},
+  {code:'aide',    ico:'🛡',  texte:'\u00c0 l\'aide !'},
+  {code:'ok',      ico:'👍',  texte:'Bien re\u00e7u'},
+  {code:'rire',    ico:'😄',  texte:'Ha !'},
+];
+function mpEmote(code){
+  if(!reseauActif()) return;
+  envoyerReseau({t:'EMOTE', par:G.me, code});
+  afficherEmote(G.me,code,true);
+}
+window.mpEmote=mpEmote;
+function afficherEmote(par,code,local){
+  const e=EMOTES.find(x=>x.code===code); if(!e) return;
+  const nom=local?((moi()&&moi().nom)||'Vous'):((RESEAU.adversaire&&RESEAU.adversaire.nom)||'Adversaire');
+  mpLigne(e.ico+' '+nom+' : '+e.texte, local?'moi':'lui');
+  if(!local) notify(e.ico+' '+nom+' : '+e.texte,'#f0c040');
+  buzz(6);
+}
+// Touches 1-4 : indispensable sur mobile ou le clavier est penible. On
+// evite de capter la touche si le joueur est en train d'ecrire ailleurs.
+window.addEventListener('keydown',e=>{
+  if(!reseauActif()) return;
+  const cible=e.target;
+  if(cible&&(cible.tagName==='INPUT'||cible.tagName==='TEXTAREA')) return;
+  const idx='1234'.indexOf(e.key);
+  if(idx>=0&&EMOTES[idx]) mpEmote(EMOTES[idx].code);
+});
+
+// \u2500\u2500 VITESSE VERROUILLEE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// setSpeed() est deja la SEULE porte d'entree pour changer G.speed : on y
+// impose 1 en reseau plutot que de dupliquer la regle a chaque appelant.
+function mpVerrouillerVitesse(){
+  document.querySelectorAll('.spd-ctrl').forEach(el=>el.classList.toggle('locked',reseauActif()));
+}
+
+// \u2500\u2500 BANDEAU ADVERSE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Nom, teinte, age, population \u2014 jamais les ressources : c'est la seule
+// information que le brouillard de guerre ne cache pas deja.
+function updateBandeauAdverse(){
+  const el=document.getElementById('mp-adv-bar');
+  if(!el) return;
+  if(!reseauActif()||!RESEAU.adversaire){ el.style.display='none'; return; }
+  const f=G.factions[RESEAU.adversaire.id];
+  if(!f){ el.style.display='none'; return; }
+  el.style.display='flex';
+  el.querySelector('.mpa-nom').textContent=f.nom||RESEAU.adversaire.nom||'Adversaire';
+  el.querySelector('.mpa-teinte').style.background=(COUL_FACTION[f.teinte]||COUL_FACTION.rouge)[0];
+  el.querySelector('.mpa-age').textContent=AGES[f.age]?AGES[f.age].ico:'';
+  el.querySelector('.mpa-pop').textContent=f.pop+'/'+f.maxPop;
+  el.querySelector('.mpa-etat').textContent=f.vaincu?'💀':'';
+}
+
+// \u2500\u2500 BASCULE IA (l'adversaire ne revient pas) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Reutilise integralement la mecanique d'IA existante (P2) : il suffit de
+// faire ressembler la faction humaine deconnectee a une faction IA pour
+// qu'updateAI() la prenne en charge d'elle-meme, avec son propre budget de
+// difficulte, comme n'importe quel rival de Conquete.
+function convertirEnIA(factionId){
+  const f=G.factions[factionId]; if(!f||f.genre==='ia') return;
+  f.genre='ia';
+  const tc=G.buildings.find(b=>b.owner===factionId&&b.type===BT.TC);
+  const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+  Object.assign(f,{
+    baseX:tc?tc.x:0, baseY:tc?tc.y:0, tcId:tc?tc.id:null,
+    think:0, atkTimer:tune.firstAtk, atkMin:tune.atkMin, raids:0, vilTarget:tune.vilTarget,
+  });
+  for(const u of G.units) if(u.owner===factionId) u.ai=true;
+  notify('🤖 '+f.nom+' est d\u00e9sormais men\u00e9e par l\'IA','#f0c040');
+}
+
+// \u2500\u2500 FENETRE DE RECONNEXION \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+const DELAI_GEL_RECO = 3000;   // silence avant de considerer la connexion perdue
+const FENETRE_RECO   = 60000;  // duree de la tentative de reconnexion
+let _minuteurVeille=null, _minuteurDecision=null;
+function demarrerVeilleReseau(){
+  RESEAU.dernierRecu=Date.now();
+  if(_minuteurVeille) clearInterval(_minuteurVeille);
+  _minuteurVeille=setInterval(()=>{
+    if(!RESEAU.actif||RESEAU.enAttenteReconnexion||RESEAU.decisionRequise) return;
+    if(Date.now()-RESEAU.dernierRecu>DELAI_GEL_RECO) entrerAttenteReconnexion();
+  },500);
+}
+function entrerAttenteReconnexion(){
+  if(RESEAU.enAttenteReconnexion) return;
+  RESEAU.enAttenteReconnexion=true;
+  G.paused=true;
+  afficherBandeauReconnexion(true);
+  if(typeof RESEAU.tenterReconnexion==='function'){ try{ RESEAU.tenterReconnexion(); }catch(e){} }
+  _minuteurDecision=setTimeout(()=>{
+    if(!RESEAU.enAttenteReconnexion) return; // reconnecte entre-temps
+    RESEAU.enAttenteReconnexion=false;
+    afficherBandeauReconnexion(false);
+    if(RESEAU.role==='hote') ouvrirDecisionHote();
+    else afficherEcranHoteParti();
+  },FENETRE_RECO);
+}
+function sortirAttenteReconnexion(){
+  if(!RESEAU.enAttenteReconnexion) return;
+  RESEAU.enAttenteReconnexion=false;
+  if(_minuteurDecision){ clearTimeout(_minuteurDecision); _minuteurDecision=null; }
+  afficherBandeauReconnexion(false);
+  G.paused=false; // la reconnexion a priorite sur une pause manuelle anterieure
+  notify('🔌 Reconnect\u00e9','#2ecc71');
+  requestAnimationFrame(loop);
+}
+function afficherBandeauReconnexion(visible){
+  const el=document.getElementById('mp-reco-bandeau');
+  if(el) el.style.display=visible?'flex':'none';
+}
+// Signal ferme, immediat : le TRANSPORT appelle ceci des qu'il constate que
+// l'hote a explicitement supprime le salon (bouton Quitter, pas une simple
+// coupure) \u2014 inutile d'attendre les 60 s dans ce cas-la.
+function signalerSalonSupprime(){
+  if(RESEAU.role!=='client') return;
+  if(_minuteurDecision){ clearTimeout(_minuteurDecision); _minuteurDecision=null; }
+  RESEAU.enAttenteReconnexion=false;
+  afficherBandeauReconnexion(false);
+  afficherEcranHoteParti();
+}
+RESEAU.onSalonSupprime=signalerSalonSupprime;
+
+// Hote : la fenetre de reconnexion a expire sans nouvelles de l'invite.
+function ouvrirDecisionHote(){
+  RESEAU.decisionRequise=true;
+  const el=document.getElementById('mp-decision-hote');
+  if(el){ el.style.display='flex'; el.querySelector('.mpd-nom').textContent=(RESEAU.adversaire&&RESEAU.adversaire.nom)||'Votre adversaire'; }
+}
+function mpDecisionContinuerIA(){
+  document.getElementById('mp-decision-hote').style.display='none';
+  RESEAU.decisionRequise=false;
+  convertirEnIA(RESEAU.adversaire.id);
+  G.paused=false;
+  requestAnimationFrame(loop);
+}
+window.mpDecisionContinuerIA=mpDecisionContinuerIA;
+function mpDecisionTerminer(){
+  document.getElementById('mp-decision-hote').style.display='none';
+  RESEAU.decisionRequise=false;
+  const f=G.factions[RESEAU.adversaire.id]; if(f) f.vaincu=true;
+  G.paused=false;
+  if(!G.gameOver){ update(SIM_DT); } // laisse update() constater la victoire par abandon
+}
+window.mpDecisionTerminer=mpDecisionTerminer;
+
+// Invite : l'hote est parti pour de bon (salon supprime, ou 60 s ecoulees
+// sans qu'il ne revienne). On ne laisse JAMAIS ce joueur sur un ecran fige
+// \u2014 c'est le pire ressenti possible : il repart soit avec sa sauvegarde,
+// soit vers le menu.
+function afficherEcranHoteParti(){
+  G.paused=true; RESEAU.actif=false;
+  const ov=document.getElementById('overlay');
+  ov.style.display='flex'; ov.classList.add('endscreen');
+  ov.innerHTML=
+    '<div style="font-size:48px">🔌</div>'+
+    '<h1>L\'h\u00f4te a quitt\u00e9</h1>'+
+    '<p>La connexion avec '+((RESEAU.adversaire&&RESEAU.adversaire.nom)||'votre adversaire')+' a \u00e9t\u00e9 perdue et n\'a pas pu \u00eatre r\u00e9tablie.</p>'+
+    '<button class="bigbtn" onclick="mpSauverEtQuitter()">💾 Sauvegarder ma partie</button>'+
+    '<button class="bigbtn" onclick="location.reload()">🏠 Retour au menu</button>';
+}
+async function mpSauverEtQuitter(){
+  try{ await storageSave(buildSaveData(),SAVE_KEY); notify('Partie sauvegard\u00e9e','#2ecc71'); }
+  catch(e){ notify('\u00c9chec de la sauvegarde','#e74c3c'); }
+  setTimeout(()=>location.reload(),900);
+}
+window.mpSauverEtQuitter=mpSauverEtQuitter;
+
+// \u2500\u2500 FIN DE PARTIE A DEUX COLONNES \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// L'hote diffuse le bilan des DEUX camps une seule fois, au moment ou la
+// partie se termine ; le client l'affiche a cote du sien. Si le message
+// n'arrive jamais (l'hote se deconnecte pile a la fin), l'ecran normal
+// (une colonne) s'affiche quand meme : la fonction rend '' dans ce cas.
+function envoyerBilanReseau(){
+  if(!reseauActif()||RESEAU.role!=='hote') return;
+  const bilan={};
+  for(const id of [FAC.P1,FAC.P2]){
+    const f=G.factions[id]; if(!f) continue;
+    bilan[id]={nom:f.nom, teinte:f.teinte, age:f.age, vaincu:!!f.vaincu, stats:f.stats};
+  }
+  envoyerReseau({t:'FIN', bilan, gagnant:G.victory?G.me:null});
+}
+function bilanDeuxColonnes(){
+  if(!reseauActif()) return '';
+  const m=RESEAU.finRecue; if(!m||!m.bilan) return '';
+  const colonne=function(id){
+    const b=m.bilan[id]; if(!b) return '';
+    const s=b.stats||{}, g=s.gathered||{};
+    return '<div style="flex:1;min-width:150px;">'+
+      '<div class="statsec" style="color:'+((COUL_FACTION[b.teinte]||COUL_FACTION.rouge)[0])+'">'+b.nom+(b.vaincu?' 💀':'')+'</div>'+
+      '<div class="statgrid">'+
+        statCell('\u2694\uFE0F',s.killed||0,'Ennemis abattus')+
+        statCell('\uD83C\uDFDB\uFE0F',s.built||0,'B\u00e2timents b\u00e2tis')+
+        statCell('👥',s.peakPop||0,'Population max')+
+        statCell('\u26CF\uFE0F',((g.food||0)+(g.wood||0)+(g.stone||0)+(g.gold||0)).toLocaleString('fr-FR'),'R\u00e9colte totale')+
+      '</div></div>';
+  };
+  return '<div class="statsec">📊 Bilan des deux camps</div>'+
+    '<div style="display:flex;gap:10px;width:100%;max-width:400px;flex-wrap:wrap;">'+colonne(FAC.P1)+colonne(FAC.P2)+'</div>';
 }
 
 let _mpEtat={dispo:false};
@@ -8066,6 +8465,8 @@ function mpLigne(txt,cls){
 // Reflete l'état du transport dans le panneau.
 function mpRafraichir(){
   const e=_mpEtat;
+  const emoterow=document.getElementById('mp-emoterow');
+  if(emoterow) emoterow.style.display=e.connecte?'flex':'none';
   const etat=document.getElementById('mpetat');
   const compte=document.getElementById('mpcompte');
   const bCo=document.getElementById('mpbtn-connexion');
@@ -8191,7 +8592,17 @@ window.mpEnvoyerChat=mpEnvoyerChat;
 // asynchrone : on r\u00e9essaie quelques fois avant d'abandonner).
 (function brancherMP(essai){
   if(window.MP&&window.MP.surEtat){
-    window.MP.surEtat(e=>{ _mpEtat=e; mpRafraichir(); });
+    let _connecteAvant=false;
+    window.MP.surEtat(e=>{
+      // PING/PONG (le vrai pouls du transport) sont interceptes AVANT
+      // d'atteindre recevoirReseau — la reconnexion ne peut donc pas
+      // compter uniquement sur "un message de jeu est arrive". Le passage
+      // false -> true de e.connecte EST la preuve que le canal revit ; on
+      // s'en sert directement plutot que d'attendre un hypothetique delta.
+      if(e.connecte&&!_connecteAvant&&RESEAU.enAttenteReconnexion) sortirAttenteReconnexion();
+      _connecteAvant=e.connecte;
+      _mpEtat=e; mpRafraichir();
+    });
     window.MP.surMessage(m=>{
       if(m&&m.t==='CHAT'){ mpLigne((_mpEtat.adversaire&&_mpEtat.adversaire.nom||'Adversaire')+' : '+m.texte,'lui'); return; }
       recevoirReseau(m);   // tout le reste releve du protocole de jeu
@@ -9056,32 +9467,44 @@ try {
 
   // Cree la connexion WebRTC et branche la signalisation sur RTDB.
   function creerPC(code,role){
-    pc=new RTCPeerConnection({iceServers:ICE_SERVERS});
+    const local=new RTCPeerConnection({iceServers:ICE_SERVERS});
+    pc=local;
     const moi   = role==='hote'?'hote':'invite';
     const autre = role==='hote'?'invite':'hote';
 
-    pc.onicecandidate=e=>{
+    local.onicecandidate=e=>{
       if(e.candidate) push(ref(db,`signal/${code}/ice/${moi}`), e.candidate.toJSON()).catch(()=>{});
     };
     const stopIce=onChildAdded(ref(db,`signal/${code}/ice/${autre}`), snap=>{
       const c=snap.val();
-      if(c) pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
+      if(c) local.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
     });
     poser(stopIce);
 
-    pc.onconnectionstatechange=()=>{
-      if(pc.connectionState==='connected'){
+    // `local` (pas `pc`, qui peut avoir ete reaffecte entre-temps par une
+    // renegociation P7) : sans ca, un evenement tardif d'UNE ancienne
+    // connexion lisait l'etat de la NOUVELLE et pouvait, par exemple,
+    // basculer en relais une reconnexion qui venait de reussir.
+    local.onconnectionstatechange=()=>{
+      if(pc!==local) return;
+      if(local.connectionState==='connected'){
         if(minuteurP2P){ clearTimeout(minuteurP2P); minuteurP2P=null; }
-      } else if(pc.connectionState==='failed'){
+      } else if(local.connectionState==='failed'){
         basculerRelais(code,role,'echec P2P');
       }
     };
-    return pc;
+    return local;
   }
 
   function brancherCanal(canal,code,role){
     dc=canal;
+    // Garde anti-course : lors d'une renegociation (P7), l'ANCIEN canal
+    // reste ferme de maniere asynchrone apres qu'un NOUVEAU lui a deja
+    // succede (dc pointe deja ailleurs). Sans ce garde-fou, le onclose
+    // tardif du canal perime ecrasait l'etat fraichement etabli du nouveau
+    // (E.connecte repassait a false juste apres le vrai succes).
     dc.onopen=()=>{
+      if(dc!==canal) return;           // ce canal n'est plus le canal actif
       if(relaisActif) return;         // le relais a deja pris la main
       // Annule le minuteur de repli ICI, pas seulement sur connectionState
       // 'connected' : plusieurs environnements (Chrome headless/sandbox
@@ -9092,8 +9515,13 @@ try {
       if(minuteurP2P){ clearTimeout(minuteurP2P); minuteurP2P=null; }
       E.canal='p2p'; E.connecte=true; prevenirEtat();
       demarrerPing();
+      // Arrete IMMEDIATEMENT la boucle de tentatives (P7) : sans ca, un
+      // essai deja programme dans les 3 s pourrait re-invoquer rejoindreSalon
+      // et casser une reconnexion qui vient tout juste de reussir. No-op
+      // cote hote (la fonction n'existe que pour le role invite).
+      if(typeof arreterTentativesClient==='function') arreterTentativesClient();
     };
-    dc.onclose=()=>{ E.connecte=false; prevenirEtat(); };
+    dc.onclose=()=>{ if(dc!==canal) return; E.connecte=false; prevenirEtat(); };
     dc.onmessage=e=>{ recevoir(e.data); };
   }
 
@@ -9214,6 +9642,17 @@ try {
     await set(ref(db,`signal/${code}/reponse`),{type:rep.type,sdp:rep.sdp});
 
     minuteurP2P=setTimeout(()=>basculerRelais(code,'invite','delai depasse'),DELAI_P2P);
+
+    // Detection IMMEDIATE (pas d'attente des 3 s de silence) : l'hote a
+    // explicitement ferme le salon (bouton Quitter), pas une simple coupure.
+    const stopSalon=onValue(ref(db,`parties/${code}`), snap=>{
+      if(!snap.exists()&&window.RESEAU&&window.RESEAU.onSalonSupprime){
+        arreterTentativesClient();
+        window.RESEAU.onSalonSupprime();
+      }
+    });
+    poser(stopSalon);
+
     return {code, config:p.config||{}, hote:p.hote};
   };
 
@@ -9233,6 +9672,68 @@ try {
       }
       await remove(ref(db,`presence/${code}/${uid}`));
     }catch(e){}
+  };
+
+  // ── RECONNEXION (P7) ─────────────────────────────────────────────
+  // Le jeu (script classique) decide QUAND tenter une reconnexion — via son
+  // propre battement independant du transport (window.RESEAU.tenterReconnexion,
+  // voir la fenetre de reconnexion cote jeu). Ici, seulement le COMMENT :
+  // renegocier une connexion WebRTC sans jamais supprimer le salon RTDB
+  // (contrairement a window.MP.quitter, qui le fait).
+
+  // Hote : le canal est tombe mais on garde le salon vivant. On nettoie
+  // seulement l'etat LOCAL (pc/dc/listeners), on efface la signalisation
+  // perimee (ICE, reponse) et on repropose une offre fraiche. Si le meme
+  // invite revient dans les 60 s, la partie reprend a l'identique.
+  async function regenererOffre(){
+    if(!E.code||E.role!=='hote') return;
+    const code=E.code;
+    toutNettoyer();
+    try{ await remove(ref(db,`signal/${code}/ice`)); }catch(e){}
+    try{ await remove(ref(db,`signal/${code}/reponse`)); }catch(e){}
+    creerPC(code,'hote');
+    brancherCanal(pc.createDataChannel('jeu',{ordered:true}),code,'hote');
+    const offre=await pc.createOffer();
+    await pc.setLocalDescription(offre);
+    await set(ref(db,`signal/${code}/offre`),{type:offre.type,sdp:offre.sdp});
+    const stop=onValue(ref(db,`signal/${code}/reponse`), async snap=>{
+      const r=snap.val();
+      if(!r||!pc||pc.currentRemoteDescription) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(r));
+    });
+    poser(stop);
+    minuteurP2P=setTimeout(()=>basculerRelais(code,'hote','delai depasse'),DELAI_P2P);
+  }
+
+  // Invite : retente rejoindreSalon (deja idempotent — il nettoie puis
+  // renegocie) toutes les 3 s jusqu'a la reconnexion ou l'arret. Si le
+  // salon a disparu, rejoindreSalon leve une erreur explicite qu'on
+  // reconnait pour prevenir immédiatement plutot que de s'epuiser en boucle.
+  let _retryClient=null;
+  function demarrerTentativesClient(){
+    if(_retryClient) return;
+    const code=E.code; if(!code) return;
+    const essai=async()=>{
+      if(!_retryClient||E.connecte){ arreterTentativesClient(); return; }
+      try{ await window.MP.rejoindreSalon(code); }
+      catch(err){
+        if(String(err&&err.message||'').includes('Aucune partie')){
+          arreterTentativesClient();
+          if(window.RESEAU&&window.RESEAU.onSalonSupprime) window.RESEAU.onSalonSupprime();
+        }
+      }
+    };
+    _retryClient=setInterval(essai,3000);
+    essai();
+  }
+  function arreterTentativesClient(){
+    if(_retryClient){ clearInterval(_retryClient); _retryClient=null; }
+  }
+
+  window.RESEAU=window.RESEAU||{};
+  window.RESEAU.tenterReconnexion=()=>{
+    if(E.role==='hote') regenererOffre();
+    else if(E.role==='invite') demarrerTentativesClient();
   };
 
   E.pret=true; prevenirEtat();

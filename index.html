@@ -1462,14 +1462,21 @@ function placeBuilding(b){
 
 // Bascule l'état ouvert/fermé d'un portail : fermé, il bloque le passage
 // comme un mur (mark=3) ; ouvert, on peut le traverser librement (mark=0).
-function toggleGate(b){
-  if(b.type!==BT.GATE) return;
+// Mutation pure — appelée par applyCommand. Le retour d'interface est du
+// ressort de l'appelant local (voir toggleGate).
+function appliquerPortail(b){
   b.open=!b.open;
   const mark=b.open?0:3;
   for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++){
     if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=mark;
   }
-  notify(b.open?'🔓 Portail ouvert':'🔒 Portail fermé', b.open?'#2ecc71':'#e67e22'); buzz(6);
+  return {open:b.open};
+}
+function toggleGate(b){
+  if(b.type!==BT.GATE) return;
+  const r=emettreOrdre(ordre(ORD.PORTAIL,{bId:b.id}));
+  if(!r.ok) return;
+  notify(r.open?'🔓 Portail ouvert':'🔒 Portail fermé', r.open?'#2ecc71':'#e67e22'); buzz(6);
   refreshUI();
 }
 
@@ -1498,28 +1505,41 @@ const TOWER_LEVELS = {
 // PV max d'une tour à un niveau donné, en tenant compte des mêmes bonus de
 // recherche/âge que mkBuilding() applique à la construction — sans quoi
 // une amélioration pourrait faire perdre le bénéfice de Maçonnerie/Génie Civil.
-function towerMaxHp(level){
+function towerMaxHp(level,owner){
+  owner=owner||G.me;
+  const rech=rechercheDe(owner);
   let hp=BDEF[BT.TOWER].hp*(TOWER_LEVELS[level].hpMult||1);
-  if(G.research.masonry) hp*=1.25;
-  hp*=AGE_BONUS[G.age].bldHp;
-  if(G.research.engineering) hp*=1.4;
+  if(rech.masonry) hp*=1.25;
+  hp*=AGE_BONUS[ageOf(owner)].bldHp;
+  if(rech.engineering) hp*=1.4;
   return Math.round(hp);
+}
+// Mutation pure — valide et applique, sans toucher à l'interface.
+function appliquerUpgradeTour(b,owner){
+  if(b.constructing) return {ok:false,raison:'cible'};
+  const cur=b.level||1, next=TOWER_LEVELS[cur+1];
+  if(!next) return {ok:false,raison:'max'};
+  if(next.reqAge!=null&&ageOf(owner)<next.reqAge) return {ok:false,raison:'age',reqAge:next.reqAge};
+  const cost=scaleCost(next.cost);
+  if(!canAfford(cost,owner)) return {ok:false,raison:'ressources',cost};
+  spend(cost,owner);
+  const dmg=b.maxHp-b.hp;             // dégâts déjà subis, conservés en absolu (pas de soin gratuit)
+  b.maxHp=towerMaxHp(cur+1,owner);
+  b.hp=Math.max(1,b.maxHp-dmg);
+  b.level=cur+1;
+  return {ok:true,next};
 }
 function upgradeTower(b){
   if(b.type!==BT.TOWER||b.constructing) return;
-  const cur=b.level||1, next=TOWER_LEVELS[cur+1];
-  if(!next){ notify('🏆 Niveau maximum atteint','#f0c040'); return; }
-  if(next.reqAge!=null&&G.age<next.reqAge){ notify(`🔒 Nécessite ${AGES[next.reqAge].nom}`,'#e74c3c'); return; }
-  const cost=scaleCost(next.cost);
-  if(!canAfford(cost)){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(cost); return; }
-  spend(cost);
-  const oldMax=b.maxHp, newMax=towerMaxHp(cur+1);
-  const dmg=oldMax-b.hp;              // dégâts déjà subis, conservés en absolu (pas de soin gratuit)
-  b.maxHp=newMax;
-  b.hp=Math.max(1,newMax-dmg);
-  b.level=cur+1;
+  const r=emettreOrdre(ordre(ORD.AMELIORER_TOUR,{bId:b.id}));
+  if(!r.ok){
+    if(r.raison==='max') notify('🏆 Niveau maximum atteint','#f0c040');
+    else if(r.raison==='age') notify(`🔒 Nécessite ${AGES[r.reqAge].nom}`,'#e74c3c');
+    else if(r.raison==='ressources'){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(r.cost); }
+    return;
+  }
   spawnParts(b.x,b.y,'#f0c040',12);
-  notify(`🏗️ ${next.nom} — Tour améliorée !`,'#2ecc71');
+  notify(`🏗️ ${r.next.nom} — Tour améliorée !`,'#2ecc71');
   sfx('build'); buzz(10);
   refreshUI();
 }
@@ -5836,15 +5856,11 @@ function handleTap(sx,sy){
     G.mode='select';
     document.getElementById('bcancel').style.display='none';
     if(us.length){
-      const fmt=formation(wx,wy,us.length);
-      us.forEach((u,i)=>{
-        u.amove={x:fmt[i].x,y:fmt[i].y};
-        u.destX=fmt[i].x; u.destY=fmt[i].y;
-        u.anchorX=fmt[i].x; u.anchorY=fmt[i].y;
-        u.state='amove'; u.target=null; u.pendingAction=null;
-      });
-      G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5;
-      notify(`⚔️ ${us.length} unité(s) en marche d'attaque`,'#e74c3c'); buzz(10);
+      const r=emettreOrdre(ordre(ORD.AMOVE,{ids:us.map(u=>u.id), x:wx, y:wy}));
+      if(r.ok){
+        G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5;
+        notify(`⚔️ ${r.n} unité(s) en marche d'attaque`,'#e74c3c'); buzz(10);
+      }
     }
     refreshUI();
     return;
@@ -5877,13 +5893,12 @@ function handleTap(sx,sy){
       if(tBuilding.type===BT.FARM && !tBuilding.constructing){
         const vils=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
         if(vils.length>0){
-          for(const v of vils){
-            if(v.invT!=='farm'){ v.inv=0; }
-            v.state='farm'; v.target=tBuilding.id; v.homeFarm=tBuilding.id; v.invT='farm';
+          const r=emettreOrdre(ordre(ORD.FERME,{ids:vils.map(u=>u.id), bId:tBuilding.id}));
+          if(r.ok){
+            G.moveTarget={x:tBuilding.x,y:tBuilding.y}; G.mtTimer=1.5;
+            notify(r.vide?'Villageois affectés — en attente de re-semis':'Villageois aux champs…','#8fbc44');
+            buzz(6);
           }
-          G.moveTarget={x:tBuilding.x,y:tBuilding.y}; G.mtTimer=1.5;
-          notify(tBuilding.foodLeft>0?'Villageois aux champs…':'Villageois affectés — en attente de re-semis','#8fbc44');
-          buzz(6);
           return;
         }
       }
@@ -5891,9 +5906,11 @@ function handleTap(sx,sy){
       if(tBuilding.constructing){
         const vb=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
         if(vb.length>0){
-          for(const v of vb){ v.state='build'; v.buildTarget=tBuilding.id; }
-          notify(`🔨 ${vb.length} villageois sur le chantier…`,'#3498db'); buzz(6);
-          G.moveTarget={x:tBuilding.x,y:tBuilding.y}; G.mtTimer=1.5;
+          const r=emettreOrdre(ordre(ORD.CHANTIER,{ids:vb.map(u=>u.id), bId:tBuilding.id}));
+          if(r.ok){
+            notify(`🔨 ${r.n} villageois sur le chantier…`,'#3498db'); buzz(6);
+            G.moveTarget={x:tBuilding.x,y:tBuilding.y}; G.mtTimer=1.5;
+          }
           return;
         }
       }
@@ -5901,9 +5918,11 @@ function handleTap(sx,sy){
       if(tBuilding.hp<tBuilding.maxHp&&!tBuilding.constructing){
         const vr=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
         if(vr.length>0){
-          for(const v of vr){ v.state='repair'; v.target=tBuilding.id; }
-          notify('🛠 Réparation en cours…','#f1c40f'); buzz(6);
-          G.moveTarget={x:tBuilding.x,y:tBuilding.y}; G.mtTimer=1.5;
+          const r=emettreOrdre(ordre(ORD.REPARE,{ids:vr.map(u=>u.id), bId:tBuilding.id}));
+          if(r.ok){
+            notify('🛠 Réparation en cours…','#f1c40f'); buzz(6);
+            G.moveTarget={x:tBuilding.x,y:tBuilding.y}; G.mtTimer=1.5;
+          }
           return;
         }
       }
@@ -5918,34 +5937,33 @@ function handleTap(sx,sy){
   if(tNode){
     const vils=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
     if(vils.length>0){
-      const r=assignGatherers(vils,tNode);
-      G.moveTarget={x:tNode.x,y:tNode.y}; G.mtTimer=1.5;
-      notify(r.placed>1
-        ? `${r.placed} villageois → ${r.spread} gisement${r.spread>1?'s':''}`
-        : 'Villageois en route récolter…','#f1c40f');
+      const r=emettreOrdre(ordre(ORD.RECOLTE,{ids:vils.map(u=>u.id), nodeId:tNode.id}));
+      if(r.ok){
+        G.moveTarget={x:tNode.x,y:tNode.y}; G.mtTimer=1.5;
+        notify(r.placed>1
+          ? `${r.placed} villageois → ${r.spread} gisement${r.spread>1?'s':''}`
+          : 'Villageois en route récolter…','#f1c40f');
+      }
       return;
     }
   }
 
   // Sol : déplacer les unités sélectionnées
   if(G.sel.length>0){
-    const selUnits=G.units.filter(u=>G.sel.includes(u.id));
+    const selUnits=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u));
     if(selUnits.length>0){
-      const fmt=formation(wx,wy,selUnits.length);
-      selUnits.forEach((u,i)=>{
-        u.destX=fmt[i].x; u.destY=fmt[i].y; u.state='moving';
-        u.target=null; u.pendingAction=null; u.amove=null;
-        u.anchorX=fmt[i].x; u.anchorY=fmt[i].y;   // point de garde des postures
-      });
-      G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5;
+      const r=emettreOrdre(ordre(ORD.DEPL,{ids:selUnits.map(u=>u.id), x:wx, y:wy}));
+      if(r.ok){ G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5; }
       return;
     }
     // Bâtiment militaire sélectionné => poser point de ralliement
     const selB=G.buildings.find(b=>b.id===G.sel[0]&&estLocal(b));
     if(selB&&[BT.TC,BT.BARRACKS,BT.STABLE,BT.MONASTERY,BT.CASTLE,BT.SIEGE].includes(selB.type)){
-      selB.rally={x:wx,y:wy};
-      G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5;
-      notify('📍 Point de ralliement défini','#3498db');
+      const r=emettreOrdre(ordre(ORD.RALLIEMENT,{bId:selB.id, x:wx, y:wy}));
+      if(r.ok){
+        G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5;
+        notify('📍 Point de ralliement défini','#3498db');
+      }
       return;
     }
   }
@@ -5971,7 +5989,8 @@ function cycleStance(){
   const us=selMilitary();
   if(!us.length){ notify('Aucune unité militaire sélectionnée','#e67e22'); return; }
   const nx=STANCES[(STANCES.indexOf(us[0].stance||'agg')+1)%3];
-  for(const u of us){ u.stance=nx; u.anchorX=u.x; u.anchorY=u.y; }
+  const r=emettreOrdre(ordre(ORD.POSTURE,{ids:us.map(u=>u.id), posture:nx}));
+  if(!r.ok) return;
   notify(`${STANCE_ICO[nx]} Posture : ${STANCE_LBL[nx]}`,'#f0c040'); buzz(6);
 }
 function orderAMove(){
@@ -5982,7 +6001,9 @@ function orderAMove(){
 }
 
 function cmdAttack(tgt){
-  G.units.filter(u=>G.sel.includes(u.id)).forEach(u=>{u.state='attack';u.target=tgt.id;});
+  const ids=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)).map(u=>u.id);
+  if(!ids.length) return;
+  emettreOrdre(ordre(ORD.ATK,{ids, cible:tgt.id, genreCible:bldById(tgt.id)?'b':'u'}));
 }
 
 function updateGhost(tx,ty){
@@ -5994,18 +6015,17 @@ function updateGhost(tx,ty){
 }
 
 function confirmBuild(tx,ty){
-  const d=BDEF[G.buildType];
-  const cost=scaleCost(d.cost);
-  if((G.buildType===BT.CASTLE||G.buildType===BT.SIEGE)&&G.age<2){ notify('🔒 Nécessite l\'Âge des Châteaux','#e74c3c'); exitBuild(); return; }
-  if(!canAfford(cost)){notify('Ressources insuffisantes !','#e74c3c');flashResources(cost);return;}
-  spend(cost);
-  const b=mkBuilding(G.buildType,tx,ty,G.me);
-  b.constructing=true; b.progress=0;
-  placeBuilding(b);
-  // Envoyer les villageois construire
-  G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL).forEach(v=>{v.state='build';v.buildTarget=b.id;});
+  const type=G.buildType, d=BDEF[type];
+  const batisseurs=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)&&u.type===UT.VIL).map(u=>u.id);
+  const r=emettreOrdre(ordre(ORD.BATIR,{type, tx, ty, batisseurs}));
+  if(!r.ok){
+    if(r.raison==='age'){ notify('🔒 Nécessite l\'Âge des Châteaux','#e74c3c'); exitBuild(); }
+    else if(r.raison==='ressources'){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(scaleCost(d.cost)); }
+    else notify('Placement impossible !','#e74c3c');
+    return;
+  }
   exitBuild();
-  notify(`Construction de ${d.nom} lancée !`,'#3498db');
+  notify(`Construction de ${r.nom} lancée !`,'#3498db');
 }
 
 function enterBuild(type){
@@ -6023,36 +6043,292 @@ function exitBuild(){
 
 document.getElementById('bcancel').addEventListener('click',exitBuild);
 
+// ══════════════════════════════════════════════════════════
+//  COUCHE D'ORDRES
+// ══════════════════════════════════════════════════════════
+// Jusqu'ici, cliquer mutait G directement depuis handleTap et les boutons du
+// panneau : il n'existait aucun point de passage où insérer le réseau. Tout
+// ce que le joueur DEMANDE devient un ordre sérialisable, validé puis
+// appliqué en un seul endroit.
+//
+//   émission  : emettreOrdre(cmd)  — appelé par l'interface locale
+//   exécution : applyCommand(cmd)  — hôte (ou solo) uniquement
+//
+// Ne passent PAS par ici, car purement locaux et devant répondre
+// instantanément : sélection, caméra, zoom, ouverture de panneaux, mini-carte.
+
+const ORD = {
+  DEPL:'DEPL', ATK:'ATK', AMOVE:'AMOVE', RECOLTE:'RECOLTE', FERME:'FERME',
+  CHANTIER:'CHANTIER', REPARE:'REPARE', POSTURE:'POSTURE', STOP:'STOP',
+  BATIR:'BATIR', FORMER:'FORMER', RECHERCHE:'RECHERCHE', AGE:'AGE',
+  RALLIEMENT:'RALLIEMENT', PORTAIL:'PORTAIL', AMELIORER_TOUR:'AMELIORER_TOUR',
+  DEMOLIR:'DEMOLIR', AUTO_FORMATION:'AUTO_FORMATION', AUTO_REPARE:'AUTO_REPARE',
+  TROC:'TROC',
+};
+
+let _ordSeq=0;
+// Construit l'enveloppe. `f` (faction) et `seq` permettront l'acquittement,
+// la déduplication et le rejeu côté réseau.
+function ordre(t,charge){ return Object.assign({seq:++_ordSeq, f:G.me, t}, charge||{}); }
+
+// Route un ordre. En solo (et chez l'hôte) il s'applique immédiatement ;
+// c'est ici que le client multijoueur l'enverra sur le réseau (P6).
+function emettreOrdre(cmd){
+  if(_journalOrdres) _journalOrdres.push({at:+G.gameTime.toFixed(3), cmd:JSON.parse(JSON.stringify(cmd))});
+  return applyCommand(cmd);
+}
+
+// Journal d'ordres : ordres + graine = rejeu complet d'une partie. Sert
+// surtout à déboguer une désynchronisation réseau (P6).
+let _journalOrdres=null;
+function demarrerJournal(){ _journalOrdres=[]; }
+function journalOrdres(){ return _journalOrdres; }
+
+// Helpers de validation
+function _unitesDe(cmd){
+  if(!cmd.ids||!cmd.ids.length) return [];
+  return G.units.filter(u=>cmd.ids.includes(u.id)&&u.owner===cmd.f&&u.hp>0);
+}
+// Resolution PAR BALAYAGE, volontairement : IU/IB ne sont reconstruits qu'une
+// fois par image (rebuildIndex), or un ordre peut arriver a tout moment — y
+// compris avant la premiere image, ou juste apres qu'un batiment vient d'etre
+// pose. Un ordre par seconde ne justifie pas de dependre de cette fraicheur.
+function _bldDe(cmd,id){
+  const cible=(id!=null?id:cmd.bId);
+  const b=G.buildings.find(x=>x.id===cible);
+  return (b&&b.owner===cmd.f&&b.hp>0)?b:null;
+}
+const KO=r=>({ok:false,raison:r});
+const OK=info=>Object.assign({ok:true},info||{});
+
+// Applique un ordre validé. SEULE fonction autorisée à muter l'état de jeu
+// pour le compte d'un joueur — la simulation (update) et l'IA gardent
+// leurs propres chemins.
+function applyCommand(cmd){
+  const f=G.factions&&G.factions[cmd.f];
+  if(!f) return KO('faction');
+  if(f.vaincu) return KO('vaincu');
+
+  switch(cmd.t){
+
+  // ── Ordres d'unités ───────────────────────────────────
+  case ORD.DEPL: {
+    const us=_unitesDe(cmd); if(!us.length) return KO('aucune');
+    // La formation est calculée ICI, pas chez l'appelant : deux clients ne
+    // doivent pas répartir les unités différemment autour du même point.
+    const fmt=formation(cmd.x,cmd.y,us.length);
+    us.forEach((u,i)=>{
+      u.destX=fmt[i].x; u.destY=fmt[i].y; u.state='moving';
+      u.target=null; u.pendingAction=null; u.amove=null;
+      u.anchorX=fmt[i].x; u.anchorY=fmt[i].y;   // point de garde des postures
+    });
+    return OK({n:us.length});
+  }
+
+  case ORD.AMOVE: {
+    const us=_unitesDe(cmd).filter(u=>isMilitary(u.type));
+    if(!us.length) return KO('aucune');
+    const fmt=formation(cmd.x,cmd.y,us.length);
+    us.forEach((u,i)=>{
+      u.amove={x:fmt[i].x,y:fmt[i].y};
+      u.destX=fmt[i].x; u.destY=fmt[i].y;
+      u.anchorX=fmt[i].x; u.anchorY=fmt[i].y;
+      u.state='amove'; u.target=null; u.pendingAction=null;
+    });
+    return OK({n:us.length});
+  }
+
+  case ORD.ATK: {
+    const us=_unitesDe(cmd); if(!us.length) return KO('aucune');
+    const cible=(cmd.genreCible==='b')?G.buildings.find(x=>x.id===cmd.cible)
+                                      :G.units.find(x=>x.id===cmd.cible);
+    if(!cible||cible.hp<=0) return KO('cible');
+    if(!estHostile({owner:cmd.f},cible)) return KO('cible'); // on n'attaque pas les siens
+    us.forEach(u=>{u.state='attack';u.target=cible.id;});
+    return OK({n:us.length});
+  }
+
+  case ORD.STOP: {
+    const us=_unitesDe(cmd); if(!us.length) return KO('aucune');
+    us.forEach(u=>{u.state='idle';u.target=null;u.amove=null;});
+    return OK({n:us.length});
+  }
+
+  case ORD.POSTURE: {
+    const us=_unitesDe(cmd).filter(u=>isMilitary(u.type));
+    if(!us.length) return KO('aucune');
+    if(!STANCES.includes(cmd.posture)) return KO('invalide');
+    us.forEach(u=>{ u.stance=cmd.posture; u.anchorX=u.x; u.anchorY=u.y; });
+    return OK({n:us.length,posture:cmd.posture});
+  }
+
+  case ORD.RECOLTE: {
+    const vils=_unitesDe(cmd).filter(u=>u.type===UT.VIL);
+    if(!vils.length) return KO('aucune');
+    const nd=G.nodes.find(x=>x.id===cmd.nodeId&&x.amt>0);
+    if(!nd) return KO('cible');
+    const r=assignGatherers(vils,nd);
+    return OK(r);
+  }
+
+  case ORD.FERME: {
+    const vils=_unitesDe(cmd).filter(u=>u.type===UT.VIL);
+    if(!vils.length) return KO('aucune');
+    const b=_bldDe(cmd); if(!b||b.type!==BT.FARM||b.constructing) return KO('cible');
+    for(const v of vils){
+      if(v.invT!=='farm') v.inv=0;
+      v.state='farm'; v.target=b.id; v.homeFarm=b.id; v.invT='farm';
+    }
+    return OK({n:vils.length, vide:b.foodLeft<=0});
+  }
+
+  case ORD.CHANTIER: {
+    const vils=_unitesDe(cmd).filter(u=>u.type===UT.VIL);
+    if(!vils.length) return KO('aucune');
+    const b=_bldDe(cmd); if(!b||!b.constructing) return KO('cible');
+    for(const v of vils){ v.state='build'; v.buildTarget=b.id; }
+    return OK({n:vils.length});
+  }
+
+  case ORD.REPARE: {
+    const vils=_unitesDe(cmd).filter(u=>u.type===UT.VIL);
+    if(!vils.length) return KO('aucune');
+    const b=_bldDe(cmd); if(!b||b.constructing||b.hp>=b.maxHp) return KO('cible');
+    for(const v of vils){ v.state='repair'; v.target=b.id; }
+    return OK({n:vils.length});
+  }
+
+  // ── Production et économie ──────────────────────────────
+  case ORD.BATIR: {
+    const d=BDEF[cmd.type]; if(!d) return KO('invalide');
+    if((cmd.type===BT.CASTLE||cmd.type===BT.SIEGE)&&f.age<2) return KO('age');
+    // Emplacement réellement libre : un client ne décide pas seul où poser.
+    const tx=cmd.tx, ty=cmd.ty;
+    if(!(tx>=0&&ty>=0&&tx+d.w<=COLS&&ty+d.h<=ROWS)) return KO('invalide');
+    for(let dy=0;dy<d.h;dy++) for(let dx=0;dx<d.w;dx++)
+      if(G.bmap[ty+dy][tx+dx]!==0) return KO('occupe');
+    const cost=scaleCost(d.cost);
+    if(!canAfford(cost,cmd.f)) return KO('ressources');
+    spend(cost,cmd.f);
+    const b=mkBuilding(cmd.type,tx,ty,cmd.f);
+    b.constructing=true; b.progress=0;
+    placeBuilding(b);
+    const vils=G.units.filter(u=>u.owner===cmd.f&&u.type===UT.VIL&&(cmd.batisseurs||[]).includes(u.id));
+    vils.forEach(v=>{ v.state='build'; v.buildTarget=b.id; });
+    return OK({b, nom:d.nom});
+  }
+
+  case ORD.FORMER: {
+    const b=_bldDe(cmd); if(!b||b.constructing) return KO('cible');
+    const cost=TCOST[cmd.unitType]; if(!cost) return KO('invalide');
+    if(!canAfford(cost,cmd.f)) return KO('ressources');
+    if(f.pop+b.trainQ.length>=f.maxPop) return KO('pop');
+    spend(cost,cmd.f);
+    b.trainQ.push(cmd.unitType);
+    if(b.trainQ.length===1) b.trainTimer=trainTime(cmd.unitType);
+    return OK({nom:UDEF[cmd.unitType].nom});
+  }
+
+  case ORD.AUTO_FORMATION: {
+    const b=_bldDe(cmd); if(!b||b.type!==BT.TC) return KO('cible');
+    b.autoTrain=!!cmd.actif;
+    return OK({actif:b.autoTrain});
+  }
+
+  case ORD.RECHERCHE: {
+    const r=RDEF[cmd.cle]; if(!r) return KO('invalide');
+    if(f.research[cmd.cle]) return KO('deja');
+    if(f.researchQ.some(x=>x.type===cmd.cle)) return KO('deja');
+    if(!canAfford(r.cost,cmd.f)) return KO('ressources');
+    spend(r.cost,cmd.f);
+    f.researchQ.push({type:cmd.cle,timer:r.time});
+    return OK({nom:r.nom});
+  }
+
+  case ORD.AGE: {
+    if(f.age>=AGES.length-1) return KO('max');
+    if(f.ageUpQ) return KO('deja');
+    if(!G.buildings.find(b=>b.type===BT.TC&&b.owner===cmd.f)) return KO('tc');
+    const next=AGES[f.age+1];
+    if(!canAfford(next.cost,cmd.f)) return KO('ressources');
+    spend(next.cost,cmd.f);
+    const t=[0,60,90,120][f.age+1]||90;
+    f.ageUpQ={timer:t, total:t};
+    return OK({next});
+  }
+
+  case ORD.RALLIEMENT: {
+    const b=_bldDe(cmd); if(!b) return KO('cible');
+    if(![BT.TC,BT.BARRACKS,BT.STABLE,BT.MONASTERY,BT.CASTLE,BT.SIEGE].includes(b.type)) return KO('invalide');
+    b.rally={x:cmd.x,y:cmd.y};
+    return OK();
+  }
+
+  case ORD.PORTAIL: {
+    const b=_bldDe(cmd); if(!b||b.type!==BT.GATE) return KO('cible');
+    return OK(appliquerPortail(b));
+  }
+
+  case ORD.AMELIORER_TOUR: {
+    const b=_bldDe(cmd); if(!b||b.type!==BT.TOWER) return KO('cible');
+    return appliquerUpgradeTour(b,cmd.f);
+  }
+
+  case ORD.DEMOLIR: {
+    const b=_bldDe(cmd); if(!b) return KO('cible');
+    if(b.type===BT.TC) return KO('invalide');
+    return OK(appliquerDemolition(b,cmd.f));
+  }
+
+  case ORD.AUTO_REPARE: {
+    f.autoRepair=!!cmd.actif;
+    return OK({actif:f.autoRepair});
+  }
+
+  case ORD.TROC: {
+    const p=resPool(cmd.f); if(!p) return KO('faction');
+    if((p[cmd.donne]||0)<cmd.qteDonne) return KO('ressources');
+    p[cmd.donne]-=cmd.qteDonne;
+    p[cmd.recoit]=(p[cmd.recoit]||0)+cmd.qteRecoit;
+    f.stats.tradesDone++;
+    return OK();
+  }
+
+  }
+  return KO('inconnu');
+}
+
 // ── ÉCONOMIE ─────────────────────────────────────────────
-function canAfford(cost){ return Object.entries(cost).every(([r,v])=>(G.res[r]||0)>=v); }
-function spend(cost){ Object.entries(cost).forEach(([r,v])=>{ G.res[r]=Math.max(0,(G.res[r]||0)-v); }); }
+// Le camp est explicite : un ordre venu du réseau paie dans SA caisse, pas
+// dans celle du joueur qui regarde.
+function canAfford(cost,owner){ const p=resPool(owner||G.me); return !!p&&Object.entries(cost).every(([r,v])=>(p[r]||0)>=v); }
+function spend(cost,owner){ const p=resPool(owner||G.me); if(p) Object.entries(cost).forEach(([r,v])=>{ p[r]=Math.max(0,(p[r]||0)-v); }); }
 
 function trainUnit(b,type){
-  const cost=TCOST[type];
-  if(!canAfford(cost)){notify('Ressources insuffisantes !','#e74c3c');flashResources(cost);return;}
-  if(G.pop+b.trainQ.length>=G.maxPop){
-    notify('Population maximale !','#e67e22');
-    const el=document.getElementById('ri-pop');
-    if(el){
-      el.classList.remove('insuff'); void el.offsetWidth; el.classList.add('insuff');
-      clearTimeout(el._insuffT);
-      el._insuffT=setTimeout(()=>el.classList.remove('insuff'),820);
+  const r=emettreOrdre(ordre(ORD.FORMER,{bId:b.id, unitType:type}));
+  if(!r.ok){
+    if(r.raison==='ressources'){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(TCOST[type]); }
+    else if(r.raison==='pop'){
+      notify('Population maximale !','#e67e22');
+      const el=document.getElementById('ri-pop');
+      if(el){
+        el.classList.remove('insuff'); void el.offsetWidth; el.classList.add('insuff');
+        clearTimeout(el._insuffT);
+        el._insuffT=setTimeout(()=>el.classList.remove('insuff'),820);
+      }
     }
     return;
   }
-  spend(cost);
-  b.trainQ.push(type);
-  if(b.trainQ.length===1) b.trainTimer=TTIME[type];
-  notify(`Formation de ${UDEF[type].nom}…`,'#3498db'); buzz(8);
+  notify(`Formation de ${r.nom}…`,'#3498db'); buzz(8);
   refreshUI();
 }
 
 // Démolir un bâtiment (récupère 25% du coût réellement payé — voir scaleCost)
-function demolishBuilding(b){
-  if(b.type===BT.TC){ notify('Le Centre Ville ne peut être démoli','#e74c3c'); return; }
+// Mutation pure — rend la liste de ce qui a été remboursé.
+function appliquerDemolition(b,owner){
   const cost=scaleCost(BDEF[b.type].cost||{});
-  const refund={};
-  for(const k in cost){ const v=Math.floor(cost[k]*0.25); if(v>0){ refund[k]=v; G.res[k]=(G.res[k]||0)+v; } }
+  const pool=resPool(owner), refund={};
+  for(const k in cost){ const v=Math.floor(cost[k]*0.25); if(v>0){ refund[k]=v; if(pool) pool[k]=(pool[k]||0)+v; } }
   // libérer les cases
   for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++){
     if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=0;
@@ -6061,10 +6337,16 @@ function demolishBuilding(b){
   for(const u of G.units) if(u.target===b.id&&['repair','farm','build'].includes(u.state)){ u.state='idle'; u.target=null; }
   G.buildings=G.buildings.filter(x=>x.id!==b.id);
   G.sel=G.sel.filter(id=>id!==b.id);
-  spawnParts(b.x,b.y,'#8a6a3a',14);
-  const txt=Object.keys(refund).length?' (+'+Object.entries(refund).map(([k,v])=>v+({food:'🍖',wood:'🪵',stone:'🪨',gold:'💰'}[k]||k)).join(' ')+')':'';
-  notify('🧨 '+BDEF[b.type].nom+' démoli'+txt,'#e67e22'); buzz(12);
   updatePopCap();
+  return {refund, nom:BDEF[b.type].nom, x:b.x, y:b.y};
+}
+function demolishBuilding(b){
+  if(b.type===BT.TC){ notify('Le Centre Ville ne peut être démoli','#e74c3c'); return; }
+  const r=emettreOrdre(ordre(ORD.DEMOLIR,{bId:b.id}));
+  if(!r.ok) return;
+  spawnParts(r.x,r.y,'#8a6a3a',14);
+  const txt=Object.keys(r.refund).length?' (+'+Object.entries(r.refund).map(([k,v])=>v+({food:'🍖',wood:'🪵',stone:'🪨',gold:'💰'}[k]||k)).join(' ')+')':'';
+  notify('🧨 '+r.nom+' démoli'+txt,'#e67e22'); buzz(12);
   refreshUI();
 }
 
@@ -6125,7 +6407,7 @@ function updateActBar(){
   const e=G.sel.length===1?(G.units.find(u=>u.id===G.sel[0])||G.buildings.find(b=>b.id===G.sel[0])):null;
   if(!e&&G.sel.length>1){
     // Multi-sélection
-    mkBtn(bar,'🛑','Stop',()=>G.units.filter(u=>G.sel.includes(u.id)).forEach(u=>{u.state='idle';u.target=null;u.amove=null;}));
+    mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)).map(u=>u.id)})));
     const mils=selMilitary();
     if(mils.length){
       mkBtn(bar,'🎯','Marche\nd\'attaque',orderAMove);
@@ -6211,10 +6493,10 @@ function drawUnitAct(bar,u){
       const realCost=scaleCost(cost);
       mkBtn(bar,ico,nom+'\n'+fmtCost(realCost),()=>enterBuild(bt),false,realCost);
     }
-    if(u.state!=='idle') mkBtn(bar,'🛑','Stop',()=>{u.state='idle';u.target=null;});
+    if(u.state!=='idle') mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:[u.id]})));
   } else if(u.type===UT.MONK){
     mkBtn(bar,'✨','Auto-Soin',()=>notify('Le moine soigne auto les unités blessées !','#2ecc71'));
-    mkBtn(bar,'🛑','Stop',()=>{u.state='idle';u.target=null;});
+    mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:[u.id]})));
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:4px 6px;line-height:1.6;';
     info.innerHTML=`Soin: ${G.research.faith?5:3} PV/s | PV: ${u.hp}/${u.maxHp}`;
@@ -6224,7 +6506,7 @@ function drawUnitAct(bar,u){
     mkBtn(bar,'🎯','Marche\nd\'attaque',orderAMove);
     const st=u.stance||'agg';
     mkBtn(bar,STANCE_ICO[st],'Posture\n'+STANCE_LBL[st],cycleStance);
-    mkBtn(bar,'🛑','Stop',()=>{u.state='idle';u.target=null;u.amove=null;});
+    mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:[u.id]})));
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:4px 6px;line-height:1.6;';
     info.innerHTML=`ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
@@ -6233,10 +6515,9 @@ function drawUnitAct(bar,u){
 }
 
 function tradeRes(fromR,fromV,toR,toV){
-  if((G.res[fromR]||0)<fromV){notify('Ressources insuffisantes !','#e74c3c');flashResources({[fromR]:fromV});return;}
-  G.res[fromR]-=fromV; G.res[toR]=(G.res[toR]||0)+toV;
-  G.stats.tradesDone++;
-  const ico=r=>r==='food'?'🍖':r==='wood'?'🪵':r==='stone'?'🪨':'💰';
+  const r=emettreOrdre(ordre(ORD.TROC,{donne:fromR, qteDonne:fromV, recoit:toR, qteRecoit:toV}));
+  if(!r.ok){ notify('Ressources insuffisantes !','#e74c3c'); flashResources({[fromR]:fromV}); return; }
+  const ico=x=>x==='food'?'🍖':x==='wood'?'🪵':x==='stone'?'🪨':'💰';
   notify(`Commerce: ${fromV}${ico(fromR)} → ${toV}${ico(toR)}`,'#f0c040');
   refreshUI();
 }
@@ -6289,9 +6570,10 @@ function drawBuildAct(bar,b){
   if(b.type===BT.TC){
     mkBtn(bar,'👷','Villageois\n'+costLabel(TCOST[UT.VIL]),()=>trainUnit(b,UT.VIL),false,TCOST[UT.VIL]);
     mkBtn(bar,b.autoTrain?'♾️':'🔁',(b.autoTrain?'Auto ON':'Auto OFF')+'\nVillageois',()=>{
-      b.autoTrain=!b.autoTrain;
-      notify(b.autoTrain?'♾️ Production continue activée':'⏹ Production continue arrêtée',
-             b.autoTrain?'#2ecc71':'#95a5a6'); buzz(6);
+      const r=emettreOrdre(ordre(ORD.AUTO_FORMATION,{bId:b.id, actif:!b.autoTrain}));
+      if(!r.ok) return;
+      notify(r.actif?'♾️ Production continue activée':'⏹ Production continue arrêtée',
+             r.actif?'#2ecc71':'#95a5a6'); buzz(6);
     });
   }
 
@@ -6576,11 +6858,10 @@ function openRP(cat='forge'){
       btn.textContent='Lancer';
       if(rShort) btn.title='Il manque : '+missingLabel(r.cost);
       btn.addEventListener('click',()=>{
-        if(!canAfford(r.cost)){notify('Ressources insuffisantes !','#e74c3c');flashResources(r.cost);return;}
-        spend(r.cost);
-        G.researchQ.push({type:key,timer:r.time});
+        const res=emettreOrdre(ordre(ORD.RECHERCHE,{cle:key}));
+        if(!res.ok){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(r.cost); return; }
         closeRP();
-        notify(`🔬 ${r.nom} en cours…`,'#3498db');
+        notify(`🔬 ${res.nom} en cours…`,'#3498db');
       });
       el.appendChild(btn);
     }
@@ -6694,7 +6975,7 @@ function toggleSfx(){
 // (récolte, construction, ferme…) : ça ne change que ce que fait un
 // villageois qui, de toute façon, ne faisait déjà plus rien.
 function toggleAutoRepair(){
-  G.autoRepair=!G.autoRepair;
+  emettreOrdre(ordre(ORD.AUTO_REPARE,{actif:!G.autoRepair}));
   syncAutoRepairBtn();
   notify(G.autoRepair
     ? '🔧 Réparation auto activée — les villageois inactifs répareront seuls'
@@ -7024,21 +7305,21 @@ window.setSpeed=setSpeed;
 
 // ── AVANCEMENT D'ÂGE ──────────────────────────────────────
 function tryAgeUp(){
-  if(G.age>=AGES.length-1){ notify('Âge maximum atteint !','#f0c040'); return; }
-  if(G.ageUpQ){ notify('Avancement déjà en cours…','#f39c12'); return; }
-  if(!G.buildings.find(b=>b.type===BT.TC&&estLocal(b))){ notify('Centre Ville requis !','#e74c3c'); return; }
   const next=AGES[G.age+1];
-  if(!canAfford(next.cost)){
-    notify(`${next.ico} ${next.nom} — Coût : ${fmtCost(next.cost)}`,'#e74c3c');
-    notify(`Apporte : ${next.bonus}`,'#e8d5a0',true);
-    flashResources(next.cost);
+  const r=emettreOrdre(ordre(ORD.AGE,{}));
+  if(!r.ok){
+    if(r.raison==='max') notify('Âge maximum atteint !','#f0c040');
+    else if(r.raison==='deja') notify('Avancement déjà en cours…','#f39c12');
+    else if(r.raison==='tc') notify('Centre Ville requis !','#e74c3c');
+    else if(r.raison==='ressources'&&next){
+      notify(`${next.ico} ${next.nom} — Coût : ${fmtCost(next.cost)}`,'#e74c3c');
+      notify(`Apporte : ${next.bonus}`,'#e8d5a0',true);
+      flashResources(next.cost);
+    }
     return;
   }
-  spend(next.cost);
-  const ageTime=[0,60,90,120][G.age+1]||90;
-  G.ageUpQ={timer:ageTime, total:ageTime};
-  notify(`${next.ico} Avancement vers ${next.nom}…`,'#3498db');
-  notify(`Apporte : ${next.bonus}`,'#e8d5a0',true);
+  notify(`${r.next.ico} Avancement vers ${r.next.nom}…`,'#3498db');
+  notify(`Apporte : ${r.next.bonus}`,'#e8d5a0',true);
   refreshUI();
 }
 window.tryAgeUp=tryAgeUp;
@@ -7660,6 +7941,7 @@ async function loadGame(key=SAVE_KEY){
     G.nid=Math.max(...[...G.units,...G.buildings,...G.nodes].map(e=>e.id||0),0)+1;
     G.lastTime=null;
     G.running=true;
+    rebuildIndex(); // même raison qu'au démarrage : l'index doit être prêt avant la 1ère image
     setSpeed(1);
     applyDifficultyBadge();
     syncAutoRepairBtn();
@@ -7790,6 +8072,7 @@ function startGame(){
 
   G.running=true;
   setSpeed(1);
+  rebuildIndex(); // sans quoi toute resolution par id echoue avant la 1ere image
   revealFog();
   applyDifficultyBadge();
   syncAutoRepairBtn(); // repart toujours désactivé (voir initState) — resynchronise le bouton après une partie précédente

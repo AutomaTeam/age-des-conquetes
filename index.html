@@ -343,6 +343,20 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .modebtn[data-m="survival"] { --mc:#5dade2; }
 .modebtn[data-m="conquest"] { --mc:#e05a4e; }
 .modebtn[data-m="conquest2"] { --mc:#b07cc6; }
+.seedrow { display:flex;gap:6px;align-items:center;justify-content:center;width:100%;margin-top:2px; }
+.seedrow label { font-size:11px;color:#9a8a6a;letter-spacing:.04em; }
+.seedrow input {
+  width:104px;padding:5px 8px;font:inherit;font-size:12px;text-align:center;
+  background:rgba(20,12,0,.7);color:var(--gold-l);
+  border:1.5px solid #5a4a2a;border-radius:6px;outline:none;
+}
+.seedrow input:focus { border-color:var(--gold-d); }
+.seedrow button {
+  padding:5px 9px;font:inherit;font-size:12px;cursor:pointer;
+  background:rgba(20,12,0,.7);color:#9a8a6a;
+  border:1.5px solid #5a4a2a;border-radius:6px;
+}
+.seedrow button:active { transform:scale(.95); }
 .modebtn .mico { font-size:20px;filter:drop-shadow(0 0 4px rgba(0,0,0,.4)); }
 .modebtn .mlabel { font-size:12px;font-weight:600; }
 .modebtn.sel { border-color:var(--mc);color:var(--mc);background:color-mix(in srgb, var(--mc) 16%, rgba(20,12,0,.7));box-shadow:0 0 14px -4px var(--mc); }
@@ -665,6 +679,12 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
       <button class="diffbtn" data-d="brutal" onclick="pickDifficulty('brutal')"><span class="dico">💀</span><span class="dlabel">Brutal</span></button>
     </div>
     <p class="tip" id="difftip">Normal — Moins de répit avant la 1ère vague, constructions +15% plus chères.</p>
+    <div class="seedrow">
+      <label for="seedin">Graine</label>
+      <input id="seedin" type="text" inputmode="numeric" placeholder="aléatoire" oninput="setGraine(this.value)">
+      <button type="button" onclick="viderGraine()" title="Carte aléatoire à chaque partie">↺</button>
+    </div>
+    <p class="tip">Deux parties de même graine ont exactement la même carte.</p>
     <button class="bigbtn sheen" onclick="startGame()">⚔️ Commencer la partie</button>
     <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la sauvegarde</button>
     <button class="bigbtn achbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Succès <span id="achcount"></span></button>
@@ -1085,6 +1105,10 @@ function initState() {
     // avec G.mode juste en dessous, qui est le mode d'INTERACTION en cours
     // (select/build/amove) et que le chargement d'une sauvegarde réinitialise.
     gmode:mode,
+    // Graine de la carte. Deux joueurs qui la partagent génèrent une carte
+    // strictement identique : en multijoueur on transmet ces 4 octets au lieu
+    // des 3 × 57 600 tuiles de terrain, blocage et brouillard (~500 Ko).
+    seed:(grainePartie!=null?grainePartie:(Math.random()*2147483646|0)+1),
     factions:{},   // tous les camps — voir mkFaction()
     me:FAC.P1,     // faction jouée par CE navigateur
     hote:true,     // cette instance fait-elle tourner la simulation ? (multijoueur)
@@ -1136,7 +1160,15 @@ function initFog(){
 // elles sont déjà proportionnelles.
 const MAPSCALE = COLS/60;
 const SC = n => Math.round(n*MAPSCALE);
+// Graine choisie par le joueur (champ de l'écran-titre) ou imposée par
+// l'hôte en multijoueur ; null = tirage aléatoire à chaque partie.
+let grainePartie=null;
+// Générateur de la CARTE uniquement. Distinct de celui du pixel art (srnd
+// est aussi utilisé par l'atlas) pour qu'un changement de zoom, qui régénère
+// les sprites, ne décale jamais la suite aléatoire du terrain.
+let RND=Math.random;
 function genMap() {
+  RND=srnd(G.seed);
   const t=[], b=[];
   for(let y=0;y<ROWS;y++){t[y]=[];b[y]=[];for(let x=0;x<COLS;x++){t[y][x]=T_GRASS;b[y][x]=0;}}
   G.tiles=t; G.bmap=b;
@@ -1207,7 +1239,7 @@ function genMap() {
 
 function place(cx,cy,rx,cnt,type,amt){
   for(let i=0;i<cnt;i++){
-    const a=Math.random()*Math.PI*2, d=Math.random()*rx;
+    const a=RND()*Math.PI*2, d=RND()*rx;
     const x=Math.round(cx+Math.cos(a)*d), y=Math.round(cy+Math.sin(a)*d);
     if(x>=1&&y>=1&&x<COLS-1&&y<ROWS-1&&G.bmap[y][x]===0){
       G.bmap[y][x]=2;
@@ -1266,7 +1298,7 @@ function spawnPOIs(){
           placeBuilding(tw);
           break;
         }
-        tx+=(Math.random()<0.5?1:-1); ty+=(Math.random()<0.5?1:-1);
+        tx+=(RND()<0.5?1:-1); ty+=(RND()<0.5?1:-1);
       }
     }
 
@@ -1280,7 +1312,7 @@ function spawnPOIs(){
       for(let i=0;i<count;i++){
         let x,y,tries=0;
         do{
-          const a=Math.random()*Math.PI*2, r=1+Math.random()*4;
+          const a=RND()*Math.PI*2, r=1+RND()*4;
           x=(cx+Math.cos(a)*r)*BASE_TILE+BASE_TILE/2; y=(cy+Math.sin(a)*r)*BASE_TILE+BASE_TILE/2;
         } while(++tries<20 && tileBlocked((x/BASE_TILE)|0,(y/BASE_TILE)|0));
         const u=mkUnit(type,x,y,FAC.PILL);
@@ -5010,11 +5042,16 @@ function aiCount(includeSites,a){
 // Cherche une zone libre de w×h tuiles autour de (cx,cy), en spirale
 // grandissante. Refuse l'eau et tout ce qui est déjà occupé (G.bmap!==0),
 // exactement comme le contrôle de pose du joueur (updateGhost).
-function aiSpot(w,h,cx,cy,minR,maxR){
+// `rnd` : générateur à utiliser pour l'angle de départ. L'installation des
+// bases (initAI) en passe un SEMÉ, sans quoi deux joueurs partageant la même
+// graine n'obtiendraient pas les mêmes emplacements de départ. En cours de
+// partie (aiBuild), Math.random convient : seul l'hôte simule.
+function aiSpot(w,h,cx,cy,minR,maxR,rnd){
+  rnd=rnd||Math.random;
   for(let r=minR;r<=maxR;r++){
     // ordre angulaire tiré au hasard : deux bâtiments successifs ne
     // s'alignent pas systématiquement du même côté de la base
-    const a0=Math.random()*Math.PI*2;
+    const a0=rnd()*Math.PI*2;
     const steps=Math.max(1,r*8); // r=0 : on teste quand même la case centrale
     for(let k=0;k<steps;k++){
       const ang=a0+(k/steps)*Math.PI*2;
@@ -5218,6 +5255,9 @@ function aiSiteRichness(tx,ty){
 // rivaux au même endroit. Renvoie la faction créée, ou null.
 function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+  // Dérivé de la graine de carte ET de l'identifiant du camp : reproductible,
+  // mais deux rivaux ne suivent pas la même suite.
+  const rndPose=srnd((G.seed^(id===FAC.IA2?0x5bf03635:0x27d4eb2f))>>>0||1);
   // Quatre ancrages à mi-bord (le joueur démarre au centre) + les quatre
   // coins (position des camps de Survie, donc déjà réputés riches en
   // ressources — la Conquête désactivant spawnPOIs, ils sont libres ici).
@@ -5233,7 +5273,7 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   // les deux (carte atypique).
   let best=null,bestScore=-Infinity;
   for(const[ax,ay] of anchors){
-    const spot=aiSpot(d.w,d.h,ax,ay,0,14);
+    const spot=aiSpot(d.w,d.h,ax,ay,0,14,rndPose);
     if(!spot) continue;
     const r=aiSiteRichness(spot.tx,spot.ty);
     if(!r.stone||!r.gold) continue;
@@ -5248,7 +5288,7 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   if(!best){
     let bestD=-1;
     for(const[ax,ay] of anchors){
-      const spot=aiSpot(d.w,d.h,ax,ay,0,14);
+      const spot=aiSpot(d.w,d.h,ax,ay,0,14,rndPose);
       if(!spot) continue;
       let dist=Math.hypot(spot.tx-playerTX,spot.ty-playerTY);
       for(const e of evites) dist+=Math.min(Math.hypot(spot.tx-e[0],spot.ty-e[1]),120);
@@ -7708,6 +7748,7 @@ function buildSaveData(){
                    // étaient exprimées en pixels à CE zoom. Voir migrerSauvegarde().
       difficulty:G.difficulty,
       mode:G.gmode,
+      seed:G.seed,
       // Tous les camps, brouillard compris (chaque faction humaine a le sien).
       factions:JSON.parse(JSON.stringify(G.factions)),
       me:G.me,
@@ -7889,6 +7930,7 @@ async function loadGame(key=SAVE_KEY){
       G.factions[id]=nf;
     }
     G.me=(data.me&&G.factions[data.me])?data.me:FAC.P1;
+    G.seed=data.seed||G.seed;
     G.campTotal=data.campTotal||0;
     G.wave=data.wave; G.waveTimer=data.waveTimer; G.waveActive=data.waveActive;
     G.cam={...data.cam};
@@ -8027,7 +8069,44 @@ function loop(ts){
   requestAnimationFrame(loop);
 }
 
+// Emplacements de départ des factions humaines, dans l'ordre. Un seul joueur
+// démarre au centre (comme avant) ; à deux, ils se font face sur la diagonale,
+// à égale distance du centre. Purement déterministe : aucun tirage.
+function departsHumains(){
+  const h=factionsHumaines().length;
+  const c=[(COLS>>1)-1,(ROWS>>1)-1];
+  if(h<2) return [c];
+  const m=SC(12); // marge au bord, proportionnelle à la taille de carte
+  return [[m,m],[COLS-m-2,ROWS-m-2]];
+}
+
 // ── DÉMARRAGE ─────────────────────────────────────────────
+// Champ graine de l'écran-titre. Vide = tirage aléatoire à chaque partie
+// (comportement historique) ; renseigné = carte reproductible à l'identique,
+// et socle de l'accord de carte entre deux joueurs en multijoueur.
+function setGraine(v){
+  const t=String(v==null?'':v).trim();
+  if(!t){ grainePartie=null; return; }
+  const k=parseInt(t.replace(/[^0-9]/g,''),10);
+  // La graine utilisée doit être CELLE QUE LE JOUEUR A TAPÉE : elle se
+  // partage entre joueurs, la voir changer sous ses yeux serait déroutant.
+  // Seule contrainte de srnd : rester dans 1..2147483646.
+  grainePartie=(isNaN(k)||k<=0)?null:((k%2147483646)||1);
+}
+window.setGraine=setGraine;
+function viderGraine(){
+  grainePartie=null;
+  const el=document.getElementById('seedin');
+  if(el) el.value='';
+  notify('\u{1F3B2} Carte aléatoire à chaque partie','#95a5a6');
+}
+window.viderGraine=viderGraine;
+// Affiche la graine réellement utilisée, pour la rejouer ou la partager.
+function afficherGraine(){
+  const el=document.getElementById('seedin');
+  if(el&&G.seed) el.value=G.seed;
+}
+
 function startGame(){
   SFX.unlock();                     // le clic sur « Commencer » autorise l'audio (iOS)
   document.getElementById('overlay').style.display='none';
@@ -8037,8 +8116,12 @@ function startGame(){
   genMap();
   buildSprites(); // pré-rendu du pixel art
 
-  // Centre-ville de départ
-  const sTX=(COLS>>1)-1, sTY=(ROWS>>1)-1;
+  // Centre-ville de départ. En solo le joueur reste au centre (comportement
+  // historique) ; dès qu'un second humain existe, les deux prennent des
+  // ancrages OPPOSÉS et déterministes, pour que la partie soit équitable et
+  // identique des deux côtés de la connexion.
+  const dep=departsHumains();
+  const sTX=dep[0][0], sTY=dep[0][1];
   const tc=mkBuilding(BT.TC,sTX,sTY,FAC.P1);
   placeBuilding(tc);
   // Libère la marge de réservation (le Centre Ville lui-même est déjà
@@ -8070,6 +8153,7 @@ function startGame(){
   // Caméra sur le TC
   camCenterOn((sTX+1.5)*BASE_TILE,(sTY+1.5)*BASE_TILE);
 
+  afficherGraine(); // le joueur peut relire ou partager la graine de SA partie
   G.running=true;
   setSpeed(1);
   rebuildIndex(); // sans quoi toute resolution par id echoue avant la 1ere image

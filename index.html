@@ -8942,11 +8942,11 @@ document.body.addEventListener('contextmenu',e=>e.preventDefault());
 // Valeurs PUBLIQUES (ce ne sont pas des secrets : la securite repose sur les
 // regles de securite Realtime Database, cote serveur). Voir README.
 const FIREBASE_CONFIG = {
-  apiKey:            'REMPLACE_MOI',
+  apiKey:            'AIzaSyDVioDa29UpYVqYNgp_BIuLfON0cQfSCcw',
   authDomain:        'age-des-conquetes.firebaseapp.com',
-  databaseURL:       'REMPLACE_MOI',
+  databaseURL:       'https://age-des-conquetes-default-rtdb.europe-west1.firebasedatabase.app',
   projectId:         'age-des-conquetes',
-  appId:             'REMPLACE_MOI',
+  appId:             '1:561523913:web:4e40e4f2efadd40fc33118',
 };
 const MP_ACTIF = !Object.values(FIREBASE_CONFIG).some(v=>String(v).startsWith('REMPLACE_MOI'));
 
@@ -9083,6 +9083,13 @@ try {
     dc=canal;
     dc.onopen=()=>{
       if(relaisActif) return;         // le relais a deja pris la main
+      // Annule le minuteur de repli ICI, pas seulement sur connectionState
+      // 'connected' : plusieurs environnements (Chrome headless/sandbox
+      // notamment) laissent l'etat agrege coince sur 'connecting' alors que
+      // le DataChannel lui-meme est deja pleinement ouvert et fonctionnel.
+      // S'appuyer uniquement sur connectionState faisait basculer un canal
+      // P2P deja etabli vers le relais apres coup, a l'expiration du delai.
+      if(minuteurP2P){ clearTimeout(minuteurP2P); minuteurP2P=null; }
       E.canal='p2p'; E.connecte=true; prevenirEtat();
       demarrerPing();
     };

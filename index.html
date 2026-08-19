@@ -7772,7 +7772,48 @@ function estHote(){ return !RESEAU.actif || RESEAU.role==='hote'; }
 
 function envoyerReseau(m){
   if(!RESEAU.actif||!RESEAU.envoi) return false;
+  // Le SNAP est le seul message assez gros pour justifier la compression
+  // (24 Ko environ a l'echelle du plan) : tout le reste tient deja en
+  // quelques centaines d'octets. Envoi asynchrone, sans bloquer l'appelant
+  // (aucun site n'attend le retour de envoyerReseau pour un SNAP).
+  if(m&&m.t==='SNAP'){ envoyerSnapCompresse(m); return true; }
   try{ return !!RESEAU.envoi(m); }catch(e){ return false; }
+}
+
+// Compresse le SNAP en gzip (CompressionStream, API Web standard) avant de
+// le confier au transport sous forme d'ArrayBuffer. Repli silencieux vers
+// le JSON tel quel si l'API n'est pas disponible (anciens navigateurs) ou
+// en cas d'echec — le protocole reste fonctionnel, juste plus verbeux.
+const MARQUEUR_SNAP_GZ = 0x53; // 'S'
+async function envoyerSnapCompresse(m){
+  try{
+    if(typeof CompressionStream==='undefined'){ RESEAU.envoi(m); return; }
+    const octets=new TextEncoder().encode(JSON.stringify(m));
+    const cs=new CompressionStream('gzip');
+    const w=cs.writable.getWriter();
+    w.write(octets); w.close();
+    const gz=new Uint8Array(await new Response(cs.readable).arrayBuffer());
+    const enveloppe=new Uint8Array(gz.byteLength+1);
+    enveloppe[0]=MARQUEUR_SNAP_GZ;
+    enveloppe.set(gz,1);
+    RESEAU.envoi(enveloppe.buffer);
+  }catch(e){ try{ RESEAU.envoi(m); }catch(e2){} }
+}
+
+// Decodage d'un message binaire recu (pour l'instant : uniquement le SNAP
+// compresse). Appele par recevoirReseau() quand le transport livre un
+// ArrayBuffer plutot qu'un objet JSON deja decode.
+async function decoderMessageBinaire(buf){
+  try{
+    const octets=new Uint8Array(buf);
+    if(octets[0]===MARQUEUR_SNAP_GZ){
+      const ds=new DecompressionStream('gzip');
+      const w=ds.writable.getWriter();
+      w.write(octets.subarray(1)); w.close();
+      const texte=await new Response(ds.readable).text();
+      recevoirReseau(JSON.parse(texte));
+    }
+  }catch(e){ console.error('multijoueur : decodage binaire echoue',e); }
 }
 
 // ── SERIALISATION ──────────────────────────────────────────────
@@ -7827,18 +7868,29 @@ function appliquerFaction(d){
 }
 
 // ── HOTE : instantane complet ──────────────────────────────────
+// N'inclut QUE ce que le destinataire possede ou voit actuellement (P8) —
+// exactement le meme critere que construireDelta(). Essentiel : dernier/
+// connus* ne doivent memoriser QUE ce qui a reellement ete envoye, sinon un
+// futur delta pourrait croire une entite deja connue du client alors qu'elle
+// ne lui a jamais ete reveillee (voir le commentaire de visiblePour).
 function construireSnap(){
-  RESEAU.connusU=new Set(G.units.map(u=>u.id));
-  RESEAU.connusB=new Set(G.buildings.map(b=>b.id));
+  const dest=RESEAU.adversaire&&G.factions[RESEAU.adversaire.id];
+  const visU=G.units.filter(u=>u.owner===(dest&&dest.id)||visiblePour(dest,u.x,u.y));
+  const visB=G.buildings.filter(b=>{
+    const cx=(b.tx+b.w/2)*BASE_TILE, cy=(b.ty+b.h/2)*BASE_TILE;
+    return b.owner===(dest&&dest.id)||visiblePour(dest,cx,cy);
+  });
+  RESEAU.connusU=new Set(visU.map(u=>u.id));
+  RESEAU.connusB=new Set(visB.map(b=>b.id));
   RESEAU.dernier.clear();
-  for(const u of G.units) RESEAU.dernier.set('u'+u.id,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir});
-  for(const b of G.buildings) RESEAU.dernier.set('b'+b.id,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing});
+  for(const u of visU) RESEAU.dernier.set('u'+u.id,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir});
+  for(const b of visB) RESEAU.dernier.set('b'+b.id,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing});
   return {
     t:'SNAP', tick:RESEAU.tick, gt:+G.gameTime.toFixed(2),
     fac:Object.values(G.factions).map(serialiserFaction),
     nodes:G.nodes.filter(nd=>nd.amt!==nd.max).map(nd=>[nd.id,nd.amt]), // le reste vient de la graine
-    uni:G.units.map(serialiserUnite),
-    bat:G.buildings.map(serialiserBatiment),
+    uni:visU.map(serialiserUnite),
+    bat:visB.map(serialiserBatiment),
     wave:G.wave, waveTimer:G.waveTimer, waveActive:G.waveActive,
   };
 }
@@ -7846,11 +7898,37 @@ function construireSnap(){
 // ── HOTE : delta ───────────────────────────────────────────────
 // Masque de bits par entite ; seuls les champs qui ont bouge voyagent.
 const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32;
+
+// Brouillard d'une faction ARBITRAIRE (pas forcement la locale, contrairement
+// a fogTileAt/G.fog) : sert a filtrer ce que l'hote envoie a l'adversaire.
+function fogTileDe(faction,tx,ty){
+  if(!faction||!faction.fog||!faction.fog.length) return 2;
+  if(tx<0||ty<0||tx>=COLS||ty>=ROWS) return 0;
+  return faction.fog[ty][tx];
+}
+// Une entite est transmise au DESTINATAIRE si elle lui appartient ou si elle
+// se trouve sur une case qu'il voit ACTUELLEMENT (fog===2). Ferme une partie
+// du trou de securite "le client lit G dans la console et voit toute la
+// carte" signale au plan (P6, visibilite v1) : desormais, hors de sa propre
+// vue, il ne reçoit tout simplement pas l'entite.
+function visiblePour(dest,x,y){
+  if(!dest) return true; // pas de destinataire identifie (ex. avant P7) : ne rien filtrer
+  return fogTileDe(dest,(x/BASE_TILE)|0,(y/BASE_TILE)|0)===2;
+}
+
 function construireDelta(){
   const d={t:'D', tick:RESEAU.tick, u:[], b:[], n:[], rm:[], rmb:[]};
   const vus=new Set(), vusB=new Set();
+  // Faction qui RECEVRA ce delta : c'est TOUJOURS l'adversaire (l'hote ne
+  // s'envoie pas de messages a lui-meme).
+  const dest=RESEAU.adversaire&&G.factions[RESEAU.adversaire.id];
 
   for(const u of G.units){
+    // Hors de la vue du destinataire et pas la sienne : ne JAMAIS l'inclure,
+    // qu'elle soit nouvelle ou deja connue. Si elle etait connue, on la
+    // traite comme disparue (voir plus bas) plutot que de risquer un ecart
+    // silencieux entre RESEAU.dernier et ce qui a reellement ete envoye.
+    if(!visiblePour(dest,u.x,u.y)&&u.owner!==(dest&&dest.id)) continue;
     vus.add(u.id);
     const cle='u'+u.id, av=RESEAU.dernier.get(cle);
     if(!av){                                   // nouvelle unite : complete
@@ -7871,8 +7949,17 @@ function construireDelta(){
   RESEAU.connusU=vus;
 
   for(const b of G.buildings){
+    // Batiments : une fois VUS, ils restent CONNUS (souvenir, comme dans
+    // AoE) — on marque toujours "vusB" un batiment deja connu (jamais de
+    // faux retrait pour simple perte de vue), mais on ne le REVELE ni ne le
+    // MET A JOUR tant qu'il n'est pas actuellement visible.
+    const centreX=(b.tx+b.w/2)*BASE_TILE, centreY=(b.ty+b.h/2)*BASE_TILE;
+    const cle='b'+b.id, connu=RESEAU.dernier.has(cle);
+    const visible=b.owner===(dest&&dest.id)||visiblePour(dest,centreX,centreY);
+    if(!visible&&!connu) continue;         // jamais vu, toujours hors champ : rien a faire
     vusB.add(b.id);
-    const cle='b'+b.id, av=RESEAU.dernier.get(cle);
+    if(!visible) continue;                 // connu mais hors champ : reste tel quel cote client
+    const av=RESEAU.dernier.get(cle);
     if(!av){
       (d.newB||(d.newB=[])).push(serialiserBatiment(b));
       RESEAU.dernier.set(cle,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing});
@@ -8050,6 +8137,10 @@ function updateVisuel(dt){
 
 // ── ROUTAGE DES MESSAGES ───────────────────────────────────────
 function recevoirReseau(m){
+  // Un SNAP compresse (ou, plus tard, un delta binaire) arrive comme
+  // ArrayBuffer plutot que comme objet deja decode : le decodage est
+  // asynchrone, recevoirReseau() sera rappelee une fois le contenu pret.
+  if(m instanceof ArrayBuffer){ decoderMessageBinaire(m); return; }
   if(!m||!m.t) return;
   RESEAU.dernierRecu=Date.now();
   // Tout message reçu prouve que le lien est vivant : sortir immédiatement
@@ -9498,6 +9589,7 @@ try {
 
   function brancherCanal(canal,code,role){
     dc=canal;
+    dc.binaryType='arraybuffer'; // sinon e.data serait un Blob (lecture async) pour tout envoi binaire
     // Garde anti-course : lors d'une renegociation (P7), l'ANCIEN canal
     // reste ferme de maniere asynchrone apres qu'un NOUVEAU lui a deja
     // succede (dc pointe deja ailleurs). Sans ce garde-fou, le onclose
@@ -9538,7 +9630,7 @@ try {
     const stop=onChildAdded(ref(db,`relais/${code}/${moi}`), snap=>{
       const v=snap.val();
       remove(snap.ref).catch(()=>{});
-      if(v&&v.charge) for(const m of v.charge) recevoir(m);
+      if(v&&v.charge) for(const m of v.charge) recevoir((m&&m.bin)?deBase64AOctets(m.b64):m);
     });
     poser(stop);
     minuteurRelais=setInterval(()=>{
@@ -9550,16 +9642,40 @@ try {
   }
 
   // ── ENVOI / RECEPTION ─────────────────────────────────────
+  // Deux formes de charge utile : une chaine JSON (l'ecrasante majorite des
+  // messages, petits et frequents) ou un ArrayBuffer (P8 : le SNAP compresse
+  // en gzip). RTCDataChannel.send() accepte les deux nativement ; RTDB (le
+  // relais) ne stocke que du JSON, d'ou l'encodage base64 sur ce chemin-la.
+  function aOctetsBase64(buf){
+    let bin=''; const octets=new Uint8Array(buf);
+    for(let i=0;i<octets.length;i++) bin+=String.fromCharCode(octets[i]);
+    return btoa(bin);
+  }
+  function deBase64AOctets(b64){
+    const bin=atob(b64), octets=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) octets[i]=bin.charCodeAt(i);
+    return octets.buffer;
+  }
   function envoyer(obj){
-    const txt=(typeof obj==='string')?obj:JSON.stringify(obj);
-    if(!relaisActif&&dc&&dc.readyState==='open'){ try{ dc.send(txt); return true; }catch(e){} }
-    if(relaisActif){ filRelais.push(txt); return true; }
+    const binaire=(obj instanceof ArrayBuffer);
+    const charge=binaire?obj:((typeof obj==='string')?obj:JSON.stringify(obj));
+    if(!relaisActif&&dc&&dc.readyState==='open'){ try{ dc.send(charge); return true; }catch(e){} }
+    if(relaisActif){
+      // Marqueur explicite : le relais transite par JSON, un ArrayBuffer
+      // brut n'y survivrait pas tel quel.
+      filRelais.push(binaire?{bin:true,b64:aOctetsBase64(charge)}:charge);
+      return true;
+    }
     return false;
   }
   window.MP.envoyer=envoyer;
 
-  function recevoir(txt){
-    let m; try{ m=JSON.parse(txt); }catch(e){ return; }
+  function recevoir(data){
+    // ArrayBuffer direct (DataChannel binaire, ou relais deja reconverti par
+    // basculerRelais) : achemine tel quel, aucun PING/PONG n'est jamais
+    // envoye sous cette forme.
+    if(data instanceof ArrayBuffer){ prevenirMessage(data); return; }
+    let m; try{ m=JSON.parse(data); }catch(e){ return; }
     // Le ping/pong est du ressort du transport, pas du jeu.
     if(m&&m.t==='PING'){ envoyer({t:'PONG',ts:m.ts}); return; }
     if(m&&m.t==='PONG'){ E.rtt=Date.now()-m.ts; prevenirEtat(); return; }

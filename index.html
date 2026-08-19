@@ -7384,14 +7384,29 @@ refreshAchCount();
 })();
 
 // ── BOUCLE DE JEU ─────────────────────────────────────────
+// Pas de simulation FIXE (30 Hz), découplé du taux de rafraîchissement de
+// l'écran : sur un moniteur 144 Hz l'ancienne boucle simulait ~2,4× plus vite
+// qu'à 60 Hz puisque `update(dt)` était rejoué `G.speed` fois avec le dt réel
+// de la frame. Ici on accumule le temps réel (multiplié par la vitesse de
+// jeu) et on égrène des pas de durée constante SIM_DT — la vitesse de jeu
+// n'est plus qu'un facteur qui accélère l'accumulation, jamais le pas
+// lui-même. Prérequis pour que des numéros de tick réseau aient un sens.
+const SIM_HZ=30, SIM_DT=1/SIM_HZ, SIM_MAX_STEPS=5; // anti « spirale de la mort »
+let _simAccum=0;
 function loop(ts){
   if(!G.running) return;
-  if(G.paused){ G.lastTime=null; return; }
-  let dt=Math.min((ts-(G.lastTime||ts))/1000,.05);
+  if(G.paused){ G.lastTime=null; _simAccum=0; return; }
+  let frameDt=Math.min((ts-(G.lastTime||ts))/1000,.25);
   G.lastTime=ts;
-  // Vitesse de jeu : on simule plusieurs pas pour rester stable
-  const steps=G.speed;
-  for(let i=0;i<steps;i++) update(dt);
+  _simAccum+=frameDt*G.speed;
+  let steps=0;
+  while(_simAccum>=SIM_DT&&steps<SIM_MAX_STEPS){
+    update(SIM_DT);
+    _simAccum-=SIM_DT;
+    steps++;
+  }
+  if(steps>=SIM_MAX_STEPS) _simAccum=0; // décroche plutôt que de spiraler si la machine rame
+  const dt=frameDt; // pour le rafraîchissement UI ci-dessous (cadence réelle, pas simulée)
   render();
   updateHUD();
   _uiRefreshCd-=dt;

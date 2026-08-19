@@ -1106,7 +1106,7 @@ function place(cx,cy,rx,cnt,type,amt){
     if(x>=1&&y>=1&&x<COLS-1&&y<ROWS-1&&G.bmap[y][x]===0){
       G.bmap[y][x]=2;
       const a2=Math.round(amt*NODE_RICHNESS);
-      G.nodes.push({id:G.nid++,type,tx:x,ty:y,x:x*TILE+TILE/2,y:y*TILE+TILE/2,amt:a2,max:a2,gatherers:[]});
+      G.nodes.push({id:G.nid++,type,tx:x,ty:y,x:x*BASE_TILE+BASE_TILE/2,y:y*BASE_TILE+BASE_TILE/2,amt:a2,max:a2,gatherers:[]});
     }
   }
 }
@@ -1166,7 +1166,7 @@ function spawnPOIs(){
 
     // garnison mixte, nettement plus robuste qu'une vague de début de partie
     // (sauf en Facile, où elle est délibérément adoucie — voir plus haut)
-    const campWX=cx*TILE+TILE/2, campWY=cy*TILE+TILE/2;
+    const campWX=cx*BASE_TILE+BASE_TILE/2, campWY=cy*BASE_TILE+BASE_TILE/2;
     const n=Math.max(4,Math.round(11*diff.enemyCount*campCountMult));
     const comp=[[UT.ENEMI,Math.ceil(n*0.4)],[UT.ENEMIA,Math.ceil(n*0.25)],
                 [UT.ENEMI_C,Math.ceil(n*0.25)],[UT.ENEMI_G,Math.max(1,Math.round(n*0.1))]];
@@ -1175,8 +1175,8 @@ function spawnPOIs(){
         let x,y,tries=0;
         do{
           const a=Math.random()*Math.PI*2, r=1+Math.random()*4;
-          x=(cx+Math.cos(a)*r)*TILE+TILE/2; y=(cy+Math.sin(a)*r)*TILE+TILE/2;
-        } while(++tries<20 && tileBlocked((x/TILE)|0,(y/TILE)|0));
+          x=(cx+Math.cos(a)*r)*BASE_TILE+BASE_TILE/2; y=(cy+Math.sin(a)*r)*BASE_TILE+BASE_TILE/2;
+        } while(++tries<20 && tileBlocked((x/BASE_TILE)|0,(y/BASE_TILE)|0));
         const u=mkUnit(type,x,y,'enemy');
         u.hp=Math.round(u.hp*2.0*campHpMult*diff.enemyHp); u.maxHp=u.hp;
         u.atk=Math.round(u.atk*1.5*diff.enemyAtk);
@@ -1257,17 +1257,20 @@ function revealFog(){
   };
   // Décroît visible -> exploré
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) if(G.fog[y][x]===2) G.fog[y][x]=1;
-  for(const u of G.units) if(u.owner==='player') reveal((u.x/TILE)|0,(u.y/TILE)|0, u.type===UT.ARC||u.type===UT.XBOW?7:5);
+  for(const u of G.units) if(u.owner==='player') reveal((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0, u.type===UT.ARC||u.type===UT.XBOW?7:5);
   for(const b of G.buildings) if(b.owner==='player'){
     const rad=b.type===BT.TOWER||b.type===BT.CASTLE?10:b.type===BT.TC?9:b.type===BT.OUTPOST?8:6;
     reveal((b.tx+b.w/2)|0,(b.ty+b.h/2)|0,rad);
   }
 }
 
-// Recalcule positions des nœuds lors du changement de zoom
+// Recalcule les positions monde (fixes, indépendantes du zoom) depuis les
+// indices de tuile — utilisé à l'initialisation et au chargement d'une
+// sauvegarde. N'a plus besoin d'être rejoué au zoom : les coordonnées monde
+// ne dépendent plus de TILE (voir BASE_TILE, la constante immuable).
 function refreshNodePos(){
-  for(const n of G.nodes){ n.x=n.tx*TILE+TILE/2; n.y=n.ty*TILE+TILE/2; }
-  for(const b of G.buildings){ b.x=b.tx*TILE+b.w*TILE/2; b.y=b.ty*TILE+b.h*TILE/2; }
+  for(const n of G.nodes){ n.x=n.tx*BASE_TILE+BASE_TILE/2; n.y=n.ty*BASE_TILE+BASE_TILE/2; }
+  for(const b of G.buildings){ b.x=b.tx*BASE_TILE+b.w*BASE_TILE/2; b.y=b.ty*BASE_TILE+b.h*BASE_TILE/2; }
 }
 
 // ── USINES D'ENTITÉS ──────────────────────────────────────
@@ -1282,7 +1285,7 @@ function mkUnit(type, wx, wy, owner='player'){
     if(G.research.iron_armor&&mil) mhp=Math.round(mhp*1.3);
     mhp=Math.round(mhp*AGE_BONUS[G.age].unitHp); // robustesse croissante avec l'âge
   }
-  let rng=d.rng*TILE;
+  let rng=d.rng*BASE_TILE; // portée en unités-monde (BASE_TILE), fixe : ne dépend pas du zoom
   if(owner==='player'&&G.research.longbow&&(type===UT.ARC||type===UT.XBOW)) rng*=1.5;
   const MELEE=[UT.MIL,UT.PIKE], RANGED=[UT.ARC,UT.XBOW], CAV=[UT.KNIGHT,UT.PALADIN,UT.SCOUT];
   if(owner==='player'&&G.research.cavalry&&CAV.includes(type)) mhp=Math.round(mhp*1.2);
@@ -1295,7 +1298,7 @@ function mkUnit(type, wx, wy, owner='player'){
   }
   return {
     id:G.nid++, type, owner,
-    x:wx, y:wy, tx:wx, ty:wy,
+    x:wx, y:wy, destX:wx, destY:wy,
     hp:mhp, maxHp:mhp,
     spd:d.spd, atk, rng, atkSpd:d.atkSpd, atkCd:0,
     state:'idle', target:null,
@@ -1318,7 +1321,7 @@ function mkBuilding(type,tx,ty,owner='player'){
   return {
     id:G.nid++, type, owner,
     tx,ty, w:d.w, h:d.h,
-    x:tx*TILE+d.w*TILE/2, y:ty*TILE+d.h*TILE/2,
+    x:tx*BASE_TILE+d.w*BASE_TILE/2, y:ty*BASE_TILE+d.h*BASE_TILE/2,
     hp:mhp, maxHp:mhp,
     constructing:false, progress:1,
     trainQ:[], trainTimer:0,
@@ -3046,7 +3049,14 @@ function drawSelBox(){
 const GCOLS={ [RT.TREE]:['#2d6b22','#356128','#3a5c28'], [RT.STONE]:['#888','#aaa'],
               [RT.GOLD]:['#d4a017','#f0c040'], [RT.BERRY]:['#2d6b22','#c0392b'] };
 
-function ws(wx,wy){ return {x:wx-G.cam.x, y:wy-G.cam.y+54}; }
+// Monde -> écran. Les coordonnées monde sont en unités BASE_TILE (fixes,
+// indépendantes du zoom) ; c'est ICI, et seulement ici, qu'on applique
+// l'échelle de zoom. G.cam reste exprimée en pixels écran zoomés (tout le
+// code de pan/pincement travaille dans cet espace), d'où des bornes de
+// caméra inchangées : COLS*BASE_TILE*échelle === COLS*TILE.
+function ws(wx,wy){ const S=TILE/BASE_TILE; return {x:wx*S-G.cam.x, y:wy*S-G.cam.y+54}; }
+// Écran -> monde, réciproque exacte de ws().
+function sw(sx,sy){ const S=TILE/BASE_TILE; return {x:(sx+G.cam.x)/S, y:(sy-54+G.cam.y)/S}; }
 
 function drawMap(){
   const cx=G.cam.x, cy=G.cam.y;
@@ -3206,7 +3216,7 @@ function drawUnits(){
     if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
     // masquer ennemis dans le brouillard non-visible
     if(u.owner==='enemy'&&G.fog.length){
-      const fx=(u.x/TILE)|0, fy=(u.y/TILE)|0;
+      const fx=(u.x/BASE_TILE)|0, fy=(u.y/BASE_TILE)|0;
       if(fx>=0&&fy>=0&&fx<COLS&&fy<ROWS&&G.fog[fy][fx]!==2) continue;
     }
     const spr0=SPR.unit[u.type];
@@ -3229,7 +3239,7 @@ function drawUnits(){
       const cdMax=1/u.atkSpd;
       const f=Math.max(0,1-(1-u.atkCd/cdMax)*5);
       if(f>0){
-        const amp=(u.rng>TILE*1.5?S*0.04:S*0.14)*f;
+        const amp=(u.rng>BASE_TILE*1.5?S*0.04:S*0.14)*f;
         lungeX=Math.cos(u.dir)*amp; lungeY=Math.sin(u.dir)*amp*0.4;
       }
     }
@@ -3320,7 +3330,7 @@ function drawProjs(){
       ctx.restore();
     } else {
       const{x:sx,y:sy}=ws(p.x,p.y);
-      const lift=arc*Math.min(26,p.d0/TILE*7); // arc léger : lisible sans casser la lecture du tir tendu
+      const lift=arc*Math.min(26,p.d0/BASE_TILE*7); // arc léger : lisible sans casser la lecture du tir tendu
       const bsy=sy-lift;
       // ombre au sol de la flèche en vol
       ctx.fillStyle='rgba(0,0,0,.18)';
@@ -3514,12 +3524,14 @@ function drawMinimap(){
   // le rayon de vision actuel (elles disparaissent hors de vue, contrairement
   // aux bâtiments qui laissent une trace mémorisée).
   for(const u of G.units){
-    if(u.owner==='enemy'&&fogTileAt((u.x/TILE)|0,(u.y/TILE)|0)!==2) continue;
+    if(u.owner==='enemy'&&fogTileAt((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0)!==2) continue;
     mctx.fillStyle=u.owner==='player'?'#5dade2':'#ff6666';
     mctx.fillRect(u.x*scx-1,u.y*scy-1,3,3);
   }
-  // Viewport
-  const vx=G.cam.x*scx, vy=G.cam.y*scy, vw=W*scx, vh=gameH()*scy;
+  // Viewport — G.cam et W/gameH() sont en pixels écran zoomés, scx/scy en
+  // unités-monde : on divise par l'échelle pour repasser en unités-monde.
+  const S=TILE/BASE_TILE;
+  const vx=G.cam.x/S*scx, vy=G.cam.y/S*scy, vw=W/S*scx, vh=gameH()/S*scy;
   mctx.strokeStyle='#f1c40f'; mctx.lineWidth=1;
   mctx.strokeRect(vx,vy,vw,vh);
 }
@@ -3686,7 +3698,7 @@ function updatePlayerUnit(u,dt){
       if(u.scanCd<=0){
         u.scanCd=0.25+Math.random()*0.15;   // désynchronise les unités entre elles
         if(u.type===UT.MONK){
-          const ally=nearInjuredAlly(u.x,u.y,6*TILE,u.id);
+          const ally=nearInjuredAlly(u.x,u.y,6*BASE_TILE,u.id);
           if(ally){u.state='heal';u.target=ally.id;}
         } else if(u.type===UT.VIL){
           if(G.autoRepair){
@@ -3713,7 +3725,7 @@ function doAMove(u,dt){
     const e=nearEnemy(u.x,u.y,u.rng*3.5);
     if(e){ u.state='attack'; u.target=e.id; return; }
   }
-  if(Math.hypot(u.tx-u.x,u.ty-u.y)<TILE*0.5){
+  if(Math.hypot(u.destX-u.x,u.destY-u.y)<BASE_TILE*0.5){
     u.state='idle'; u.amove=null; u.anchorX=u.x; u.anchorY=u.y; return;
   }
   moveTo(u,dt,true);
@@ -3724,7 +3736,7 @@ function doHeal(u,dt){
   const tgt=(_t&&_t.owner==='player'&&_t.hp<_t.maxHp)?_t:null;
   if(!tgt){u.state='idle';u.target=null;return;}
   const dx=tgt.x-u.x,dy=tgt.y-u.y,d=Math.sqrt(dx*dx+dy*dy);
-  if(d>TILE*2.2){u.tx=tgt.x;u.ty=tgt.y;moveTo(u,dt);return;}
+  if(d>BASE_TILE*2.2){u.destX=tgt.x;u.destY=tgt.y;moveTo(u,dt);return;}
   u.atkCd-=dt;
   if(u.atkCd<=0){
     u.atkCd=1.0;
@@ -3748,15 +3760,15 @@ function nearInjuredAlly(x,y,r,selfId){
 // keepState=true : déplacement au service d'une tâche (récolte, dépôt, chantier…)
 // sans quoi arriver à destination remettrait l'unité au repos et annulerait la tâche.
 function moveTo(u,dt,keepState){
-  const dx=u.tx-u.x, dy=u.ty-u.y;
+  const dx=u.destX-u.x, dy=u.destY-u.y;
   const d=Math.sqrt(dx*dx+dy*dy);
   if(d<4){
-    u.x=u.tx; u.y=u.ty; u.moving=false; u.path=null;
+    u.x=u.destX; u.y=u.destY; u.moving=false; u.path=null;
     if(u.pendingAction){const f=u.pendingAction;u.pendingAction=null;f(u);}
     else if(!keepState) u.state='idle';
     return;
   }
-  if(advance(u,u.tx,u.ty,dt)){
+  if(advance(u,u.destX,u.destY,dt)){
     const r=requestPath(u);                       // coincé : calculer un contournement
     if(r===false){                                // aucun chemin : on abandonne l'ordre
       u.pathFail=(u.pathFail||0)+1;
@@ -3767,7 +3779,7 @@ function moveTo(u,dt,keepState){
 
 // Un mur bloque physiquement le passage (bmap===3)
 function wallAt(wx,wy){
-  const tx=(wx/TILE)|0, ty=(wy/TILE)|0;
+  const tx=(wx/BASE_TILE)|0, ty=(wy/BASE_TILE)|0;
   if(tx<0||ty<0||tx>=COLS||ty>=ROWS) return false;
   return G.bmap[ty][tx]===3;
 }
@@ -3820,8 +3832,8 @@ function hPop(){
 }
 // Ligne de vue libre entre deux points monde (Bresenham sur tuiles)
 function losClear(x0,y0,x1,y1){
-  let tx=(x0/TILE)|0, ty=(y0/TILE)|0;
-  const ex=(x1/TILE)|0, ey=(y1/TILE)|0;
+  let tx=(x0/BASE_TILE)|0, ty=(y0/BASE_TILE)|0;
+  const ex=(x1/BASE_TILE)|0, ey=(y1/BASE_TILE)|0;
   const dx=Math.abs(ex-tx), dy=Math.abs(ey-ty);
   const sx=tx<ex?1:-1, sy=ty<ey?1:-1;
   let err=dx-dy, guard=0;
@@ -3846,8 +3858,8 @@ function smoothPath(sx,sy,pts){
 }
 function findPath(sx,sy,gx,gy){
   const W=COLS;
-  const stx=Math.max(0,Math.min(COLS-1,(sx/TILE)|0)), sty=Math.max(0,Math.min(ROWS-1,(sy/TILE)|0));
-  let gtx=Math.max(0,Math.min(COLS-1,(gx/TILE)|0)), gty=Math.max(0,Math.min(ROWS-1,(gy/TILE)|0));
+  const stx=Math.max(0,Math.min(COLS-1,(sx/BASE_TILE)|0)), sty=Math.max(0,Math.min(ROWS-1,(sy/BASE_TILE)|0));
+  let gtx=Math.max(0,Math.min(COLS-1,(gx/BASE_TILE)|0)), gty=Math.max(0,Math.min(ROWS-1,(gy/BASE_TILE)|0));
   if(tileBlocked(gtx,gty)){                      // arrivée dans un mur : viser la case libre la plus proche
     let bd=Infinity, bx=-1, by=-1;
     for(let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++){
@@ -3890,7 +3902,7 @@ function findPath(sx,sy,gx,gy){
   const tiles=[];
   for(let i=gi;i!==-1&&tiles.length<600;i=PF.from[i]) tiles.push(i);
   tiles.reverse();
-  const pts=tiles.map(i=>({x:(i%W)*TILE+TILE/2, y:((i/W)|0)*TILE+TILE/2}));
+  const pts=tiles.map(i=>({x:(i%W)*BASE_TILE+BASE_TILE/2, y:((i/W)|0)*BASE_TILE+BASE_TILE/2}));
   pts[pts.length-1]={x:gx,y:gy};                 // dernier point : la cible réelle
   return smoothPath(sx,sy,pts);
 }
@@ -3898,25 +3910,25 @@ function findPath(sx,sy,gx,gy){
 function requestPath(u){
   if((u.pathCd||0)>0||_pfFrame>=PF_PER_FRAME) return null;
   u.pathCd=0.6; _pfFrame++;
-  const p=findPath(u.x,u.y,u.tx,u.ty);
+  const p=findPath(u.x,u.y,u.destX,u.destY);
   u.path=(p&&p.length)?p:null;
-  u.pathGoal=u.path?{x:u.tx,y:u.ty}:null;
+  u.pathGoal=u.path?{x:u.destX,y:u.destY}:null;
   return !!u.path;
 }
 // Avance vers (gx,gy) en suivant le chemin s'il y en a un. Renvoie true si bloqué.
 function advance(u,gx,gy,dt){
-  u.tx=gx; u.ty=gy;
+  u.destX=gx; u.destY=gy;
   // ordre changé : le chemin mémorisé ne vaut plus rien
-  if(u.path&&(!u.pathGoal||Math.hypot(u.pathGoal.x-gx,u.pathGoal.y-gy)>TILE*1.5)) u.path=null;
+  if(u.path&&(!u.pathGoal||Math.hypot(u.pathGoal.x-gx,u.pathGoal.y-gy)>BASE_TILE*1.5)) u.path=null;
   let ax=gx, ay=gy;
   if(u.path&&u.path.length){
-    if(Math.hypot(u.path[0].x-u.x,u.path[0].y-u.y)<TILE*0.45) u.path.shift();
+    if(Math.hypot(u.path[0].x-u.x,u.path[0].y-u.y)<BASE_TILE*0.45) u.path.shift();
     if(u.path.length){ ax=u.path[0].x; ay=u.path[0].y; } else u.path=null;
   }
   const dx=ax-u.x, dy=ay-u.y, d=Math.hypot(dx,dy);
   if(d<0.001) return false;
   u.moving=true; u.dir=Math.atan2(dy,dx);
-  const spd=u.spd*TILE*dt;
+  const spd=u.spd*BASE_TILE*dt;
   return stepBlocked(u, u.x+dx/d*spd, u.y+dy/d*spd);
 }
 
@@ -3925,7 +3937,7 @@ function advance(u,gx,gy,dt){
 // bloquée par un obstacle qui n'est pas sa cible courante — auparavant
 // limité aux murs, alors que n'importe quel bâtiment bloque désormais.
 function blockingBuildingAt(wx,wy){
-  const tx=(wx/TILE)|0, ty=(wy/TILE)|0;
+  const tx=(wx/BASE_TILE)|0, ty=(wy/BASE_TILE)|0;
   return G.buildings.find(b=>b.type!==BT.FARM&&tx>=b.tx&&tx<b.tx+b.w&&ty>=b.ty&&ty<b.ty+b.h);
 }
 
@@ -3938,9 +3950,9 @@ function nodeReach(nd){
   // L'arbre a une large canopée mais sa masse au sol, c'est le TRONC (~±3px) :
   // caler l'ellipse sur la canopée laissait un vide visible entre le bûcheron
   // et l'arbre. Les rochers et buissons, eux, sont larges au sol.
-  if(nd.type===RT.TREE)  return {rx:TILE*0.27, ry:TILE*0.20, fy:TILE*0.26};
-  if(nd.type===RT.BERRY) return {rx:TILE*0.36, ry:TILE*0.20, fy:0};
-  return {rx:TILE*0.38, ry:TILE*0.20, fy:TILE*0.02};  // pierre / or
+  if(nd.type===RT.TREE)  return {rx:BASE_TILE*0.27, ry:BASE_TILE*0.20, fy:BASE_TILE*0.26};
+  if(nd.type===RT.BERRY) return {rx:BASE_TILE*0.36, ry:BASE_TILE*0.20, fy:0};
+  return {rx:BASE_TILE*0.38, ry:BASE_TILE*0.20, fy:BASE_TILE*0.02};  // pierre / or
 }
 // Distance normalisée au gisement : <=1 = au contact
 function nodeDistN(u,nd){
@@ -3962,15 +3974,15 @@ function nodeApproach(u,nd){
 }
 // Distance de contact avec un bâtiment : son bord, pas son centre
 function bldContact(b,margin){
-  return (Math.max(b.w,b.h)*TILE)/2 + TILE*(margin==null?0.45:margin);
+  return (Math.max(b.w,b.h)*BASE_TILE)/2 + BASE_TILE*(margin==null?0.45:margin);
 }
 // Point d'approche d'un BÂTIMENT : sur son pourtour, jamais par l'arrière.
 // Le sprite est dessiné vers le haut (marge oy dans drawBuildings) : une unité
 // postée au nord disparaît derrière le toit au lieu de longer le mur.
 function bldApproach(u,b,margin){
-  const m=TILE*(margin==null?0.45:margin);
-  const rx=(b.w*TILE/2+m)*0.92;                       // toujours < bldContact : pas d'oscillation
-  const ry=(b.h*TILE/2+Math.max(m,TILE*0.30))*0.92;   // ...et toujours hors de l'emprise au sol
+  const m=BASE_TILE*(margin==null?0.45:margin);
+  const rx=(b.w*BASE_TILE/2+m)*0.92;                       // toujours < bldContact : pas d'oscillation
+  const ry=(b.h*BASE_TILE/2+Math.max(m,BASE_TILE*0.30))*0.92;   // ...et toujours hors de l'emprise au sol
   let ang=Math.atan2((u.y-b.y)/ry,(u.x-b.x)/rx);
   if(!isFinite(ang)) ang=Math.PI/2;
   if(Math.sin(ang)<-0.30){                            // rabat vers les flancs
@@ -3993,7 +4005,7 @@ function farmSpot(u,f){
   }
   const i=u.farmSlot;
   const ox=(i%2)?0.74:0.26, oy=(i<2)?0.36:0.74;
-  return {x:(f.tx+ox*f.w)*TILE, y:(f.ty+oy*f.h)*TILE};
+  return {x:(f.tx+ox*f.w)*BASE_TILE, y:(f.ty+oy*f.h)*BASE_TILE};
 }
 
 
@@ -4023,7 +4035,7 @@ function doGather(u,dt){
   u.moving=false;
   if(nodeDistN(u,n)>1){
     const ap=nodeApproach(u,n);
-    u.tx=ap.x; u.ty=ap.y; moveTo(u,dt,true); return;
+    u.destX=ap.x; u.destY=ap.y; moveTo(u,dt,true); return;
   }
   if(!n.gatherers.includes(u.id)) n.gatherers.push(u.id);
   u.homeNode=n.id;
@@ -4061,8 +4073,8 @@ function doFarm(u,dt){
   u.homeFarm=f.id;
   // le fermier travaille DANS le champ, sur son propre sillon (pas au centre)
   const sp=farmSpot(u,f);
-  if(Math.hypot(sp.x-u.x,sp.y-u.y)>TILE*0.20){
-    u.tx=sp.x; u.ty=sp.y; moveTo(u,dt,true); return;
+  if(Math.hypot(sp.x-u.x,sp.y-u.y)>BASE_TILE*0.20){
+    u.destX=sp.x; u.destY=sp.y; moveTo(u,dt,true); return;
   }
   u.moving=false;
   if(!(f.farmers||[]).includes(u.id)) (f.farmers=f.farmers||[]).push(u.id);
@@ -4100,10 +4112,10 @@ function doRepair(u,dt){
   }
   const reach=bldContact(b,0.35);
   const d=Math.hypot(b.x-u.x,b.y-u.y);
-  if(d>reach){ const ap=bldApproach(u,b,0.35); u.tx=ap.x; u.ty=ap.y; moveTo(u,dt,true); return; }
+  if(d>reach){ const ap=bldApproach(u,b,0.35); u.destX=ap.x; u.destY=ap.y; moveTo(u,dt,true); return; }
   u.moving=false;
   b.hp=Math.min(b.maxHp, b.hp+REPAIR_RATE*dt);
-  if(Math.random()<dt*3) spawnParts(b.x+(Math.random()-0.5)*b.w*TILE, b.y+(Math.random()-0.5)*b.h*TILE,'#f1c40f',1);
+  if(Math.random()<dt*3) spawnParts(b.x+(Math.random()-0.5)*b.w*BASE_TILE, b.y+(Math.random()-0.5)*b.h*BASE_TILE,'#f1c40f',1);
 }
 
 function findNearestFarm(x,y,allowEmpty,owner='player'){
@@ -4143,10 +4155,10 @@ function bestNodeFor(u,type,anchor,load){
       // le rayon était de 12 tuiles et l'éloignement ne coûtait rien : on
       // désignait un arbre et le villageois partait sur un autre, très loin.
       anchorD=Math.hypot(nd.x-anchor.x,nd.y-anchor.y);
-      if(anchorD>ANCHOR_RADIUS*TILE) continue;
+      if(anchorD>ANCHOR_RADIUS*BASE_TILE) continue;
     }
     const dist=Math.hypot(nd.x-u.x,nd.y-u.y);
-    const score=dist+anchorD*ANCHOR_WEIGHT+(load[nd.id]||0)*TILE*CROWD_PENALTY;
+    const score=dist+anchorD*ANCHOR_WEIGHT+(load[nd.id]||0)*BASE_TILE*CROWD_PENALTY;
     if(score<bestScore){bestScore=score;best=nd;}
   }
   return best;
@@ -4199,7 +4211,7 @@ function doReturn(u,dt){
   u.moving=false;
   const dx=b.x-u.x,dy=b.y-u.y,d=Math.sqrt(dx*dx+dy*dy);
   const dc=bldContact(b);
-  if(d>dc){ const ap=bldApproach(u,b,0.45); u.tx=ap.x; u.ty=ap.y; moveTo(u,dt,true); return; }
+  if(d>dc){ const ap=bldApproach(u,b,0.45); u.destX=ap.x; u.destY=ap.y; moveTo(u,dt,true); return; }
   // Dépose
   const rm={[RT.TREE]:'wood',[RT.STONE]:'stone',[RT.GOLD]:'gold',[RT.BERRY]:'food',farm:'food'};
   const rk=rm[u.invT];
@@ -4241,12 +4253,12 @@ function doBuild(u,dt){
   u.moving=false;
   const dx=b.x-u.x,dy=b.y-u.y,d=Math.sqrt(dx*dx+dy*dy);
   const bc=bldContact(b,0.35);
-  if(d>bc){ const ap=bldApproach(u,b,0.35); u.tx=ap.x; u.ty=ap.y; moveTo(u,dt,true); return; }
+  if(d>bc){ const ap=bldApproach(u,b,0.35); u.destX=ap.x; u.destY=ap.y; moveTo(u,dt,true); return; }
   // Plus il y a de villageois, plus c'est rapide
   b.progress=Math.min(1,b.progress+dt*0.12);
   // Fumée de construction occasionnelle
   if(Math.random()<dt*4){
-    G.parts.push({x:b.x+(Math.random()-.5)*b.w*TILE*.6, y:b.y, vx:(Math.random()-.5)*8, vy:-20-Math.random()*15, col:'rgba(200,200,200,.8)', r:2+Math.random()*2, life:1});
+    G.parts.push({x:b.x+(Math.random()-.5)*b.w*BASE_TILE*.6, y:b.y, vx:(Math.random()-.5)*8, vy:-20-Math.random()*15, col:'rgba(200,200,200,.8)', r:2+Math.random()*2, life:1});
   }
   if(b.progress>=1){
     b.constructing=false;
@@ -4271,17 +4283,17 @@ function doAttack(u,dt){
   if(!tgt||tgt.hp<=0){
     u.target=null;
     // cible abattue : on reprend la marche d'attaque là où elle s'était arrêtée
-    if(u.amove){ u.tx=u.amove.x; u.ty=u.amove.y; u.state='amove'; return; }
+    if(u.amove){ u.destX=u.amove.x; u.destY=u.amove.y; u.state='amove'; return; }
     u.state='idle'; return;
   }
   const dx=tgt.x-u.x,dy=tgt.y-u.y,d=Math.sqrt(dx*dx+dy*dy);
   if(d>u.rng+10){
     const st=u.stance||'agg';
     if(st==='hold'){ u.state='idle'; u.target=null; return; }   // ne quitte jamais son poste
-    if(st==='def'&&u.anchorX!=null&&Math.hypot(u.x-u.anchorX,u.y-u.anchorY)>8*TILE){
-      u.tx=u.anchorX; u.ty=u.anchorY; u.state='moving'; u.target=null; return; // laisse trop de champ
+    if(st==='def'&&u.anchorX!=null&&Math.hypot(u.x-u.anchorX,u.y-u.anchorY)>8*BASE_TILE){
+      u.destX=u.anchorX; u.destY=u.anchorY; u.state='moving'; u.target=null; return; // laisse trop de champ
     }
-    u.tx=tgt.x;u.ty=tgt.y;moveTo(u,dt,true);return;
+    u.destX=tgt.x;u.destY=tgt.y;moveTo(u,dt,true);return;
   }
   u.moving=false;
   u.dir=Math.atan2(dy,dx);
@@ -4294,7 +4306,7 @@ function doAttack(u,dt){
     // Bonus siège vs bâtiments
     const isB=bldById(tgt.id);
     if(UDEF[u.type].siege&&isB) dmg=Math.round(dmg*1.5);
-    if(u.rng>TILE*1.5) shootProj(u,tgt,false,dmg);
+    if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,false,dmg);
     else dealDmg(tgt,dmg);
   }
 }
@@ -4332,8 +4344,8 @@ function updateBuildings(dt){
     if(b.type===BT.TOWER||b.type===BT.CASTLE){
       b.atkCd-=dt;
       let range,atk,cd;
-      if(b.type===BT.CASTLE){ range=9*TILE; atk=30; cd=1.2; }
-      else { const lv=TOWER_LEVELS[b.level||1]; range=lv.range*TILE; atk=lv.atk; cd=lv.cd; }
+      if(b.type===BT.CASTLE){ range=9*BASE_TILE; atk=30; cd=1.2; }
+      else { const lv=TOWER_LEVELS[b.level||1]; range=lv.range*BASE_TILE; atk=lv.atk; cd=lv.cd; }
       if(b.atkCd<=0){
         const e=b.owner==='player'?nearEnemyAll(b.x,b.y,range):nearPlayerUnit(b.x,b.y,range);
         if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:b.owner},e,b.owner==='enemy'); }
@@ -4360,13 +4372,13 @@ function updateBuildings(dt){
 
 function spawnUnit(type,building,owner){
   const d=BDEF[building.type];
-  const wx=(building.tx+d.w/2)*TILE+(Math.random()-.5)*TILE;
-  const wy=(building.ty+d.h)*TILE+TILE*.6;
+  const wx=(building.tx+d.w/2)*BASE_TILE+(Math.random()-.5)*BASE_TILE;
+  const wy=(building.ty+d.h)*BASE_TILE+BASE_TILE*.6;
   const u=mkUnit(type,wx,wy,owner);
   // Point de ralliement
   if(owner==='player'&&building.rally){
-    u.tx=building.rally.x+(Math.random()-.5)*TILE;
-    u.ty=building.rally.y+(Math.random()-.5)*TILE;
+    u.destX=building.rally.x+(Math.random()-.5)*BASE_TILE;
+    u.destY=building.rally.y+(Math.random()-.5)*BASE_TILE;
     u.state='moving';
   }
   G.units.push(u);
@@ -4380,7 +4392,7 @@ function spawnUnit(type,building,owner){
 // quoi nearPlayerBuildingSmart (sans limite de distance) leur faisait
 // repérer le Centre Ville du joueur dès la 1ère image et partir l'assiéger
 // avant même la première vague.
-const GUARD_AGGRO_RADIUS = TILE*7;
+const GUARD_AGGRO_RADIUS = BASE_TILE*7;
 // Variante bornée de nearPlayerBuildingSmart, pour les gardes de camp
 // uniquement : un bâtiment du joueur ne les intéresse que s'il empiète sur
 // leur zone de garde (ex. le joueur construit collé au camp).
@@ -4431,7 +4443,7 @@ function updateEnemyAI(dt){
     if(!tgt){
       // Une garde sans cible retourne à son poste au lieu de dériver —
       // sans ça, elle resterait plantée là où le dernier combat l'a menée.
-      if(u.camp&&Math.hypot(u.campX-u.x,u.campY-u.y)>TILE*1.5){
+      if(u.camp&&Math.hypot(u.campX-u.x,u.campY-u.y)>BASE_TILE*1.5){
         u.state='moving'; u.moving=true;
         advance(u,u.campX,u.campY,dt);
         continue;
@@ -4446,9 +4458,9 @@ function updateEnemyAI(dt){
         // que si elle enferme réellement la base (aucun chemin praticable).
         const r=requestPath(u);
         if(!u.path&&r!==null){
-          const spd=u.spd*TILE*dt;
+          const spd=u.spd*BASE_TILE*dt;
           const nx=u.x+dx/d*spd, ny=u.y+dy/d*spd;
-          const w=blockingBuildingAt(nx,ny)||blockingBuildingAt(u.x+Math.sign(dx)*TILE*0.6,u.y)||blockingBuildingAt(u.x,u.y+Math.sign(dy)*TILE*0.6);
+          const w=blockingBuildingAt(nx,ny)||blockingBuildingAt(u.x+Math.sign(dx)*BASE_TILE*0.6,u.y)||blockingBuildingAt(u.x,u.y+Math.sign(dy)*BASE_TILE*0.6);
           if(w){ tgt=w; u.target=w.id; u.state='attack'; u.moving=false;
             if(u.atkCd<=0){ u.atkCd=1/u.atkSpd; dealDmg(w,u.atk); } }
         }
@@ -4460,7 +4472,7 @@ function updateEnemyAI(dt){
         let dmg=u.atk;
         const isB=bldById(tgt.id);
         if(u.type===UT.ENEMI_BOSS&&isB) dmg=Math.round(dmg*1.6); // boss casse les murs vite
-        if(u.rng>TILE*1.5) shootProj(u,tgt,true,dmg);
+        if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,true,dmg);
         else dealDmg(tgt,dmg);
       }
     }
@@ -4504,7 +4516,7 @@ function nearPlayerUnit(x,y,r){
 function shootProj(from,tgt,isEnemy,dmg){
   const d0=Math.max(1,Math.hypot(tgt.x-from.x,tgt.y-from.y));
   G.projs.push({id:G.nid++,x:from.x,y:from.y,tx:tgt.x,ty:tgt.y,
-    targetId:tgt.id,atk:dmg!=null?dmg:from.atk,spd:8*TILE,enemy:isEnemy,life:1,d0,
+    targetId:tgt.id,atk:dmg!=null?dmg:from.atk,spd:8*BASE_TILE,enemy:isEnemy,life:1,d0,
     siege:!!(from.type&&UDEF[from.type]&&UDEF[from.type].siege)});
 }
 
@@ -4533,7 +4545,7 @@ function updateProjs(dt){
         spawnParts(p.tx,p.ty,'#aa8855',16);
         spawnParts(p.tx,p.ty,'#e0d8c8',6);
         shakeScreen(7);
-        const splash=2*TILE;
+        const splash=2*BASE_TILE;
         for(const u of G.units){
           if(u.owner==='enemy'&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash) dealDmg(u,p.atk);
         }
@@ -4640,11 +4652,11 @@ function spawnWave(){
     let x,y,tries=0;
     do{
       const e=['top','bottom','left','right'][Math.random()*4|0];
-      if(e==='top')        {x=Math.random()*COLS*TILE; y=TILE*2;}
-      else if(e==='bottom'){x=Math.random()*COLS*TILE; y=(ROWS-2)*TILE;}
-      else if(e==='left')  {x=TILE*2; y=Math.random()*ROWS*TILE;}
-      else                 {x=(COLS-2)*TILE; y=Math.random()*ROWS*TILE;}
-    } while(++tries<40 && tileBlocked((x/TILE)|0,(y/TILE)|0));
+      if(e==='top')        {x=Math.random()*COLS*BASE_TILE; y=BASE_TILE*2;}
+      else if(e==='bottom'){x=Math.random()*COLS*BASE_TILE; y=(ROWS-2)*BASE_TILE;}
+      else if(e==='left')  {x=BASE_TILE*2; y=Math.random()*ROWS*BASE_TILE;}
+      else                 {x=(COLS-2)*BASE_TILE; y=Math.random()*ROWS*BASE_TILE;}
+    } while(++tries<40 && tileBlocked((x/BASE_TILE)|0,(y/BASE_TILE)|0));
     const u=mkUnit(type,x,y,'enemy');
     u.hp=Math.round(u.hp*(1+G.wave*.07)*scaleHp*diff.enemyHp); u.maxHp=u.hp;
     u.atk=Math.round(u.atk*(1+G.wave*.05)*scaleAtk*diff.enemyAtk);
@@ -4806,7 +4818,7 @@ function aiSpot(w,h,cx,cy,minR,maxR){
 
 // Gisement le plus proche d'un type donné, dans un rayon (en tuiles).
 function aiNearestNode(type,x,y,maxTiles){
-  let best=null,bd=(maxTiles||60)*TILE;
+  let best=null,bd=(maxTiles||60)*BASE_TILE;
   for(const n of G.nodes){
     if(n.amt<=0||n.type!==type) continue;
     const d=Math.hypot(n.x-x,n.y-y);
@@ -4820,7 +4832,7 @@ function aiNearestNode(type,x,y,maxTiles){
 function aiBuild(type,nearX,nearY){
   const a=G.ai, d=BDEF[type];
   if(!aiAfford(d.cost)) return false;
-  const cx=Math.round((nearX!=null?nearX:a.baseX)/TILE), cy=Math.round((nearY!=null?nearY:a.baseY)/TILE);
+  const cx=Math.round((nearX!=null?nearX:a.baseX)/BASE_TILE), cy=Math.round((nearY!=null?nearY:a.baseY)/BASE_TILE);
   const spot=aiSpot(d.w,d.h,cx,cy,3,16);
   if(!spot) return false;
   aiSpend(d.cost);
@@ -4975,7 +4987,7 @@ function updateAIVillager(u,dt){
 // tuiles pour bois/pierre/or, 32 pour les baies — on reste prudemment en
 // deçà pour ne compter que ce qui est confortablement à portée).
 function aiSiteRichness(tx,ty){
-  const wx=tx*TILE, wy=ty*TILE, R=26*TILE;
+  const wx=tx*BASE_TILE, wy=ty*BASE_TILE, R=26*BASE_TILE;
   let stone=0,gold=0,tree=0,berry=0;
   for(const nd of G.nodes){
     if(Math.hypot(nd.x-wx,nd.y-wy)>R) continue;
@@ -5038,7 +5050,7 @@ function initAI(playerTX,playerTY){
     vilTarget:tune.vilTarget,
   };
   for(let i=0;i<4;i++){
-    const u=mkUnit(UT.VIL,tc.x+(i-1.5)*TILE*0.9,tc.y+TILE*1.8,'enemy');
+    const u=mkUnit(UT.VIL,tc.x+(i-1.5)*BASE_TILE*0.9,tc.y+BASE_TILE*1.8,'enemy');
     aiAdoptUnit(u);
     G.units.push(u);
   }
@@ -5386,8 +5398,8 @@ function gestureMove(pts){
     lastMoveT=now;
   }
   if(G.mode==='build'){
-    const wx=p.x+G.cam.x, wy=p.y-54+G.cam.y;
-    updateGhost(wx/TILE|0, wy/TILE|0);
+    const {x:wx,y:wy}=sw(p.x,p.y);
+    updateGhost(wx/BASE_TILE|0, wy/BASE_TILE|0);
   }
 }
 
@@ -5467,8 +5479,8 @@ canvas.addEventListener('mousemove',e=>{
   // Aperçu de placement en mode construction : suit le curseur même sans
   // bouton enfoncé (le tactile ne peut pas faire ça, faute de survol).
   if(G.mode==='build'){
-    const wx=e.clientX+G.cam.x, wy=e.clientY-54+G.cam.y;
-    updateGhost(wx/TILE|0, wy/TILE|0);
+    const {x:wx,y:wy}=sw(e.clientX,e.clientY);
+    updateGhost(wx/BASE_TILE|0, wy/BASE_TILE|0);
   }
   if(mouseDown) gestureMove([{x:e.clientX,y:e.clientY}]);
   // Survol (souris uniquement, pas de doigt enfoncé) : met en évidence la
@@ -5525,12 +5537,12 @@ function cancelOrDeselect(){
 // à handleTap) — sert uniquement au feedback visuel (anneau + curseur).
 function updateHoverAt(sx,sy){
   if(G.mode!=='select'){ G.hover=null; return; }
-  const wx=sx+G.cam.x, wy=sy-54+G.cam.y;
+  const {x:wx,y:wy}=sw(sx,sy);
   const tUnit=G.units.find(u=>Math.hypot(u.x-wx,u.y-wy)<16);
   if(tUnit){ G.hover={kind:'unit',id:tUnit.id,owner:tUnit.owner}; return; }
-  const tBuilding=G.buildings.find(b=>wx>=b.tx*TILE&&wx<=(b.tx+b.w)*TILE&&wy>=b.ty*TILE&&wy<=(b.ty+b.h)*TILE);
+  const tBuilding=G.buildings.find(b=>wx>=b.tx*BASE_TILE&&wx<=(b.tx+b.w)*BASE_TILE&&wy>=b.ty*BASE_TILE&&wy<=(b.ty+b.h)*BASE_TILE);
   if(tBuilding){ G.hover={kind:'building',id:tBuilding.id,owner:tBuilding.owner}; return; }
-  const tNode=G.nodes.find(n=>n.amt>0&&Math.hypot(n.x-wx,n.y-wy)<TILE*.9);
+  const tNode=G.nodes.find(n=>n.amt>0&&Math.hypot(n.x-wx,n.y-wy)<BASE_TILE*.9);
   if(tNode){ G.hover={kind:'node',id:tNode.id}; return; }
   G.hover=null;
 }
@@ -5556,7 +5568,7 @@ function updateGlide(dt){
 
 // Sélectionne toutes les unités du même type visibles à l'écran
 function handleDoubleTap(sx,sy){
-  const wx=sx+G.cam.x, wy=sy-54+G.cam.y;
+  const {x:wx,y:wy}=sw(sx,sy);
   const tU=G.units.find(u=>u.owner==='player'&&Math.hypot(u.x-wx,u.y-wy)<16);
   if(!tU){
     // double-tap dans le vide = désélectionner (le simple tap sert à donner des ordres)
@@ -5565,7 +5577,8 @@ function handleDoubleTap(sx,sy){
   }
   const type=tU.type;
   const sel=[];
-  const x0=G.cam.x,y0=G.cam.y,x1=G.cam.x+W,y1=G.cam.y+gameH();
+  const tl=sw(0,54), br=sw(W,54+gameH());
+  const x0=tl.x,y0=tl.y,x1=br.x,y1=br.y;
   for(const u of G.units){
     if(u.owner!=='player'||u.type!==type) continue;
     if(u.x>=x0&&u.x<=x1&&u.y>=y0&&u.y<=y1) sel.push(u.id);
@@ -5577,8 +5590,9 @@ function handleDoubleTap(sx,sy){
 
 // Applique la sélection rectangle (unités joueur seulement)
 function applyBoxSelection(box){
-  const x0=Math.min(box.x0,box.x1)+G.cam.x, x1=Math.max(box.x0,box.x1)+G.cam.x;
-  const y0=Math.min(box.y0,box.y1)-54+G.cam.y, y1=Math.max(box.y0,box.y1)-54+G.cam.y;
+  const a=sw(Math.min(box.x0,box.x1),Math.min(box.y0,box.y1));
+  const b2=sw(Math.max(box.x0,box.x1),Math.max(box.y0,box.y1));
+  const x0=a.x, x1=b2.x, y0=a.y, y1=b2.y;
   const sel=[];
   for(const u of G.units){
     if(u.owner!=='player') continue;
@@ -5592,8 +5606,8 @@ function applyBoxSelection(box){
 }
 
 function handleTap(sx,sy){
-  const wx=sx+G.cam.x, wy=sy-54+G.cam.y;
-  const tx=wx/TILE|0, ty=wy/TILE|0;
+  const {x:wx,y:wy}=sw(sx,sy);
+  const tx=wx/BASE_TILE|0, ty=wy/BASE_TILE|0;
 
   // Mode attaque-déplacement
   if(G.mode==='amove'){
@@ -5604,7 +5618,7 @@ function handleTap(sx,sy){
       const fmt=formation(wx,wy,us.length);
       us.forEach((u,i)=>{
         u.amove={x:fmt[i].x,y:fmt[i].y};
-        u.tx=fmt[i].x; u.ty=fmt[i].y;
+        u.destX=fmt[i].x; u.destY=fmt[i].y;
         u.anchorX=fmt[i].x; u.anchorY=fmt[i].y;
         u.state='amove'; u.target=null; u.pendingAction=null;
       });
@@ -5635,7 +5649,7 @@ function handleTap(sx,sy){
   }
 
   // Bâtiment touché ?
-  const tBuilding=G.buildings.find(b=>wx>=b.tx*TILE&&wx<=(b.tx+b.w)*TILE&&wy>=b.ty*TILE&&wy<=(b.ty+b.h)*TILE);
+  const tBuilding=G.buildings.find(b=>wx>=b.tx*BASE_TILE&&wx<=(b.tx+b.w)*BASE_TILE&&wy>=b.ty*BASE_TILE&&wy<=(b.ty+b.h)*BASE_TILE);
   if(tBuilding){
     if(tBuilding.owner==='player'){
       // Ferme avec stock + villageois sélectionnés => les envoyer récolter dessus
@@ -5679,7 +5693,7 @@ function handleTap(sx,sy){
   }
 
   // Nœud de ressource touché ?
-  const tNode=G.nodes.find(n=>n.amt>0&&Math.hypot(n.x-wx,n.y-wy)<TILE*.9);
+  const tNode=G.nodes.find(n=>n.amt>0&&Math.hypot(n.x-wx,n.y-wy)<BASE_TILE*.9);
   if(tNode){
     const vils=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
     if(vils.length>0){
@@ -5698,7 +5712,7 @@ function handleTap(sx,sy){
     if(selUnits.length>0){
       const fmt=formation(wx,wy,selUnits.length);
       selUnits.forEach((u,i)=>{
-        u.tx=fmt[i].x; u.ty=fmt[i].y; u.state='moving';
+        u.destX=fmt[i].x; u.destY=fmt[i].y; u.state='moving';
         u.target=null; u.pendingAction=null; u.amove=null;
         u.anchorX=fmt[i].x; u.anchorY=fmt[i].y;   // point de garde des postures
       });
@@ -5723,7 +5737,7 @@ function formation(cx,cy,n){
   const cols=Math.ceil(Math.sqrt(n)),res=[];
   for(let i=0;i<n;i++){
     const c=i%cols, r=i/cols|0;
-    res.push({x:cx+(c-cols/2)*TILE*.65, y:cy+r*TILE*.65});
+    res.push({x:cx+(c-cols/2)*BASE_TILE*.65, y:cy+r*BASE_TILE*.65});
   }
   return res;
 }
@@ -5992,7 +6006,7 @@ function drawUnitAct(bar,u){
     mkBtn(bar,'🛑','Stop',()=>{u.state='idle';u.target=null;u.amove=null;});
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:4px 6px;line-height:1.6;';
-    info.innerHTML=`ATK: ${u.atk} | ${u.rng>TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
+    info.innerHTML=`ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
     bar.appendChild(info);
   }
 }
@@ -6508,8 +6522,7 @@ function alertAttack(x,y){
   el.style.cursor='pointer';
   el.textContent='⚠️ Base attaquée — toucher pour voir';
   el.addEventListener('click',()=>{
-    G.cam.x=Math.max(0,Math.min(COLS*TILE-W, x-W/2));
-    G.cam.y=Math.max(0,Math.min(ROWS*TILE-gameH(), y-gameH()/2));
+    camCenterOn(x,y);
     el.remove();
   });
   c.appendChild(el);
@@ -6834,39 +6847,26 @@ function updateAgeBar(){
 let zoomLevel=2; // 0=éloigné, 1=normal, 2=rapproché (BASE_TILE = niveau 2)
 const ZOOMS=[0.55,0.75,1.0];
 
-// Le monde est exprimé en pixels dépendant de TILE : changer d'échelle
-// impose de repositionner TOUT (les unités étaient oubliées = décalage visuel).
-function rescaleWorld(oldT,newT){
-  const k=newT/oldT;
-  refreshNodePos(); // gisements + bâtiments recalculés depuis leurs coordonnées de tuile
-  for(const u of G.units){
-    u.x*=k; u.y*=k; u.tx*=k; u.ty*=k;
-    u.rng=UDEF[u.type].rng*newT;
-    // les points de passage sont en pixels monde : sans mise à l'échelle,
-    // un changement de zoom enverrait l'unité sur d'anciennes coordonnées.
-    if(u.path) for(const wp of u.path){ wp.x*=k; wp.y*=k; }
-    if(u.pathGoal){ u.pathGoal.x*=k; u.pathGoal.y*=k; }
-    // ancre de poste d'une garde de point d'intérêt (voir spawnPOIs /
-    // updateEnemyAI) : coordonnée monde elle aussi, sans quoi un zoom la
-    // désynchronise de la vraie position du camp et la garde finit par
-    // "rentrer" n'importe où sur la carte — y compris vers le joueur.
-    if(u.campX!=null){ u.campX*=k; u.campY*=k; }
-  }
-  for(const b of G.buildings) if(b.rally){ b.rally.x*=k; b.rally.y*=k; }
-  // Base de l'adversaire de Conquête : même nature de coordonnée monde que
-  // les ancres de garde ci-dessus (elle sert de centre à ses chantiers et de
-  // poste de repli à ses défenseurs).
-  if(G.ai){ G.ai.baseX*=k; G.ai.baseY*=k; }
-  for(const p of G.projs){ p.x*=k; p.y*=k; if(p.tx!=null){p.tx*=k;p.ty*=k;} }
-  for(const p of G.parts){ p.x*=k; p.y*=k; }
-  for(const f of G.ftexts){ f.x*=k; f.y*=k; }
-  if(G.moveTarget){ G.moveTarget.x*=k; G.moveTarget.y*=k; }
-  G.cam.x*=k; G.cam.y*=k;
-}
+// rescaleWorld() a disparu : les coordonnées monde sont désormais exprimées
+// en unités BASE_TILE, constantes, et ne dépendent plus du zoom. Changer
+// d'échelle ne touche donc plus une seule entité — seule la caméra (exprimée
+// en pixels écran zoomés) est recalculée dans applyZoomToTile ci-dessous.
+// C'est ce qui supprime toute une classe de bugs de dérive au zoom.
 
 function clampCam(){
+  // Bornes inchangées : la carte fait COLS*BASE_TILE unités-monde, soit
+  // COLS*BASE_TILE*échelle === COLS*TILE pixels écran.
   G.cam.x=Math.max(0,Math.min(Math.max(0,COLS*TILE-W),G.cam.x));
   G.cam.y=Math.max(0,Math.min(Math.max(0,ROWS*TILE-gameH()),G.cam.y));
+}
+
+// Centre la caméra sur un point MONDE (unités BASE_TILE) : point de passage
+// unique pour « aller à », qui applique l'échelle de zoom une seule fois.
+function camCenterOn(wx,wy){
+  const S=TILE/BASE_TILE;
+  G.cam.x=wx*S-W/2;
+  G.cam.y=wy*S-gameH()/2;
+  clampCam();
 }
 
 // Régénération des sprites différée : pendant un pincement on se contente
@@ -6890,15 +6890,15 @@ function zoomScaleNow(){ return TILE/BASE_TILE; }
 function applyZoomToTile(targetT,anchorSX,anchorSY){
   const newT=Math.max(TILE_MIN,Math.min(TILE_MAX,Math.round(targetT)));
   if(newT===TILE) return false;
-  const oldT=TILE;
   if(anchorSX==null){ anchorSX=W/2; anchorSY=54+gameH()/2; }
-  // position (en tuiles) du point visé, AVANT changement d'échelle
-  const wtx=(anchorSX+G.cam.x)/oldT, wty=(anchorSY-54+G.cam.y)/oldT;
+  // Point monde visé, AVANT changement d'échelle. Aucune entité n'est
+  // touchée : leurs coordonnées sont en unités BASE_TILE, invariantes.
+  const w=sw(anchorSX,anchorSY);
   TILE=newT;
-  rescaleWorld(oldT,newT);
-  // ce point doit rester exactement sous le doigt
-  G.cam.x=wtx*newT-anchorSX;
-  G.cam.y=wty*newT-(anchorSY-54);
+  // ce même point monde doit rester exactement sous le doigt après le zoom
+  const S=TILE/BASE_TILE;
+  G.cam.x=w.x*S-anchorSX;
+  G.cam.y=w.y*S-(anchorSY-54);
   clampCam();
   markSpritesDirty();
   return true;
@@ -6907,8 +6907,7 @@ function applyZoomToTile(targetT,anchorSX,anchorSY){
 document.getElementById('zhome').addEventListener('click',()=>{
   const tc=G.buildings.find(b=>b.owner==='player'&&b.type===BT.TC)||G.buildings.find(b=>b.owner==='player');
   if(!tc){ notify('Aucun bâtiment','#e67e22'); return; }
-  G.cam.x=Math.max(0,Math.min(COLS*TILE-W, tc.x-W/2));
-  G.cam.y=Math.max(0,Math.min(ROWS*TILE-gameH(), tc.y-gameH()/2));
+  camCenterOn(tc.x,tc.y);
   buzz(8);
 });
 document.getElementById('zarmy').addEventListener('click',()=>{
@@ -6929,8 +6928,7 @@ document.getElementById('deselbtn').addEventListener('click',()=>{
 document.getElementById('minimap').addEventListener('click',e=>{
   const r=document.getElementById('minimap').getBoundingClientRect();
   const mx=(e.clientX-r.left)/88, my=(e.clientY-r.top)/88;
-  G.cam.x=Math.max(0,Math.min(COLS*TILE-W,mx*COLS*BASE_TILE-W/2));
-  G.cam.y=Math.max(0,Math.min(ROWS*TILE-gameH(),my*ROWS*BASE_TILE-gameH()/2));
+  camCenterOn(mx*COLS*BASE_TILE,my*ROWS*BASE_TILE);
 });
 
 // ── PAUSE ─────────────────────────────────────────────────
@@ -7200,11 +7198,12 @@ async function saveGame(){
 
 function buildSaveData(){
     return {
-      v:6,
+      v:7,         // v7 : coordonnées monde en unités BASE_TILE, indépendantes du zoom
       ts:Date.now(),
-      tile:TILE,   // niveau de zoom exact : sans lui, les positions sauvegardées
-                   // (calculées en pixels à CE zoom) ne correspondent plus à rien
-                   // une fois rechargées à un autre zoom.
+      tile:TILE,   // zoom courant — purement cosmétique depuis la v7 (on le
+                   // restaure pour retrouver la même vue), mais indispensable
+                   // pour convertir les sauvegardes v6 dont les positions
+                   // étaient exprimées en pixels à CE zoom. Voir migrerSauvegarde().
       difficulty:G.difficulty, autoRepair:G.autoRepair,
       mode:G.gmode, ai:G.ai?{...G.ai,res:{...G.ai.res},ageQ:G.ai.ageQ?{...G.ai.ageQ}:null}:null,
       stats:JSON.parse(JSON.stringify(G.stats)), campTotal:G.campTotal||0,
@@ -7244,6 +7243,54 @@ function updateAutoSave(dt){
   if(_autoTimer>=AUTOSAVE_INTERVAL){ _autoTimer=0; autoSave(); }
 }
 
+// ── MIGRATION DES SAUVEGARDES ─────────────────────────────
+// Chaînée : chaque palier ne connaît que le passage de v(n) à v(n+1).
+//
+// v6 -> v7 : jusqu'à la v6, les coordonnées monde étaient des pixels au zoom
+// courant (champ `tile`). Elles sont désormais en unités BASE_TILE, fixes.
+// On divise donc tout ce qui est une coordonnée ou une distance monde par
+// l'échelle à laquelle la sauvegarde a été écrite. Les indices de tuile
+// (b.tx/b.ty, n.tx/n.ty) n'ont jamais dépendu du zoom : on n'y touche pas.
+function migrerSauvegarde(data){
+  if(!data||typeof data!=='object') return data;
+  if((data.v||0)<7){
+    const k=(data.tile||BASE_TILE)/BASE_TILE; // échelle d'écriture
+    if(k&&k!==1){
+      const d=v=>(typeof v==='number'?v/k:v);
+      for(const u of (data.units||[])){
+        u.x=d(u.x); u.y=d(u.y);
+        // v6 nommait ces champs tx/ty (destination), homonymes des indices
+        // de tuile des bâtiments — renommés destX/destY depuis.
+        u.destX=d(u.destX!=null?u.destX:u.tx); u.destY=d(u.destY!=null?u.destY:u.ty);
+        delete u.tx; delete u.ty;
+        u.rng=d(u.rng);
+        if(u.path) for(const wp of u.path){ wp.x=d(wp.x); wp.y=d(wp.y); }
+        if(u.pathGoal){ u.pathGoal.x=d(u.pathGoal.x); u.pathGoal.y=d(u.pathGoal.y); }
+        if(u.campX!=null){ u.campX=d(u.campX); u.campY=d(u.campY); }
+        if(u.anchorX!=null){ u.anchorX=d(u.anchorX); u.anchorY=d(u.anchorY); }
+        if(u.amove){ u.amove.x=d(u.amove.x); u.amove.y=d(u.amove.y); }
+      }
+      // b.x/b.y et n.x/n.y sont de toute façon recalculés depuis tx/ty par
+      // refreshNodePos() au chargement ; on les corrige quand même pour ne
+      // pas laisser de valeurs incohérentes dans l'objet.
+      for(const b of (data.buildings||[])){
+        b.x=d(b.x); b.y=d(b.y);
+        if(b.rally){ b.rally.x=d(b.rally.x); b.rally.y=d(b.rally.y); }
+      }
+      for(const n of (data.nodes||[])){ n.x=d(n.x); n.y=d(n.y); }
+      if(data.ai){ data.ai.baseX=d(data.ai.baseX); data.ai.baseY=d(data.ai.baseY); }
+    } else {
+      // Même à l'échelle 1, le renommage tx/ty -> destX/destY s'applique.
+      for(const u of (data.units||[])){
+        if(u.destX==null&&u.tx!=null){ u.destX=u.tx; u.destY=u.ty; }
+        delete u.tx; delete u.ty;
+      }
+    }
+    data.v=7;
+  }
+  return data;
+}
+
 // ── CHARGER ───────────────────────────────────────────────
 async function loadAutoSave(){ return loadGame(AUTO_KEY); }
 
@@ -7251,12 +7298,14 @@ async function loadGame(key=SAVE_KEY){
   const st=document.getElementById('save-status');
   if(st) { st.textContent='📂 Chargement…'; st.style.color='#3498db'; }
   try{
-    const data=await storageLoad(key);
-    if(!data){ 
+    let data=await storageLoad(key);
+    if(!data){
       if(st){ st.textContent='❌ Aucune sauvegarde trouvée'; st.style.color='#e74c3c'; }
       notify('❌ Aucune sauvegarde trouvée','#e74c3c');
       return;
     }
+    // Met la sauvegarde au format courant AVANT toute lecture de ses champs.
+    data=migrerSauvegarde(data);
     // Fermer les menus
     document.getElementById('pausemenu').style.display='none';
     document.getElementById('overlay').style.display='none';
@@ -7315,7 +7364,7 @@ async function loadGame(key=SAVE_KEY){
     // ne se retrouve pas visuellement hors de la carte ; le pathing la
     // ramène ensuite naturellement vers sa tâche (ferme, gisement, etc).
     {
-      const mw=COLS*TILE, mh=ROWS*TILE;
+      const mw=COLS*BASE_TILE, mh=ROWS*BASE_TILE;
       for(const u of G.units){
         u.x=Math.max(0,Math.min(mw,u.x));
         u.y=Math.max(0,Math.min(mh,u.y));
@@ -7443,7 +7492,7 @@ function startGame(){
 
   // 3 Villageois
   for(let i=0;i<3;i++){
-    const u=mkUnit(UT.VIL,(sTX+1.5)*TILE+(i-1)*TILE*.9,(sTY+3)*TILE,'player');
+    const u=mkUnit(UT.VIL,(sTX+1.5)*BASE_TILE+(i-1)*BASE_TILE*.9,(sTY+3)*BASE_TILE,'player');
     G.units.push(u); G.pop++;
   }
 
@@ -7453,8 +7502,7 @@ function startGame(){
   if(G.gmode==='conquest') initAI(sTX,sTY);
 
   // Caméra sur le TC
-  G.cam.x=Math.max(0,(sTX+1.5)*TILE-W/2);
-  G.cam.y=Math.max(0,(sTY+1.5)*TILE-gameH()/2);
+  camCenterOn((sTX+1.5)*BASE_TILE,(sTY+1.5)*BASE_TILE);
 
   G.running=true;
   setSpeed(1);
@@ -7491,8 +7539,7 @@ document.getElementById('idlebtn-inner').addEventListener('click',()=>{
   }
   G.sel=[chosen.id];
   // Centrer la caméra sur le villageois
-  G.cam.x=Math.max(0,Math.min(COLS*TILE-W, chosen.x-W/2));
-  G.cam.y=Math.max(0,Math.min(ROWS*TILE-gameH(), chosen.y-gameH()/2));
+  camCenterOn(chosen.x,chosen.y);
   refreshUI();
   notify(`👷 Villageois inactif sélectionné !`,'#3498db');
 });

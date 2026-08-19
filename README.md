@@ -37,3 +37,40 @@ Le mode se choisit sur l'écran-titre, en plus de la difficulté.
 
 Tout le rendu (bâtiments, unités, icônes) est généré en pixel art par code,
 directement en `<canvas>`.
+
+## Sauvegarde cloud (connexion Google)
+
+Optionnelle et désactivée par défaut : sans configuration, le jeu utilise
+uniquement le stockage local (`localStorage`, ou `window.storage` dans
+Claude Canvas) comme avant. Une fois activée, la sauvegarde manuelle et
+l'auto-sauvegarde suivent le compte Google du joueur plutôt que l'appareil
+(fichier caché dans son propre Drive, dossier `appData` — invisible dans son
+Drive normal, illisible par toute autre application).
+
+**Déjà configuré** pour `https://automateam.fr` (projet Google Cloud
+`age-des-conquetes`, API Drive activée, écran de consentement en statut
+*Test*, `GOOGLE_CLIENT_ID` déjà renseigné dans `index.html`). Tant que
+l'appli reste en *Test*, seuls les comptes Google ajoutés comme
+« utilisateurs test » peuvent se connecter (jusqu'à 100, sans passer par la
+vérification Google) — ajouter quelqu'un : Google Cloud Console → projet
+*age-des-conquetes* → **Google Auth Platform → Audience → Add users**.
+
+Pour re-configurer ailleurs (autre domaine, autre projet) :
+
+1. [console.cloud.google.com](https://console.cloud.google.com/) → créer/
+   choisir un projet.
+2. **APIs et services → Bibliothèque** → activer *Google Drive API*.
+3. **Google Auth Platform → Audience** → type *Externe* + utilisateurs test.
+4. **Google Auth Platform → Clients → Créer un client** → type *Application
+   Web* → dans *Origines JavaScript autorisées*, l'URL exacte d'hébergement
+   — et `http://localhost:PORT` pour tester en local (un `file://` direct ne
+   fonctionne **pas** avec la connexion Google, un serveur statique est
+   nécessaire).
+5. Copier l'*ID client* (`xxxx.apps.googleusercontent.com` — ce n'est pas un
+   secret) dans `index.html`, constante `GOOGLE_CLIENT_ID` (section
+   « CONNEXION GOOGLE » du script).
+
+Le bouton ☁️ *Connexion Google* (écran-titre et menu pause) reste caché tant
+que `GOOGLE_CLIENT_ID` garde sa valeur par défaut. La connexion n'est pas
+persistée entre deux rechargements de page (pas de backend) : le joueur
+reclique une fois par session de navigateur.

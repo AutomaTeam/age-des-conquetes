@@ -487,6 +487,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .pmenu-sound  { background:rgba(93,173,226,.12);color:#5dade2;border-color:#5dade2; }
 .pmenu-save   { background:rgba(46,204,113,.12);color:#2ecc71;border-color:#2ecc71; }
 .pmenu-load   { background:rgba(52,152,219,.12);color:#3498db;border-color:#3498db; }
+.pmenu-google { background:rgba(255,255,255,.06);color:#e8e8e8;border-color:#5a5a5a; }
 .pmenu-quit   { background:rgba(231,76,60,.10);color:#e74c3c;border-color:#e74c3c; }
 #save-status  { font-family:'Crimson Text',serif;font-size:13px;color:#888;text-align:center;min-height:18px; }
 #save-info    { font-family:'Crimson Text',serif;font-size:12px;color:#9a8a6a;text-align:center;line-height:1.5;margin-bottom:2px; }
@@ -579,6 +580,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     </div>
   </div>
   <button class="pmenu-btn" style="background:rgba(212,160,23,.12);color:var(--gold-l);border-color:var(--gold-d);" onclick="openAch()">🏆 Succès <span id="achcount2"></span></button>
+  <button class="pmenu-btn pmenu-google" id="gauthbtn" onclick="googleAuthClick()" style="display:none;">☁️ Connexion Google</button>
   <button class="pmenu-btn pmenu-save"   onclick="saveGame()">💾 Sauvegarder</button>
   <button class="pmenu-btn pmenu-load"   onclick="loadGame()">📂 Charger</button>
   <button class="pmenu-btn pmenu-load"   id="autoloadbtn" onclick="loadAutoSave()" style="display:none;">⏱️ Charger l'auto-sauvegarde</button>
@@ -664,6 +666,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <button class="bigbtn sheen" onclick="startGame()">⚔️ Commencer la partie</button>
     <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la sauvegarde</button>
     <button class="bigbtn achbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Succès <span id="achcount"></span></button>
+    <button class="bigbtn" id="gauthbtn-title" onclick="googleAuthClick()" style="display:none;background:rgba(255,255,255,.06);color:#e8e8e8;border:1.5px solid #5a5a5a;box-shadow:none;">☁️ Connexion Google</button>
   </div>
 </div>
 
@@ -6962,13 +6965,152 @@ function quitGame(){
   });
 }
 
-// ── STOCKAGE DUAL (Canvas Claude → localStorage iOS) ──────
+// ── CONNEXION GOOGLE (sauvegarde cloud) ────────────────────
+// Identifiant client OAuth 2.0 (public — ce n'est PAS un secret, il ne
+// donne accès à rien par lui-même) à créer sur
+// https://console.cloud.google.com/apis/credentials — type « ID client
+// OAuth », application Web, avec pour origine JavaScript autorisée l'URL
+// exacte d'hébergement du jeu (voir README pour la procédure complète).
+// Tant que ce champ garde sa valeur par défaut, tout le module reste
+// inerte : aucun script Google n'est chargé, aucun bouton n'apparaît, le
+// jeu se comporte exactement comme avant (sauvegarde locale/Canvas
+// uniquement) — un dev qui clone le dépôt sans configurer d'identifiant
+// n'est donc jamais affecté par cette fonctionnalité.
+const GOOGLE_CLIENT_ID = '561523913-llsat3nhiocqmpjv7f8qu4qhj84a7ucq.apps.googleusercontent.com';
+const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email';
+const GOOGLE_CONFIGURED = !GOOGLE_CLIENT_ID.startsWith('REMPLACE_MOI');
+
+let gAuth = { tokenClient:null, token:null, tokenExp:0, email:null, signedIn:false };
+
+// Chargé à la demande (pas de balise <script> statique) : un joueur qui ne
+// se connecte jamais à Google ne déclenche aucune requête réseau vers
+// accounts.google.com.
+if(GOOGLE_CONFIGURED){
+  const _gs=document.createElement('script');
+  _gs.src='https://accounts.google.com/gsi/client'; _gs.async=true;
+  _gs.onload=()=>initGoogleAuth();
+  _gs.onerror=()=>console.warn('Google Identity Services indisponible (hors-ligne ?)');
+  document.head.appendChild(_gs);
+}
+
+function initGoogleAuth(){
+  if(!GOOGLE_CONFIGURED||!window.google||!google.accounts) return;
+  gAuth.tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: GOOGLE_SCOPES,
+    callback: async(resp)=>{
+      if(!resp||resp.error){ notify('❌ Connexion Google refusée','#e74c3c'); return; }
+      gAuth.token=resp.access_token;
+      gAuth.tokenExp=Date.now()+(resp.expires_in||3600)*1000;
+      gAuth.signedIn=true;
+      try{
+        const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+gAuth.token}});
+        const j=await r.json();
+        gAuth.email=j.email||null;
+      }catch(e){}
+      notify(gAuth.email?`✅ Connecté : ${gAuth.email}`:'✅ Connecté à Google','#2ecc71');
+      refreshGoogleUI();
+      if(typeof refreshSaveInfo==='function') refreshSaveInfo();
+    },
+  });
+  refreshGoogleUI();
+}
+window.initGoogleAuth=initGoogleAuth;
+
+function googleAuthClick(){
+  if(gAuth.signedIn){ googleSignOut(); return; }
+  if(!gAuth.tokenClient){ notify('☁️ Connexion Google indisponible pour l\'instant','#e74c3c'); return; }
+  // 'consent' au tout premier lien de session (rien à ré-afficher ensuite) :
+  // sans ça, Google republie l'écran de consentement à chaque clic.
+  gAuth.tokenClient.requestAccessToken({prompt: gAuth.token?'':'consent'});
+}
+window.googleAuthClick=googleAuthClick;
+
+function googleSignOut(){
+  if(gAuth.token&&window.google&&google.accounts) google.accounts.oauth2.revoke(gAuth.token,()=>{});
+  gAuth.token=null; gAuth.signedIn=false; gAuth.email=null;
+  notify('☁️ Déconnecté de Google — sauvegardes locales uniquement','#95a5a6');
+  refreshGoogleUI();
+  if(typeof refreshSaveInfo==='function') refreshSaveInfo();
+}
+
+function refreshGoogleUI(){
+  const show=GOOGLE_CONFIGURED&&!!gAuth.tokenClient;
+  for(const id of ['gauthbtn','gauthbtn-title']){
+    const b=document.getElementById(id);
+    if(!b) continue;
+    b.style.display=show?'flex':'none';
+    b.textContent=gAuth.signedIn?`☁️ ${gAuth.email||'Connecté'} · Déconnexion`:'☁️ Connexion Google';
+  }
+}
+
+// Jeton d'accès valide, ou null si non connecté / expiré. Pas de
+// rafraîchissement silencieux implémenté (hors scope pour un jeu casual) :
+// passé l'expiration (~1h), le joueur reclique simplement pour se
+// reconnecter — storageSave/Load retombent entre-temps sur le stockage
+// local sans jamais bloquer la sauvegarde.
+function googleToken(){
+  if(!gAuth.signedIn||!gAuth.token) return null;
+  if(Date.now()>gAuth.tokenExp-30000){ gAuth.signedIn=false; gAuth.token=null; refreshGoogleUI(); return null; }
+  return gAuth.token;
+}
+
+// ── GOOGLE DRIVE : dossier « appData », cache et propre à ce jeu ─────────
+// (invisible dans le Drive normal du joueur, illisible par toute autre
+// application — portée volontairement la plus étroite possible).
+async function driveFind(name){
+  const tok=googleToken(); if(!tok) return null;
+  const q=encodeURIComponent(`name='${name}' and trashed=false`);
+  const r=await fetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id)`,
+    {headers:{Authorization:'Bearer '+tok}});
+  if(!r.ok) throw new Error('drive find '+r.status);
+  const j=await r.json();
+  return (j.files&&j.files[0])?j.files[0].id:null;
+}
+async function driveSave(name,json){
+  const tok=googleToken(); if(!tok) return false;
+  const id=await driveFind(name);
+  if(id){
+    const r=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`,
+      {method:'PATCH',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:json});
+    if(!r.ok) throw new Error('drive update '+r.status);
+  } else {
+    const boundary='adcbnd'+Date.now();
+    const meta=JSON.stringify({name,parents:['appDataFolder']});
+    const body=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n`+
+               `--${boundary}\r\nContent-Type: application/json\r\n\r\n${json}\r\n--${boundary}--`;
+    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      {method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':`multipart/related; boundary=${boundary}`},body});
+    if(!r.ok) throw new Error('drive create '+r.status);
+  }
+  return true;
+}
+async function driveLoad(name){
+  const tok=googleToken(); if(!tok) return null;
+  const id=await driveFind(name);
+  if(!id) return null;
+  const r=await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`,{headers:{Authorization:'Bearer '+tok}});
+  if(!r.ok) throw new Error('drive load '+r.status);
+  return await r.json();
+}
+async function driveExists(name){
+  try{ return !!(await driveFind(name)); }catch(e){ return false; }
+}
+
+// ── STOCKAGE (Google Drive → Canvas Claude → localStorage) ─
 const SAVE_KEY  = 'adc_save_v1';      // sauvegarde manuelle
 const AUTO_KEY  = 'adc_autosave_v1';  // sauvegarde automatique (séparée : n'écrase jamais la manuelle)
 const AUTOSAVE_INTERVAL = 180;        // secondes de jeu entre deux sauvegardes auto
 
 async function storageSave(data,key=SAVE_KEY){
   const json=JSON.stringify(data);
+  // 0. Google Drive si connecté — a la priorité : la sauvegarde suit alors
+  // le compte plutôt que l'appareil. Échec silencieux (jeton expiré, hors-
+  // ligne…) : on retombe sur les paliers suivants, jamais de sauvegarde
+  // perdue pour une simple coupure réseau côté Drive.
+  if(googleToken()){
+    try{ await driveSave(key+'.json', json); return 'google'; } catch(e){ console.warn('Sauvegarde Drive échouée',e); }
+  }
   // 1. Essayer window.storage (Claude Canvas)
   if(window.storage){
     try{ await window.storage.set(key, json); return 'canvas'; } catch(e){}
@@ -6979,6 +7121,10 @@ async function storageSave(data,key=SAVE_KEY){
 }
 
 async function storageLoad(key=SAVE_KEY){
+  // 0. Google Drive
+  if(googleToken()){
+    try{ const d=await driveLoad(key+'.json'); if(d) return d; } catch(e){ console.warn('Lecture Drive échouée',e); }
+  }
   // 1. window.storage
   if(window.storage){
     try{
@@ -6995,6 +7141,9 @@ async function storageLoad(key=SAVE_KEY){
 }
 
 async function checkSaveExists(key=SAVE_KEY){
+  if(googleToken()){
+    try{ if(await driveExists(key+'.json')) return true; } catch(e){}
+  }
   if(window.storage){
     try{ const r=await window.storage.get(key); return !!(r&&r.value); } catch(e){}
   }
@@ -7018,6 +7167,7 @@ async function refreshSaveInfo(){
   if(!el) return;
   const [man,auto]=await Promise.all([storageLoad(SAVE_KEY),storageLoad(AUTO_KEY)]);
   const lines=[];
+  if(gAuth.signedIn) lines.push(`☁️ Compte : <b>${gAuth.email||'connecté'}</b>`);
   lines.push(man?`💾 Manuelle : <b>${saveLabel(man)}</b>`:'💾 Manuelle : <b>aucune</b>');
   lines.push(auto?`⏱️ Auto : <b>${saveLabel(auto)}</b>`:'⏱️ Auto : <b>aucune</b>');
   el.innerHTML=lines.join('<br>');
@@ -7034,7 +7184,7 @@ async function saveGame(){
     const data=buildSaveData();
     const medium=await storageSave(data);
     if(medium){
-      const where=medium==='canvas'?'Claude Canvas':'Safari iOS';
+      const where=medium==='google'?'Google Drive':medium==='canvas'?'Claude Canvas':'cet appareil';
       st.textContent=`✅ Sauvegardé (${where}) — ${saveLabel(data)}`;
       st.style.color='#2ecc71';
       refreshSaveInfo();

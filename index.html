@@ -342,6 +342,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .modebtn:active { transform:scale(.96); }
 .modebtn[data-m="survival"] { --mc:#5dade2; }
 .modebtn[data-m="conquest"] { --mc:#e05a4e; }
+.modebtn[data-m="conquest2"] { --mc:#b07cc6; }
 .modebtn .mico { font-size:20px;filter:drop-shadow(0 0 4px rgba(0,0,0,.4)); }
 .modebtn .mlabel { font-size:12px;font-weight:600; }
 .modebtn.sel { border-color:var(--mc);color:var(--mc);background:color-mix(in srgb, var(--mc) 16%, rgba(20,12,0,.7));box-shadow:0 0 14px -4px var(--mc); }
@@ -654,6 +655,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <div class="moderow" id="moderow">
       <button class="modebtn" data-m="survival" onclick="pickMode('survival')"><span class="mico">🛡️</span><span class="mlabel">Survie</span></button>
       <button class="modebtn" data-m="conquest" onclick="pickMode('conquest')"><span class="mico">🏴</span><span class="mlabel">Conquête</span></button>
+      <button class="modebtn" data-m="conquest2" onclick="pickMode('conquest2')"><span class="mico">⚔️</span><span class="mlabel">2 rivaux</span></button>
     </div>
     <p class="tip" id="modetip">Survie — Repoussez 20 vagues d'assaut pour l'emporter.</p>
     <div class="diffrow" id="diffrow">
@@ -893,7 +895,10 @@ const MODES = {
   survival: { nom:'Survie',   ico:'🛡️', targetWaves:20,
               desc:"Repoussez 20 vagues d'assaut pour l'emporter.",
               intro:'Récoltez bois, pierre et or. Bâtissez votre cité. Forgez vos armes.<br>Vous avez <strong id="peacetxt">20 minutes</strong> avant la première attaque !' },
-  conquest: { nom:'Conquête', ico:'🏴', targetWaves:0,
+  conquest2:{ nom:'2 rivaux', ico:'⚔️', targetWaves:0, rivaux:2,
+              desc:'Deux seigneurs rivaux, hostiles à vous ET entre eux. Le dernier Centre Ville debout l\'emporte.',
+              intro:'Trois cités se partagent la carte : la vôtre et deux rivaux qui se combattent aussi entre eux.<br>Laissez-les s\'affaiblir… ou frappez le premier.' },
+  conquest: { nom:'Conquête', ico:'🏴', targetWaves:0, rivaux:1,
               desc:'Un seigneur rival bâtit sa propre cité. Détruisez son Centre Ville — avant qu\'il ne détruise le vôtre.',
               intro:'Un rival récolte, construit, monte les âges et lève ses armées en même temps que vous.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong> — pas de vagues, un seul adversaire.' },
 };
@@ -980,19 +985,109 @@ function initStats(){
   };
 }
 
+// ── FACTIONS ─────────────────────────────────────────────
+// Un camp = une faction. Jusqu'ici le jeu n'avait que deux propriétaires
+// ('player' / 'enemy') dans lesquels TROIS camps étaient écrasés : le joueur,
+// l'adversaire de Conquête (marqué ai:true) et les pillards de vague. Un duel
+// 1v1 avec IA en plus impose de les distinguer réellement : chaque faction a
+// sa caisse, son âge, ses recherches, sa population, son brouillard et ses
+// compteurs.
+const FAC = { P1:'p1', P2:'p2', IA:'ia', IA2:'ia2', PILL:'pillards' };
+
+// Teinte de sprites par défaut de chaque faction (voir PAL_FACTION).
+const TEINTE_DEF = { p1:'bleu', p2:'vert', ia:'rouge', ia2:'violet', pillards:'rouge' };
+
+function initResearch(){
+  return { iron_sword:false, bow_craft:false, iron_armor:false, masonry:false,
+           cavalry:false, longbow:false, tactics:false, faith:false, engineering:false };
+}
+// Lecture seule : recherches d'un camp qui n'en a pas (pillards).
+const EMPTY_RESEARCH = initResearch();
+
+// genre  : 'humain' (joue et voit) | 'ia' (cerveau updateAI) | 'neutre' (pillards)
+// equipe : deux factions de MÊME équipe ne s'attaquent pas
+function mkFaction(id,o){
+  return {
+    id,
+    genre:o.genre, equipe:o.equipe,
+    teinte:o.teinte||TEINTE_DEF[id]||'rouge',
+    nom:o.nom||id,
+    hostileATous:!!o.hostileATous, // pillards : hostiles à tout le monde
+    res:{...(o.res||{})},
+    age:0, ageUpQ:null,
+    research:initResearch(), researchQ:[],
+    pop:0, maxPop:o.maxPop!=null?o.maxPop:5,
+    fog:[],                        // propre à chaque faction humaine
+    stats:initStats(),
+    autoRepair:false,
+    vaincu:false,
+    // Les factions 'ia' reçoivent en plus, via initAI(), leur cerveau :
+    // baseX, baseY, tcId, think, ageQ, atkTimer, atkMin, raids, vilTarget.
+  };
+}
+
+// Faction d'une entité (ou d'un identifiant de faction).
+function fac(o){ const id=(o&&typeof o==='object')?o.owner:o; return G.factions?G.factions[id]:null; }
+// Faction locale : celle que CE navigateur joue, et dont on affiche le HUD.
+function moi(){ return G.factions?G.factions[G.me]:null; }
+function estLocal(e){ return !!e && e.owner===G.me; }
+function estIA(e){ const f=fac(e); return !!f && f.genre==='ia'; }
+function factionsIA(){ return G.factions?Object.values(G.factions).filter(f=>f.genre==='ia'):[]; }
+function factionsHumaines(){ return G.factions?Object.values(G.factions).filter(f=>f.genre==='humain'):[]; }
+// Factions réellement en lice (les pillards ne « perdent » ni ne « gagnent »).
+function factionsJouantes(){ return G.factions?Object.values(G.factions).filter(f=>f.genre!=='neutre'):[]; }
+
+// Deux entités sont-elles hostiles ? Remplace le test binaire player/enemy :
+// gère les équipes et les pillards hostiles à tous.
+function estHostile(a,b){
+  if(!a||!b) return false;
+  const fa=fac(a), fb=fac(b);
+  if(!fa||!fb||fa===fb) return false;
+  if(fa.hostileATous||fb.hostileATous) return true;
+  return fa.equipe!==fb.equipe;
+}
+
+// Accesseurs par camp — remplacent les ternaires codés en dur player/IA.
+function resPool(owner){ const f=fac(owner); return f?f.res:null; }
+function ageOf(owner){ const f=fac(owner); return f?f.age:0; }
+function rechercheDe(owner){ const f=fac(owner); return f?f.research:EMPTY_RESEARCH; }
+function popDe(owner){ const f=fac(owner); return f?f.pop:0; }
+function maxPopDe(owner){ const f=fac(owner); return f?f.maxPop:0; }
+function gatherMult(owner){ return AGE_BONUS[ageOf(owner)].gather; } // récolte croissante à chaque âge
+
+// Raccourcis vers la faction LOCALE. Tout le code d'interface (HUD, panneaux,
+// sélection, brouillard affiché) continue de lire G.res / G.age / G.stats…
+// comme avant : ce sont désormais des vues sur G.factions[G.me].
+function installerShims(){
+  const lien=(prop,champ)=>Object.defineProperty(G,prop,{
+    configurable:true, enumerable:true,
+    get(){ const f=moi(); return f?f[champ]:undefined; },
+    set(v){ const f=moi(); if(f) f[champ]=v; },
+  });
+  lien('res','res'); lien('age','age'); lien('ageUpQ','ageUpQ');
+  lien('research','research'); lien('researchQ','researchQ');
+  lien('stats','stats'); lien('fog','fog');
+  lien('pop','pop'); lien('maxPop','maxPop'); lien('autoRepair','autoRepair');
+  // G.ai — cerveau du PREMIER adversaire IA. Conservé tel quel pour tout le
+  // code (et les sauvegardes) qui ne raisonne qu'avec un seul rival.
+  Object.defineProperty(G,'ai',{configurable:true, enumerable:true,
+    get(){ return G.factions?(G.factions[FAC.IA]||null):null; },
+    set(v){ if(G.factions){ if(v) G.factions[FAC.IA]=v; else delete G.factions[FAC.IA]; } },
+  });
+}
+
 function initState() {
   const diff=DIFFS[selectedDifficulty]||DIFFS.normal;
   const mode=MODES[selectedMode]?selectedMode:'survival';
   G = {
     difficulty:selectedDifficulty,
-    // gmode = mode de PARTIE (survival/conquest). À ne pas confondre avec
-    // G.mode juste en dessous, qui est le mode d'INTERACTION en cours
+    // gmode = mode de PARTIE (survival/conquest/conquest2). À ne pas confondre
+    // avec G.mode juste en dessous, qui est le mode d'INTERACTION en cours
     // (select/build/amove) et que le chargement d'une sauvegarde réinitialise.
     gmode:mode,
-    stats:initStats(),
-    ai:null, // état de l'adversaire (mode Conquête uniquement) — voir initAI()
-    res: { ...diff.startRes },
-    pop:0, maxPop:5,
+    factions:{},   // tous les camps — voir mkFaction()
+    me:FAC.P1,     // faction jouée par CE navigateur
+    hote:true,     // cette instance fait-elle tourner la simulation ? (multijoueur)
     units:[], buildings:[], nodes:[], projs:[], parts:[], ftexts:[], deathfx:[],
     shake:{mag:0}, // secousse de caméra sur les gros impacts (siège, boss)
     nid:1,
@@ -1001,13 +1096,8 @@ function initState() {
     mode:'select',
     buildType:null, ghost:null,
     buildTab:0, // 0=Économie 1=Militaire 2=Défense 3=Amélioration
-    research:{ iron_sword:false, bow_craft:false, iron_armor:false, masonry:false,
-               cavalry:false, longbow:false, tactics:false, faith:false, engineering:false },
-    researchQ:[],
     wave:0, waveTimer:FIRST_WAVE_DELAY*diff.waveDelayMult, waveActive:false,
-    autoRepair:false, // villageois inactifs réparant seuls les bâtiments endommagés
     paused:false,
-    age:0, ageUpQ:null, // âge courant + recherche d'âge en cours
     speed:1, // vitesse du jeu 1/2/3
     gameTime:0, // temps de jeu écoulé (s)
     victory:false, targetWaves:MODES[mode].targetWaves, // Survie : survivre à N vagues. Conquête : 0, la victoire vient de la chute du Centre Ville adverse.
@@ -1016,10 +1106,25 @@ function initState() {
     moveTarget:null, mtTimer:0,
     selBox:null, // rectangle de sélection
     hover:null, // entité survolée à la souris (desktop) : {kind,id,owner}
-    tiles:[], bmap:[], fog:[], // carte, blocage, brouillard (0=inexploré 1=exploré)
+    tiles:[], bmap:[], // carte + blocage (le brouillard est par faction)
     running:false, gameOver:false,
     dayPhase:0, // 0..1 cycle jour/nuit
   };
+  // Le joueur local. Les adversaires IA sont créés par initAI(), les pillards
+  // ne servent qu'en Survie (vagues + garnisons des points d'intérêt).
+  G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:'Vous',res:diff.startRes,maxPop:5});
+  G.factions[FAC.PILL]=mkFaction(FAC.PILL,{genre:'neutre',equipe:0,hostileATous:true});
+  installerShims();
+}
+
+// Alloue à chaque faction humaine son propre calque de brouillard. L'IA et
+// les pillards n'en ont pas : ils voient toute la carte, comme avant.
+function initFog(){
+  for(const f of factionsHumaines()){
+    const g=[];
+    for(let y=0;y<ROWS;y++){ g[y]=[]; for(let x=0;x<COLS;x++) g[y][x]=0; }
+    f.fog=g;
+  }
 }
 
 // ── GÉNÉRATION DE LA CARTE ────────────────────────────────
@@ -1032,9 +1137,10 @@ function initState() {
 const MAPSCALE = COLS/60;
 const SC = n => Math.round(n*MAPSCALE);
 function genMap() {
-  const t=[], b=[], f=[];
-  for(let y=0;y<ROWS;y++){t[y]=[];b[y]=[];f[y]=[];for(let x=0;x<COLS;x++){t[y][x]=T_GRASS;b[y][x]=0;f[y][x]=0;}}
-  G.tiles=t; G.bmap=b; G.fog=f;
+  const t=[], b=[];
+  for(let y=0;y<ROWS;y++){t[y]=[];b[y]=[];for(let x=0;x<COLS;x++){t[y][x]=T_GRASS;b[y][x]=0;}}
+  G.tiles=t; G.bmap=b;
+  initFog(); // un calque de brouillard par faction humaine
 
   // Lacs répartis sur toute la carte
   const lakes=[[SC(3),SC(3),SC(2)],[COLS-SC(4),SC(3),SC(2)],[SC(3),ROWS-SC(4),SC(2)],[COLS-SC(4),ROWS-SC(4),SC(2)],
@@ -1096,7 +1202,7 @@ function genMap() {
   // Points d'intérêt : filons infinis gardés. Réservés au mode Survie — leurs
   // garnisons ne ciblent que le joueur (voir updateEnemyAI), elles fausseraient
   // donc le duel en Conquête en n'inquiétant jamais l'adversaire.
-  if(G.gmode!=='conquest') spawnPOIs();
+  if(G.gmode==='survival') spawnPOIs();
 }
 
 function place(cx,cy,rx,cnt,type,amt){
@@ -1154,7 +1260,7 @@ function spawnPOIs(){
       let tx=cx+ox, ty=cy+oy;
       for(let tries=0;tries<14;tries++){
         if(poiCanPlaceTower(tx,ty)){
-          const tw=mkBuilding(BT.TOWER,tx,ty,'enemy');
+          const tw=mkBuilding(BT.TOWER,tx,ty,FAC.PILL);
           tw.level=towerLevel;
           tw.hp=tw.maxHp=Math.round(BDEF[BT.TOWER].hp*TOWER_LEVELS[towerLevel].hpMult);
           placeBuilding(tw);
@@ -1177,7 +1283,7 @@ function spawnPOIs(){
           const a=Math.random()*Math.PI*2, r=1+Math.random()*4;
           x=(cx+Math.cos(a)*r)*BASE_TILE+BASE_TILE/2; y=(cy+Math.sin(a)*r)*BASE_TILE+BASE_TILE/2;
         } while(++tries<20 && tileBlocked((x/BASE_TILE)|0,(y/BASE_TILE)|0));
-        const u=mkUnit(type,x,y,'enemy');
+        const u=mkUnit(type,x,y,FAC.PILL);
         u.hp=Math.round(u.hp*2.0*campHpMult*diff.enemyHp); u.maxHp=u.hp;
         u.atk=Math.round(u.atk*1.5*diff.enemyAtk);
         u.camp=camp; // exclu des vagues (updateWaves) — garde permanente
@@ -1246,21 +1352,27 @@ function nearestBy(x,y,r,pred){
 }
 
 // ── BROUILLARD DE GUERRE ──────────────────────────────────
+// Chaque faction humaine explore sa propre carte : en 1v1, ce que voit
+// l'adversaire ne doit rien révéler à l'autre. L'IA et les pillards n'ont
+// pas de calque (ils voient tout, comme avant).
 function revealFog(){
-  if(!G.fog.length) return;
-  const reveal=(tx,ty,rad)=>{
-    for(let dy=-rad;dy<=rad;dy++) for(let dx=-rad;dx<=rad;dx++){
-      if(dx*dx+dy*dy>rad*rad) continue;
-      const x=tx+dx, y=ty+dy;
-      if(x>=0&&y>=0&&x<COLS&&y<ROWS) G.fog[y][x]=2; // visible
+  for(const f of factionsHumaines()){
+    const fog=f.fog;
+    if(!fog||!fog.length) continue;
+    const reveal=(tx,ty,rad)=>{
+      for(let dy=-rad;dy<=rad;dy++) for(let dx=-rad;dx<=rad;dx++){
+        if(dx*dx+dy*dy>rad*rad) continue;
+        const x=tx+dx, y=ty+dy;
+        if(x>=0&&y>=0&&x<COLS&&y<ROWS) fog[y][x]=2; // visible
+      }
+    };
+    // Décroît visible -> exploré
+    for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) if(fog[y][x]===2) fog[y][x]=1;
+    for(const u of G.units) if(u.owner===f.id) reveal((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0, u.type===UT.ARC||u.type===UT.XBOW?7:5);
+    for(const b of G.buildings) if(b.owner===f.id){
+      const rad=b.type===BT.TOWER||b.type===BT.CASTLE?10:b.type===BT.TC?9:b.type===BT.OUTPOST?8:6;
+      reveal((b.tx+b.w/2)|0,(b.ty+b.h/2)|0,rad);
     }
-  };
-  // Décroît visible -> exploré
-  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) if(G.fog[y][x]===2) G.fog[y][x]=1;
-  for(const u of G.units) if(u.owner==='player') reveal((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0, u.type===UT.ARC||u.type===UT.XBOW?7:5);
-  for(const b of G.buildings) if(b.owner==='player'){
-    const rad=b.type===BT.TOWER||b.type===BT.CASTLE?10:b.type===BT.TC?9:b.type===BT.OUTPOST?8:6;
-    reveal((b.tx+b.w/2)|0,(b.ty+b.h/2)|0,rad);
   }
 }
 
@@ -1277,25 +1389,26 @@ function refreshNodePos(){
 const MIL_TYPES=[UT.MIL,UT.ARC,UT.KNIGHT,UT.PALADIN,UT.PIKE,UT.XBOW,UT.TREB,UT.RAM,UT.SCOUT];
 function isMilitary(type){ return MIL_TYPES.includes(type); }
 
-function mkUnit(type, wx, wy, owner='player'){
+// Les bonus de recherche et d'âge s'appliquent désormais à TOUT camp, lus
+// dans sa propre faction. Auparavant ils étaient réservés à owner==='player'
+// et l'IA devait se les réappliquer après coup (aiAdoptUnit) — le code est
+// plus court, et un second joueur humain les reçoit naturellement.
+function mkUnit(type, wx, wy, owner=FAC.P1){
   const d=UDEF[type];
+  const rech=rechercheDe(owner), age=ageOf(owner);
   let mhp=d.hp;
   const mil=isMilitary(type);
-  if(owner==='player'){
-    if(G.research.iron_armor&&mil) mhp=Math.round(mhp*1.3);
-    mhp=Math.round(mhp*AGE_BONUS[G.age].unitHp); // robustesse croissante avec l'âge
-  }
+  if(rech.iron_armor&&mil) mhp=Math.round(mhp*1.3);
+  mhp=Math.round(mhp*AGE_BONUS[age].unitHp); // robustesse croissante avec l'âge
   let rng=d.rng*BASE_TILE; // portée en unités-monde (BASE_TILE), fixe : ne dépend pas du zoom
-  if(owner==='player'&&G.research.longbow&&(type===UT.ARC||type===UT.XBOW)) rng*=1.5;
+  if(rech.longbow&&(type===UT.ARC||type===UT.XBOW)) rng*=1.5;
   const MELEE=[UT.MIL,UT.PIKE], RANGED=[UT.ARC,UT.XBOW], CAV=[UT.KNIGHT,UT.PALADIN,UT.SCOUT];
-  if(owner==='player'&&G.research.cavalry&&CAV.includes(type)) mhp=Math.round(mhp*1.2);
+  if(rech.cavalry&&CAV.includes(type)) mhp=Math.round(mhp*1.2);
   let atk=d.atk;
-  if(owner==='player'){
-    if(G.research.iron_sword&&MELEE.includes(type)) atk=Math.round(atk*1.25);
-    if(G.research.bow_craft&&RANGED.includes(type)) atk=Math.round(atk*1.25);
-    if(G.research.tactics&&mil) atk=Math.round(atk*1.2);
-    if(mil) atk=Math.round(atk*AGE_BONUS[G.age].milAtk); // ATK militaire croissant avec l'âge
-  }
+  if(rech.iron_sword&&MELEE.includes(type)) atk=Math.round(atk*1.25);
+  if(rech.bow_craft&&RANGED.includes(type)) atk=Math.round(atk*1.25);
+  if(rech.tactics&&mil) atk=Math.round(atk*1.2);
+  if(mil) atk=Math.round(atk*AGE_BONUS[age].milAtk); // ATK militaire croissant avec l'âge
   return {
     id:G.nid++, type, owner,
     x:wx, y:wy, destX:wx, destY:wy,
@@ -1305,19 +1418,18 @@ function mkUnit(type, wx, wy, owner='player'){
     gTimer:0, inv:0, invT:null, dropoff:null,
     buildTarget:null,
     pendingAction:null,
-    animT:Math.random()*6.28, dir:0, moving:false,
+    animT:(G.nid*2.399)%6.283, dir:0, moving:false, // dérivé de l'id : déterministe, et un champ d'aléa en moins dans l'état
     homeNode:null, // mémoire du dernier nœud récolté
   };
 }
 
-function mkBuilding(type,tx,ty,owner='player'){
+function mkBuilding(type,tx,ty,owner=FAC.P1){
   const d=BDEF[type];
+  const rech=rechercheDe(owner);
   let mhp=d.hp;
-  if(owner==='player'){
-    if(G.research.masonry) mhp=Math.round(mhp*1.25);
-    mhp=Math.round(mhp*AGE_BONUS[G.age].bldHp); // PV bâtiments croissants avec l'âge
-    if(G.research.engineering&&(type===BT.TOWER||type===BT.CASTLE)) mhp=Math.round(mhp*1.4);
-  }
+  if(rech.masonry) mhp=Math.round(mhp*1.25);
+  mhp=Math.round(mhp*AGE_BONUS[ageOf(owner)].bldHp); // PV bâtiments croissants avec l'âge
+  if(rech.engineering&&(type===BT.TOWER||type===BT.CASTLE)) mhp=Math.round(mhp*1.4);
   return {
     id:G.nid++, type, owner,
     tx,ty, w:d.w, h:d.h,
@@ -1361,14 +1473,18 @@ function toggleGate(b){
   refreshUI();
 }
 
+// Recalcule la capacité de population de CHAQUE camp : chacun ne loge que
+// dans ses propres Maisons, avec le bonus de SON âge.
 function updatePopCap(){
-  let cap=0;
+  const cap={};
+  for(const f of factionsJouantes()) cap[f.id]=0;
   for(const b of G.buildings){
-    if(b.owner!=='player') continue;
-    if(b.type===BT.HOUSE) cap+=AGE_BONUS[G.age].housePop; // capacité croissante avec l'âge
-    else { const d=BDEF[b.type]; if(d.popBonus) cap+=d.popBonus; }
+    if(cap[b.owner]==null) continue;
+    if(b.type===BT.HOUSE) cap[b.owner]+=AGE_BONUS[ageOf(b.owner)].housePop; // capacité croissante avec l'âge
+    else { const d=BDEF[b.type]; if(d.popBonus) cap[b.owner]+=d.popBonus; }
   }
-  G.maxPop=Math.min(cap,AGE_BONUS[G.age].popCap);
+  // Chaque camp est plafonné par le popCap de SON âge.
+  for(const f of factionsJouantes()) f.maxPop=Math.min(cap[f.id],AGE_BONUS[f.age].popCap);
 }
 
 // ── AMÉLIORATION DES TOURS DÉFENSIVES ──────────────────────
@@ -2931,8 +3047,33 @@ function applyStaticIcons(){
 }
 
 // Reconstruit tous les sprites (appelé au démarrage et au changement de zoom)
+// ── TEINTES DE FACTION ────────────────────────────────────
+// Le pixel art ne connaît que deux habillages : celui du joueur et une
+// variante rouge. Plutôt que de dupliquer les dizaines de couleurs codées en
+// dur pour chaque nouveau camp, on rejoue le sprite rouge à travers une
+// rotation de teinte : le résultat reste cohérent (mêmes ombres, mêmes
+// contrastes) pour un seul drawImage, généré paresseusement et uniquement
+// pour les teintes réellement présentes dans la partie.
+const TEINTE_HUE = { bleu:0, rouge:0, vert:118, violet:268 };
+function sprTeinte(kind,key,teinte){
+  const base=SPR[kind]&&SPR[kind][key];
+  const hue=TEINTE_HUE[teinte]||0;
+  if(!base||!hue) return base;
+  const store=SPR.teintes||(SPR.teintes={});
+  const parTeinte=store[teinte]||(store[teinte]={});
+  const sub=parTeinte[kind]||(parTeinte[kind]={});
+  if(sub[key]) return sub[key];
+  const {c,cx}=offCanvas(base.c.width,base.c.height);
+  cx.filter='hue-rotate('+hue+'deg)';
+  cx.drawImage(base.c,0,0);
+  cx.filter='none';
+  sub[key]=Object.assign({},base,{c,cx});
+  return sub[key];
+}
+
 function buildSprites(){
   SPR.refT=TILE;   // échelle de référence des sprites générés
+  SPR.teintes=null; // les variantes teintées dérivent des sprites : à refaire
   const T=TILE*SS; // génération haute résolution
   buildTerrain(T);
   buildTrees(T);
@@ -3005,7 +3146,7 @@ function drawNightGlow(){
   ctx.globalCompositeOperation='lighter';
   const amp=0.85+Math.sin(G.gameTime*3)*0.15; // vacillement doux de flamme
   for(const b of G.buildings){
-    if(b.owner!=='player'||b.constructing||!GLOW_BLDS.includes(b.type)) continue;
+    if(!estLocal(b)||b.constructing||!GLOW_BLDS.includes(b.type)) continue;
     const{x:sx,y:sy}=ws(b.x,b.y);
     if(sx<-80||sx>W+80||sy<0||sy>H+80) continue;
     const r=TILE*1.7;
@@ -3132,12 +3273,16 @@ function drawBuildings(){
     const{x:sx,y:sy}=ws(b.x,b.y);
     if(sx<-pw*2||sx>W+pw*2||sy<54-ph*2||sy>H+ph*2) continue;
     const bx=sx-pw/2, by=sy-ph/2;
-    const isEn=b.owner==='enemy';
+    const teinte=(fac(b)||{}).teinte||'rouge';
+    const ageB=ageOf(b.owner);
     const lvlSuffix=(b.type===BT.TOWER&&(b.level||1)>=2)?'_L'+b.level
-                   :((b.type===BT.TC||b.type===BT.BARRACKS||b.type===BT.WALL)&&G.age>0)?'_A'+G.age
+                   :((b.type===BT.TC||b.type===BT.BARRACKS||b.type===BT.WALL)&&ageB>0)?'_A'+ageB
                    :(b.type===BT.GATE&&b.open)?'_OPEN'
                    :'';
-    const spr=SPR.bld[b.type+lvlSuffix+(isEn?'_E':'')]||SPR.bld[b.type+(isEn?'_E':'')];
+    // Les habillages d'âge suivent l'âge du PROPRIÉTAIRE, pas celui du joueur
+    // local : en 1v1 les deux camps ne progressent pas au même rythme.
+    const suf=(teinte==='bleu')?'':'_E';
+    const spr=sprTeinte('bld',b.type+lvlSuffix+suf,teinte)||sprTeinte('bld',b.type+suf,teinte);
     const k=TILE/(SPR.refT||TILE); // facteur si zoom en cours (sprites pas encore régénérés)
     if(spr){
       // le sprite a une marge haute (oy) pour les toits en relief
@@ -3158,7 +3303,7 @@ function drawBuildings(){
         ctx.drawImage(spr.c, Math.round(bx), sy0, dw, dh);
       }
     } else {
-      ctx.fillStyle=isEn?'#8b1a1a':'#8a6a3a'; ctx.fillRect(bx,by,pw,ph);
+      ctx.fillStyle=(teinte==='bleu')?'#8a6a3a':couleurMinimap(b,false); ctx.fillRect(bx,by,pw,ph);
     }
     // contour de sélection
     if(G.sel.includes(b.id)){
@@ -3215,11 +3360,12 @@ function drawUnits(){
     const{x:sx,y:sy}=ws(u.x,u.y);
     if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
     // masquer ennemis dans le brouillard non-visible
-    if(u.owner==='enemy'&&G.fog.length){
+    if(!estLocal(u)&&G.fog.length){
       const fx=(u.x/BASE_TILE)|0, fy=(u.y/BASE_TILE)|0;
       if(fx>=0&&fy>=0&&fx<COLS&&fy<ROWS&&G.fog[fy][fx]!==2) continue;
     }
-    const spr0=SPR.unit[u.type];
+    const teinteU=(fac(u)||{}).teinte||'rouge';
+    const spr0=sprTeinte('unit',u.type,teinteU);
     const S=(spr0?spr0.S:TILE*0.85)*(TILE/(SPR.refT||TILE));
     // bobbing en mouvement
     const bob=u.moving?Math.abs(Math.sin(u.animT*9))*2.5:0;
@@ -3228,8 +3374,8 @@ function drawUnits(){
     let spr=spr0;
     if(u.moving){
       const cyc=Math.sin(u.animT*9);
-      if(cyc>0.2&&SPR.unit[u.type+'_W1']) spr=SPR.unit[u.type+'_W1'];
-      else if(cyc<-0.2&&SPR.unit[u.type+'_W2']) spr=SPR.unit[u.type+'_W2'];
+      if(cyc>0.2&&SPR.unit[u.type+'_W1']) spr=sprTeinte('unit',u.type+'_W1',teinteU);
+      else if(cyc<-0.2&&SPR.unit[u.type+'_W2']) spr=sprTeinte('unit',u.type+'_W2',teinteU);
     }
     // pichenette d'attaque : bref déplacement vers la cible juste après le
     // coup (atkCd revient à son maximum à l'impact), qui s'estompe vite —
@@ -3252,7 +3398,7 @@ function drawUnits(){
     // l'adversaire aligne des VILLAGEOIS — dont le sprite est identique à
     // ceux du joueur : sans ce repère au sol, impossible de distinguer un
     // ouvrier ennemi du sien au milieu d'un gisement disputé.
-    if(u.owner==='enemy'){
+    if(!estLocal(u)){
       ctx.strokeStyle='rgba(231,76,60,.55)'; ctx.lineWidth=1.5;
       ctx.beginPath(); ctx.ellipse(sx,sy,S*0.27,S*0.13,0,0,Math.PI*2); ctx.stroke();
     }
@@ -3339,7 +3485,7 @@ function drawProjs(){
       const ang=Math.atan2(p.ty-p.y,p.tx-p.x)+(prog-0.5)*0.5;
       ctx.save();
       ctx.translate(sx,bsy); ctx.rotate(ang);
-      const col=p.enemy?'#e88':'#fd0';
+      const col=(p.owner&&p.owner!==G.me)?'#e88':'#fd0'; // trait ennemi plus terne que le nôtre
       ctx.strokeStyle='#8a5a2a'; ctx.lineWidth=1.6;
       ctx.beginPath(); ctx.moveTo(-6,0); ctx.lineTo(4,0); ctx.stroke();
       ctx.fillStyle=col; // pointe
@@ -3516,16 +3662,16 @@ function drawMinimap(){
   // Bâtiments : les nôtres toujours visibles, ceux ennemis seulement une
   // fois leur case explorée (mémorisés ensuite, comme sur la carte).
   for(const b of G.buildings){
-    if(b.owner!=='player'&&fogTileAt(b.tx,b.ty)===0) continue;
-    mctx.fillStyle=b.owner==='player'?'#3498db':'#e74c3c';
+    if(!estLocal(b)&&fogTileAt(b.tx,b.ty)===0) continue;
+    mctx.fillStyle=couleurMinimap(b,false);
     mctx.fillRect(b.tx*scx*BASE_TILE,b.ty*scy*BASE_TILE,b.w*scx*BASE_TILE+2,b.h*scy*BASE_TILE+2);
   }
   // Unités : les nôtres toujours visibles, celles ennemies seulement dans
   // le rayon de vision actuel (elles disparaissent hors de vue, contrairement
   // aux bâtiments qui laissent une trace mémorisée).
   for(const u of G.units){
-    if(u.owner==='enemy'&&fogTileAt((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0)!==2) continue;
-    mctx.fillStyle=u.owner==='player'?'#5dade2':'#ff6666';
+    if(!estLocal(u)&&fogTileAt((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0)!==2) continue;
+    mctx.fillStyle=couleurMinimap(u,true);
     mctx.fillRect(u.x*scx-1,u.y*scy-1,3,3);
   }
   // Viewport — G.cam et W/gameH() sont en pixels écran zoomés, scx/scy en
@@ -3583,8 +3729,8 @@ function update(dt){
   if(G.statsTick<=0){
     G.statsTick=1;
     let mil=0, farms=0;
-    for(const u of G.units) if(u.owner==='player'&&isMilitary(u.type)) mil++;
-    for(const b of G.buildings) if(b.owner==='player'&&b.type===BT.FARM&&!b.constructing) farms++;
+    for(const u of G.units) if(estLocal(u)&&isMilitary(u.type)) mil++;
+    for(const b of G.buildings) if(estLocal(b)&&b.type===BT.FARM&&!b.constructing) farms++;
     G.stats.peakMil=Math.max(G.stats.peakMil,mil);
     G.stats.peakFarms=Math.max(G.stats.peakFarms,farms);
     // Camps de points d'intérêt entièrement nettoyés (numérotés à la genèse)
@@ -3594,16 +3740,26 @@ function update(dt){
     checkAchievements();
   }
 
-  // Game over si TC détruit
-  if(!G.buildings.find(b=>b.type===BT.TC&&b.owner==='player')&&!G.gameOver){
-    G.gameOver=true; showGameOver();
+  // Élimination : une faction sans Centre Ville est hors jeu. On l'annonce
+  // une seule fois (f.vaincu), ce qui permet à une partie à trois camps de
+  // continuer après la chute du premier.
+  for(const f of factionsJouantes()){
+    if(f.vaincu) continue;
+    if(!G.buildings.find(b=>b.type===BT.TC&&b.owner===f.id)){
+      f.vaincu=true;
+      if(f.id!==G.me) notify(`💀 ${f.nom} a été éliminé`,'#f0c040');
+    }
   }
-  // Victoire — Survie : survivre à targetWaves. Conquête : raser le Centre
-  // Ville adverse (la partie n'a alors aucune vague, targetWaves vaut 0, d'où
-  // la garde sur le mode : sans elle, Conquête serait gagnée à la 1ère image).
+  // Défaite locale
+  if(moi()&&moi().vaincu&&!G.gameOver){ G.gameOver=true; showGameOver(); }
+  // Victoire — Survie : survivre à targetWaves. Conquête : plus aucun camp
+  // hostile debout (la partie n'a alors aucune vague, targetWaves vaut 0,
+  // d'où la garde sur le mode : sans elle, Conquête serait gagnée à la
+  // 1ère image).
   if(!G.victory&&!G.gameOver){
-    if(G.gmode==='conquest'){
-      if(G.ai&&!G.buildings.find(b=>b.type===BT.TC&&b.owner==='enemy')){ G.victory=true; showVictory(); }
+    if(G.gmode!=='survival'){
+      const rivaux=factionsJouantes().filter(f=>f.id!==G.me&&f.equipe!==(moi()?moi().equipe:-1));
+      if(rivaux.length&&rivaux.every(f=>f.vaincu)){ G.victory=true; showVictory(); }
     } else if(G.wave>=G.targetWaves&&!G.waveActive){
       G.victory=true; showVictory();
     }
@@ -3629,12 +3785,12 @@ function updateAgeUp(dt){ // (auto-sauvegarde déclenchée à la fin du passage 
     // l'amélioration de tour), pour CHAQUE palier, pas seulement le premier
     // et le dernier comme avant. L'ATK militaire suit la même logique.
     const ob=AGE_BONUS[oldAge], nb=AGE_BONUS[G.age];
-    for(const b of G.buildings) if(b.owner==='player'){
+    for(const b of G.buildings) if(estLocal(b)){
       const newMax=Math.round(b.maxHp/ob.bldHp*nb.bldHp);
       const dmg=b.maxHp-b.hp;
       b.maxHp=newMax; b.hp=Math.max(1,newMax-dmg);
     }
-    for(const u of G.units) if(u.owner==='player'){
+    for(const u of G.units) if(estLocal(u)){
       const newMaxHp=Math.round(u.maxHp/ob.unitHp*nb.unitHp);
       const dmg=u.maxHp-u.hp;
       u.maxHp=newMaxHp; u.hp=Math.max(1,newMaxHp-dmg);
@@ -3650,8 +3806,9 @@ function updateUnits(dt){
     u.atkCd=Math.max(0,u.atkCd-dt);
     if(u.pathCd) u.pathCd=Math.max(0,u.pathCd-dt);
     if(u.hitFlash) u.hitFlash=Math.max(0,u.hitFlash-dt);
-    if(u.owner==='player') updatePlayerUnit(u,dt);
-    else if(u.ai&&u.type===UT.VIL) updateAIVillager(u,dt);
+    const fu=fac(u);
+    if(fu&&fu.genre==='humain') updatePlayerUnit(u,dt);
+    else if(estIA(u)&&u.type===UT.VIL) updateAIVillager(u,dt);
     if(u.moving) u.animT+=dt; // anim de marche uniquement en mouvement
   }
   // Mort
@@ -3659,17 +3816,20 @@ function updateUnits(dt){
   for(const u of dead){
     G.sel=G.sel.filter(id=>id!==u.id);
     for(const n of G.nodes) n.gatherers=n.gatherers.filter(id=>id!==u.id);
-    spawnParts(u.x,u.y,u.owner==='enemy'?'#e74c3c':'#3498db',8);
+    spawnParts(u.x,u.y,couleurMinimap(u,true),8);
     G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1}); // silhouette qui bascule au sol et s'estompe, plutôt qu'une disparition instantanée
     sfx('death');
-    if(u.owner==='player'){ G.pop--; G.stats.lost++; }
+    const fm=fac(u); if(fm) fm.pop--;
+    if(estLocal(u)){ moi().stats.lost++; }
     else {
-      G.stats.killed++;
+      // Le kill est crédité à la faction qui a porté le coup fatal.
+      const tueur=fac(u.dernierAgresseur);
+      if(tueur) tueur.stats.killed++;
       if(u.type===UT.ENEMI_BOSS) G.stats.bossKilled++;
       // Une unité de l'IA de Conquête appartient à une économie réelle : elle
       // compte dans SA population, et ne verse pas de prime au joueur (sans
       // quoi harceler l'adversaire financerait la partie à sa place).
-      if(u.ai){ if(G.ai) G.ai.pop--; }
+      // (population deja decrementee plus haut, par faction)
       else { // récompense or à la mort d'un pillard de vague
         const bounty=u.type===UT.ENEMI_BOSS?200:u.type===UT.ENEMI_G?15:u.type===UT.ENEMI_C?8:4;
         G.res.gold+=bounty;
@@ -3698,10 +3858,10 @@ function updatePlayerUnit(u,dt){
       if(u.scanCd<=0){
         u.scanCd=0.25+Math.random()*0.15;   // désynchronise les unités entre elles
         if(u.type===UT.MONK){
-          const ally=nearInjuredAlly(u.x,u.y,6*BASE_TILE,u.id);
+          const ally=nearInjuredAlly(u.x,u.y,6*BASE_TILE,u.id,u.owner);
           if(ally){u.state='heal';u.target=ally.id;}
         } else if(u.type===UT.VIL){
-          if(G.autoRepair){
+          if(fac(u)&&fac(u).autoRepair){
             const b=nearestDamagedBuilding(u.x,u.y);
             if(b){ u.state='repair'; u.target=b.id; }
           }
@@ -3709,7 +3869,7 @@ function updatePlayerUnit(u,dt){
           const st=u.stance||'agg';
           // Tenir position : ne riposte que si l'ennemi entre dans sa portée
           const r=st==='hold'?u.rng+8:st==='def'?u.rng*1.8:u.rng*3.5;
-          const e=nearEnemy(u.x,u.y,r);
+          const e=prochainHostileUnite(u.x,u.y,r,u);
           if(e){u.state='attack';u.target=e.id;}
         }
       }
@@ -3722,7 +3882,7 @@ function doAMove(u,dt){
   u.scanCd=(u.scanCd||0)-dt;
   if(u.scanCd<=0){
     u.scanCd=0.25+Math.random()*0.15;
-    const e=nearEnemy(u.x,u.y,u.rng*3.5);
+    const e=prochainHostileUnite(u.x,u.y,u.rng*3.5,u);
     if(e){ u.state='attack'; u.target=e.id; return; }
   }
   if(Math.hypot(u.destX-u.x,u.destY-u.y)<BASE_TILE*0.5){
@@ -3733,24 +3893,24 @@ function doAMove(u,dt){
 
 function doHeal(u,dt){
   const _t=unitById(u.target);
-  const tgt=(_t&&_t.owner==='player'&&_t.hp<_t.maxHp)?_t:null;
+  const tgt=(_t&&_t.owner===u.owner&&_t.hp<_t.maxHp)?_t:null; // on ne soigne que les siens
   if(!tgt){u.state='idle';u.target=null;return;}
   const dx=tgt.x-u.x,dy=tgt.y-u.y,d=Math.sqrt(dx*dx+dy*dy);
   if(d>BASE_TILE*2.2){u.destX=tgt.x;u.destY=tgt.y;moveTo(u,dt);return;}
   u.atkCd-=dt;
   if(u.atkCd<=0){
     u.atkCd=1.0;
-    const heal=G.research.faith?5:3;
+    const heal=rechercheDe(u.owner).faith?5:3;
     tgt.hp=Math.min(tgt.maxHp,tgt.hp+heal);
     addFText(tgt.x,tgt.y-14,`+${heal}`,'#2ecc71');
     if(tgt.hp>=tgt.maxHp){u.state='idle';u.target=null;}
   }
 }
 
-function nearInjuredAlly(x,y,r,selfId){
+function nearInjuredAlly(x,y,r,selfId,owner=FAC.P1){
   let best=null,bd=r,lowestHp=Infinity;
   for(const u of G.units){
-    if(u.owner!=='player'||u.hp>=u.maxHp||u.id===selfId) continue;
+    if(u.owner!==owner||u.hp>=u.maxHp||u.id===selfId) continue;
     const d=Math.hypot(u.x-x,u.y-y);
     if(d<bd&&u.hp<lowestHp){bd=d;best=u;lowestHp=u.hp;}
   }
@@ -4009,15 +4169,8 @@ function farmSpot(u,f){
 }
 
 
-// Réserve de ressources d'un camp. Le joueur puise dans G.res, l'adversaire
-// de Conquête dans G.ai.res : toute la chaîne de récolte (dépôt, coûts,
-// construction, entraînement) passe par ici plutôt que d'écrire G.res en dur,
-// sans quoi les villageois de l'IA rempliraient les caisses du joueur.
-function resPool(owner){ return owner==='player'?G.res:(G.ai?G.ai.res:null); }
-// Âge du camp : les bonus de récolte/PV/ATK des deux adversaires progressent
-// indépendamment, chacun payant ses propres montées d'âge.
-function ageOf(owner){ return owner==='player'?G.age:(G.ai?G.ai.age:0); }
-function gatherMult(owner){ return AGE_BONUS[ageOf(owner||'player')].gather; } // récolte croissante à chaque âge
+// (resPool / ageOf / gatherMult sont désormais définis avec les factions,
+//  plus haut : ce sont des lectures de table, plus des ternaires codés en dur.)
 
 function doGather(u,dt){
   const n=nodeById(u.target);
@@ -4105,7 +4258,7 @@ function doFarm(u,dt){
 // Réparation d'un bâtiment endommagé par un villageois
 const REPAIR_RATE=14; // PV/s
 function doRepair(u,dt){
-  const _b=bldById(u.target), b=(_b&&_b.owner==='player')?_b:null;
+  const _b=bldById(u.target), b=(_b&&_b.owner===u.owner)?_b:null; // on ne bâtit/répare que chez soi
   if(!b||b.hp>=b.maxHp||b.constructing){
     if(b&&b.hp>=b.maxHp) addFText(b.x,b.y-20,'Réparé !','#2ecc71');
     u.state='idle'; u.target=null; return;
@@ -4118,7 +4271,7 @@ function doRepair(u,dt){
   if(Math.random()<dt*3) spawnParts(b.x+(Math.random()-0.5)*b.w*BASE_TILE, b.y+(Math.random()-0.5)*b.h*BASE_TILE,'#f1c40f',1);
 }
 
-function findNearestFarm(x,y,allowEmpty,owner='player'){
+function findNearestFarm(x,y,allowEmpty,owner=FAC.P1){
   let best=null,bd=Infinity;
   for(const b of G.buildings){
     if(b.owner!==owner||b.type!==BT.FARM||b.constructing) continue;
@@ -4218,9 +4371,9 @@ function doReturn(u,dt){
   if(rk){
     const pool=resPool(u.owner);
     if(pool) pool[rk]+=u.inv;
-    if(u.owner==='player'){
+    const fg=fac(u.owner); if(fg) fg.stats.gathered[rk]+=u.inv;
+    if(estLocal(u)){ // retours d'interface : seulement pour le joueur local
       G.rateAcc[rk]=(G.rateAcc[rk]||0)+u.inv;
-      G.stats.gathered[rk]+=u.inv;
       addFText(b.x,b.y-16,`+${u.inv}`,rk==='gold'?'#f0c040':rk==='wood'?'#8fbc44':rk==='stone'?'#bbb':'#e8d5a0');
       sfx('drop');
     }
@@ -4265,12 +4418,12 @@ function doBuild(u,dt){
     // Un chantier adverse ne doit pas déclencher les retours destinés au
     // joueur (son : sfx, bannière plein écran, notification) : seule la
     // particule de fin reste, visible uniquement si la zone est explorée.
-    if(b.owner==='player'){
+    const fb=fac(b.owner);
+    if(fb){ fb.stats.built++; if(b.type===BT.WALL) fb.stats.wallsBuilt++; }
+    if(estLocal(b)){
       sfx('build');
       notify(`${BDEF[b.type].nom} construite !`,'#2ecc71');
       bigBanner(`✅ ${BDEF[b.type].nom}`);
-      G.stats.built++;
-      if(b.type===BT.WALL) G.stats.wallsBuilt++;
     }
     spawnParts(b.x,b.y,'#2ecc71',10);
     updatePopCap();
@@ -4306,17 +4459,17 @@ function doAttack(u,dt){
     // Bonus siège vs bâtiments
     const isB=bldById(tgt.id);
     if(UDEF[u.type].siege&&isB) dmg=Math.round(dmg*1.5);
-    if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,false,dmg);
-    else dealDmg(tgt,dmg);
+    if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,dmg);
+    else dealDmg(tgt,dmg,u);
   }
 }
 
 function updateBuildings(dt){
   for(const b of G.buildings){
     if(!b.active||b.constructing) continue;
-    if(b.type===BT.FARM&&b.owner==='player') tryAutoReseed(b);
+    if(b.type===BT.FARM&&estLocal(b)) tryAutoReseed(b);
     // Production continue : réenfile un villageois dès que la file est vide
-    if(b.type===BT.TC&&b.owner==='player'&&b.autoTrain&&b.trainQ.length===0
+    if(b.type===BT.TC&&estLocal(b)&&b.autoTrain&&b.trainQ.length===0
        &&G.pop<G.maxPop&&canAfford(TCOST[UT.VIL])){
       spend(TCOST[UT.VIL]); b.trainQ.push(UT.VIL); b.trainTimer=TTIME[UT.VIL];
     }
@@ -4326,9 +4479,7 @@ function updateBuildings(dt){
       b.trainTimer-=dt;
       if(b.trainTimer<=0){
         const type=b.trainQ[0];
-        const isP=b.owner==='player';
-        const pop=isP?G.pop:(G.ai?G.ai.pop:0);
-        const cap=isP?G.maxPop:(G.ai?G.ai.maxPop:0);
+        const pop=popDe(b.owner), cap=maxPopDe(b.owner);
         if(pop<cap){
           b.trainQ.shift();
           spawnUnit(type,b,b.owner);
@@ -4347,8 +4498,8 @@ function updateBuildings(dt){
       if(b.type===BT.CASTLE){ range=9*BASE_TILE; atk=30; cd=1.2; }
       else { const lv=TOWER_LEVELS[b.level||1]; range=lv.range*BASE_TILE; atk=lv.atk; cd=lv.cd; }
       if(b.atkCd<=0){
-        const e=b.owner==='player'?nearEnemyAll(b.x,b.y,range):nearPlayerUnit(b.x,b.y,range);
-        if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:b.owner},e,b.owner==='enemy'); }
+        const e=prochainHostileToute(b.x,b.y,range,b);
+        if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:b.owner},e); }
       }
     }
   }
@@ -4358,13 +4509,10 @@ function updateBuildings(dt){
     G.sel=G.sel.filter(id=>id!==b.id);
     for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++) G.bmap[b.ty+dy][b.tx+dx]=0;
     spawnParts(b.x,b.y,'#e74c3c',14);
-    if(b.owner==='player'){
-      G.stats.bldLost++;
-      notify(`${BDEF[b.type].nom} détruite !`,'#e74c3c');
-    } else {
-      G.stats.bldDestroyed++;
-      notify(`💥 ${BDEF[b.type].nom} ennemie détruite !`,'#2ecc71');
-    }
+    const fv=fac(b.owner); if(fv) fv.stats.bldLost++;
+    const fk=fac(b.dernierAgresseur); if(fk&&fk!==fv) fk.stats.bldDestroyed++;
+    if(estLocal(b)) notify(`${BDEF[b.type].nom} détruite !`,'#e74c3c');
+    else if(fk&&fk.id===G.me) notify(`💥 ${BDEF[b.type].nom} ennemie détruite !`,'#2ecc71');
     updatePopCap();
   }
   G.buildings=G.buildings.filter(b=>b.hp>0);
@@ -4376,14 +4524,18 @@ function spawnUnit(type,building,owner){
   const wy=(building.ty+d.h)*BASE_TILE+BASE_TILE*.6;
   const u=mkUnit(type,wx,wy,owner);
   // Point de ralliement
-  if(owner==='player'&&building.rally){
+  if(building.rally){
     u.destX=building.rally.x+(Math.random()-.5)*BASE_TILE;
     u.destY=building.rally.y+(Math.random()-.5)*BASE_TILE;
     u.state='moving';
   }
   G.units.push(u);
-  if(owner==='player'){ G.pop++; sfx('train'); G.stats.trained++; }
-  else if(building.ai) aiAdoptUnit(u); // bonus d'âge/difficulté + poste de garde
+  const fo=fac(owner);
+  if(fo){ fo.pop++; fo.stats.trained++; }
+  if(estLocal(u)) sfx('train');
+  // Les bonus d'âge/recherche sont désormais appliqués par mkUnit pour TOUS
+  // les camps : l'IA n'a plus qu'à poster sa recrue en garde.
+  if(estIA(u)) aiAdoptUnit(u,fo);
   return u;
 }
 
@@ -4396,10 +4548,10 @@ const GUARD_AGGRO_RADIUS = BASE_TILE*7;
 // Variante bornée de nearPlayerBuildingSmart, pour les gardes de camp
 // uniquement : un bâtiment du joueur ne les intéresse que s'il empiète sur
 // leur zone de garde (ex. le joueur construit collé au camp).
-function nearPlayerBuildingWithin(x,y,r){
+function nearPlayerBuildingWithin(x,y,r,src){
   let best=null,bd=r*r;
   for(const b of G.buildings){
-    if(b.owner!=='player'||b.type===BT.WALL) continue;
+    if(!estHostile(src,b)||b.type===BT.WALL) continue;
     const dx=b.x-x,dy=b.y-y,d2=dx*dx+dy*dy;
     if(d2<bd){bd=d2;best=b;}
   }
@@ -4408,12 +4560,12 @@ function nearPlayerBuildingWithin(x,y,r){
 
 function updateEnemyAI(dt){
   for(const u of G.units){
-    if(u.owner!=='enemy') continue;
+    if(fac(u)&&fac(u).genre==='humain') continue; // assaillants : IA et pillards
     // Les villageois de l'IA de Conquête vivent sur la machine à états du
     // joueur (récolte, dépôt, chantier — voir updateAIVillager) : les faire
     // aussi passer par la boucle de combat les enverrait charger l'ennemi
     // au lieu de travailler.
-    if(u.ai&&u.type===UT.VIL) continue;
+    if(estIA(u)&&u.type===UT.VIL) continue;
     u.atkCd=Math.max(0,u.atkCd-dt);
     // Reciblage 4×/s au lieu de 60×/s : le déplacement reste fluide, mais on
     // ne rebalaie plus tout le voisinage à chaque image (c'était 70% du CPU).
@@ -4421,7 +4573,7 @@ function updateEnemyAI(dt){
     let tgt=null;
     if(u.aiCd>0&&u.target!=null){
       tgt=unitById(u.target)||bldById(u.target);
-      if(tgt&&(tgt.hp<=0||tgt.owner!=='player')) tgt=null;
+      if(tgt&&(tgt.hp<=0||!estHostile(u,tgt))) tgt=null;
     }
     if(!tgt){
       u.aiCd=0.25+Math.random()*0.15;                     // désynchronise les ennemis
@@ -4430,13 +4582,13 @@ function updateEnemyAI(dt){
         // de garde, jamais à un bâtiment repéré à l'autre bout de la carte
         // comme un pillard de vague — le camp doit rester dormant tant
         // qu'on ne vient pas l'attaquer.
-        tgt=nearestBy(u.campX,u.campY,GUARD_AGGRO_RADIUS,e=>e.owner==='player'&&e.hp>0)
-          ||nearPlayerBuildingWithin(u.campX,u.campY,GUARD_AGGRO_RADIUS);
+        tgt=nearestBy(u.campX,u.campY,GUARD_AGGRO_RADIUS,e=>e.hp>0&&estHostile(u,e))
+          ||nearPlayerBuildingWithin(u.campX,u.campY,GUARD_AGGRO_RADIUS,u);
       } else {
         // Stratégie : villageois proche (cible molle) > unité militaire proche > bâtiment prioritaire
-        tgt=nearPlayerUnitType(u.x,u.y,u.rng*4,UT.VIL)   // chasse les villageois
-          ||nearPlayerUnit(u.x,u.y,u.rng*3)               // sinon militaire proche
-          ||nearPlayerBuildingSmart(u.x,u.y);             // sinon bâtiment intelligent
+        tgt=nearestBy(u.x,u.y,u.rng*4,e=>e.type===UT.VIL&&e.hp>0&&estHostile(u,e)) // chasse les villageois
+          ||prochainHostileUnite(u.x,u.y,u.rng*3,u)      // sinon militaire proche
+          ||nearPlayerBuildingSmart(u.x,u.y,u);          // sinon bâtiment intelligent
       }
       u.target=tgt?tgt.id:null;
     }
@@ -4462,7 +4614,7 @@ function updateEnemyAI(dt){
           const nx=u.x+dx/d*spd, ny=u.y+dy/d*spd;
           const w=blockingBuildingAt(nx,ny)||blockingBuildingAt(u.x+Math.sign(dx)*BASE_TILE*0.6,u.y)||blockingBuildingAt(u.x,u.y+Math.sign(dy)*BASE_TILE*0.6);
           if(w){ tgt=w; u.target=w.id; u.state='attack'; u.moving=false;
-            if(u.atkCd<=0){ u.atkCd=1/u.atkSpd; dealDmg(w,u.atk); } }
+            if(u.atkCd<=0){ u.atkCd=1/u.atkSpd; dealDmg(w,u.atk,u); } }
         }
       }
     } else {
@@ -4472,15 +4624,15 @@ function updateEnemyAI(dt){
         let dmg=u.atk;
         const isB=bldById(tgt.id);
         if(u.type===UT.ENEMI_BOSS&&isB) dmg=Math.round(dmg*1.6); // boss casse les murs vite
-        if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,true,dmg);
-        else dealDmg(tgt,dmg);
+        if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,dmg);
+        else dealDmg(tgt,dmg,u);
       }
     }
   }
 }
 
 // Ciblage bâtiment intelligent : préfère éco (villageois-producteurs) puis TC
-function nearPlayerBuildingSmart(x,y){
+function nearPlayerBuildingSmart(x,y,src){
   const prio={[BT.MILL]:3,[BT.FARM]:3,[BT.LUMBER]:3,[BT.MINE]:3,[BT.MARKET]:2,
               [BT.HOUSE]:2,[BT.TC]:4,[BT.FORGE]:1,[BT.UNIV]:1};
   let best=null,bestScore=-Infinity;
@@ -4491,7 +4643,7 @@ function nearPlayerBuildingSmart(x,y){
     // ement au lieu de chercher un chemin — la logique de repli plus bas
     // (n'attaquer un mur QUE si le pathfinding échoue vraiment) n'était
     // alors jamais consultée.
-    if(b.owner!=='player'||b.type===BT.WALL) continue;
+    if(!estHostile(src,b)||b.type===BT.WALL) continue;
     const d=Math.hypot(b.x-x,b.y-y);
     const p=prio[b.type]||0.5;
     // score : priorité élevée et proche = meilleur
@@ -4501,22 +4653,58 @@ function nearPlayerBuildingSmart(x,y){
   return best;
 }
 
-function nearPlayerUnitType(x,y,r,type){
-  return nearestBy(x,y,r,u=>u.owner==='player'&&u.type===type);
+// ── CIBLAGE ─────────────────────────────────────────────
+// Le ciblage était binaire (joueur contre 'enemy'). Il passe par estHostile(),
+// qui connaît les équipes : indispensable dès qu'un troisième camp existe.
+// `src` est l'entité qui cherche une cible (on lit son owner).
+function prochainHostileUnite(x,y,r,src){
+  return nearestBy(x,y,r,u=>u.hp>0&&estHostile(src,u));
+}
+// Unités ET bâtiments hostiles (les tours prennent aussi les bâtiments).
+function prochainHostileToute(x,y,r,src){
+  const u=prochainHostileUnite(x,y,r,src);
+  if(u) return u;
+  let best=null,bd=r;
+  for(const b of G.buildings){
+    if(b.hp<=0||!estHostile(src,b)) continue;
+    const d=Math.hypot(b.x-x,b.y-y);
+    if(d<bd){bd=d;best=b;}
+  }
+  return best;
+}
+// Allié (même camp) du type demandé — sert à l'IA et aux gardes.
+function prochainAllieType(x,y,r,type,src){
+  return nearestBy(x,y,r,u=>u.owner===(src&&src.owner)&&u.type===type);
 }
 
+// Enveloppes historiques, liées à la faction LOCALE : conservées pour le code
+// d'interface (survol, mini-carte, anneaux de sélection) qui raisonne
+// toujours du point de vue du joueur qui regarde.
+function nearPlayerUnitType(x,y,r,type){
+  return nearestBy(x,y,r,u=>estLocal(u)&&u.type===type);
+}
 function nearEnemy(x,y,r){
-  return nearestBy(x,y,r,u=>u.owner==='enemy'&&u.hp>0);
+  return nearestBy(x,y,r,u=>u.hp>0&&estHostile(moi()&&{owner:G.me},u));
 }
 function nearEnemyAll(x,y,r){ return nearEnemy(x,y,r); }
 function nearPlayerUnit(x,y,r){
-  return nearestBy(x,y,r,u=>u.owner==='player'&&u.hp>0);
+  return nearestBy(x,y,r,u=>estLocal(u)&&u.hp>0);
 }
 
-function shootProj(from,tgt,isEnemy,dmg){
+// Couleur d'un camp sur la mini-carte (unités légèrement plus claires).
+const COUL_FACTION={ bleu:['#3498db','#5dade2'], vert:['#27ae60','#52d68a'],
+                     rouge:['#e74c3c','#ff6666'], violet:['#8e44ad','#b07cc6'] };
+function couleurMinimap(e,unite){
+  const f=fac(e), c=COUL_FACTION[f?f.teinte:'rouge']||COUL_FACTION.rouge;
+  return unite?c[1]:c[0];
+}
+
+// Le booléen `isEnemy` ne servait qu'à colorer le trait : on mémorise
+// désormais le camp tireur, qui donne la teinte ET crédite les dégâts.
+function shootProj(from,tgt,dmg){
   const d0=Math.max(1,Math.hypot(tgt.x-from.x,tgt.y-from.y));
   G.projs.push({id:G.nid++,x:from.x,y:from.y,tx:tgt.x,ty:tgt.y,
-    targetId:tgt.id,atk:dmg!=null?dmg:from.atk,spd:8*BASE_TILE,enemy:isEnemy,life:1,d0,
+    targetId:tgt.id,atk:dmg!=null?dmg:from.atk,spd:8*BASE_TILE,owner:from.owner,life:1,d0,
     siege:!!(from.type&&UDEF[from.type]&&UDEF[from.type].siege)});
 }
 
@@ -4524,7 +4712,10 @@ function shootProj(from,tgt,isEnemy,dmg){
 // Les impacts s'accumulent sans jamais dépasser la plus forte secousse en cours.
 function shakeScreen(mag){ G.shake.mag=Math.max(G.shake.mag,mag); }
 
-function dealDmg(tgt,dmg){
+// `source` : l'entité (ou le camp) qui frappe — mémorisée sur la cible pour
+// créditer le bon camp du kill ou de la destruction.
+function dealDmg(tgt,dmg,source){
+  if(source) tgt.dernierAgresseur=(typeof source==='string')?source:source.owner;
   tgt.hp=Math.max(0,tgt.hp-dmg);
   sfx('hit');
   spawnParts(tgt.x,tgt.y,'#e74c3c',3);
@@ -4533,7 +4724,7 @@ function dealDmg(tgt,dmg){
   tgt.hitFlash=0.15;
   if(dmg>=18) shakeScreen(Math.min(9,dmg*0.35)); // gros coup = secousse ressentie, pas juste un chiffre qui saute
   // alerte si un bâtiment du joueur est frappé (hors champ de vision surtout)
-  if(tgt.owner==='player'&&tgt.maxHp>=180&&typeof alertAttack==='function') alertAttack(tgt.x,tgt.y);
+  if(estLocal(tgt)&&tgt.maxHp>=180&&typeof alertAttack==='function') alertAttack(tgt.x,tgt.y);
 }
 
 function updateProjs(dt){
@@ -4547,14 +4738,14 @@ function updateProjs(dt){
         shakeScreen(7);
         const splash=2*BASE_TILE;
         for(const u of G.units){
-          if(u.owner==='enemy'&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash) dealDmg(u,p.atk);
+          if(estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash) dealDmg(u,p.atk,p);
         }
         for(const b of G.buildings){
-          if(b.owner==='enemy'&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash) dealDmg(b,p.atk);
+          if(estHostile(p,b)&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash) dealDmg(b,p.atk,p);
         }
       } else {
         const t=unitById(p.targetId)||bldById(p.targetId);
-        if(t&&t.hp>0) dealDmg(t,p.atk);
+        if(t&&t.hp>0) dealDmg(t,p.atk,p);
       }
       p.life=0;
     } else {
@@ -4594,7 +4785,7 @@ function addFText(x,y,txt,col){
 function updateWaves(dt){
   // Mode Conquête : aucune vague scriptée — la barre du haut sert à suivre
   // l'adversaire vivant à la place (voir refreshConquestBar).
-  if(G.gmode==='conquest'){ refreshConquestBar(); return; }
+  if(G.gmode!=='survival'){ refreshConquestBar(); return; }
   // Retour en Survie (chargement d'une sauvegarde depuis une partie de
   // Conquête) : on rétablit l'affichage du compteur de vagues.
   {
@@ -4606,7 +4797,7 @@ function updateWaves(dt){
     // indépendants des vagues : ils ne doivent jamais compter comme "vague
     // repoussée", sans quoi une garnison encore vivante bloquerait à jamais
     // la détection de fin de vague.
-    if(G.units.filter(u=>u.owner==='enemy'&&!u.camp&&!u.ai).length===0){
+    if(G.units.filter(u=>u.owner===FAC.PILL&&!u.camp).length===0){
       const diff=DIFFS[G.difficulty]||DIFFS.normal;
       G.waveActive=false;
       const reward=Math.round((50+G.wave*20)*diff.rewardMult);
@@ -4657,7 +4848,7 @@ function spawnWave(){
       else if(e==='left')  {x=BASE_TILE*2; y=Math.random()*ROWS*BASE_TILE;}
       else                 {x=(COLS-2)*BASE_TILE; y=Math.random()*ROWS*BASE_TILE;}
     } while(++tries<40 && tileBlocked((x/BASE_TILE)|0,(y/BASE_TILE)|0));
-    const u=mkUnit(type,x,y,'enemy');
+    const u=mkUnit(type,x,y,FAC.PILL);
     u.hp=Math.round(u.hp*(1+G.wave*.07)*scaleHp*diff.enemyHp); u.maxHp=u.hp;
     u.atk=Math.round(u.atk*(1+G.wave*.05)*scaleAtk*diff.enemyAtk);
     u.spd=u.spd*Math.min(1.6,0.85+G.wave*0.03);
@@ -4755,40 +4946,41 @@ const AI_UNIT_AGE = { [UT.ENEMI_G]:2, [UT.ENEMI_BOSS]:3 };
 // Sert à l'épargne de montée d'âge : sans elle, l'IA réinvestissait chaque
 // pièce dans une unité de plus et restait bloquée à l'Âge Sombre toute la
 // partie — c'est exactement l'erreur qu'un joueur débutant commet.
-function aiAfford(cost,reserve){
-  const p=G.ai&&G.ai.res;
+function aiAfford(cost,reserve,a){
+  const p=a&&a.res;
   if(!p) return false;
   return Object.entries(cost).every(([r,v])=>(p[r]||0)-((reserve&&reserve[r])||0)>=v);
 }
-function aiSpend(cost){ const p=G.ai.res; Object.entries(cost).forEach(([r,v])=>{ p[r]=Math.max(0,(p[r]||0)-v); }); }
+function aiSpend(cost,a){ const p=a.res; Object.entries(cost).forEach(([r,v])=>{ p[r]=Math.max(0,(p[r]||0)-v); }); }
 
-// Applique à une unité fraîchement produite par l'IA ses bonus d'âge et le
-// modificateur de difficulté, puis la poste en défense de la base. Miroir de
-// ce que mkUnit fait pour le joueur (qui ne s'applique qu'à owner==='player'
-// pour ne pas gonfler les pillards de vague).
-function aiAdoptUnit(u){
-  const a=G.ai; if(!a) return;
+// Applique à une unité fraîchement produite par l'IA le modificateur de
+// DIFFICULTÉ (propre à l'IA), puis la poste en défense de la base. Les bonus
+// d'âge, eux, sont désormais posés par mkUnit pour tous les camps : cette
+// fonction ne les réapplique surtout pas, sous peine de les compter deux fois.
+function aiAdoptUnit(u,a){
+  a=a||fac(u); if(!a||a.genre!=='ia') return;
   const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
-  const bonus=AGE_BONUS[a.age];
   u.ai=true;
-  u.hp=u.maxHp=Math.round(u.maxHp*bonus.unitHp*tune.hpMult);
+  // Les bonus d'âge sont déjà posés par mkUnit (ils valent pour tous les
+  // camps depuis la refonte en factions) : il ne reste ici que le
+  // modificateur de DIFFICULTÉ, propre à l'IA, et la mise en garde.
+  u.hp=u.maxHp=Math.round(u.maxHp*tune.hpMult);
   if(u.type!==UT.VIL){
-    u.atk=Math.round(u.atk*bonus.milAtk*tune.atkMult);
+    u.atk=Math.round(u.atk*tune.atkMult);
     // Posté en garde autour de la base tant qu'aucun assaut n'est lancé :
     // réutilise le mécanisme de garnison des camps (campX/campY), qui sait
     // déjà ramener une unité à son poste après un combat.
-    u.camp='ai'; u.campX=a.baseX; u.campY=a.baseY;
+    u.camp=a.id; u.campX=a.baseX; u.campY=a.baseY;
   }
-  a.pop++;
 }
 
 // Recense les bâtiments de l'IA par type (terminés uniquement pour ce qui
 // doit être opérationnel, chantiers inclus pour ne pas relancer deux fois le
 // même bâtiment pendant qu'il se construit).
-function aiCount(includeSites){
+function aiCount(includeSites,a){
   const c={};
   for(const b of G.buildings){
-    if(b.owner!=='enemy'||!b.ai) continue;
+    if(b.owner!==a.id) continue;
     if(b.constructing&&!includeSites) continue;
     c[b.type]=(c[b.type]||0)+1;
   }
@@ -4817,7 +5009,7 @@ function aiSpot(w,h,cx,cy,minR,maxR){
 }
 
 // Gisement le plus proche d'un type donné, dans un rayon (en tuiles).
-function aiNearestNode(type,x,y,maxTiles){
+function aiNearestNode(type,x,y,maxTiles,a){
   let best=null,bd=(maxTiles||60)*BASE_TILE;
   for(const n of G.nodes){
     if(n.amt<=0||n.type!==type) continue;
@@ -4829,14 +5021,14 @@ function aiNearestNode(type,x,y,maxTiles){
 
 // Lance un chantier de l'IA : place le bâtiment, prélève son coût, applique
 // ses PV d'âge, puis affecte des villageois au chantier.
-function aiBuild(type,nearX,nearY){
-  const a=G.ai, d=BDEF[type];
-  if(!aiAfford(d.cost)) return false;
+function aiBuild(type,nearX,nearY,a){
+  const d=BDEF[type];
+  if(!aiAfford(d.cost,null,a)) return false;
   const cx=Math.round((nearX!=null?nearX:a.baseX)/BASE_TILE), cy=Math.round((nearY!=null?nearY:a.baseY)/BASE_TILE);
   const spot=aiSpot(d.w,d.h,cx,cy,3,16);
   if(!spot) return false;
-  aiSpend(d.cost);
-  const b=mkBuilding(type,spot.tx,spot.ty,'enemy');
+  aiSpend(d.cost,a);
+  const b=mkBuilding(type,spot.tx,spot.ty,a.id);
   b.ai=true; b.constructing=true; b.progress=0;
   b.aiStartT=G.gameTime; // sert de garde-fou anti-blocage — voir aiWatchSites
   b.aiCost=d.cost;
@@ -4846,7 +5038,7 @@ function aiBuild(type,nearX,nearY){
   b.hp=b.maxHp=mhp;
   placeBuilding(b);
   // 2 bâtisseurs : les villageois les plus proches, en priorité les inactifs
-  const vils=G.units.filter(u=>u.ai&&u.type===UT.VIL&&u.state!=='build')
+  const vils=G.units.filter(u=>u.owner===a.id&&u.type===UT.VIL&&u.state!=='build')
     .sort((p,q)=>{
       const pi=p.state==='idle'?0:1, qi=q.state==='idle'?0:1;
       if(pi!==qi) return pi-qi;
@@ -4859,11 +5051,11 @@ function aiBuild(type,nearX,nearY){
 // Abandonne un chantier resté bloqué (voir l'appelant, dans updateAI) :
 // libère ses bâtisseurs, rend la case franchissable et rembourse la moitié
 // du coût — le site est perdu, pas l'investissement en entier.
-function aiAbortSite(b){
-  for(const u of G.units) if(u.ai&&u.state==='build'&&u.buildTarget===b.id){
+function aiAbortSite(b,a){
+  for(const u of G.units) if(u.owner===b.owner&&u.state==='build'&&u.buildTarget===b.id){
     u.state='idle'; u.buildTarget=null; u.scanCd=0;
   }
-  if(G.ai&&b.aiCost) for(const[r,v] of Object.entries(b.aiCost)) G.ai.res[r]=(G.ai.res[r]||0)+Math.round(v*0.5);
+  if(a&&b.aiCost) for(const[r,v] of Object.entries(b.aiCost)) a.res[r]=(a.res[r]||0)+Math.round(v*0.5);
   for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++) if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=0;
   G.buildings=G.buildings.filter(x=>x.id!==b.id);
   G.sel=G.sel.filter(id=>id!==b.id);
@@ -4872,15 +5064,15 @@ function aiAbortSite(b){
 // Prochain bâtiment à ériger, par ordre de besoin. La liste suit la même
 // logique qu'une ouverture humaine : loger, nourrir, s'installer sur les
 // ressources, puis militariser et fortifier.
-function aiNextBuild(vilCount){
-  const a=G.ai, c=aiCount(true);
+function aiNextBuild(vilCount,a){
+  const c=aiCount(true,a);
   const n=t=>c[t]||0;
   // Fermes « de croisière », visées une fois l'essentiel (Mine, Caserne)
   // acquis — voir plus bas pourquoi elles ne bloquent plus rien avant ça.
   const farmTarget=Math.min(8, 2 + Math.floor((vilCount||0)/5));
   if(a.pop>=a.maxPop-2 && a.maxPop<AGE_BONUS[a.age].popCap) return {type:BT.HOUSE};
   if(!n(BT.LUMBER)){
-    const t=aiNearestNode(RT.TREE,a.baseX,a.baseY,30);
+    const t=aiNearestNode(RT.TREE,a.baseX,a.baseY,30,a);
     if(t) return {type:BT.LUMBER,x:t.x,y:t.y};
   }
   if(!n(BT.MILL)) return {type:BT.MILL};
@@ -4893,7 +5085,7 @@ function aiNextBuild(vilCount){
   // quelle que soit la durée de la partie.
   if(n(BT.FARM)<2) return {type:BT.FARM};
   if(!n(BT.MINE)){
-    const t=aiNearestNode(RT.GOLD,a.baseX,a.baseY,44)||aiNearestNode(RT.STONE,a.baseX,a.baseY,44);
+    const t=aiNearestNode(RT.GOLD,a.baseX,a.baseY,44,a)||aiNearestNode(RT.STONE,a.baseX,a.baseY,44,a);
     if(t) return {type:BT.MINE,x:t.x,y:t.y};
   }
   if(!n(BT.BARRACKS)) return {type:BT.BARRACKS};
@@ -4914,8 +5106,8 @@ function aiNextBuild(vilCount){
 // ça, l'IA empilerait tout sur la ressource la moins chère à récolter.
 const AI_RES_WEIGHT = { wood:0.34, food:0.30, gold:0.21, stone:0.15 };
 // Écart de chaque ressource à sa part visée : < 1 = en retard, > 1 = en excès.
-function aiResRatios(){
-  const p=G.ai.res;
+function aiResRatios(a){
+  const p=a.res;
   const total=Math.max(1,p.wood+p.food+p.gold+p.stone);
   const out={};
   for(const[r,w] of Object.entries(AI_RES_WEIGHT)) out[r]=(p[r]/total)/w;
@@ -4934,8 +5126,8 @@ function aiVilRes(u){
 // main-d'œuvre figée sur le bois et la pierre des premières minutes, des
 // milliers d'unités de surplus inutile, et une famine qui l'empêchait de
 // monter d'âge ou de lever la moindre troupe.
-function aiRebalance(vils){
-  const ratios=aiResRatios();
+function aiRebalance(vils,a){
+  const ratios=aiResRatios(a);
   let worst=null,worstV=Infinity,over=null,overV=-Infinity;
   for(const[r,v] of Object.entries(ratios)){
     if(v<worstV){worstV=v;worst=r;}
@@ -4949,21 +5141,21 @@ function aiRebalance(vils){
   cand.inv=0; cand.invT=null; cand.homeNode=null; cand.homeFarm=null;
   cand.target=null; cand.state='idle'; cand.scanCd=0; // aiAssignVillager le replacera
 }
-function aiAssignVillager(u){
-  const ratios=aiResRatios();
+function aiAssignVillager(u,a){
+  const ratios=aiResRatios(a);
   let worst=null,worstRatio=Infinity;
   for(const[r,v] of Object.entries(ratios)){
     if(v<worstRatio){worstRatio=v;worst=r;}
   }
   if(worst==='food'){
     // Nourriture : les baies d'abord (immédiat), sinon un champ de l'IA.
-    const berry=aiNearestNode(RT.BERRY,u.x,u.y,32);
+    const berry=aiNearestNode(RT.BERRY,u.x,u.y,32,a);
     if(berry){ u.state='gather'; u.target=berry.id; u.homeNode=berry.id; return; }
-    const farm=findNearestFarm(u.x,u.y,true,'enemy');
+    const farm=findNearestFarm(u.x,u.y,true,u.owner);
     if(farm){ u.state='farm'; u.target=farm.id; u.homeFarm=farm.id; u.invT='farm'; return; }
   }
   const nodeType={wood:RT.TREE,stone:RT.STONE,gold:RT.GOLD,food:RT.BERRY}[worst];
-  const nd=aiNearestNode(nodeType,u.x,u.y,50)||aiNearestNode(RT.TREE,u.x,u.y,50);
+  const nd=aiNearestNode(nodeType,u.x,u.y,50,a)||aiNearestNode(RT.TREE,u.x,u.y,50,a);
   if(nd){ u.state='gather'; u.target=nd.id; u.homeNode=nd.id; }
 }
 
@@ -4978,7 +5170,7 @@ function updateAIVillager(u,dt){
     case 'build':  doBuild(u,dt);  break;
     default:
       u.scanCd=(u.scanCd||0)-dt;
-      if(u.scanCd<=0){ u.scanCd=0.4+Math.random()*0.4; aiAssignVillager(u); }
+      if(u.scanCd<=0){ u.scanCd=0.4+Math.random()*0.4; aiAssignVillager(u,fac(u)); }
   }
 }
 
@@ -5001,7 +5193,10 @@ function aiSiteRichness(tx,ty){
 
 // Installe l'adversaire sur la carte : Centre Ville au plus loin du joueur
 // PARMI les emplacements viables, premiers villageois, caisse de départ.
-function initAI(playerTX,playerTY){
+// Installe UN adversaire IA. `id` permet d'en aligner plusieurs (mode
+// « 2 rivaux ») ; `evites` liste les points déjà pris, pour ne pas poser deux
+// rivaux au même endroit. Renvoie la faction créée, ou null.
+function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
   // Quatre ancrages à mi-bord (le joueur démarre au centre) + les quatre
   // coins (position des camps de Survie, donc déjà réputés riches en
@@ -5023,7 +5218,11 @@ function initAI(playerTX,playerTY){
     const r=aiSiteRichness(spot.tx,spot.ty);
     if(!r.stone||!r.gold) continue;
     const dist=Math.hypot(spot.tx-playerTX,spot.ty-playerTY);
-    const score=dist+Math.min(r.stone,6)*40+Math.min(r.gold,6)*40+Math.min(r.tree,10)*8+Math.min(r.berry,6)*20;
+    // S'écarter aussi des rivaux déjà installés : deux IA côte à côte se
+    // partageraient les mêmes gisements et s'étrangleraient mutuellement.
+    let ecart=0;
+    for(const e of evites) ecart+=Math.min(Math.hypot(spot.tx-e[0],spot.ty-e[1]),120);
+    const score=dist+ecart*1.5+Math.min(r.stone,6)*40+Math.min(r.gold,6)*40+Math.min(r.tree,10)*8+Math.min(r.berry,6)*20;
     if(score>bestScore){bestScore=score;best=spot;}
   }
   if(!best){
@@ -5031,29 +5230,38 @@ function initAI(playerTX,playerTY){
     for(const[ax,ay] of anchors){
       const spot=aiSpot(d.w,d.h,ax,ay,0,14);
       if(!spot) continue;
-      const dist=Math.hypot(spot.tx-playerTX,spot.ty-playerTY);
+      let dist=Math.hypot(spot.tx-playerTX,spot.ty-playerTY);
+      for(const e of evites) dist+=Math.min(Math.hypot(spot.tx-e[0],spot.ty-e[1]),120);
       if(dist>bestD){bestD=dist;best=spot;}
     }
   }
   if(!best){ // carte pathologique : on renonce plutôt que de planter la partie
     notify('⚠️ Aucun emplacement pour l\'adversaire — partie sans IA','#e74c3c');
-    return;
+    return null;
   }
-  const tc=mkBuilding(BT.TC,best.tx,best.ty,'enemy');
-  tc.ai=true;
-  placeBuilding(tc);
-  G.ai={
-    res:{...tune.start}, age:0, pop:0, maxPop:BDEF[BT.TC].popBonus,
-    baseX:tc.x, baseY:tc.y, tcId:tc.id,
+  // La faction doit exister AVANT de poser le moindre bâtiment : mkBuilding
+  // lit désormais l'âge et les recherches de son propriétaire.
+  const a=mkFaction(id,{genre:'ia', equipe:(id===FAC.IA?3:4), nom, res:tune.start,
+                        maxPop:BDEF[BT.TC].popBonus});
+  Object.assign(a,{
+    baseX:0, baseY:0, tcId:null,
     think:0, ageQ:null,
     atkTimer:tune.firstAtk, atkMin:tune.atkMin, raids:0,
     vilTarget:tune.vilTarget,
-  };
+  });
+  G.factions[id]=a;
+
+  const tc=mkBuilding(BT.TC,best.tx,best.ty,id);
+  tc.ai=true;
+  placeBuilding(tc);
+  a.baseX=tc.x; a.baseY=tc.y; a.tcId=tc.id;
   for(let i=0;i<4;i++){
-    const u=mkUnit(UT.VIL,tc.x+(i-1.5)*BASE_TILE*0.9,tc.y+BASE_TILE*1.8,'enemy');
-    aiAdoptUnit(u);
+    const u=mkUnit(UT.VIL,tc.x+(i-1.5)*BASE_TILE*0.9,tc.y+BASE_TILE*1.8,id);
+    aiAdoptUnit(u,a);
+    a.pop++;
     G.units.push(u);
   }
+  return a;
 }
 
 // ── CERVEAU DE L'IA ───────────────────────────────────────
@@ -5061,9 +5269,15 @@ function initAI(playerTX,playerTY){
 // file de production vide, assez espacé pour rester négligeable au profilage
 // même avec plusieurs dizaines d'unités des deux côtés.
 const AI_THINK = 0.5;
+// Fait jouer TOUS les adversaires IA de la partie (le mode « 2 rivaux » en
+// aligne deux, le multijoueur 1v1+IA un seul).
 function updateAI(dt){
-  const a=G.ai;
-  if(!a||G.gmode!=='conquest') return;
+  if(G.gmode==='survival') return;
+  for(const a of factionsIA()) updateUneIA(dt,a);
+}
+
+function updateUneIA(dt,a){
+  if(!a||a.vaincu) return;
 
   // Montée d'âge en cours
   if(a.ageQ){
@@ -5073,11 +5287,11 @@ function updateAI(dt){
       const nb=AGE_BONUS[a.age];
       // Mêmes règles rétroactives que pour le joueur (updateAgeUp) : les PV
       // maximum montent, les dégâts déjà subis restent acquis.
-      for(const b of G.buildings) if(b.owner==='enemy'&&b.ai){
+      for(const b of G.buildings) if(b.owner===a.id){
         const nm=Math.round(b.maxHp/ob.bldHp*nb.bldHp), dmg=b.maxHp-b.hp;
         b.maxHp=nm; b.hp=Math.max(1,nm-dmg);
       }
-      for(const u of G.units) if(u.ai){
+      for(const u of G.units) if(u.owner===a.id){
         const nm=Math.round(u.maxHp/ob.unitHp*nb.unitHp), dmg=u.maxHp-u.hp;
         u.maxHp=nm; u.hp=Math.max(1,nm-dmg);
         if(u.type!==UT.VIL) u.atk=Math.round(u.atk/ob.milAtk*nb.milAtk);
@@ -5088,8 +5302,8 @@ function updateAI(dt){
 
   // Re-semis des champs adverses, payé sur sa propre caisse
   for(const b of G.buildings){
-    if(b.owner==='enemy'&&b.ai&&b.type===BT.FARM&&!b.constructing&&b.foodLeft<=0&&aiAfford(FARM_RESEED_COST)){
-      aiSpend(FARM_RESEED_COST); b.foodLeft=FARM_FOOD;
+    if(b.owner===a.id&&b.type===BT.FARM&&!b.constructing&&b.foodLeft<=0&&aiAfford(FARM_RESEED_COST,null,a)){
+      aiSpend(FARM_RESEED_COST,a); b.foodLeft=FARM_FOOD;
     }
   }
 
@@ -5101,7 +5315,7 @@ function updateAI(dt){
   // « dette » et déclenchait son 1er assaut à la seconde où sa 6e unité
   // sortait — puis affichait « assaut : 0s » pendant tout ce temps.
   a.atkTimer=Math.max(0,a.atkTimer-dt);
-  const army=G.units.filter(u=>u.ai&&u.type!==UT.VIL);
+  const army=G.units.filter(u=>u.owner===a.id&&u.type!==UT.VIL);
   if(a.atkTimer<=0&&army.length>=a.atkMin){
     const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
     // camp effacé = l'unité cesse de garder la base et part chasser le
@@ -5120,21 +5334,21 @@ function updateAI(dt){
   a.think=AI_THINK;
 
   // ── Recensement ──
-  a.pop=G.units.filter(u=>u.ai).length;
+  a.pop=G.units.filter(u=>u.owner===a.id).length;
   let cap=0;
   for(const b of G.buildings){
-    if(b.owner!=='enemy'||!b.ai||b.constructing) continue;
+    if(b.owner!==a.id||b.constructing) continue;
     if(b.type===BT.HOUSE) cap+=AGE_BONUS[a.age].housePop;
     else if(BDEF[b.type].popBonus) cap+=BDEF[b.type].popBonus;
   }
   a.maxPop=Math.min(cap,AGE_BONUS[a.age].popCap);
 
-  const vils=G.units.filter(u=>u.ai&&u.type===UT.VIL);
+  const vils=G.units.filter(u=>u.owner===a.id&&u.type===UT.VIL);
   const tc=bldById(a.tcId);
   // Rééquilibrage de la main-d'œuvre (voir aiRebalance) — un travailleur
   // déplacé toutes les 6 secondes au maximum.
   a.rebal=(a.rebal||0)-AI_THINK;
-  if(a.rebal<=0){ a.rebal=6; aiRebalance(vils); }
+  if(a.rebal<=0){ a.rebal=6; aiRebalance(vils,a); }
 
   // Épargne de montée d'âge : dès que l'économie tient debout, le coût du
   // prochain âge devient intouchable pour la production militaire. L'IA
@@ -5150,7 +5364,7 @@ function updateAI(dt){
 
   // ── Production ──
   for(const b of G.buildings){
-    if(b.owner!=='enemy'||!b.ai||b.constructing) continue;
+    if(b.owner!==a.id||b.constructing) continue;
     const roster=AI_TRAINERS[b.type];
     if(!roster||b.trainQ.length>=3) continue;
     if(a.pop>=a.maxPop) continue;
@@ -5158,8 +5372,8 @@ function updateAI(dt){
       // Villageois jusqu'à l'objectif d'économie, puis on garde la place
       // pour l'armée.
       if(vils.length+b.trainQ.length>=a.vilTarget) continue;
-      if(!aiAfford(AI_TCOST[UT.VIL])) continue;
-      aiSpend(AI_TCOST[UT.VIL]);
+      if(!aiAfford(AI_TCOST[UT.VIL],null,a)) continue;
+      aiSpend(AI_TCOST[UT.VIL],a);
       b.trainQ.push(UT.VIL);
       if(b.trainQ.length===1) b.trainTimer=trainTime(UT.VIL);
       continue;
@@ -5167,10 +5381,10 @@ function updateAI(dt){
     // Bâtiments militaires : on ne produit qu'une fois l'économie lancée,
     // pour ne pas étrangler les chantiers dès les premières minutes.
     if(vils.length<Math.min(6,a.vilTarget)) continue;
-    const avail=roster.filter(t=>(AI_UNIT_AGE[t]||0)<=a.age&&aiAfford(AI_TCOST[t],saving));
+    const avail=roster.filter(t=>(AI_UNIT_AGE[t]||0)<=a.age&&aiAfford(AI_TCOST[t],saving,a));
     if(!avail.length) continue;
     const type=avail[(Math.random()*avail.length)|0];
-    aiSpend(AI_TCOST[type]);
+    aiSpend(AI_TCOST[type],a);
     b.trainQ.push(type);
     if(b.trainQ.length===1) b.trainTimer=trainTime(type);
   }
@@ -5179,7 +5393,7 @@ function updateAI(dt){
   // 4 villageois sur 2 fronts ne construit rien), un second dès qu'elle est
   // assez fournie pour alimenter les deux — sans quoi une IA à 12 villageois
   // passait l'essentiel de son temps à regarder un unique mur monter.
-  let sites=G.buildings.filter(b=>b.owner==='enemy'&&b.ai&&b.constructing);
+  let sites=G.buildings.filter(b=>b.owner===a.id&&b.constructing);
   // Garde-fou anti-blocage : constaté en simulation (rare, ~1 partie sur 15)
   // — un bâtisseur qui n'arrive jamais à destination (chemin impraticable
   // vers le site choisi) laisse le chantier à l'arrêt indéfiniment. Sans
@@ -5188,17 +5402,17 @@ function updateAI(dt){
   // laissé au joueur. Un chantier resté quasiment vierge plus de 90s est
   // donc abandonné (bâtisseurs libérés, moitié du coût remboursée) pour
   // qu'un autre site, ailleurs, ait sa chance.
-  for(const s of sites) if(G.gameTime-(s.aiStartT||0)>90&&s.progress<0.15) aiAbortSite(s);
-  sites=G.buildings.filter(b=>b.owner==='enemy'&&b.ai&&b.constructing);
+  for(const s of sites) if(G.gameTime-(s.aiStartT||0)>90&&s.progress<0.15) aiAbortSite(s,a);
+  sites=G.buildings.filter(b=>b.owner===a.id&&b.constructing);
   const maxSites=vils.length>=10?2:1;
   if(sites.length<maxSites){
-    const next=aiNextBuild(vils.length);
-    if(next) aiBuild(next.type,next.x,next.y);
+    const next=aiNextBuild(vils.length,a);
+    if(next) aiBuild(next.type,next.x,next.y,a);
   }
   {
     // Chantier orphelin (bâtisseurs tués) : on y renvoie quelqu'un
     for(const s of sites){
-      if(G.units.some(u=>u.ai&&u.state==='build'&&u.buildTarget===s.id)) continue;
+      if(G.units.some(u=>u.owner===a.id&&u.state==='build'&&u.buildTarget===s.id)) continue;
       const v=vils.find(u=>u.state!=='build');
       if(v){ v.state='build'; v.buildTarget=s.id; v.target=null; }
     }
@@ -5208,8 +5422,8 @@ function updateAI(dt){
   // au point de ne plus rien pouvoir produire ensuite.
   if(!a.ageQ&&a.age<AGES.length-1&&tc&&vils.length>=Math.min(8,a.vilTarget)){
     const cost=AGES[a.age+1].cost;
-    if(aiAfford(cost)){
-      aiSpend(cost);
+    if(aiAfford(cost,null,a)){
+      aiSpend(cost,a);
       const t=[0,60,90,120][a.age+1]||90;
       a.ageQ={timer:t,total:t};
     }
@@ -5226,7 +5440,7 @@ function refreshConquestBar(){
   if(sv) sv.style.display='none';
   const a=G.ai;
   if(!a){ el.textContent='🏴 Conquête'; return; }
-  const army=G.units.filter(u=>u.ai&&u.type!==UT.VIL).length;
+  const army=G.units.filter(u=>u.owner===a.id&&u.type!==UT.VIL).length;
   const nextAtk=Math.max(0,Math.ceil(a.atkTimer));
   const m=Math.floor(nextAtk/60), s=nextAtk%60;
   // Trois états distincts, pour ne jamais afficher un décompte qui ment :
@@ -5239,19 +5453,26 @@ function refreshConquestBar(){
   el.innerHTML=`🏴 Ennemi ${AGES[a.age].ico} &nbsp;|&nbsp; ⚔️ ${army} &nbsp;|&nbsp; ${etat}`;
 }
 
+// Chaque camp fait avancer sa propre file : en 1v1, les deux joueurs
+// cherchent en parallèle, et les effets rétroactifs ne touchent que les
+// unités de celui qui a payé la recherche.
 function updateResearchQ(dt){
-  if(!G.researchQ.length) return;
-  const r=G.researchQ[0];
+  for(const f of factionsJouantes()) updateResearchFaction(dt,f);
+}
+function updateResearchFaction(dt,f){
+  if(!f.researchQ||!f.researchQ.length) return;
+  const owner=f.id, local=(owner===G.me);
+  const r=f.researchQ[0];
   r.timer-=dt;
   if(r.timer<=0){
-    G.research[r.type]=true;
-    G.researchQ.shift();
-    G.stats.research++;
-    notify(`✅ ${RDEF[r.type].nom} recherché !`,'#2ecc71');
+    f.research[r.type]=true;
+    f.researchQ.shift();
+    f.stats.research++;
+    if(local) notify(`✅ ${RDEF[r.type].nom} recherché !`,'#2ecc71');
     // Effets rétroactifs
     if(r.type==='iron_armor'){
       for(const u of G.units)
-        if(u.owner==='player'&&isMilitary(u.type)){ // toutes les unités militaires (Piquier/Arbalétrier/Trébuchet inclus)
+        if(u.owner===owner&&isMilitary(u.type)){ // toutes les unités militaires (Piquier/Arbalétrier/Trébuchet inclus)
           u.maxHp=Math.round(u.maxHp*1.3); u.hp=Math.min(u.hp+10,u.maxHp);
         }
     }
@@ -5261,46 +5482,46 @@ function updateResearchQ(dt){
       // quoi une unité déjà en jeu et une unité formée après la recherche
       // ne reçoivent pas le même bonus.
       for(const u of G.units)
-        if(u.owner==='player'&&isMilitary(u.type)){
+        if(u.owner===owner&&isMilitary(u.type)){
           u.atk=Math.round(u.atk*1.2);
         }
-      notify('⚔️ +20% ATK sur toutes vos unités militaires !','#f0c040');
+      if(local) notify('⚔️ +20% ATK sur toutes vos unités militaires !','#f0c040');
     }
     if(r.type==='iron_sword'){
-      for(const u of G.units) if(u.owner==='player'&&[UT.MIL,UT.PIKE].includes(u.type)) u.atk=Math.round(u.atk*1.25);
-      notify('⚔️ Miliciens et Piquiers renforcés !','#e74c3c');
+      for(const u of G.units) if(u.owner===owner&&[UT.MIL,UT.PIKE].includes(u.type)) u.atk=Math.round(u.atk*1.25);
+      if(local) notify('⚔️ Miliciens et Piquiers renforcés !','#e74c3c');
     }
     if(r.type==='bow_craft'){
-      for(const u of G.units) if(u.owner==='player'&&[UT.ARC,UT.XBOW].includes(u.type)) u.atk=Math.round(u.atk*1.25);
-      notify('🏹 Archers renforcés !','#e67e22');
+      for(const u of G.units) if(u.owner===owner&&[UT.ARC,UT.XBOW].includes(u.type)) u.atk=Math.round(u.atk*1.25);
+      if(local) notify('🏹 Archers renforcés !','#e67e22');
     }
     if(r.type==='cavalry'){
       // Éclaireur inclus : c'est de la cavalerie légère, et mkUnit lui
       // applique déjà ce bonus à la création (voir CAV dans mkUnit) — sans
       // ça, un Éclaireur déjà formé avant la recherche ne recevait rien.
-      for(const u of G.units) if(u.owner==='player'&&[UT.KNIGHT,UT.PALADIN,UT.SCOUT].includes(u.type)){
+      for(const u of G.units) if(u.owner===owner&&[UT.KNIGHT,UT.PALADIN,UT.SCOUT].includes(u.type)){
         u.maxHp=Math.round(u.maxHp*1.2); u.hp=Math.min(u.hp+15,u.maxHp);
       }
-      notify('🐴 Cavalerie renforcée !','#9b59b6');
+      if(local) notify('🐴 Cavalerie renforcée !','#9b59b6');
     }
     if(r.type==='masonry'){ // était absent : les bâtiments existants ne gagnaient rien
       for(const b of G.buildings)
-        if(b.owner==='player'){ b.maxHp=Math.round(b.maxHp*1.25); b.hp=Math.min(Math.round(b.hp*1.25),b.maxHp); }
-      notify('🧱 Tous vos bâtiments renforcés !','#95a5a6');
+        if(b.owner===owner){ b.maxHp=Math.round(b.maxHp*1.25); b.hp=Math.min(Math.round(b.hp*1.25),b.maxHp); }
+      if(local) notify('🧱 Tous vos bâtiments renforcés !','#95a5a6');
     }
     if(r.type==='longbow'){
       for(const u of G.units)
-        if(u.owner==='player'&&(u.type===UT.ARC||u.type===UT.XBOW)){ // Arbalétrier inclus
+        if(u.owner===owner&&(u.type===UT.ARC||u.type===UT.XBOW)){ // Arbalétrier inclus
           u.rng=Math.round(u.rng*1.5);
         }
-      notify('🎯 Portée des Archers augmentée !','#3498db');
+      if(local) notify('🎯 Portée des Archers augmentée !','#3498db');
     }
     if(r.type==='engineering'){
       for(const b of G.buildings)
-        if(b.owner==='player'&&(b.type===BT.TOWER||b.type===BT.CASTLE)){
+        if(b.owner===owner&&(b.type===BT.TOWER||b.type===BT.CASTLE)){
           b.maxHp=Math.round(b.maxHp*1.4); b.hp=Math.min(b.hp+80,b.maxHp);
         }
-      notify('🔧 Tours et Château renforcés !','#95a5a6');
+      if(local) notify('🔧 Tours et Château renforcés !','#95a5a6');
     }
   }
 }
@@ -5552,7 +5773,7 @@ function updateCursor(){
   else if(isDrag) cur='grabbing';
   else if(G.hover){
     if(G.hover.kind==='node') cur='pointer';
-    else cur = G.hover.owner==='player' ? 'pointer' : 'crosshair';
+    else cur = G.hover.owner===G.me ? 'pointer' : 'crosshair';
   }
   canvas.style.cursor=cur;
 }
@@ -5569,7 +5790,7 @@ function updateGlide(dt){
 // Sélectionne toutes les unités du même type visibles à l'écran
 function handleDoubleTap(sx,sy){
   const {x:wx,y:wy}=sw(sx,sy);
-  const tU=G.units.find(u=>u.owner==='player'&&Math.hypot(u.x-wx,u.y-wy)<16);
+  const tU=G.units.find(u=>estLocal(u)&&Math.hypot(u.x-wx,u.y-wy)<16);
   if(!tU){
     // double-tap dans le vide = désélectionner (le simple tap sert à donner des ordres)
     if(G.sel.length){ clearSelection(); notify('Sélection annulée','#95a5a6'); }
@@ -5580,7 +5801,7 @@ function handleDoubleTap(sx,sy){
   const tl=sw(0,54), br=sw(W,54+gameH());
   const x0=tl.x,y0=tl.y,x1=br.x,y1=br.y;
   for(const u of G.units){
-    if(u.owner!=='player'||u.type!==type) continue;
+    if(!estLocal(u)||u.type!==type) continue;
     if(u.x>=x0&&u.x<=x1&&u.y>=y0&&u.y<=y1) sel.push(u.id);
   }
   G.sel=sel;
@@ -5595,7 +5816,7 @@ function applyBoxSelection(box){
   const x0=a.x, x1=b2.x, y0=a.y, y1=b2.y;
   const sel=[];
   for(const u of G.units){
-    if(u.owner!=='player') continue;
+    if(!estLocal(u)) continue;
     if(u.x>=x0&&u.x<=x1&&u.y>=y0&&u.y<=y1) sel.push(u.id);
   }
   // Priorité aux unités militaires si mélange
@@ -5640,7 +5861,7 @@ function handleTap(sx,sy){
   // Unité touchée ?
   const tUnit=G.units.find(u=>Math.hypot(u.x-wx,u.y-wy)<16);
   if(tUnit){
-    if(tUnit.owner==='player'){
+    if(estLocal(tUnit)){
       // re-toucher l'unité déjà seule sélectionnée la désélectionne
       if(G.sel.length===1&&G.sel[0]===tUnit.id){ clearSelection(); return; }
       G.sel=[tUnit.id]; refreshUI(); return;
@@ -5651,7 +5872,7 @@ function handleTap(sx,sy){
   // Bâtiment touché ?
   const tBuilding=G.buildings.find(b=>wx>=b.tx*BASE_TILE&&wx<=(b.tx+b.w)*BASE_TILE&&wy>=b.ty*BASE_TILE&&wy<=(b.ty+b.h)*BASE_TILE);
   if(tBuilding){
-    if(tBuilding.owner==='player'){
+    if(estLocal(tBuilding)){
       // Ferme avec stock + villageois sélectionnés => les envoyer récolter dessus
       if(tBuilding.type===BT.FARM && !tBuilding.constructing){
         const vils=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
@@ -5720,7 +5941,7 @@ function handleTap(sx,sy){
       return;
     }
     // Bâtiment militaire sélectionné => poser point de ralliement
-    const selB=G.buildings.find(b=>b.id===G.sel[0]&&b.owner==='player');
+    const selB=G.buildings.find(b=>b.id===G.sel[0]&&estLocal(b));
     if(selB&&[BT.TC,BT.BARRACKS,BT.STABLE,BT.MONASTERY,BT.CASTLE,BT.SIEGE].includes(selB.type)){
       selB.rally={x:wx,y:wy};
       G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5;
@@ -5778,7 +5999,7 @@ function confirmBuild(tx,ty){
   if((G.buildType===BT.CASTLE||G.buildType===BT.SIEGE)&&G.age<2){ notify('🔒 Nécessite l\'Âge des Châteaux','#e74c3c'); exitBuild(); return; }
   if(!canAfford(cost)){notify('Ressources insuffisantes !','#e74c3c');flashResources(cost);return;}
   spend(cost);
-  const b=mkBuilding(G.buildType,tx,ty,'player');
+  const b=mkBuilding(G.buildType,tx,ty,G.me);
   b.constructing=true; b.progress=0;
   placeBuilding(b);
   // Envoyer les villageois construire
@@ -5886,7 +6107,7 @@ function updateHUD(){
   setRate('rfood',G.rateShow.food); setRate('rwood',G.rateShow.wood);
   setRate('rstone',G.rateShow.stone); setRate('rgold',G.rateShow.gold);
   // Badge villageois inactifs
-  const idleCount=G.units.filter(u=>u.owner==='player'&&u.type===UT.VIL&&u.state==='idle').length;
+  const idleCount=G.units.filter(u=>estLocal(u)&&u.type===UT.VIL&&u.state==='idle').length;
   document.getElementById('vidle').textContent=idleCount;
   const btn=document.getElementById('idlebtn-inner');
   btn.className=idleCount>0?'active':'zero';
@@ -6492,7 +6713,7 @@ function syncAutoRepairBtn(){
 function nearestDamagedBuilding(x,y){
   let best=null,bd=Infinity;
   for(const b of G.buildings){
-    if(b.owner!=='player'||b.constructing||b.hp>=b.maxHp) continue;
+    if(!estLocal(b)||b.constructing||b.hp>=b.maxHp) continue;
     const dx=b.x-x,dy=b.y-y,d2=dx*dx+dy*dy;
     if(d2<bd){bd=d2;best=b;}
   }
@@ -6606,8 +6827,8 @@ const ACH = [
   { id:'siegemaster', ico:'💥',  nom:'Assiégeur',          desc:'Détruire 25 bâtiments ennemis.',              test:(s)=>s.bldDestroyed>=25 },
   { id:'cleaner',     ico:'🏆',  nom:'Nettoyeur',          desc:"Nettoyer entièrement un point d'intérêt.",    test:(s)=>s.campsCleared>=1 },
   { id:'survivor',    ico:'🛡️',  nom:'Survivant',          desc:'Remporter une partie en mode Survie.',        test:(s,c)=>c.won&&c.gmode==='survival' },
-  { id:'conqueror',   ico:'🏴',  nom:'Conquérant',         desc:'Raser le Centre Ville adverse en Conquête.',  test:(s,c)=>c.won&&c.gmode==='conquest' },
-  { id:'blitz',       ico:'⚡',  nom:'Guerre Éclair',      desc:'Gagner une Conquête en moins de 25 minutes.', test:(s,c)=>c.won&&c.gmode==='conquest'&&c.time<1500 },
+  { id:'conqueror',   ico:'🏴',  nom:'Conquérant',         desc:'Raser le Centre Ville adverse en Conquête.',  test:(s,c)=>c.won&&c.gmode!=='survival' },
+  { id:'blitz',       ico:'⚡',  nom:'Guerre Éclair',      desc:'Gagner une Conquête en moins de 25 minutes.', test:(s,c)=>c.won&&c.gmode!=='survival'&&c.time<1500 },
   { id:'flawless',    ico:'✨',  nom:'Inébranlable',       desc:'Gagner sans perdre un seul bâtiment.',        test:(s,c)=>c.won&&s.bldLost===0 },
   { id:'tactician',   ico:'🔥',  nom:'Tacticien',          desc:'Gagner en difficulté Difficile.',             test:(s,c)=>c.won&&c.diff==='hard' },
   { id:'legend',      ico:'☠️',  nom:'Légende',            desc:'Gagner en difficulté Brutal.',                test:(s,c)=>c.won&&c.diff==='brutal' },
@@ -6747,7 +6968,7 @@ function showVictory(){
   ov.classList.add('endscreen');
   // Le mode Conquête n'a pas de vague à comptabiliser : son exploit est la
   // chute du Centre Ville adverse, pas un compteur de survie.
-  const exploit=G.gmode==='conquest'
+  const exploit=G.gmode!=='survival'
     ? `Le Centre Ville rival est tombé. La carte est à vous.`
     : `Vous avez repoussé ${G.targetWaves} vagues et bâti un empire légendaire !`;
   ov.innerHTML=`
@@ -6758,7 +6979,7 @@ function showVictory(){
     ${statsBlock()}
     ${freshAchBlock(fresh)}
     <button class="bigbtn" onclick="location.reload()">🔄 Nouvelle partie</button>
-    ${G.gmode==='conquest'?'':`<button class="bigbtn" id="contBtn" style="background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:2px solid #2ecc71;" onclick="continuePlay()">⚔️ Continuer (sans fin)</button>`}
+    ${G.gmode!=='survival'?'':`<button class="bigbtn" id="contBtn" style="background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:2px solid #2ecc71;" onclick="continuePlay()">⚔️ Continuer (sans fin)</button>`}
     <button class="bigbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Voir tous les succès</button>
   `;
 }
@@ -6775,7 +6996,7 @@ window.continuePlay=continuePlay;
 function showGameOver(){
   G.running=false;
   const fresh=finishGame(false);
-  const cause=G.gmode==='conquest'
+  const cause=G.gmode!=='survival'
     ? `Le seigneur rival a rasé votre Centre Ville.`
     : `Votre Centre Ville a été détruit lors de la vague ${G.wave}.`;
   document.getElementById('overlay').style.display='flex';
@@ -6805,7 +7026,7 @@ window.setSpeed=setSpeed;
 function tryAgeUp(){
   if(G.age>=AGES.length-1){ notify('Âge maximum atteint !','#f0c040'); return; }
   if(G.ageUpQ){ notify('Avancement déjà en cours…','#f39c12'); return; }
-  if(!G.buildings.find(b=>b.type===BT.TC&&b.owner==='player')){ notify('Centre Ville requis !','#e74c3c'); return; }
+  if(!G.buildings.find(b=>b.type===BT.TC&&estLocal(b))){ notify('Centre Ville requis !','#e74c3c'); return; }
   const next=AGES[G.age+1];
   if(!canAfford(next.cost)){
     notify(`${next.ico} ${next.nom} — Coût : ${fmtCost(next.cost)}`,'#e74c3c');
@@ -6905,13 +7126,13 @@ function applyZoomToTile(targetT,anchorSX,anchorSY){
 }
 
 document.getElementById('zhome').addEventListener('click',()=>{
-  const tc=G.buildings.find(b=>b.owner==='player'&&b.type===BT.TC)||G.buildings.find(b=>b.owner==='player');
+  const tc=G.buildings.find(b=>estLocal(b)&&b.type===BT.TC)||G.buildings.find(b=>estLocal(b));
   if(!tc){ notify('Aucun bâtiment','#e67e22'); return; }
   camCenterOn(tc.x,tc.y);
   buzz(8);
 });
 document.getElementById('zarmy').addEventListener('click',()=>{
-  const army=G.units.filter(u=>u.owner==='player'&&u.type!==UT.VIL);
+  const army=G.units.filter(u=>estLocal(u)&&u.type!==UT.VIL);
   if(!army.length){ notify('Aucune unité militaire','#e67e22'); return; }
   G.sel=army.map(u=>u.id); G.mode='select'; buzz(10);
   notify(`${army.length} unité${army.length>1?'s':''} sélectionnée${army.length>1?'s':''}`,'#e74c3c');
@@ -7198,24 +7419,22 @@ async function saveGame(){
 
 function buildSaveData(){
     return {
-      v:7,         // v7 : coordonnées monde en unités BASE_TILE, indépendantes du zoom
+      v:8,         // v8 : N factions (v7 : coordonnées monde en unités BASE_TILE)
       ts:Date.now(),
       tile:TILE,   // zoom courant — purement cosmétique depuis la v7 (on le
                    // restaure pour retrouver la même vue), mais indispensable
                    // pour convertir les sauvegardes v6 dont les positions
                    // étaient exprimées en pixels à CE zoom. Voir migrerSauvegarde().
-      difficulty:G.difficulty, autoRepair:G.autoRepair,
-      mode:G.gmode, ai:G.ai?{...G.ai,res:{...G.ai.res},ageQ:G.ai.ageQ?{...G.ai.ageQ}:null}:null,
-      stats:JSON.parse(JSON.stringify(G.stats)), campTotal:G.campTotal||0,
+      difficulty:G.difficulty,
+      mode:G.gmode,
+      // Tous les camps, brouillard compris (chaque faction humaine a le sien).
+      factions:JSON.parse(JSON.stringify(G.factions)),
+      me:G.me,
+      campTotal:G.campTotal||0,
       wave:G.wave, waveTimer:G.waveTimer, waveActive:G.waveActive,
-      res:{...G.res},
-      pop:G.pop, maxPop:G.maxPop,
-      research:{...G.research},
-      researchQ:G.researchQ.map(r=>({...r})),
       cam:{...G.cam},
-      age:G.age, ageUpQ:G.ageUpQ?{...G.ageUpQ}:null,
       gameTime:G.gameTime, targetWaves:G.targetWaves, victory:G.victory,
-      tiles:G.tiles, bmap:G.bmap, fog:G.fog,
+      tiles:G.tiles, bmap:G.bmap,
       nodes:G.nodes.map(n=>({...n, gatherers:[]})),
       buildings:G.buildings.map(b=>({...b, trainQ:[...b.trainQ]})),
       units:G.units.map(u=>({...u, pendingAction:null})),
@@ -7288,6 +7507,52 @@ function migrerSauvegarde(data){
     }
     data.v=7;
   }
+  // v7 -> v8 : un joueur + une IA deviennent des factions nommées. Les
+  // propriétaires 'player'/'enemy' sont réécrits ; 'enemy' se scinde selon
+  // que l'entité appartenait à l'IA de Conquête (marqueur .ai) ou aux
+  // pillards de vague / garnisons de points d'intérêt.
+  if((data.v||0)<8){
+    const versFaction=e=>{
+      if(e.owner==='player') return FAC.P1;
+      if(e.owner==='enemy')  return (e.ai||e.camp==='ai')?FAC.IA:FAC.PILL;
+      return e.owner;
+    };
+    for(const u of (data.units||[])) u.owner=versFaction(u);
+    for(const b of (data.buildings||[])) b.owner=versFaction(b);
+    // Une garde de camp repérait son poste par u.camp==='ai' : désormais
+    // c'est l'identifiant de faction.
+    for(const u of (data.units||[])) if(u.camp==='ai') u.camp=FAC.IA;
+
+    const diff=DIFFS[data.difficulty]||DIFFS.normal;
+    const facs={};
+    const p1=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:'Vous',res:data.res||diff.startRes,maxPop:data.maxPop||5});
+    p1.age=data.age||0; p1.ageUpQ=data.ageUpQ||null;
+    p1.research=Object.assign(initResearch(),data.research||{});
+    p1.researchQ=(data.researchQ||[]).map(r=>({...r}));
+    p1.pop=data.pop||0;
+    p1.stats=Object.assign(initStats(),data.stats||{});
+    p1.stats.gathered=Object.assign({food:0,wood:0,stone:0,gold:0},(data.stats&&data.stats.gathered)||{});
+    p1.autoRepair=!!data.autoRepair;
+    p1.fog=data.fog||[];
+    facs[FAC.P1]=p1;
+    facs[FAC.PILL]=mkFaction(FAC.PILL,{genre:'neutre',equipe:0,hostileATous:true});
+    if(data.ai){
+      const ia=mkFaction(FAC.IA,{genre:'ia',equipe:3,nom:'Seigneur rival',res:data.ai.res,maxPop:data.ai.maxPop});
+      Object.assign(ia,{
+        age:data.ai.age||0, pop:data.ai.pop||0,
+        baseX:data.ai.baseX, baseY:data.ai.baseY, tcId:data.ai.tcId,
+        think:data.ai.think||0, ageQ:data.ai.ageQ||null,
+        atkTimer:data.ai.atkTimer, atkMin:data.ai.atkMin, raids:data.ai.raids||0,
+        vilTarget:data.ai.vilTarget,
+      });
+      facs[FAC.IA]=ia;
+    }
+    data.factions=facs; data.me=FAC.P1;
+    delete data.res; delete data.pop; delete data.maxPop; delete data.research;
+    delete data.researchQ; delete data.age; delete data.ageUpQ; delete data.stats;
+    delete data.autoRepair; delete data.fog; delete data.ai;
+    data.v=8;
+  }
   return data;
 }
 
@@ -7328,24 +7593,34 @@ async function loadGame(key=SAVE_KEY){
     // Sauvegardes antérieures au mode Conquête : Survie par défaut, sans IA.
     G.gmode=(data.mode&&MODES[data.mode])?data.mode:'survival';
     selectedMode=G.gmode;
-    G.ai=data.ai?{...data.ai,res:{...data.ai.res},ageQ:data.ai.ageQ?{...data.ai.ageQ}:null}:null;
-    G.stats=Object.assign(initStats(),data.stats||{});
-    G.stats.gathered=Object.assign({food:0,wood:0,stone:0,gold:0},(data.stats&&data.stats.gathered)||{});
+    // Toutes les factions d'un coup : chacune porte sa caisse, son âge, ses
+    // recherches, sa population, son brouillard et ses compteurs. Les
+    // sauvegardes antérieures ont été converties par migrerSauvegarde().
+    G.factions={};
+    for(const[id,f] of Object.entries(data.factions||{})){
+      const nf=mkFaction(id,{genre:f.genre,equipe:f.equipe,teinte:f.teinte,nom:f.nom,
+                             hostileATous:f.hostileATous,res:f.res,maxPop:f.maxPop});
+      Object.assign(nf,f);
+      nf.research=Object.assign(initResearch(),f.research||{});
+      nf.stats=Object.assign(initStats(),f.stats||{});
+      nf.stats.gathered=Object.assign({food:0,wood:0,stone:0,gold:0},(f.stats&&f.stats.gathered)||{});
+      nf.fog=f.fog||[];
+      G.factions[id]=nf;
+    }
+    G.me=(data.me&&G.factions[data.me])?data.me:FAC.P1;
     G.campTotal=data.campTotal||0;
-    G.autoRepair=data.autoRepair||false;
     G.wave=data.wave; G.waveTimer=data.waveTimer; G.waveActive=data.waveActive;
-    G.res={...data.res};
-    G.pop=data.pop; G.maxPop=data.maxPop;
-    G.research={...data.research};
-    G.researchQ=data.researchQ.map(r=>({...r}));
     G.cam={...data.cam};
     clampCam(); // même défaut que pour les bâtiments : une vieille sauvegarde
                 // sans le zoom exact peut placer la caméra hors de la carte
-    G.age=data.age||0; G.ageUpQ=data.ageUpQ?{...data.ageUpQ}:null;
     G.gameTime=data.gameTime||0; G.targetWaves=data.targetWaves||20; G.victory=data.victory||false;
-    G.tiles=data.tiles; G.bmap=data.bmap; G.fog=data.fog||[];
-    // Compat : si fog absent, tout révélé
-    if(!G.fog.length){ for(let y=0;y<ROWS;y++){G.fog[y]=[];for(let x=0;x<COLS;x++)G.fog[y][x]=1;} }
+    G.tiles=data.tiles; G.bmap=data.bmap;
+    // Compat : brouillard absent (très vieille sauvegarde) = tout révélé
+    for(const f of factionsHumaines()){
+      if(f.fog&&f.fog.length) continue;
+      const g=[]; for(let y=0;y<ROWS;y++){ g[y]=[]; for(let x=0;x<COLS;x++) g[y][x]=1; }
+      f.fog=g;
+    }
     G.nodes=data.nodes.map(n=>({...n, gatherers:[]}));
     G.buildings=data.buildings.map(b=>({...b, trainQ:[...(b.trainQ||[])], farmers:[],
       level: b.level||1, // anciennes sauvegardes : pas de niveau -> Tour de Guet (niveau 1)
@@ -7482,7 +7757,7 @@ function startGame(){
 
   // Centre-ville de départ
   const sTX=(COLS>>1)-1, sTY=(ROWS>>1)-1;
-  const tc=mkBuilding(BT.TC,sTX,sTY,'player');
+  const tc=mkBuilding(BT.TC,sTX,sTY,FAC.P1);
   placeBuilding(tc);
   // Libère la marge de réservation (le Centre Ville lui-même est déjà
   // correctement marqué solide par placeBuilding juste au-dessus).
@@ -7492,14 +7767,23 @@ function startGame(){
 
   // 3 Villageois
   for(let i=0;i<3;i++){
-    const u=mkUnit(UT.VIL,(sTX+1.5)*BASE_TILE+(i-1)*BASE_TILE*.9,(sTY+3)*BASE_TILE,'player');
+    const u=mkUnit(UT.VIL,(sTX+1.5)*BASE_TILE+(i-1)*BASE_TILE*.9,(sTY+3)*BASE_TILE,FAC.P1);
     G.units.push(u); G.pop++;
   }
 
   // Mode Conquête : l'adversaire s'installe une fois la carte semée et le
   // Centre Ville du joueur posé, pour choisir son emplacement en connaissance
   // du terrain réellement occupé.
-  if(G.gmode==='conquest') initAI(sTX,sTY);
+  // Autant d'adversaires IA que le mode en réclame. Chacun s'installe en
+  // tenant compte des bases déjà posées (joueur compris) pour ne pas se
+  // retrouver à partager les mêmes gisements.
+  const nbRivaux=MODES[G.gmode].rivaux||0;
+  const prisSurCarte=[[sTX,sTY]];
+  const idsIA=[FAC.IA,FAC.IA2], nomsIA=['Seigneur rival','Seigneur rival II'];
+  for(let i=0;i<nbRivaux;i++){
+    const a=initAI(sTX,sTY,idsIA[i],nomsIA[i],prisSurCarte);
+    if(a) prisSurCarte.push([Math.round(a.baseX/BASE_TILE),Math.round(a.baseY/BASE_TILE)]);
+  }
 
   // Caméra sur le TC
   camCenterOn((sTX+1.5)*BASE_TILE,(sTY+1.5)*BASE_TILE);
@@ -7515,9 +7799,11 @@ function startGame(){
   // Messages de bienvenue
   setTimeout(()=>notify('Sélectionnez un villageois, puis tapez une ressource !','#f0c040'),600);
   setTimeout(()=>notify('🪵 Récoltez du bois puis construisez des Maisons !','#e8d5a0'),3200);
-  if(G.gmode==='conquest'){
-    setTimeout(()=>notify('🏴 Un seigneur rival bâtit sa cité à l\'autre bout de la carte.','#e67e22'),6200);
-    setTimeout(()=>notify('🏰 Détruisez son Centre Ville pour l\'emporter — explorez pour le trouver !','#f0c040'),9200);
+  if(G.gmode!=='survival'){
+    const nb=MODES[G.gmode].rivaux||1;
+    setTimeout(()=>notify(nb>1?'🏴 Deux seigneurs rivaux bâtissent leurs cités — et se combattent entre eux.'
+                              :'🏴 Un seigneur rival bâtit sa cité à l\'autre bout de la carte.','#e67e22'),6200);
+    setTimeout(()=>notify('🏰 Rasez leur Centre Ville pour l\'emporter — explorez pour les trouver !','#f0c040'),9200);
   } else {
     setTimeout(()=>notify(`⏳ ${peaceLabel()} avant la 1ère attaque — montez les âges !`,'#2ecc71'),6200);
     setTimeout(()=>notify('🏆 Des points d\'intérêt (or illimité, lourdement gardés) sont dispersés sur la carte !','#f0c040'),9200);
@@ -7529,7 +7815,7 @@ window.startGame=startGame;
 // ── BADGE VILLAGEOIS INACTIFS ──────────────────────────────
 document.getElementById('idlebtn-inner').addEventListener('click',()=>{
   if(!G.running) return;
-  const idleVils=G.units.filter(u=>u.owner==='player'&&u.type===UT.VIL&&u.state==='idle');
+  const idleVils=G.units.filter(u=>estLocal(u)&&u.type===UT.VIL&&u.state==='idle');
   if(!idleVils.length) return;
   // Tourner parmi les inactifs si on en a déjà un de sélectionné
   let chosen=idleVils[0];

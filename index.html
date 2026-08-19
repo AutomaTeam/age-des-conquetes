@@ -357,6 +357,53 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   border:1.5px solid #5a4a2a;border-radius:6px;
 }
 .seedrow button:active { transform:scale(.95); }
+
+/* ── Panneau multijoueur ── */
+#mppanel {
+  position:fixed;inset:0;z-index:560;display:none;
+  background:rgba(0,0,0,.94);
+  flex-direction:column;align-items:center;gap:11px;
+  padding:20px 14px;overflow-y:auto;
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);
+}
+#mppanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px;margin:0; }
+#mppanel .mpsub { font-family:'Crimson Text',serif;font-size:12.5px;color:#9a8a6a;text-align:center;max-width:340px;line-height:1.45; }
+.mpcard {
+  width:100%;max-width:360px;background:rgba(42,22,0,.9);
+  border:1.5px solid #4a3a20;border-radius:10px;padding:12px 13px;
+  display:flex;flex-direction:column;gap:9px;
+}
+.mpcard h3 { font-family:'Cinzel',serif;font-size:14px;color:var(--gold-l);margin:0; }
+.mpbtn {
+  padding:9px 12px;font:inherit;font-size:13px;cursor:pointer;border-radius:8px;
+  background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);
+  border:1.5px solid var(--gold-d);
+}
+.mpbtn:active { transform:scale(.97); }
+.mpbtn[disabled] { opacity:.42;cursor:not-allowed; }
+.mpin {
+  padding:8px 10px;font:inherit;font-size:13px;text-align:center;
+  background:rgba(20,12,0,.75);color:var(--gold-l);
+  border:1.5px solid #5a4a2a;border-radius:8px;outline:none;width:100%;
+}
+.mpin:focus { border-color:var(--gold-d); }
+#mpcode {
+  font-family:'Cinzel',serif;font-size:30px;letter-spacing:.22em;
+  color:var(--gold-l);text-align:center;padding:6px 0 2px;
+}
+#mpetat { font-family:'Crimson Text',serif;font-size:12px;color:#9a8a6a;text-align:center; }
+#mpetat .ok  { color:#2ecc71; }
+#mpetat .warn{ color:#e67e22; }
+#mpetat .bad { color:#e74c3c; }
+#mpchat {
+  width:100%;max-width:360px;height:150px;overflow-y:auto;
+  background:rgba(12,8,0,.75);border:1.5px solid #4a3a20;border-radius:9px;
+  padding:8px 10px;font-family:'Crimson Text',serif;font-size:12.5px;
+  color:var(--parch2);display:flex;flex-direction:column;gap:3px;
+}
+#mpchat .moi { color:#7fb8e8; }
+#mpchat .lui { color:#e8c07f; }
+#mpchat .sys { color:#7a6a52;font-style:italic; }
 .modebtn .mico { font-size:20px;filter:drop-shadow(0 0 4px rgba(0,0,0,.4)); }
 .modebtn .mlabel { font-size:12px;font-weight:600; }
 .modebtn.sel { border-color:var(--mc);color:var(--mc);background:color-mix(in srgb, var(--mc) 16%, rgba(20,12,0,.7));box-shadow:0 0 14px -4px var(--mc); }
@@ -687,9 +734,44 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <p class="tip">Deux parties de même graine ont exactement la même carte.</p>
     <button class="bigbtn sheen" onclick="startGame()">⚔️ Commencer la partie</button>
     <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la sauvegarde</button>
+    <button class="bigbtn" id="mpbtn-titre" onclick="mpOuvrir()" style="background:linear-gradient(180deg,#0d2a3a,#08161f);color:#7fb8e8;border:1.5px solid #2a6a9a;box-shadow:none;">👥 1v1 en ligne</button>
     <button class="bigbtn achbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Succès <span id="achcount"></span></button>
     <button class="bigbtn" id="gauthbtn-title" onclick="googleAuthClick()" style="display:none;background:rgba(255,255,255,.06);color:#e8e8e8;border:1.5px solid #5a5a5a;box-shadow:none;">☁️ Connexion Google</button>
   </div>
+</div>
+
+<!-- ── PANNEAU MULTIJOUEUR ── -->
+<div id="mppanel">
+  <h2>👥 1v1 en ligne</h2>
+  <p class="mpsub" id="mpintro">Affrontez un ami sur la même carte, avec l'IA rivale en troisième camp.</p>
+
+  <div class="mpcard" id="mpcard-compte">
+    <h3>Compte</h3>
+    <div id="mpcompte" class="mpsub">…</div>
+    <button class="mpbtn" id="mpbtn-connexion" onclick="mpConnexion()">Se connecter avec Google</button>
+    <input class="mpin" id="mppseudo" type="text" maxlength="18" placeholder="Votre pseudo" oninput="mpPseudo(this.value)">
+  </div>
+
+  <div class="mpcard" id="mpcard-salon">
+    <h3>Partie</h3>
+    <button class="mpbtn" id="mpbtn-creer" onclick="mpCreer()">Créer une partie</button>
+    <div style="display:flex;gap:6px;">
+      <input class="mpin" id="mpjoin" type="text" maxlength="5" placeholder="CODE" style="text-transform:uppercase;letter-spacing:.18em;">
+      <button class="mpbtn" id="mpbtn-rejoindre" onclick="mpRejoindre()" style="flex-shrink:0;">Rejoindre</button>
+    </div>
+    <div id="mpcode" style="display:none;"></div>
+    <button class="mpbtn" id="mpbtn-copier" onclick="mpCopierLien()" style="display:none;">🔗 Copier le lien</button>
+  </div>
+
+  <div id="mpetat">Multijoueur non configuré</div>
+
+  <div id="mpchat"></div>
+  <div style="display:flex;gap:6px;width:100%;max-width:360px;">
+    <input class="mpin" id="mpmsg" type="text" maxlength="120" placeholder="Message…" onkeydown="if(event.key==='Enter')mpEnvoyerChat()">
+    <button class="mpbtn" onclick="mpEnvoyerChat()" style="flex-shrink:0;">Envoyer</button>
+  </div>
+
+  <button class="rclose" onclick="mpFermer()">Fermer</button>
 </div>
 
 <!-- ── PANNEAU DES SUCCÈS ── -->
@@ -7505,6 +7587,169 @@ function quitGame(){
   });
 }
 
+// ══════════════════════════════════════════════════════════
+//  SALON MULTIJOUEUR (interface)
+// ══════════════════════════════════════════════════════════
+// Le transport vit dans un module séparé (window.MP, voir tout en bas du
+// fichier). Ici on ne fait que piloter l'interface : tout appel est gardé par
+// `window.MP?.` pour que le jeu reste intact si le module n'a pas chargé.
+
+let _mpEtat={dispo:false};
+
+function mpDispo(){ return !!(window.MP&&_mpEtat.dispo); }
+
+function mpOuvrir(){
+  document.getElementById('mppanel').style.display='flex';
+  const ps=document.getElementById('mppseudo');
+  if(ps&&!ps.value) ps.value=localStorage.getItem('adc_pseudo')||'';
+  mpRafraichir();
+}
+window.mpOuvrir=mpOuvrir;
+function mpFermer(){ document.getElementById('mppanel').style.display='none'; }
+window.mpFermer=mpFermer;
+
+function mpLigne(txt,cls){
+  const c=document.getElementById('mpchat');
+  if(!c) return;
+  const d=document.createElement('div');
+  d.className=cls||'sys'; d.textContent=txt;
+  c.appendChild(d); c.scrollTop=c.scrollHeight;
+}
+
+// Reflete l'état du transport dans le panneau.
+function mpRafraichir(){
+  const e=_mpEtat;
+  const etat=document.getElementById('mpetat');
+  const compte=document.getElementById('mpcompte');
+  const bCo=document.getElementById('mpbtn-connexion');
+  const bCr=document.getElementById('mpbtn-creer');
+  const bRj=document.getElementById('mpbtn-rejoindre');
+  if(!etat) return;
+
+  if(!window.MP||!e.dispo){
+    etat.innerHTML='<span class="bad">Multijoueur indisponible</span> — '+
+      (e.raison==='sdk'?'SDK Firebase injoignable (hors-ligne ?)':'non configur\u00e9 (voir README)');
+    if(compte) compte.textContent='\u2014';
+    [bCo,bCr,bRj].forEach(b=>{ if(b) b.disabled=true; });
+    return;
+  }
+  [bCo,bCr,bRj].forEach(b=>{ if(b) b.disabled=false; });
+
+  if(!e.uid){
+    if(compte) compte.textContent='Non connect\u00e9';
+    if(bCo){ bCo.textContent='Se connecter avec Google'; bCo.style.display=''; }
+    if(bCr) bCr.disabled=true;
+    if(bRj) bRj.disabled=true;
+    etat.innerHTML='<span class="warn">Connexion requise pour jouer en ligne</span>';
+    return;
+  }
+  if(compte) compte.textContent=e.nom||'Connect\u00e9';
+  if(bCo){ bCo.textContent='Se d\u00e9connecter'; }
+
+  const code=document.getElementById('mpcode');
+  const copier=document.getElementById('mpbtn-copier');
+  if(e.code){
+    if(code){ code.textContent=e.code; code.style.display=''; }
+    if(copier) copier.style.display='';
+  } else {
+    if(code) code.style.display='none';
+    if(copier) copier.style.display='none';
+  }
+
+  const parts=[];
+  if(e.code) parts.push(`Salon <b>${e.code}</b> — ${e.role==='hote'?'vous h\u00e9bergez':'vous avez rejoint'}`);
+  if(e.adversaire) parts.push(`Adversaire : <b>${e.adversaire.nom||'…'}</b>`);
+  else if(e.code&&e.role==='hote') parts.push('<span class="warn">En attente d\'un adversaire…</span>');
+  if(e.connecte){
+    parts.push(e.canal==='p2p'
+      ? `<span class="ok">P2P \u00e9tabli</span>${e.rtt!=null?` (RTT ${e.rtt} ms)`:''}`
+      : `<span class="warn">Relais \u2014 latence \u00e9lev\u00e9e</span>${e.rtt!=null?` (RTT ${e.rtt} ms)`:''}`);
+  } else if(e.code){
+    parts.push('Signalisation…');
+  }
+  etat.innerHTML=parts.join('<br>')||'Pr\u00eat';
+}
+
+async function mpConnexion(){
+  if(!mpDispo()) return;
+  try{
+    if(_mpEtat.uid){ await window.MP.deconnecter(); mpLigne('D\u00e9connect\u00e9.','sys'); }
+    else { const u=await window.MP.connecter(); mpLigne(`Connect\u00e9 en tant que ${u.nom}.`,'sys'); }
+  }catch(err){ mpLigne('\u00c9chec de connexion : '+err.message,'sys'); }
+}
+window.mpConnexion=mpConnexion;
+
+function mpPseudo(v){ if(window.MP&&window.MP.definirPseudo) window.MP.definirPseudo(v); }
+window.mpPseudo=mpPseudo;
+
+async function mpCreer(){
+  if(!mpDispo()) return;
+  try{
+    const code=await window.MP.creerSalon({
+      gmode:selectedMode, difficulty:selectedDifficulty,
+      seed:(grainePartie!=null?grainePartie:(Math.random()*2147483646|0)+1),
+      avecIA:(MODES[selectedMode]||{}).rivaux||0,
+    });
+    mpLigne(`Partie cr\u00e9\u00e9e — code ${code}. Transmettez-le \u00e0 votre adversaire.`,'sys');
+  }catch(err){ mpLigne('Impossible de cr\u00e9er : '+err.message,'sys'); }
+}
+window.mpCreer=mpCreer;
+
+async function mpRejoindre(){
+  if(!mpDispo()) return;
+  const el=document.getElementById('mpjoin');
+  const code=(el?el.value:'').toUpperCase().trim();
+  if(code.length!==5){ mpLigne('Le code fait 5 caract\u00e8res.','sys'); return; }
+  try{
+    const r=await window.MP.rejoindreSalon(code);
+    mpLigne(`Vous avez rejoint la partie de ${r.hote?r.hote.nom:'l\'h\u00f4te'}.`,'sys');
+  }catch(err){ mpLigne('Impossible de rejoindre : '+err.message,'sys'); }
+}
+window.mpRejoindre=mpRejoindre;
+
+function mpCopierLien(){
+  if(!_mpEtat.code) return;
+  const lien=location.origin+location.pathname+'?p='+_mpEtat.code;
+  if(navigator.clipboard) navigator.clipboard.writeText(lien).then(
+    ()=>mpLigne('Lien copi\u00e9 : '+lien,'sys'),
+    ()=>mpLigne('Lien : '+lien,'sys'));
+  else mpLigne('Lien : '+lien,'sys');
+}
+window.mpCopierLien=mpCopierLien;
+
+function mpEnvoyerChat(){
+  const el=document.getElementById('mpmsg');
+  const txt=(el?el.value:'').trim();
+  if(!txt) return;
+  if(!window.MP||!window.MP.envoyer({t:'CHAT',texte:txt})){
+    mpLigne('Pas de canal — message non envoy\u00e9.','sys'); return;
+  }
+  mpLigne((_mpEtat.nom||'Moi')+' : '+txt,'moi');
+  el.value='';
+}
+window.mpEnvoyerChat=mpEnvoyerChat;
+
+// Branchement au transport d\u00e8s qu'il est l\u00e0 (le module se charge de fa\u00e7on
+// asynchrone : on r\u00e9essaie quelques fois avant d'abandonner).
+(function brancherMP(essai){
+  if(window.MP&&window.MP.surEtat){
+    window.MP.surEtat(e=>{ _mpEtat=e; mpRafraichir(); });
+    window.MP.surMessage(m=>{
+      if(m&&m.t==='CHAT') mpLigne((_mpEtat.adversaire&&_mpEtat.adversaire.nom||'Adversaire')+' : '+m.texte,'lui');
+    });
+    // Lien de partage ?p=CODE : pr\u00e9-remplit le code et ouvre le panneau.
+    const pc=new URLSearchParams(location.search).get('p');
+    if(pc){
+      const el=document.getElementById('mpjoin');
+      if(el) el.value=pc.toUpperCase();
+      mpOuvrir();
+    }
+    return;
+  }
+  if((essai||0)<40) setTimeout(()=>brancherMP((essai||0)+1),150);
+  else mpRafraichir();
+})(0);
+
 // ── CONNEXION GOOGLE (sauvegarde cloud) ────────────────────
 // Identifiant client OAuth 2.0 (public — ce n'est PAS un secret, il ne
 // donne accès à rien par lui-même) à créer sur
@@ -8204,5 +8449,312 @@ document.body.addEventListener('touchstart',e=>{if(e.target===canvas)e.preventDe
 document.body.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 document.body.addEventListener('contextmenu',e=>e.preventDefault());
 </script>
+
+<!-- ══ TRANSPORT MULTIJOUEUR (Firebase + WebRTC) ══════════════
+     Bloc SEPARE et en type="module" : le SDK Firebase n'existe qu'en ESM,
+     que le grand script classique ci-dessus ne peut pas importer. Il publie
+     window.MP et rien d'autre ; tout le jeu appelle `window.MP?.…` derriere
+     des gardes, exactement comme pour GOOGLE_CONFIGURED. Si la config est
+     absente ou le CDN injoignable, le solo se comporte comme avant. -->
+<script type="module">
+// ── CONFIGURATION ────────────────────────────────────────────
+// Valeurs PUBLIQUES (ce ne sont pas des secrets : la securite repose sur les
+// regles de securite Realtime Database, cote serveur). Voir README.
+const FIREBASE_CONFIG = {
+  apiKey:            'REMPLACE_MOI',
+  authDomain:        'age-des-conquetes.firebaseapp.com',
+  databaseURL:       'REMPLACE_MOI',
+  projectId:         'age-des-conquetes',
+  appId:             'REMPLACE_MOI',
+};
+const MP_ACTIF = !Object.values(FIREBASE_CONFIG).some(v=>String(v).startsWith('REMPLACE_MOI'));
+
+// Serveurs STUN publics. Suffisent dans ~75-85 % des cas ; derriere un NAT
+// symetrique (4G, reseaux d'entreprise) il faudrait un TURN, que Firebase ne
+// fournit pas — d'ou le repli relais RTDB plus bas.
+const ICE_SERVERS = [
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+];
+
+const DELAI_P2P     = 9000;  // ms avant de renoncer au P2P et de passer au relais
+const RELAIS_PERIODE= 200;   // ms entre deux envois groupes en mode relais (5 Hz)
+
+// Etat expose au jeu.
+const E = {
+  dispo:false, pret:false, raison:null,
+  uid:null, nom:null,
+  code:null, role:null,        // 'hote' | 'invite'
+  canal:null,                  // 'p2p' | 'relais' | null
+  rtt:null,
+  adversaire:null,             // {uid,nom}
+  connecte:false,
+};
+const abonnesMessage=[], abonnesEtat=[];
+function prevenirEtat(){ for(const f of abonnesEtat){ try{ f({...E}); }catch(e){} } }
+function prevenirMessage(m){ for(const f of abonnesMessage){ try{ f(m); }catch(e){} } }
+
+// API publiee tres tot : le jeu peut l'interroger meme si le SDK n'a pas
+// (encore) charge, et affichera "indisponible" plutot que de planter.
+window.MP = {
+  etat: ()=>({...E}),
+  surMessage: f=>{ abonnesMessage.push(f); },
+  surEtat:    f=>{ abonnesEtat.push(f); prevenirEtat(); },
+  connecter:  async()=>{ throw new Error('Multijoueur non configure'); },
+  deconnecter:async()=>{},
+  creerSalon: async()=>{ throw new Error('Multijoueur non configure'); },
+  rejoindreSalon: async()=>{ throw new Error('Multijoueur non configure'); },
+  envoyer:    ()=>false,
+  quitter:    async()=>{},
+};
+
+if(!MP_ACTIF){
+  E.raison='config';
+  prevenirEtat();
+} else {
+try {
+  const [appMod, authMod, dbMod] = await Promise.all([
+    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'),
+    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'),
+    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js'),
+  ]);
+  const app  = appMod.initializeApp(FIREBASE_CONFIG);
+  const auth = authMod.getAuth(app);
+  const db   = dbMod.getDatabase(app);
+  const {ref,set,get,child,update,remove,onValue,onChildAdded,push,onDisconnect,serverTimestamp}=dbMod;
+
+  E.dispo=true; prevenirEtat();
+
+  // ── AUTHENTIFICATION ──────────────────────────────────────
+  // Cohabitation volontaire avec le gAuth GIS existant (qui sert la
+  // sauvegarde Drive) : on ne touche pas a ce qui marche. Le cout est un
+  // second consentement Google possible ; l'unification viendra plus tard.
+  authMod.onAuthStateChanged(auth, u=>{
+    E.uid = u?u.uid:null;
+    E.nom = u?(localStorage.getItem('adc_pseudo')||u.displayName||'Joueur'):null;
+    prevenirEtat();
+  });
+
+  window.MP.connecter = async()=>{
+    const p = new authMod.GoogleAuthProvider();
+    const res = await authMod.signInWithPopup(auth,p);
+    E.uid=res.user.uid;
+    E.nom=localStorage.getItem('adc_pseudo')||res.user.displayName||'Joueur';
+    prevenirEtat();
+    return {uid:E.uid, nom:E.nom};
+  };
+  window.MP.deconnecter = async()=>{ await authMod.signOut(auth); prevenirEtat(); };
+  window.MP.definirPseudo = nom=>{
+    const t=String(nom||'').trim().slice(0,18);
+    if(t){ localStorage.setItem('adc_pseudo',t); E.nom=t; prevenirEtat(); }
+  };
+
+  // ── SALON ─────────────────────────────────────────────────
+  // Code court, sans caracteres ambigus (ni 0/O ni 1/I/L).
+  const ALPHABET='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const nouveauCode=()=>{
+    let c=''; const a=new Uint32Array(5); crypto.getRandomValues(a);
+    for(let i=0;i<5;i++) c+=ALPHABET[a[i]%ALPHABET.length];
+    return c;
+  };
+
+  let pc=null, dc=null, nettoyages=[], minuteurP2P=null, minuteurPing=null;
+  let relaisActif=false, filRelais=[], minuteurRelais=null;
+
+  function poser(f){ nettoyages.push(f); }
+  function toutNettoyer(){
+    for(const f of nettoyages){ try{ f(); }catch(e){} }
+    nettoyages=[];
+    if(minuteurP2P)   { clearTimeout(minuteurP2P); minuteurP2P=null; }
+    if(minuteurPing)  { clearInterval(minuteurPing); minuteurPing=null; }
+    if(minuteurRelais){ clearInterval(minuteurRelais); minuteurRelais=null; }
+    if(dc){ try{ dc.close(); }catch(e){} dc=null; }
+    if(pc){ try{ pc.close(); }catch(e){} pc=null; }
+    relaisActif=false; filRelais=[];
+  }
+
+  // Cree la connexion WebRTC et branche la signalisation sur RTDB.
+  function creerPC(code,role){
+    pc=new RTCPeerConnection({iceServers:ICE_SERVERS});
+    const moi   = role==='hote'?'hote':'invite';
+    const autre = role==='hote'?'invite':'hote';
+
+    pc.onicecandidate=e=>{
+      if(e.candidate) push(ref(db,`signal/${code}/ice/${moi}`), e.candidate.toJSON()).catch(()=>{});
+    };
+    const stopIce=onChildAdded(ref(db,`signal/${code}/ice/${autre}`), snap=>{
+      const c=snap.val();
+      if(c) pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
+    });
+    poser(stopIce);
+
+    pc.onconnectionstatechange=()=>{
+      if(pc.connectionState==='connected'){
+        if(minuteurP2P){ clearTimeout(minuteurP2P); minuteurP2P=null; }
+      } else if(pc.connectionState==='failed'){
+        basculerRelais(code,role,'echec P2P');
+      }
+    };
+    return pc;
+  }
+
+  function brancherCanal(canal,code,role){
+    dc=canal;
+    dc.onopen=()=>{
+      if(relaisActif) return;         // le relais a deja pris la main
+      E.canal='p2p'; E.connecte=true; prevenirEtat();
+      demarrerPing();
+    };
+    dc.onclose=()=>{ E.connecte=false; prevenirEtat(); };
+    dc.onmessage=e=>{ recevoir(e.data); };
+  }
+
+  // ── REPLI RELAIS ──────────────────────────────────────────
+  // Le P2P echoue (NAT symetrique sans TURN) : on fait transiter les messages
+  // par la base. Fonctionnel mais couteux — latence 150-400 ms et facturation
+  // a l'ecriture — d'ou une cadence reduite et des envois groupes.
+  function basculerRelais(code,role,pourquoi){
+    if(relaisActif) return;
+    relaisActif=true;
+    E.canal='relais'; E.connecte=true; prevenirEtat();
+    const moi   = role==='hote'?'hote':'invite';
+    const autre = role==='hote'?'invite':'hote';
+    const stop=onChildAdded(ref(db,`relais/${code}/${moi}`), snap=>{
+      const v=snap.val();
+      remove(snap.ref).catch(()=>{});
+      if(v&&v.charge) for(const m of v.charge) recevoir(m);
+    });
+    poser(stop);
+    minuteurRelais=setInterval(()=>{
+      if(!filRelais.length) return;
+      const lot=filRelais.splice(0,filRelais.length);
+      push(ref(db,`relais/${code}/${autre}`),{de:moi,ts:Date.now(),charge:lot}).catch(()=>{});
+    },RELAIS_PERIODE);
+    demarrerPing();
+  }
+
+  // ── ENVOI / RECEPTION ─────────────────────────────────────
+  function envoyer(obj){
+    const txt=(typeof obj==='string')?obj:JSON.stringify(obj);
+    if(!relaisActif&&dc&&dc.readyState==='open'){ try{ dc.send(txt); return true; }catch(e){} }
+    if(relaisActif){ filRelais.push(txt); return true; }
+    return false;
+  }
+  window.MP.envoyer=envoyer;
+
+  function recevoir(txt){
+    let m; try{ m=JSON.parse(txt); }catch(e){ return; }
+    // Le ping/pong est du ressort du transport, pas du jeu.
+    if(m&&m.t==='PING'){ envoyer({t:'PONG',ts:m.ts}); return; }
+    if(m&&m.t==='PONG'){ E.rtt=Date.now()-m.ts; prevenirEtat(); return; }
+    prevenirMessage(m);
+  }
+
+  function demarrerPing(){
+    if(minuteurPing) clearInterval(minuteurPing);
+    minuteurPing=setInterval(()=>{ envoyer({t:'PING',ts:Date.now()}); },1000);
+  }
+
+  // ── CREER / REJOINDRE ─────────────────────────────────────
+  window.MP.creerSalon = async(config)=>{
+    if(!E.uid) throw new Error('Connexion Google requise');
+    await window.MP.quitter();
+    const code=nouveauCode();
+    await set(ref(db,`parties/${code}`),{
+      hote:{uid:E.uid,nom:E.nom,ts:Date.now()},
+      invite:null, etat:'ouvert',
+      config:config||{}, creeLe:serverTimestamp(),
+      expireLe:Date.now()+2*3600*1000,
+    });
+    E.code=code; E.role='hote'; prevenirEtat();
+
+    // Le salon se nettoie tout seul si l'hote ferme l'onglet.
+    onDisconnect(ref(db,`parties/${code}`)).remove();
+    onDisconnect(ref(db,`signal/${code}`)).remove();
+    await set(ref(db,`presence/${code}/${E.uid}`),'connecte');
+    onDisconnect(ref(db,`presence/${code}/${E.uid}`)).set('parti');
+
+    creerPC(code,'hote');
+    brancherCanal(pc.createDataChannel('jeu',{ordered:true}),code,'hote');
+    const offre=await pc.createOffer();
+    await pc.setLocalDescription(offre);
+    await set(ref(db,`signal/${code}/offre`),{type:offre.type,sdp:offre.sdp});
+
+    // Attendre la reponse de l'invite.
+    const stop=onValue(ref(db,`signal/${code}/reponse`), async snap=>{
+      const r=snap.val();
+      if(!r||!pc||pc.currentRemoteDescription) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(r));
+    });
+    poser(stop);
+
+    // Qui nous rejoint ?
+    const stop2=onValue(ref(db,`parties/${code}/invite`), snap=>{
+      const v=snap.val();
+      E.adversaire=v?{uid:v.uid,nom:v.nom}:null;
+      prevenirEtat();
+    });
+    poser(stop2);
+
+    minuteurP2P=setTimeout(()=>basculerRelais(code,'hote','delai depasse'),DELAI_P2P);
+    return code;
+  };
+
+  window.MP.rejoindreSalon = async(code)=>{
+    if(!E.uid) throw new Error('Connexion Google requise');
+    code=String(code||'').toUpperCase().trim();
+    await window.MP.quitter();
+    const snap=await get(ref(db,`parties/${code}`));
+    if(!snap.exists()) throw new Error('Aucune partie a ce code');
+    const p=snap.val();
+    if(p.invite&&p.invite.uid&&p.invite.uid!==E.uid) throw new Error('Cette partie est deja complete');
+
+    await update(ref(db,`parties/${code}`),{invite:{uid:E.uid,nom:E.nom,ts:Date.now()},etat:'plein'});
+    E.code=code; E.role='invite'; E.adversaire=p.hote?{uid:p.hote.uid,nom:p.hote.nom}:null;
+    prevenirEtat();
+    await set(ref(db,`presence/${code}/${E.uid}`),'connecte');
+    onDisconnect(ref(db,`presence/${code}/${E.uid}`)).set('parti');
+
+    creerPC(code,'invite');
+    pc.ondatachannel=e=>brancherCanal(e.channel,code,'invite');
+
+    const offSnap=await get(ref(db,`signal/${code}/offre`));
+    if(!offSnap.exists()) throw new Error('Partie non prete — reessayez');
+    await pc.setRemoteDescription(new RTCSessionDescription(offSnap.val()));
+    const rep=await pc.createAnswer();
+    await pc.setLocalDescription(rep);
+    await set(ref(db,`signal/${code}/reponse`),{type:rep.type,sdp:rep.sdp});
+
+    minuteurP2P=setTimeout(()=>basculerRelais(code,'invite','delai depasse'),DELAI_P2P);
+    return {code, config:p.config||{}, hote:p.hote};
+  };
+
+  window.MP.quitter = async()=>{
+    const code=E.code, role=E.role, uid=E.uid;
+    toutNettoyer();
+    E.code=null; E.role=null; E.canal=null; E.connecte=false; E.rtt=null; E.adversaire=null;
+    prevenirEtat();
+    if(!code) return;
+    try{
+      if(role==='hote'){
+        await remove(ref(db,`parties/${code}`));
+        await remove(ref(db,`signal/${code}`));
+        await remove(ref(db,`relais/${code}`));
+      } else if(uid){
+        await update(ref(db,`parties/${code}`),{invite:null,etat:'ouvert'});
+      }
+      await remove(ref(db,`presence/${code}/${uid}`));
+    }catch(e){}
+  };
+
+  E.pret=true; prevenirEtat();
+} catch(err){
+  E.raison='sdk';
+  console.warn('Multijoueur indisponible (SDK Firebase injoignable ?)',err);
+  prevenirEtat();
+}
+}
+</script>
+
 </body>
 </html>

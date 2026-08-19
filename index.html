@@ -760,6 +760,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
       <button class="mpbtn" id="mpbtn-rejoindre" onclick="mpRejoindre()" style="flex-shrink:0;">Rejoindre</button>
     </div>
     <div id="mpcode" style="display:none;"></div>
+    <button class="mpbtn" id="mpbtn-lancer" onclick="mpLancer()" style="display:none;background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border-color:#2ecc71;">⚔️ Lancer la partie</button>
     <button class="mpbtn" id="mpbtn-copier" onclick="mpCopierLien()" style="display:none;">🔗 Copier le lien</button>
   </div>
 
@@ -1220,6 +1221,14 @@ function initState() {
   // ne servent qu'en Survie (vagues + garnisons des points d'intérêt).
   G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:'Vous',res:diff.startRes,maxPop:5});
   G.factions[FAC.PILL]=mkFaction(FAC.PILL,{genre:'neutre',equipe:0,hostileATous:true});
+  // Partie en ligne : le second joueur humain existe des la creation de
+  // l'etat, car mkBuilding/mkUnit lisent l'age et les recherches de leur
+  // proprietaire — sa faction doit preexister a sa base.
+  if(typeof RESEAU!=='undefined'&&RESEAU.actif&&RESEAU.role==='hote'){
+    G.factions[FAC.P2]=mkFaction(FAC.P2,{genre:'humain',equipe:2,
+      nom:(RESEAU.adversaire&&RESEAU.adversaire.nom)||'Adversaire',
+      res:diff.startRes,maxPop:5});
+  }
   installerShims();
 }
 
@@ -6195,9 +6204,17 @@ function ordre(t,charge){ return Object.assign({seq:++_ordSeq, f:G.me, t}, charg
 
 // Route un ordre. En solo (et chez l'hôte) il s'applique immédiatement ;
 // c'est ici que le client multijoueur l'enverra sur le réseau (P6).
-function emettreOrdre(cmd){
+function emettreOrdre(cmd,predire){
   if(_journalOrdres) _journalOrdres.push({at:+G.gameTime.toFixed(3), cmd:JSON.parse(JSON.stringify(cmd))});
-  return applyCommand(cmd);
+  // Solo, ou hôte : on applique tout de suite, c'est nous qui faisons foi.
+  if(estHote()) return applyCommand(cmd);
+  // Client : l'ordre part chez l'hôte, qui le validera. En attendant, on
+  // répond localement (prédiction optimiste) pour que l'interface ne donne
+  // pas l'impression d'être morte pendant un aller-retour réseau.
+  if(!envoyerReseau({t:'ORDRE',cmd})) return {ok:false,raison:'reseau'};
+  const pred=predire?predire():null;
+  RESEAU.attente.set(cmd.seq,{cmd, annuler:pred&&pred.annuler});
+  return pred&&pred.resultat ? pred.resultat : {ok:true, optimiste:true};
 }
 
 // Journal d'ordres : ordres + graine = rejeu complet d'une partie. Sert
@@ -7588,11 +7605,441 @@ function quitGame(){
 }
 
 // ══════════════════════════════════════════════════════════
+//  TRANSPORT : branchement
+// Le protocole ci-dessus ne connait ni Firebase ni WebRTC : il ecrit dans
+// RESEAU.envoi et lit par recevoirReseau. On peut donc l'eprouver sur
+// n'importe quel canal - window.MP en production, une boucle locale en test.
+function brancherTransport(envoi){ RESEAU.envoi=envoi; }
+window.brancherTransport=brancherTransport;
+
+// Canal de TEST : relie deux onglets du jeu sans Firebase, pour valider le
+// protocole independamment du transport reseau.
+function transportLocal(canalNom){
+  const bc=new BroadcastChannel(canalNom||'adc-test');
+  bc.onmessage=e=>{ try{ recevoirReseau(e.data); }catch(err){ console.error('reseau:',err); } };
+  brancherTransport(m=>{ bc.postMessage(m); return true; });
+  return bc;
+}
+window.transportLocal=transportLocal;
+
 //  SALON MULTIJOUEUR (interface)
 // ══════════════════════════════════════════════════════════
 // Le transport vit dans un module séparé (window.MP, voir tout en bas du
 // fichier). Ici on ne fait que piloter l'interface : tout appel est gardé par
 // `window.MP?.` pour que le jeu reste intact si le module n'a pas chargé.
+
+
+// ═══════════════════════════════════════════════════════════════
+//  BOUCLE RESEAU  (hote autoritaire)
+// ═══════════════════════════════════════════════════════════════
+// La simulation n'est PAS deterministe (Math.random dans update, dt variable
+// avant P0, coordonnees flottantes) : rejouer les memes ordres des deux cotes
+// divergerait. L'hote fait donc tourner la seule simulation qui fasse foi ; le
+// client ne fait qu'envoyer des ordres et afficher l'etat recu, interpole.
+//
+//   hote   : update() -> etat -> deltas 10 Hz -> client
+//   client : ordres -> hote ;  deltas -> interpolation -> rendu
+//
+// Le transport est abstrait (RESEAU.envoi) : window.MP en production, une
+// simple boucle locale pour les tests. Rien ici ne connait Firebase.
+
+const PROTO_VERSION = 1;
+const DELTA_HZ      = 10;
+const DELTA_PERIODE = 1/DELTA_HZ;
+const SEUIL_POS     = 1;    // unites-monde : en deca, on ne renvoie pas la position
+
+const RESEAU = {
+  actif:false,
+  role:null,          // 'hote' | 'client'
+  envoi:null,         // fonction(objet) -> bool, fournie par le transport
+  moi:null,           // faction locale
+  adversaire:null,    // {id, nom}
+  tick:0,
+  accDelta:0,
+  pret:false,         // le client a fini de generer sa carte
+  dernier:new Map(),  // id -> derniere valeur envoyee (hote)
+  connusU:new Set(), connusB:new Set(),
+  attente:new Map(),  // seq -> ordre en attente d'acquittement (client)
+  latence:0,
+};
+window.RESEAU=RESEAU;
+
+function reseauActif(){ return RESEAU.actif; }
+function estHote(){ return !RESEAU.actif || RESEAU.role==='hote'; }
+
+function envoyerReseau(m){
+  if(!RESEAU.actif||!RESEAU.envoi) return false;
+  try{ return !!RESEAU.envoi(m); }catch(e){ return false; }
+}
+
+// ── SERIALISATION ──────────────────────────────────────────────
+// On ne transmet que ce qui ne se rededuit pas : la carte vient de la graine
+// (P4), les projectiles sont peu nombreux, et la mort d'une unite se lit dans
+// la liste des retraits.
+function serialiserUnite(u){
+  return {i:u.id, t:u.type, o:u.owner,
+          x:Math.round(u.x), y:Math.round(u.y),
+          h:u.hp, m:u.maxHp, s:u.state, g:u.target||null,
+          d:+(u.dir||0).toFixed(2), v:u.inv||0, w:u.invT||null,
+          c:u.camp||null, k:u.stance||null};
+}
+function deserialiserUnite(d){
+  const u=mkUnit(d.t, d.x, d.y, d.o);
+  u.id=d.i; u.hp=d.h; u.maxHp=d.m; u.state=d.s; u.target=d.g;
+  u.dir=d.d; u.inv=d.v; u.invT=d.w; u.camp=d.c; u.stance=d.k;
+  u._netX=d.x; u._netY=d.y;
+  return u;
+}
+function serialiserBatiment(b){
+  return {i:b.id, t:b.type, o:b.owner, x:b.tx, y:b.ty,
+          h:b.hp, m:b.maxHp, c:b.constructing?1:0, p:+(b.progress||0).toFixed(3),
+          q:b.trainQ||[], r:b.trainTimer||0, l:b.level||1,
+          g:b.open?1:0, f:b.foodLeft||0, a:b.autoTrain?1:0,
+          y2:b.rally?[Math.round(b.rally.x),Math.round(b.rally.y)]:null};
+}
+function deserialiserBatiment(d){
+  const b=mkBuilding(d.t, d.x, d.y, d.o);
+  b.id=d.i; b.hp=d.h; b.maxHp=d.m;
+  b.constructing=!!d.c; b.progress=d.p;
+  b.trainQ=d.q||[]; b.trainTimer=d.r; b.level=d.l;
+  b.open=!!d.g; b.foodLeft=d.f; b.autoTrain=!!d.a;
+  b.rally=d.y2?{x:d.y2[0],y:d.y2[1]}:null;
+  return b;
+}
+function serialiserFaction(f){
+  return {i:f.id, g:f.genre, e:f.equipe, t:f.teinte, n:f.nom,
+          ht:f.hostileATous?1:0,
+          r:f.res, a:f.age, q:f.ageUpQ, rc:f.research, rq:f.researchQ,
+          p:f.pop, mp:f.maxPop, v:f.vaincu?1:0};
+}
+function appliquerFaction(d){
+  let f=G.factions[d.i];
+  if(!f){
+    f=mkFaction(d.i,{genre:d.g,equipe:d.e,teinte:d.t,nom:d.n,hostileATous:!!d.ht});
+    G.factions[d.i]=f;
+  }
+  f.res=d.r; f.age=d.a; f.ageUpQ=d.q; f.research=d.rc; f.researchQ=d.rq;
+  f.pop=d.p; f.maxPop=d.mp; f.vaincu=!!d.v; f.nom=d.n; f.teinte=d.t;
+  return f;
+}
+
+// ── HOTE : instantane complet ──────────────────────────────────
+function construireSnap(){
+  RESEAU.connusU=new Set(G.units.map(u=>u.id));
+  RESEAU.connusB=new Set(G.buildings.map(b=>b.id));
+  RESEAU.dernier.clear();
+  for(const u of G.units) RESEAU.dernier.set('u'+u.id,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir});
+  for(const b of G.buildings) RESEAU.dernier.set('b'+b.id,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing});
+  return {
+    t:'SNAP', tick:RESEAU.tick, gt:+G.gameTime.toFixed(2),
+    fac:Object.values(G.factions).map(serialiserFaction),
+    nodes:G.nodes.filter(nd=>nd.amt!==nd.max).map(nd=>[nd.id,nd.amt]), // le reste vient de la graine
+    uni:G.units.map(serialiserUnite),
+    bat:G.buildings.map(serialiserBatiment),
+    wave:G.wave, waveTimer:G.waveTimer, waveActive:G.waveActive,
+  };
+}
+
+// ── HOTE : delta ───────────────────────────────────────────────
+// Masque de bits par entite ; seuls les champs qui ont bouge voyagent.
+const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32;
+function construireDelta(){
+  const d={t:'D', tick:RESEAU.tick, u:[], b:[], n:[], rm:[], rmb:[]};
+  const vus=new Set(), vusB=new Set();
+
+  for(const u of G.units){
+    vus.add(u.id);
+    const cle='u'+u.id, av=RESEAU.dernier.get(cle);
+    if(!av){                                   // nouvelle unite : complete
+      (d.newU||(d.newU=[])).push(serialiserUnite(u));
+      RESEAU.dernier.set(cle,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir});
+      continue;
+    }
+    let masque=0; const ch=[];
+    if(Math.abs(u.x-av.x)>SEUIL_POS){ masque|=M_X; ch.push(Math.round(u.x)); av.x=u.x; }
+    if(Math.abs(u.y-av.y)>SEUIL_POS){ masque|=M_Y; ch.push(Math.round(u.y)); av.y=u.y; }
+    if(u.hp!==av.h){ masque|=M_HP; ch.push(u.hp); av.h=u.hp; }
+    if(u.state!==av.s){ masque|=M_ETAT; ch.push(u.state); av.s=u.state; }
+    if((u.target||null)!==(av.g||null)){ masque|=M_CIBLE; ch.push(u.target||null); av.g=u.target; }
+    if(Math.abs((u.dir||0)-(av.d||0))>0.25){ masque|=M_DIR; ch.push(+(u.dir||0).toFixed(2)); av.d=u.dir; }
+    if(masque) d.u.push([u.id,masque].concat(ch));
+  }
+  for(const id of RESEAU.connusU) if(!vus.has(id)){ d.rm.push(id); RESEAU.dernier.delete('u'+id); }
+  RESEAU.connusU=vus;
+
+  for(const b of G.buildings){
+    vusB.add(b.id);
+    const cle='b'+b.id, av=RESEAU.dernier.get(cle);
+    if(!av){
+      (d.newB||(d.newB=[])).push(serialiserBatiment(b));
+      RESEAU.dernier.set(cle,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing});
+      continue;
+    }
+    const q=JSON.stringify(b.trainQ);
+    // `constructing` et `maxHp` voyagent EXPLICITEMENT. Les deduire cote
+    // client (progress>=1) etait un piege : le dernier pas de chantier fait
+    // moins que le seuil de progression, aucun delta n'etait emis, et le
+    // batiment restait "en travaux" a jamais chez le client.
+    if(b.hp!==av.h||b.maxHp!==av.mh||Math.abs(b.progress-av.p)>0.004||q!==av.q
+       ||b.foodLeft!==av.f||b.level!==av.l||b.open!==av.g||(!!b.constructing)!==av.c){
+      d.b.push([b.id,b.hp,+b.progress.toFixed(3),b.trainQ,b.foodLeft,b.level,
+                b.open?1:0,b.constructing?1:0,b.maxHp]);
+      av.h=b.hp; av.mh=b.maxHp; av.p=b.progress; av.q=q;
+      av.f=b.foodLeft; av.l=b.level; av.g=b.open; av.c=!!b.constructing;
+    }
+  }
+  for(const id of RESEAU.connusB) if(!vusB.has(id)){ d.rmb.push(id); RESEAU.dernier.delete('b'+id); }
+  RESEAU.connusB=vusB;
+
+  // Gisements entames depuis le dernier envoi
+  for(const nd of G.nodes){
+    const cle='n'+nd.id, av=RESEAU.dernier.get(cle);
+    if(av===undefined){ if(nd.amt!==nd.max){ d.n.push([nd.id,nd.amt]); RESEAU.dernier.set(cle,nd.amt); } }
+    else if(av!==nd.amt){ d.n.push([nd.id,nd.amt]); RESEAU.dernier.set(cle,nd.amt); }
+  }
+
+  // Factions : caisse, age, population, recherches
+  d.fac=Object.values(G.factions).map(serialiserFaction);
+  // Projectiles : trop peu nombreux pour meriter un differentiel
+  d.p=G.projs.map(pr=>[pr.x|0,pr.y|0,pr.tx|0,pr.ty|0,pr.owner||'']);
+  d.gt=+G.gameTime.toFixed(2);
+  d.wave=G.wave;
+  return d;
+}
+
+// ── CLIENT : application ───────────────────────────────────────
+function appliquerSnap(m){
+  G.gameTime=m.gt;
+  for(const f of m.fac) appliquerFaction(f);
+  for(const [id,amt] of (m.nodes||[])){ const nd=G.nodes.find(x=>x.id===id); if(nd) nd.amt=amt; }
+  // Les batiments repassent par placeBuilding : la grille de blocage doit
+  // refleter exactement celle de l'hote, sinon le pathfinding local diverge.
+  G.buildings=[];
+  // Purge des marques laissees par des batiments (1=ferme, 3=solide,
+  // 9=reserve) : le terrain lui-meme (eau, gisements) ne doit pas bouger.
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const v=G.bmap[y][x]; if(v===1||v===3||v===9) G.bmap[y][x]=0;
+  }
+  for(const bd of m.bat) placeBuilding(deserialiserBatiment(bd)); // placeBuilding pousse lui-meme
+  G.units=m.uni.map(deserialiserUnite);
+  G.wave=m.wave; G.waveTimer=m.waveTimer; G.waveActive=m.waveActive;
+  G.nid=Math.max(...[...G.units,...G.buildings,...G.nodes].map(e=>e.id||0),0)+1;
+  rebuildIndex();
+  updatePopCap();
+  revealFog();
+  refreshUI();
+}
+
+function appliquerDelta(m){
+  if(m.gt!=null) G.gameTime=m.gt;
+  if(m.wave!=null) G.wave=m.wave;
+  if(m.fac) for(const f of m.fac) appliquerFaction(f);
+
+  for(const nd of (m.n||[])){ const x=G.nodes.find(z=>z.id===nd[0]); if(x) x.amt=nd[1]; }
+
+  for(const bd of (m.newB||[])){
+    if(G.buildings.some(b=>b.id===bd.i)) continue;
+    placeBuilding(deserialiserBatiment(bd));
+  }
+  for(const ud of (m.newU||[])){
+    if(G.units.some(u=>u.id===ud.i)) continue;
+    G.units.push(deserialiserUnite(ud));
+  }
+  rebuildIndex();
+
+  for(const e of (m.u||[])){
+    const u=unitById(e[0]); if(!u) continue;
+    const masque=e[1]; let k=2;
+    if(masque&M_X)     u._netX=e[k++];
+    if(masque&M_Y)     u._netY=e[k++];
+    if(masque&M_HP)    { const av=u.hp; u.hp=e[k++]; if(u.hp<av) u.hitFlash=0.15; }
+    if(masque&M_ETAT)  u.state=e[k++];
+    if(masque&M_CIBLE) u.target=e[k++];
+    if(masque&M_DIR)   u.dir=e[k++];
+  }
+  for(const e of (m.b||[])){
+    const b=bldById(e[0]); if(!b) continue;
+    const avHp=b.hp, avOuvert=b.open;
+    b.hp=e[1]; b.progress=e[2]; b.trainQ=e[3]; b.foodLeft=e[4];
+    b.level=e[5]; b.open=!!e[6];
+    b.constructing=!!e[7];        // autoritaire : jamais deduit
+    if(e[8]!=null) b.maxHp=e[8];
+    if(b.hp<avHp) b.hitFlash=0.15;
+    // Un portail qui s'ouvre ou se ferme change la grille de blocage : sans
+    // ca le pathfinding local du client diverge de celui de l'hote.
+    if(b.open!==avOuvert&&b.type===BT.GATE){
+      const mark=b.open?0:3;
+      for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++)
+        if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=mark;
+    }
+  }
+
+  // Retraits : c'est ici que le client apprend les morts et les destructions.
+  for(const id of (m.rm||[])){
+    const u=unitById(id); if(!u) continue;
+    G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1});
+    spawnParts(u.x,u.y,couleurMinimap(u,true),8);
+    G.units=G.units.filter(z=>z.id!==id);
+    G.sel=G.sel.filter(z=>z!==id);
+  }
+  for(const id of (m.rmb||[])){
+    const b=bldById(id); if(!b) continue;
+    spawnParts(b.x,b.y,'#e74c3c',14);
+    for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++) if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=0;
+    G.buildings=G.buildings.filter(z=>z.id!==id);
+    G.sel=G.sel.filter(z=>z!==id);
+  }
+  if((m.rm||[]).length||(m.rmb||[]).length){ rebuildIndex(); updatePopCap(); }
+
+  // Projectiles : etat complet, ils sont trop peu nombreux pour un differentiel
+  if(m.p){
+    G.projs=m.p.map(q=>({id:G.nid++,x:q[0],y:q[1],tx:q[2],ty:q[3],owner:q[4]||null,
+                         targetId:null,atk:0,spd:8*BASE_TILE,life:1,d0:1}));
+  }
+}
+
+// ── CLIENT : mise a jour purement visuelle ─────────────────────
+// Le client ne simule RIEN : il interpole vers l'etat recu et fait vivre les
+// effets locaux (particules, textes flottants, silhouettes de mort, camera).
+let _fogClientT=0;
+function updateVisuel(dt){
+  G.dt=dt;
+  G.gameTime+=dt;                       // avance douce entre deux deltas
+  G.dayPhase=(G.gameTime/90)%1;
+  rebuildIndex();
+  rebuildGrid();
+
+  const k=Math.min(1,dt*14);            // lissage de l'interpolation
+  for(const u of G.units){
+    if(u._netX==null){ u._netX=u.x; u._netY=u.y; }
+    const dx=u._netX-u.x, dy=u._netY-u.y;
+    const dist=Math.hypot(dx,dy);
+    if(dist>BASE_TILE*2){                // teleportation ou resynchronisation
+      u.x=u._netX; u.y=u._netY; u.moving=false;
+    } else if(dist>0.5){
+      u.x+=dx*k; u.y+=dy*k;
+      u.moving=true; u.dir=Math.atan2(dy,dx);
+      u.animT+=dt;
+    } else {
+      u.moving=false;
+    }
+    if(u.hitFlash) u.hitFlash=Math.max(0,u.hitFlash-dt);
+    if(u.atkCd) u.atkCd=Math.max(0,u.atkCd-dt);
+  }
+  for(const b of G.buildings) if(b.hitFlash) b.hitFlash=Math.max(0,b.hitFlash-dt);
+
+  updateProjs(dt); updateParts(dt); updateFTexts(dt); updateDeathFx(dt);
+  if(G.shake.mag>0) G.shake.mag=Math.max(0,G.shake.mag-dt*14);
+  updateSpriteRebuild(dt);
+  updateGlide(dt);
+  G.mtTimer=Math.max(0,G.mtTimer-dt);
+
+  _fogClientT-=dt;
+  if(_fogClientT<=0){ revealFog(); _fogClientT=0.2; }
+
+  // Fin de partie : l'hote fait foi, mais l'affichage est local.
+  if(moi()&&moi().vaincu&&!G.gameOver){ G.gameOver=true; showGameOver(); }
+  if(!G.victory&&!G.gameOver){
+    const rivaux=factionsJouantes().filter(f=>f.id!==G.me&&f.equipe!==(moi()?moi().equipe:-1));
+    if(rivaux.length&&rivaux.every(f=>f.vaincu)){ G.victory=true; showVictory(); }
+  }
+}
+
+// ── ROUTAGE DES MESSAGES ───────────────────────────────────────
+function recevoirReseau(m){
+  if(!m||!m.t) return;
+  switch(m.t){
+    case 'SALUT':  demarrerPartieClient(m); break;
+    case 'PRET':   if(RESEAU.role==='hote'){ RESEAU.pret=true; envoyerReseau(construireSnap()); } break;
+    case 'SNAP':   appliquerSnap(m); RESEAU.pret=true; break;
+    case 'D':      if(RESEAU.pret) appliquerDelta(m); break;
+    case 'ORDRE':  traiterOrdreDistant(m); break;
+    case 'REJ':    traiterRejet(m); break;
+    case 'CHAT':   break; // gere par le panneau de salon
+  }
+}
+
+// Hote : un ordre venu du client. applyCommand revalide TOUT (P3) — c'est la
+// seule protection contre un ordre forge, et elle suffit pour l'invite.
+function traiterOrdreDistant(m){
+  if(RESEAU.role!=='hote') return;
+  const cmd=m.cmd;
+  if(!cmd||cmd.f!==RESEAU.adversaire.id) return;   // on ne joue pas pour l'autre
+  const r=applyCommand(cmd);
+  if(!r.ok) envoyerReseau({t:'REJ',seq:cmd.seq,raison:r.raison});
+}
+
+// Client : l'hote a refuse un ordre — on annule la prediction optimiste.
+function traiterRejet(m){
+  const att=RESEAU.attente.get(m.seq);
+  RESEAU.attente.delete(m.seq);
+  if(!att) return;
+  if(att.annuler) try{ att.annuler(); }catch(e){}
+  const t={ressources:'Ressources insuffisantes !', pop:'Population maximale !',
+           age:'Age requis non atteint', occupe:'Placement impossible !',
+           invalide:'Action impossible', cible:'Cible invalide'};
+  notify(t[m.raison]||'Action refusee','#e74c3c');
+  refreshUI();
+}
+
+// ── DEMARRAGE D'UNE PARTIE EN RESEAU ───────────────────────────
+// L'hote lance la partie, puis decrit au client ce qu'il doit generer.
+function demarrerPartieHote(adversaire){
+  RESEAU.actif=true; RESEAU.role='hote';
+  RESEAU.adversaire={id:FAC.P2, nom:adversaire&&adversaire.nom||'Adversaire'};
+  RESEAU.tick=0; RESEAU.accDelta=0; RESEAU.pret=false;
+  startGame();
+  envoyerReseau({
+    t:'SALUT', proto:PROTO_VERSION,
+    seed:G.seed, gmode:G.gmode, difficulty:G.difficulty,
+    cols:COLS, rows:ROWS, simHz:SIM_HZ,
+    fac:Object.values(G.factions).map(serialiserFaction),
+    toi:FAC.P2,
+  });
+}
+
+// Le client regenere la MEME carte a partir de la graine (P4) : seuls les
+// entites et l'etat des camps voyagent, jamais les 57 600 tuiles.
+function demarrerPartieClient(m){
+  if(m.proto!==PROTO_VERSION){ notify('Version de protocole incompatible','#e74c3c'); return; }
+  RESEAU.actif=true; RESEAU.role='client'; RESEAU.pret=false;
+  RESEAU.adversaire={id:FAC.P1, nom:(m.fac.find(f=>f.i===FAC.P1)||{}).n||'Hote'};
+
+  SFX.unlock();
+  document.getElementById('overlay').style.display='none';
+  const mp=document.getElementById('mppanel'); if(mp) mp.style.display='none';
+  resizeCanvas();
+
+  selectedMode=m.gmode; selectedDifficulty=m.difficulty;
+  grainePartie=m.seed;
+  initState();
+  G.seed=m.seed;
+  G.factions={};
+  for(const f of m.fac) appliquerFaction(f);
+  G.me=m.toi; G.hote=false;
+
+  TILE=Math.round(BASE_TILE*ZOOMS[zoomLevel]);
+  genMap();                 // meme graine => carte identique a celle de l'hote
+  buildSprites();
+  G.running=true;
+  setSpeed(1);
+  rebuildIndex();
+  applyDifficultyBadge();
+  refreshUI();
+  envoyerReseau({t:'PRET'});
+  requestAnimationFrame(loop);
+  notify('Partie en ligne — en attente de l\'etat initial…','#3498db');
+}
+
+// ── EMISSION DES DELTAS (hote) ─────────────────────────────────
+function pousserReseau(dt){
+  if(!RESEAU.actif||RESEAU.role!=='hote'||!RESEAU.pret) return;
+  RESEAU.accDelta+=dt;
+  if(RESEAU.accDelta<DELTA_PERIODE) return;
+  RESEAU.accDelta=0;
+  RESEAU.tick++;
+  envoyerReseau(construireDelta());
+}
 
 let _mpEtat={dispo:false};
 
@@ -7656,6 +8103,8 @@ function mpRafraichir(){
     if(copier) copier.style.display='none';
   }
 
+  const lancer=document.getElementById('mpbtn-lancer');
+  if(lancer) lancer.style.display=(e.role==='hote'&&e.connecte&&e.adversaire)?'':'none';
   const parts=[];
   if(e.code) parts.push(`Salon <b>${e.code}</b> — ${e.role==='hote'?'vous h\u00e9bergez':'vous avez rejoint'}`);
   if(e.adversaire) parts.push(`Adversaire : <b>${e.adversaire.nom||'…'}</b>`);
@@ -7717,6 +8166,15 @@ function mpCopierLien(){
 }
 window.mpCopierLien=mpCopierLien;
 
+// L'hote lance la partie : il demarre la simulation et decrit au client ce
+// qu'il doit generer (graine, mode, camps).
+function mpLancer(){
+  if(!_mpEtat.connecte||_mpEtat.role!=='hote') return;
+  mpFermer();
+  demarrerPartieHote(_mpEtat.adversaire);
+}
+window.mpLancer=mpLancer;
+
 function mpEnvoyerChat(){
   const el=document.getElementById('mpmsg');
   const txt=(el?el.value:'').trim();
@@ -7735,8 +8193,10 @@ window.mpEnvoyerChat=mpEnvoyerChat;
   if(window.MP&&window.MP.surEtat){
     window.MP.surEtat(e=>{ _mpEtat=e; mpRafraichir(); });
     window.MP.surMessage(m=>{
-      if(m&&m.t==='CHAT') mpLigne((_mpEtat.adversaire&&_mpEtat.adversaire.nom||'Adversaire')+' : '+m.texte,'lui');
+      if(m&&m.t==='CHAT'){ mpLigne((_mpEtat.adversaire&&_mpEtat.adversaire.nom||'Adversaire')+' : '+m.texte,'lui'); return; }
+      recevoirReseau(m);   // tout le reste releve du protocole de jeu
     });
+    brancherTransport(m=>window.MP.envoyer(m));
     // Lien de partage ?p=CODE : pr\u00e9-remplit le code et ouvre le panneau.
     const pc=new URLSearchParams(location.search).get('p');
     if(pc){
@@ -8294,7 +8754,10 @@ function loop(ts){
   _simAccum+=frameDt*G.speed;
   let steps=0;
   while(_simAccum>=SIM_DT&&steps<SIM_MAX_STEPS){
-    update(SIM_DT);
+    // Le client ne simule RIEN : l'hôte est seul autoritaire. Il se contente
+    // d'interpoler vers l'état reçu et de faire vivre les effets locaux.
+    if(estHote()) update(SIM_DT); else updateVisuel(SIM_DT);
+    if(estHote()) pousserReseau(SIM_DT);
     _simAccum-=SIM_DT;
     steps++;
   }
@@ -8384,11 +8847,29 @@ function startGame(){
   // Mode Conquête : l'adversaire s'installe une fois la carte semée et le
   // Centre Ville du joueur posé, pour choisir son emplacement en connaissance
   // du terrain réellement occupé.
+  // Emplacements deja occupes : les IA devront s'en ecarter.
+  const prisSurCarte=[[sTX,sTY]];
+
+  // Base du second joueur humain (partie en ligne). Meme dotation de depart
+  // que l'hote, a l'ancrage oppose calcule par departsHumains().
+  if(G.factions[FAC.P2]&&dep.length>1){
+    const [pTX,pTY]=dep[1];
+    const tc2=mkBuilding(BT.TC,pTX,pTY,FAC.P2);
+    placeBuilding(tc2);
+    for(let y=pTY-1;y<=pTY+tc2.h;y++) for(let x=pTX-1;x<=pTX+tc2.w;x++){
+      if(x>=0&&y>=0&&x<COLS&&y<ROWS&&G.bmap[y][x]===9) G.bmap[y][x]=0;
+    }
+    for(let i=0;i<3;i++){
+      const u=mkUnit(UT.VIL,(pTX+1.5)*BASE_TILE+(i-1)*BASE_TILE*.9,(pTY+3)*BASE_TILE,FAC.P2);
+      G.units.push(u); G.factions[FAC.P2].pop++;
+    }
+    prisSurCarte.push([pTX,pTY]); // les IA s'ecartent aussi de cette base
+  }
+
   // Autant d'adversaires IA que le mode en réclame. Chacun s'installe en
   // tenant compte des bases déjà posées (joueur compris) pour ne pas se
   // retrouver à partager les mêmes gisements.
   const nbRivaux=MODES[G.gmode].rivaux||0;
-  const prisSurCarte=[[sTX,sTY]];
   const idsIA=[FAC.IA,FAC.IA2], nomsIA=['Seigneur rival','Seigneur rival II'];
   for(let i=0;i<nbRivaux;i++){
     const a=initAI(sTX,sTY,idsIA[i],nomsIA[i],prisSurCarte);

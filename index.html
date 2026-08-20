@@ -942,6 +942,13 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
         <button class="diffbtn" data-d="brutal" onclick="pickDifficulty('brutal')"><span class="dico">💀</span><span class="dlabel">Brutal</span></button>
       </div>
       <p class="tip" id="difftip">Normal — Moins de répit avant la 1ère vague, constructions +15% plus chères.</p>
+      <div class="diffrow" id="civrow">
+        <button class="diffbtn" data-c="francs"    onclick="pickCiv('francs')"><span class="dico">🐴</span><span class="dlabel">Francs</span></button>
+        <button class="diffbtn" data-c="byzantins" onclick="pickCiv('byzantins')"><span class="dico">🛡️</span><span class="dlabel">Byzantins</span></button>
+        <button class="diffbtn" data-c="chinois"   onclick="pickCiv('chinois')"><span class="dico">🌾</span><span class="dlabel">Chinois</span></button>
+        <button class="diffbtn" data-c="mongols"   onclick="pickCiv('mongols')"><span class="dico">🏹</span><span class="dlabel">Mongols</span></button>
+      </div>
+      <p class="tip" id="civtip">Francs — +20% PV à la Cavalerie (Chevaliers, Paladins, Éclaireurs)</p>
       <div class="seedrow">
         <label for="seedin">Graine</label>
         <input id="seedin" type="text" inputmode="numeric" placeholder="aléatoire" oninput="setGraine(this.value)">
@@ -1055,11 +1062,11 @@ const BT = { TC:'TC', HOUSE:'HO', LUMBER:'LU', MINE:'MI', FARM:'FA',
              FORGE:'FO', BARRACKS:'BA', TOWER:'TW',
              MILL:'ML', MARKET:'MK', STABLE:'ST', CASTLE:'CS',
              MONASTERY:'MO', WALL:'WL', UNIV:'UV',
-             SIEGE:'SG', OUTPOST:'OP', GATE:'GT', HLM:'HL' };
+             SIEGE:'SG', OUTPOST:'OP', GATE:'GT', HLM:'HL', WONDER:'WD' };
 
 // Définitions bâtiments
 const BDEF = {
-  [BT.TC]:       { nom:'Centre Ville',   w:2,h:2, hp:1500, cost:{},                          col:'#7a5018',cld:'#503410', drops:true, popBonus:5 },
+  [BT.TC]:       { nom:'Centre Ville',   w:2,h:2, hp:1500, cost:{},                          col:'#7a5018',cld:'#503410', drops:true, popBonus:5, garrisonCap:10 },
   [BT.HOUSE]:    { nom:'Maison',         w:1,h:1, hp:180,  cost:{wood:25},                   col:'#8B6914',cld:'#5a4010', popBonus:5 },
   [BT.HLM]:      { nom:'Immeuble HLM',   w:2,h:2, hp:560,  cost:{wood:150,stone:100},         col:'#8a8f96',cld:'#565b62', popBonus:25 },
   [BT.LUMBER]:   { nom:'Camp Forestier', w:2,h:1, hp:260,  cost:{wood:80},                   col:'#5a3810',cld:'#3a2008', drops:true },
@@ -1072,12 +1079,13 @@ const BDEF = {
   [BT.STABLE]:   { nom:'Écurie',         w:2,h:2, hp:420,  cost:{wood:175,stone:60},          col:'#8b5e3c',cld:'#5a3820' },
   [BT.MONASTERY]:{ nom:'Monastère',      w:1,h:2, hp:360,  cost:{wood:175,stone:50},          col:'#c9b99a',cld:'#8b7355' },
   [BT.UNIV]:     { nom:'Université',     w:2,h:2, hp:420,  cost:{wood:200,stone:150},         col:'#2c6e8a',cld:'#1a4a5a' },
-  [BT.TOWER]:    { nom:'Tour Défensive', w:1,h:2, hp:750,  cost:{wood:60,stone:180},          col:'#7a6a4a',cld:'#4a3a2a' },
-  [BT.CASTLE]:   { nom:'Château Fort',   w:3,h:3, hp:2800, cost:{wood:300,stone:300,gold:100},col:'#888878',cld:'#555548' },
+  [BT.TOWER]:    { nom:'Tour Défensive', w:1,h:2, hp:750,  cost:{wood:60,stone:180},          col:'#7a6a4a',cld:'#4a3a2a', garrisonCap:5 },
+  [BT.CASTLE]:   { nom:'Château Fort',   w:3,h:3, hp:2800, cost:{wood:300,stone:300,gold:100},col:'#888878',cld:'#555548', garrisonCap:15 },
   [BT.WALL]:     { nom:'Mur Palissade',  w:1,h:1, hp:450,  cost:{wood:20},                   col:'#8b7355',cld:'#6b5335' },
   [BT.SIEGE]:    { nom:'Atelier de Siège',w:2,h:2,hp:480,  cost:{wood:220,stone:140},         col:'#5a4a34',cld:'#382c1e' },
   [BT.OUTPOST]:  { nom:'Avant-poste',    w:1,h:1, hp:260,  cost:{wood:50},                    col:'#6a5a3a',cld:'#443620' },
   [BT.GATE]:     { nom:'Portail',        w:1,h:1, hp:400,  cost:{wood:40,stone:20},           col:'#7a5a34',cld:'#4a3620' },
+  [BT.WONDER]:   { nom:'Merveille',      w:3,h:3, hp:3500, cost:{wood:800,stone:800,gold:400},col:'#d8c078',cld:'#8a7838', popBonus:10 },
 };
 
 // Types unités
@@ -1136,6 +1144,13 @@ const TTIME = { [UT.VIL]:20, [UT.MIL]:15, [UT.ARC]:18, [UT.KNIGHT]:25, [UT.MONK]
 
 // Taux de récolte (par seconde)
 const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, farm:1.0, mill:0.38 };
+// Vitesse de la caravane commerciale (unités-monde/s) — un peu plus rapide
+// qu'un villageois, pour que la route se sente vivante sans dominer l'écran.
+const CARAVAN_SPEED = BASE_TILE*2.4;
+// Reliques : revenu passif en or, par relique mise à l'abri au Monastère.
+const RELIC_GOLD_RATE = 0.15; // or/s/relique (≈9/min — comparable à un mineur)
+// Merveille : temps qu'elle doit tenir debout, achevée, avant la victoire.
+const MERVEILLE_WIN_TIME = 300; // 5 minutes — le temps pour l'adversaire de réagir
 const GCAP  = 22;            // capacité inventaire villageois (moins d'allers-retours)
 const NODE_RICHNESS = 1.5;   // gisements 50% plus riches
 const FARM_FOOD = 350;
@@ -1190,6 +1205,32 @@ const DIFFS = {
             desc:'Assauts massifs et quasi sans répit, constructions +50% plus chères.' },
 };
 
+// ── CIVILISATIONS ─────────────────────────────────────────
+// Un seul bonus passif marquant par civilisation, appliqué à des points de
+// passage déjà centralisés (mkUnit, mkBuilding, gatherMult) : pas de nouveau
+// système, juste une lecture en plus à chacun de ces trois endroits.
+const CIVS = {
+  francs:    { nom:'Francs',    ico:'🐴', desc:'+20% PV à la Cavalerie (Chevaliers, Paladins, Éclaireurs)', cavHpMult:1.20 },
+  byzantins: { nom:'Byzantins', ico:'🛡️', desc:'+15% PV à tous les bâtiments',                             bldHpMult:1.15 },
+  chinois:   { nom:'Chinois',   ico:'🌾', desc:'+15% vitesse de récolte',                                   gatherMult:1.15 },
+  mongols:   { nom:'Mongols',   ico:'🏹', desc:'+20% ATK aux unités à distance (Archers, Trébuchets)',      rangedAtkMult:1.20 },
+};
+let selectedCiv='francs';
+function pickCiv(key){
+  if(!CIVS[key]) return;
+  selectedCiv=key;
+  document.querySelectorAll('#civrow .diffbtn').forEach(b=>b.classList.toggle('sel', b.dataset.c===key));
+  const ct=document.getElementById('civtip');
+  if(ct) ct.textContent=`${CIVS[key].nom} — ${CIVS[key].desc}`;
+  try{ localStorage.setItem('adc_civ',key); }catch(e){}
+  updateCfgSummary();
+}
+window.pickCiv=pickCiv;
+// Bonus de la civilisation d'un camp — EMPTY_CIV si la faction n'existe pas
+// encore (lecture avant première image, comme rechercheDe/EMPTY_RESEARCH).
+const EMPTY_CIV={};
+function civOf(owner){ const f=fac(owner); return (f&&CIVS[f.civ])||EMPTY_CIV; }
+
 // Coût réel d'un bâtiment, mis à l'échelle par la difficulté en cours.
 // Point de passage UNIQUE pour tout coût de construction/amélioration de
 // bâtiment : le menu de construction, la confirmation de pose et
@@ -1227,7 +1268,7 @@ function peaceLabel(diffKey,modeKey){
 function pickDifficulty(key){
   if(!DIFFS[key]) return;
   selectedDifficulty=key;
-  document.querySelectorAll('.diffbtn').forEach(b=>b.classList.toggle('sel', b.dataset.d===key));
+  document.querySelectorAll('#diffrow .diffbtn').forEach(b=>b.classList.toggle('sel', b.dataset.d===key));
   const dt=document.getElementById('difftip');
   if(dt) dt.textContent=`${DIFFS[key].nom} — ${DIFFS[key].desc}`;
   const pt=document.getElementById('peacetxt');
@@ -1244,8 +1285,8 @@ window.pickDifficulty=pickDifficulty;
 function updateCfgSummary(){
   const txt=document.getElementById('cfgsummary-txt');
   if(!txt) return;
-  const m=MODES[selectedMode]||MODES.survival, d=DIFFS[selectedDifficulty]||DIFFS.normal;
-  txt.textContent=`${m.ico} ${m.nom} · ${d.ico} ${d.nom}`;
+  const m=MODES[selectedMode]||MODES.survival, d=DIFFS[selectedDifficulty]||DIFFS.normal, c=CIVS[selectedCiv]||CIVS.francs;
+  txt.textContent=`${m.ico} ${m.nom} · ${d.ico} ${d.nom} · ${c.ico} ${c.nom}`;
 }
 function toggleCfg(){
   const det=document.getElementById('cfgdetails');
@@ -1346,7 +1387,7 @@ const BICO = {
   [BT.FARM]:'🌾',[BT.MILL]:'💨',[BT.MARKET]:'🏪',[BT.FORGE]:'⚒️',
   [BT.BARRACKS]:'⚔️',[BT.STABLE]:'🐴',[BT.MONASTERY]:'⛪',[BT.UNIV]:'🎓',
   [BT.TOWER]:'🗼',[BT.CASTLE]:'🏯',[BT.WALL]:'🪵',
-  [BT.SIEGE]:'🛠️',[BT.OUTPOST]:'🚩',[BT.GATE]:'🚪',[BT.HLM]:'🏢',
+  [BT.SIEGE]:'🛠️',[BT.OUTPOST]:'🚩',[BT.GATE]:'🚪',[BT.HLM]:'🏢',[BT.WONDER]:'🏛️',
 };
 
 // Même emoji que le bouton de formation correspondant (voir drawBuildAct) —
@@ -1401,6 +1442,7 @@ function mkFaction(id,o){
   return {
     id,
     genre:o.genre, equipe:o.equipe,
+    civ:o.civ||'francs',
     teinte:o.teinte||TEINTE_DEF[id]||'rouge',
     nom:o.nom||id,
     hostileATous:!!o.hostileATous, // pillards : hostiles à tout le monde
@@ -1412,6 +1454,7 @@ function mkFaction(id,o){
     stats:initStats(),
     autoRepair:false,
     vaincu:false,
+    merveilleAchevee:false, // Merveille achevée et restée debout MERVEILLE_WIN_TIME : victoire immédiate
     // Les factions 'ia' reçoivent en plus, via initAI(), leur cerveau :
     // baseX, baseY, tcId, think, ageQ, atkTimer, atkMin, raids, vilTarget.
   };
@@ -1444,7 +1487,7 @@ function ageOf(owner){ const f=fac(owner); return f?f.age:0; }
 function rechercheDe(owner){ const f=fac(owner); return f?f.research:EMPTY_RESEARCH; }
 function popDe(owner){ const f=fac(owner); return f?f.pop:0; }
 function maxPopDe(owner){ const f=fac(owner); return f?f.maxPop:0; }
-function gatherMult(owner){ return AGE_BONUS[ageOf(owner)].gather; } // récolte croissante à chaque âge
+function gatherMult(owner){ return AGE_BONUS[ageOf(owner)].gather*(civOf(owner).gatherMult||1); } // récolte croissante à chaque âge + bonus de civilisation
 
 // Raccourcis vers la faction LOCALE. Tout le code d'interface (HUD, panneaux,
 // sélection, brouillard affiché) continue de lire G.res / G.age / G.stats…
@@ -1489,7 +1532,7 @@ function initState() {
     cam:{ x:0, y:0 },
     sel:[],
     mode:'select',
-    buildType:null, ghost:null,
+    buildType:null, ghost:null, routeFrom:null,
     buildTab:0, // 0=Économie 1=Militaire 2=Défense 3=Amélioration
     wave:0, waveTimer:FIRST_WAVE_DELAY*diff.waveDelayMult, waveActive:false,
     paused:false,
@@ -1508,7 +1551,7 @@ function initState() {
   };
   // Le joueur local. Les adversaires IA sont créés par initAI(), les pillards
   // ne servent qu'en Survie (vagues + garnisons des points d'intérêt).
-  G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:'Vous',res:diff.startRes,maxPop:5});
+  G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:'Vous',res:diff.startRes,maxPop:5,civ:selectedCiv});
   G.factions[FAC.PILL]=mkFaction(FAC.PILL,{genre:'neutre',equipe:0,hostileATous:true});
   // Partie en ligne : le second joueur humain existe des la creation de
   // l'etat, car mkBuilding/mkUnit lisent l'age et les recherches de leur
@@ -1521,9 +1564,13 @@ function initState() {
     // propre à chacun, ciblage IA, bascule en IA à la déconnexion) suit déjà
     // le système d'équipes sans rien connaître de plus sur le mode.
     const allie=(MODES[mode]||{}).coop;
+    // Le second joueur humain ne choisit pas encore sa civilisation via le
+    // protocole en ligne (hors scope v1) : on lui en attribue une différente
+    // de celle de l'hôte, pour au moins varier les bonus des deux côtés.
+    const civKeys=Object.keys(CIVS), civP2=civKeys[(civKeys.indexOf(selectedCiv)+1)%civKeys.length];
     G.factions[FAC.P2]=mkFaction(FAC.P2,{genre:'humain',equipe:allie?1:2,
       nom:(RESEAU.adversaire&&RESEAU.adversaire.nom)||'Adversaire',
-      res:diff.startRes,maxPop:5});
+      res:diff.startRes,maxPop:5,civ:civP2});
   }
   installerShims();
 }
@@ -1618,10 +1665,36 @@ function genMap() {
   place(SC(8),SC(8),SC(2),6,RT.BERRY,280);   place(COLS-SC(10),ROWS-SC(10),SC(2),6,RT.BERRY,280);
   place(COLS-SC(20),SC(8),SC(2),5,RT.BERRY,260); place(SC(10),ROWS-SC(10),SC(2),5,RT.BERRY,260);
 
+  // Reliques : générées AVANT spawnPOIs pour rester à un point fixe de la
+  // séquence RND (déterminisme partagé hôte/client — voir construireSnap,
+  // seul r.bankedBy voyage sur le réseau, jamais la position).
+  genRelics();
+
   // Points d'intérêt : filons infinis gardés. Réservés au mode Survie — leurs
   // garnisons ne ciblent que le joueur (voir updateEnemyAI), elles fausseraient
   // donc le duel en Conquête en n'inquiétant jamais l'adversaire.
   if(G.gmode==='survival') spawnPOIs();
+}
+
+// Quelques reliques dispersées sur la carte, à l'écart du centre (où les
+// bases démarrent) et suffisamment éloignées les unes des autres. Un Moine
+// qui en approche peut la porter jusqu'à son Monastère (voir doRelic) pour
+// un revenu passif en or (voir updateRelicIncome) — jamais épuisée, jamais
+// reprise une fois livrée (contrairement à AoE2, pas de vol de relique en v1).
+const RELIC_COUNT = 5;
+function genRelics(){
+  G.relics=[];
+  const centerX=(COLS>>1)*BASE_TILE, centerY=(ROWS>>1)*BASE_TILE;
+  let tries=0;
+  while(G.relics.length<RELIC_COUNT&&tries<500){
+    tries++;
+    const x=1+Math.floor(RND()*(COLS-2)), y=1+Math.floor(RND()*(ROWS-2));
+    if(G.bmap[y][x]!==0) continue;
+    const wx=x*BASE_TILE+BASE_TILE/2, wy=y*BASE_TILE+BASE_TILE/2;
+    if(Math.hypot(wx-centerX,wy-centerY)<SC(10)*BASE_TILE) continue; // pas trop près du centre
+    if(G.relics.some(r=>Math.hypot(r.x-wx,r.y-wy)<SC(14)*BASE_TILE)) continue; // dispersion
+    G.relics.push({id:G.nid++, tx:x, ty:y, x:wx, y:wy, carrier:null, bankedBy:null});
+  }
 }
 
 function place(cx,cy,rx,cnt,type,amt){
@@ -1726,6 +1799,11 @@ function gridKey(x,y){ return (((x/GRID_SZ)|0)+GRID_OFF)*4096 + (((y/GRID_SZ)|0)
 function rebuildGrid(){
   grid.clear();
   for(const u of G.units){
+    // Une unité en garnison est retirée de la grille spatiale : ni ciblable
+    // ni détectable par les recherches de proximité (forNearby/nearestBy),
+    // sans quoi elle resterait attaquable alors qu'elle est censée être à
+    // l'abri à l'intérieur du bâtiment.
+    if(u.state==='garrison') continue;
     const k=gridKey(u.x,u.y);
     const cell=grid.get(k);
     if(cell) cell.push(u); else grid.set(k,[u]);
@@ -1814,7 +1892,7 @@ function isMilitary(type){ return MIL_TYPES.includes(type); }
 // plus court, et un second joueur humain les reçoit naturellement.
 function mkUnit(type, wx, wy, owner=FAC.P1){
   const d=UDEF[type];
-  const rech=rechercheDe(owner), age=ageOf(owner);
+  const rech=rechercheDe(owner), age=ageOf(owner), civ=civOf(owner);
   let mhp=d.hp;
   const mil=isMilitary(type);
   if(rech.iron_armor&&mil) mhp=Math.round(mhp*1.3);
@@ -1823,12 +1901,14 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
   if(rech.longbow&&(type===UT.ARC||type===UT.XBOW)) rng*=1.5;
   const MELEE=[UT.MIL,UT.PIKE], RANGED=[UT.ARC,UT.XBOW], CAV=[UT.KNIGHT,UT.PALADIN,UT.SCOUT], SIEGE=[UT.RAM,UT.TREB];
   if(rech.cavalry&&CAV.includes(type)) mhp=Math.round(mhp*1.2);
+  if(civ.cavHpMult&&CAV.includes(type)) mhp=Math.round(mhp*civ.cavHpMult); // bonus de civilisation (Francs)
   let atk=d.atk;
   if(rech.iron_sword&&MELEE.includes(type)) atk=Math.round(atk*1.25);
   if(rech.bow_craft&&RANGED.includes(type)) atk=Math.round(atk*1.25);
   if(rech.cavalry_lance&&CAV.includes(type)) atk=Math.round(atk*1.2);
   if(rech.siege_smithing&&SIEGE.includes(type)) atk=Math.round(atk*1.25);
   if(rech.tactics&&mil) atk=Math.round(atk*1.2);
+  if(civ.rangedAtkMult&&(RANGED.includes(type)||type===UT.TREB)) atk=Math.round(atk*civ.rangedAtkMult); // bonus de civilisation (Mongols)
   if(mil) atk=Math.round(atk*AGE_BONUS[age].milAtk); // ATK militaire croissant avec l'âge
   let spd=d.spd;
   if(rech.logistics&&mil) spd*=1.15;
@@ -1854,6 +1934,7 @@ function mkBuilding(type,tx,ty,owner=FAC.P1){
   mhp=Math.round(mhp*AGE_BONUS[ageOf(owner)].bldHp); // PV bâtiments croissants avec l'âge
   if(rech.engineering&&(type===BT.TOWER||type===BT.CASTLE)) mhp=Math.round(mhp*1.4);
   if(rech.fortification&&(type===BT.WALL||type===BT.GATE||type===BT.OUTPOST)) mhp=Math.round(mhp*1.25);
+  const civBldMult=civOf(owner).bldHpMult; if(civBldMult) mhp=Math.round(mhp*civBldMult); // bonus de civilisation (Byzantins)
   return {
     id:G.nid++, type, owner,
     tx,ty, w:d.w, h:d.h,
@@ -3624,7 +3705,7 @@ function render(){
     ctx.translate((Math.random()-0.5)*G.shake.mag,(Math.random()-0.5)*G.shake.mag);
   }
 
-  drawMap(); drawNodes(); drawBuildings(); drawDeathFx(); drawUnits();
+  drawMap(); drawNodes(); drawRelics(); drawBuildings(); drawCaravans(); drawDeathFx(); drawUnits();
   drawHoverRing();
   drawProjs(); drawParts(); drawFTexts(); drawSelRings();
   if(G.mode==='build'&&G.ghost) drawGhost();
@@ -3879,8 +3960,49 @@ const UCOL={
   [UT.ENEMI_C]:'#a93226',[UT.ENEMI_BOSS]:'#641e16',
 };
 
+// Petit chariot animé sur chaque route commerciale active — purement
+// cosmétique et calculé localement à partir de b.tradeRoute (synchronisé
+// comme tout le reste du bâtiment côté hôte ; un client non-hôte peut ne pas
+// voir l'anim tant que ce champ n'est pas répliqué, voir updateTradeRoutes).
+function drawCaravans(){
+  for(const b of G.buildings){
+    if(b.type!==BT.MARKET||!b.tradeRoute||b.constructing) continue;
+    if(!estLocal(b)&&G.fog.length){
+      const fx=(b.tx/BASE_TILE)|0, fy=(b.ty/BASE_TILE)|0;
+      if(G.fog[fy]&&G.fog[fy][fx]!==2) continue;
+    }
+    const p=caravanPos(b); if(!p) continue;
+    const{x:sx,y:sy}=ws(p.x,p.y);
+    if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
+    ctx.font=Math.round(TILE*0.6)+'px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🐫',sx,sy);
+  }
+}
+
+// Reliques encore au sol — masquées dès qu'un moine les porte (son état
+// 'relic' suffit à le savoir, pas besoin de synchroniser relic.carrier) ou
+// une fois mises à l'abri (bankedBy, lui synchronisé — voir construireDelta).
+function drawRelics(){
+  if(!G.relics||!G.relics.length) return;
+  for(const r of G.relics){
+    if(r.bankedBy) continue;
+    if(G.units.some(u=>u.state==='relic'&&u.target===r.id)) continue;
+    const{x:sx,y:sy}=ws(r.x,r.y);
+    if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
+    if(G.fog.length){
+      const fx=(r.tx|0), fy=(r.ty|0);
+      if(G.fog[fy]&&G.fog[fy][fx]!==2) continue; // reliques non-mémorisées : invisibles hors vision actuelle
+    }
+    ctx.font=Math.round(TILE*0.65)+'px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🏺',sx,sy);
+  }
+}
+
 function drawUnits(){
   for(const u of G.units){
+    if(u.state==='garrison') continue; // à l'abri dans le bâtiment : invisible
     const{x:sx,y:sy}=ws(u.x,u.y);
     if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
     // masquer ennemis dans le brouillard non-visible
@@ -4194,6 +4316,7 @@ function drawMinimap(){
   // le rayon de vision actuel (elles disparaissent hors de vue, contrairement
   // aux bâtiments qui laissent une trace mémorisée).
   for(const u of G.units){
+    if(u.state==='garrison') continue;
     if(!estLocal(u)&&fogTileAt((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0)!==2) continue;
     mctx.fillStyle=couleurMinimap(u,true);
     mctx.fillRect(u.x*scx-1,u.y*scy-1,3,3);
@@ -4228,6 +4351,9 @@ function update(dt){
   updateSpriteRebuild(dt);
   updateGlide(dt);
   updateResearchQ(dt);
+  updateTradeRoutes(dt);
+  updateRelicIncome(dt);
+  updateWonders(dt);
   updateAgeUp(dt);
   G.mtTimer=Math.max(0,G.mtTimer-dt);
 
@@ -4276,6 +4402,10 @@ function update(dt){
   }
   // Défaite locale
   if(moi()&&moi().vaincu&&!G.gameOver){ G.gameOver=true; showGameOver(); }
+  // Merveille achevée et restée debout assez longtemps : victoire immédiate,
+  // quel que soit le mode — vérifiée avant les conditions propres au mode
+  // pour ne jamais être masquée par elles.
+  checkMerveilleVictory();
   // Victoire — Survie : survivre à targetWaves. Conquête : plus aucun camp
   // hostile debout (la partie n'a alors aucune vague, targetWaves vaut 0,
   // d'où la garde sur le mode : sans elle, Conquête serait gagnée à la
@@ -4372,6 +4502,7 @@ function updatePlayerUnit(u,dt){
     case 'repair':  doRepair(u,dt); break;
     case 'return':  doReturn(u,dt); break;
     case 'build':   doBuild(u,dt); break;
+    case 'relic':   doRelic(u,dt); break;
     case 'attack':  doAttack(u,dt); break;
     case 'amove':   doAMove(u,dt); break;
     case 'heal':    doHeal(u,dt); break;
@@ -4806,6 +4937,51 @@ function findNearestFarm(x,y,allowEmpty,owner=FAC.P1){
   }
   return best;
 }
+// Une relique est libre si personne ne la porte activement — auto-guérit :
+// un moine "porteur" réaffecté à autre chose (déplacement, attaque, mort,
+// garnison…) sans repasser par ORD.RELIQUE libère la relique tout seul, sans
+// qu'il faille intercepter chaque ordre susceptible d'interrompre un moine.
+function relicFree(r){
+  if(r.bankedBy) return false;
+  if(!r.carrier) return true;
+  // Balayage direct plutôt que unitById (IU) : un ordre peut arriver avant
+  // la première reconstruction de l'index, comme pour _bldDe (voir plus haut).
+  const u=G.units.find(x=>x.id===r.carrier);
+  return !(u&&u.hp>0&&u.state==='relic'&&u.target===r.id);
+}
+function findNearestMonastery(x,y,owner){
+  let best=null,bd=Infinity;
+  for(const b of G.buildings){
+    if(b.owner!==owner||b.type!==BT.MONASTERY||b.constructing) continue;
+    const d=Math.hypot(b.x-x,b.y-y);
+    if(d<bd){bd=d;best=b;}
+  }
+  return best;
+}
+// Un Moine porte une relique jusqu'au Monastère le plus proche : d'abord la
+// rejoindre (elle reste immobile à son point de génération jusqu'à ce
+// qu'un moine l'atteigne), puis la livrer. Sans Monastère possédé, il
+// patiente sur place — relique en main — jusqu'à ce que le joueur en bâtisse un.
+function doRelic(u,dt){
+  const relic=G.relics&&G.relics.find(r=>r.id===u.target);
+  if(!relic||relic.carrier!==u.id){ u.state='idle'; u.target=null; return; } // relique perdue (improbable) : abandon propre
+  if(!u.relicHeld){
+    if(Math.hypot(relic.x-u.x,relic.y-u.y)>BASE_TILE*0.5){
+      u.destX=relic.x; u.destY=relic.y; moveTo(u,dt,true); return;
+    }
+    u.relicHeld=true; // relique ramassée : elle voyage désormais avec le moine
+  }
+  u.moving=false;
+  const mon=findNearestMonastery(u.x,u.y,u.owner);
+  if(!mon) return; // pas de Monastère : attente sur place, relique en main
+  const d=Math.hypot(mon.x-u.x,mon.y-u.y);
+  if(d>bldContact(mon,0.4)){ const ap=bldApproach(u,mon,0.4); u.destX=ap.x; u.destY=ap.y; moveTo(u,dt,true); return; }
+  // Livraison : revenu passif désormais actif (voir updateRelicIncome)
+  u.moving=false;
+  relic.carrier=null; relic.bankedBy=u.owner; u.relicHeld=false;
+  if(estLocal(u)) notify('🏺 Relique mise à l\'abri — revenu passif en or !','#f0c040');
+  u.state='idle'; u.target=null;
+}
 
 // Charge réelle par nœud : villageois qui y récoltent OU qui y retournent après dépôt
 // Compte les deux camps : un gisement déjà saturé par les villageois adverses
@@ -5022,6 +5198,11 @@ function updateBuildings(dt){
       let range,atk,cd;
       if(b.type===BT.CASTLE){ range=9*BASE_TILE; atk=30; cd=1.2; }
       else { const lv=TOWER_LEVELS[b.level||1]; range=lv.range*BASE_TILE; atk=lv.atk; cd=lv.cd; }
+      // Garnison d'archers/arbalétriers : chacun ajoute un peu de dégâts à
+      // l'attaque automatique du bâtiment (façon AoE2), plafonné pour ne pas
+      // transformer une Tour en artillerie à elle seule.
+      const garnAtk=G.units.filter(u=>u.state==='garrison'&&u.target===b.id&&(u.type===UT.ARC||u.type===UT.XBOW)).length;
+      if(garnAtk) atk+=Math.min(garnAtk,garnBonusCap(b))*4;
       if(b.atkCd<=0){
         const e=prochainHostileToute(b.x,b.y,range,b);
         if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:b.owner},e); }
@@ -5034,6 +5215,9 @@ function updateBuildings(dt){
     G.sel=G.sel.filter(id=>id!==b.id);
     for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++) G.bmap[b.ty+dy][b.tx+dx]=0;
     spawnParts(b.x,b.y,'#e74c3c',14);
+    // La garnison tombe avec le bâtiment — un abri détruit ne protège plus
+    // personne (contrairement à une démolition volontaire, voir appliquerDemolition).
+    for(const u of G.units) if(u.state==='garrison'&&u.target===b.id) u.hp=0;
     const fv=fac(b.owner); if(fv) fv.stats.bldLost++;
     const fk=fac(b.dernierAgresseur); if(fk&&fk!==fv) fk.stats.bldDestroyed++;
     if(estLocal(b)) notify(`${BDEF[b.type].nom} détruite !`,'#e74c3c');
@@ -5041,6 +5225,88 @@ function updateBuildings(dt){
     updatePopCap();
   }
   G.buildings=G.buildings.filter(b=>b.hp>0);
+}
+// Plafond de bonus d'archers garnis : 5 par Tour, 8 par Château (plus grande
+// capacité d'accueil).
+function garnBonusCap(b){ return b.type===BT.CASTLE?8:5; }
+
+// ── ROUTES COMMERCIALES ─────────────────────────────────────
+// Fait avancer chaque caravane active ; à l'arrivée elle paie de l'or à SON
+// propriétaire (pas au destinataire — c'est le marché qui a expédié la
+// caravane, celui d'en face n'est qu'un point de virage) et repart en sens
+// inverse. Aucune protection ni interception en v1 : la route continue de
+// payer même sous blocus, mais s'interrompt proprement si l'un des deux
+// marchés disparaît (démoli ou détruit).
+function updateTradeRoutes(dt){
+  for(const b of G.buildings){
+    if(b.type!==BT.MARKET||!b.tradeRoute||b.constructing) continue;
+    const to=bldById(b.tradeRoute.toId);
+    if(!to||to.type!==BT.MARKET||to.constructing){ b.tradeRoute=null; continue; }
+    const tr=b.tradeRoute;
+    tr.t+=dt;
+    if(tr.t>=tr.dur){
+      tr.t=0; tr.dir*=-1;
+      const gold=Math.round(10+(tr.dist/BASE_TILE)*0.6);
+      const pool=resPool(b.owner);
+      if(pool){
+        pool.gold+=gold;
+        const fo=fac(b.owner);
+        if(fo){ fo.stats.gathered.gold+=gold; fo.stats.tradesDone++; }
+        if(estLocal(b)){ addFText(b.x,b.y-24,`+${gold}💰`,'#f0c040'); if(G.rateAcc) G.rateAcc.gold=(G.rateAcc.gold||0)+gold; }
+      }
+    }
+  }
+}
+// Position actuelle de la caravane sur son trajet, pour le rendu.
+function caravanPos(b){
+  const tr=b.tradeRoute, to=bldById(tr.toId); if(!to) return null;
+  const p=Math.max(0,Math.min(1,tr.t/tr.dur));
+  const k=tr.dir>0?p:1-p;
+  return {x:b.x+(to.x-b.x)*k, y:b.y+(to.y-b.y)*k};
+}
+
+// ── RELIQUES ─────────────────────────────────────────────
+// Revenu passif : chaque relique mise à l'abri (voir doRelic) rapporte de
+// l'or en continu à SA faction, sans limite de durée — contrairement à la
+// route commerciale, aucune protection à entretenir une fois livrée.
+function updateRelicIncome(dt){
+  if(!G.relics||!G.relics.length) return;
+  for(const f of factionsJouantes()){
+    let n=0; for(const r of G.relics) if(r.bankedBy===f.id) n++;
+    if(n>0) f.res.gold+=n*RELIC_GOLD_RATE*dt;
+  }
+}
+
+// ── MERVEILLE ────────────────────────────────────────────
+// Le décompte tourne tant que la Merveille reste achevée et debout ; il n'est
+// PAS répliqué tel quel sur le réseau (trop de trafic pour une seule barre de
+// progression) — seul le franchissement du seuil l'est, via f.merveilleAchevee
+// (un simple booléen de faction, qui suit le même chemin que f.vaincu).
+function updateWonders(dt){
+  for(const b of G.buildings){
+    if(b.type!==BT.WONDER||b.constructing) continue;
+    b.wonderTimer=(b.wonderTimer||0)+dt;
+    if(estLocal(b)){
+      const restant=Math.max(0,MERVEILLE_WIN_TIME-b.wonderTimer);
+      if(restant>0&&Math.floor(restant)%60===0&&Math.abs(restant-Math.floor(restant))<dt){
+        notify(`🏛️ Merveille : victoire dans ${Math.ceil(restant/60)} min si elle tient debout`,'#d8c078');
+      }
+    }
+    if(b.wonderTimer>=MERVEILLE_WIN_TIME){
+      const fo=fac(b.owner); if(fo) fo.merveilleAchevee=true;
+    }
+  }
+}
+// Vérifie la victoire/défaite par Merveille — appelé depuis update() (hôte)
+// ET updateVisuel() (client), comme f.vaincu : seule la donnée de faction
+// (déjà synchronisée) fait foi, jamais un minuteur local.
+function checkMerveilleVictory(){
+  if(G.victory||G.gameOver) return false;
+  const gagnant=factionsJouantes().find(f=>f.merveilleAchevee);
+  if(!gagnant) return false;
+  if(gagnant.id===G.me){ G.victory=true; showVictory(); }
+  else { G.gameOver=true; showGameOver(); }
+  return true;
 }
 
 function spawnUnit(type,building,owner){
@@ -5774,8 +6040,12 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   }
   // La faction doit exister AVANT de poser le moindre bâtiment : mkBuilding
   // lit désormais l'âge et les recherches de son propriétaire.
+  // Civilisation tirée depuis rndPose (déterministe par graine+camp), en
+  // évitant celle du joueur pour que les bonus asymétriques se voient.
+  const civKeysIA=Object.keys(CIVS).filter(k=>k!==selectedCiv);
+  const civIA=civKeysIA[Math.floor(rndPose()*civKeysIA.length)]||Object.keys(CIVS)[0];
   const a=mkFaction(id,{genre:'ia', equipe:(id===FAC.IA?3:4), nom, res:tune.start,
-                        maxPop:BDEF[BT.TC].popBonus});
+                        maxPop:BDEF[BT.TC].popBonus, civ:civIA});
   Object.assign(a,{
     baseX:0, baseY:0, tcId:null,
     think:0, ageQ:null,
@@ -6310,7 +6580,7 @@ function assignerGroupe(n){
   notify(`Groupe ${n} : ${ids.length} unité(s) assignée(s)`,'#3498db');
 }
 function rappelerGroupe(n){
-  const ids=(G.groupes[n]||[]).filter(id=>{ const u=unitById(id); return u&&estLocal(u); });
+  const ids=(G.groupes[n]||[]).filter(id=>{ const u=unitById(id); return u&&estLocal(u)&&u.state!=='garrison'; });
   G.groupes[n]=ids;
   if(!ids.length){ notify(`Groupe ${n} vide`,'#95a5a6'); return; }
   const maintenant=Date.now();
@@ -6352,7 +6622,7 @@ function cancelOrDeselect(){
 function updateHoverAt(sx,sy){
   if(G.mode!=='select'){ G.hover=null; return; }
   const {x:wx,y:wy}=sw(sx,sy);
-  const tUnit=G.units.find(u=>Math.hypot(u.x-wx,u.y-wy)<16);
+  const tUnit=G.units.find(u=>u.state!=='garrison'&&Math.hypot(u.x-wx,u.y-wy)<16);
   if(tUnit){ G.hover={kind:'unit',id:tUnit.id,owner:tUnit.owner}; return; }
   const tBuilding=G.buildings.find(b=>wx>=b.tx*BASE_TILE&&wx<=(b.tx+b.w)*BASE_TILE&&wy>=b.ty*BASE_TILE&&wy<=(b.ty+b.h)*BASE_TILE);
   if(tBuilding){ G.hover={kind:'building',id:tBuilding.id,owner:tBuilding.owner}; return; }
@@ -6394,7 +6664,7 @@ function handleDoubleTap(sx,sy){
   const tl=sw(0,54), br=sw(W,54+gameH());
   const x0=tl.x,y0=tl.y,x1=br.x,y1=br.y;
   for(const u of G.units){
-    if(!estLocal(u)||u.type!==type) continue;
+    if(!estLocal(u)||u.type!==type||u.state==='garrison') continue;
     if(u.x>=x0&&u.x<=x1&&u.y>=y0&&u.y<=y1) sel.push(u.id);
   }
   G.sel=sel;
@@ -6409,7 +6679,7 @@ function applyBoxSelection(box){
   const x0=a.x, x1=b2.x, y0=a.y, y1=b2.y;
   const sel=[];
   for(const u of G.units){
-    if(!estLocal(u)) continue;
+    if(!estLocal(u)||u.state==='garrison') continue;
     if(u.x>=x0&&u.x<=x1&&u.y>=y0&&u.y<=y1) sel.push(u.id);
   }
   // Priorité aux unités militaires si mélange
@@ -6447,8 +6717,23 @@ function handleTap(sx,sy){
     return;
   }
 
+  // Mode route commerciale : on attend le second Marché
+  if(G.mode==='route'){
+    const target=G.buildings.find(b2=>wx>=b2.tx*BASE_TILE&&wx<=(b2.tx+b2.w)*BASE_TILE&&wy>=b2.ty*BASE_TILE&&wy<=(b2.ty+b2.h)*BASE_TILE);
+    const fromId=G.routeFrom;
+    exitRoute();
+    if(!target||target.type!==BT.MARKET||target.id===fromId){
+      notify('Choisissez un autre Marché pour établir la route','#e74c3c');
+      return;
+    }
+    const r=emettreOrdre(ordre(ORD.ROUTE_COMMERCIALE,{bId:fromId, toId:target.id}));
+    if(r.ok){ notify(`🐫 Route commerciale établie (~${r.dist} tuiles)`,'#f0c040'); buzz(10); }
+    else notify('Route impossible (marché adverse)','#e74c3c');
+    return;
+  }
+
   // Unité touchée ?
-  const tUnit=G.units.find(u=>Math.hypot(u.x-wx,u.y-wy)<16);
+  const tUnit=G.units.find(u=>u.state!=='garrison'&&Math.hypot(u.x-wx,u.y-wy)<16);
   if(tUnit){
     if(estLocal(tUnit)){
       // re-toucher l'unité déjà seule sélectionnée la désélectionne
@@ -6499,6 +6784,22 @@ function handleTap(sx,sy){
           return;
         }
       }
+      // Unités sélectionnées + bâtiment garnissable (Centre Ville/Tour/
+      // Château) à pleine santé ou non => les mettre à l'abri dedans.
+      // Placé APRÈS la réparation : un villageois envoyé sur un bâtiment
+      // endommagé continue de le réparer plutôt que de s'y enfermer.
+      const gcap=BDEF[tBuilding.type].garrisonCap;
+      if(gcap&&!tBuilding.constructing){
+        const gArmy=G.units.filter(u=>G.sel.includes(u.id)&&u.state!=='garrison'&&u.type!==UT.TREB&&u.type!==UT.RAM);
+        if(gArmy.length>0){
+          const r=emettreOrdre(ordre(ORD.GARNIR,{ids:gArmy.map(u=>u.id), bId:tBuilding.id}));
+          if(r.ok){
+            notify(r.refuses>0?`🏰 ${r.n} unité(s) en garnison (garnison pleine, ${r.refuses} refusée(s))`:`🏰 ${r.n} unité(s) en garnison`,'#3498db');
+            buzz(6); clearSelection();
+          } else if(r.raison==='plein') notify('🏰 Garnison pleine !','#e74c3c');
+          return;
+        }
+      }
       if(G.sel.length===1&&G.sel[0]===tBuilding.id){ clearSelection(); return; }
       G.sel=[tBuilding.id]; refreshUI(); return;
     }
@@ -6517,6 +6818,17 @@ function handleTap(sx,sy){
           ? `${r.placed} villageois → ${r.spread} gisement${r.spread>1?'s':''}`
           : 'Villageois en route récolter…','#f1c40f');
       }
+      return;
+    }
+  }
+
+  // Relique touchée ? Seul un Moine peut la porter — un seul suffit.
+  const tRelic=G.relics&&G.relics.find(r=>relicFree(r)&&Math.hypot(r.x-wx,r.y-wy)<BASE_TILE*.9);
+  if(tRelic){
+    const monk=G.units.find(u=>G.sel.includes(u.id)&&u.type===UT.MONK);
+    if(monk){
+      const r=emettreOrdre(ordre(ORD.RELIQUE,{ids:[monk.id], relicId:tRelic.id}));
+      if(r.ok){ G.moveTarget={x:tRelic.x,y:tRelic.y}; G.mtTimer=1.5; notify('🏺 Le moine part récupérer la relique…','#f0c040'); }
       return;
     }
   }
@@ -6614,7 +6926,7 @@ function exitBuild(){
   refreshUI();
 }
 
-document.getElementById('bcancel').addEventListener('click',exitBuild);
+document.getElementById('bcancel').addEventListener('click',()=>{ if(G.mode==='route') exitRoute(); else exitBuild(); });
 
 // ══════════════════════════════════════════════════════════
 //  COUCHE D'ORDRES
@@ -6637,6 +6949,8 @@ const ORD = {
   RALLIEMENT:'RALLIEMENT', PORTAIL:'PORTAIL', AMELIORER_TOUR:'AMELIORER_TOUR',
   DEMOLIR:'DEMOLIR', AUTO_FORMATION:'AUTO_FORMATION', AUTO_REPARE:'AUTO_REPARE',
   TROC:'TROC', ANNULER_FORMATION:'ANNULER_FORMATION', AMELIORER_CAMP:'AMELIORER_CAMP',
+  GARNIR:'GARNIR', DEGARNIR:'DEGARNIR', ROUTE_COMMERCIALE:'ROUTE_COMMERCIALE',
+  RELIQUE:'RELIQUE',
 };
 
 let _ordSeq=0;
@@ -6783,6 +7097,8 @@ function applyCommand(cmd){
   case ORD.BATIR: {
     const d=BDEF[cmd.type]; if(!d) return KO('invalide');
     if((cmd.type===BT.CASTLE||cmd.type===BT.SIEGE)&&f.age<2) return KO('age');
+    if(cmd.type===BT.WONDER&&f.age<3) return KO('age');
+    if(cmd.type===BT.WONDER&&G.buildings.some(bb=>bb.owner===cmd.f&&bb.type===BT.WONDER)) return KO('invalide'); // une seule Merveille à la fois
     // Emplacement réellement libre : un client ne décide pas seul où poser.
     const tx=cmd.tx, ty=cmd.ty;
     if(!(tx>=0&&ty>=0&&tx+d.w<=COLS&&ty+d.h<=ROWS)) return KO('invalide');
@@ -6877,6 +7193,70 @@ function applyCommand(cmd){
     return appliquerUpgradeCamp(b,cmd.f);
   }
 
+  // ── Garnison : un villageois ou un soldat entré dans un Centre Ville /
+  // Tour / Château est invisible au ciblage (retiré de la grille spatiale,
+  // voir rebuildGrid), donc invulnérable, sans pour autant quitter la partie
+  // (population inchangée). Les archers/arbalétriers garnis boostent en
+  // prime l'attaque automatique du bâtiment (voir updateBuildings).
+  case ORD.GARNIR: {
+    const b=_bldDe(cmd); if(!b||b.constructing) return KO('cible');
+    const cap=BDEF[b.type].garrisonCap; if(!cap) return KO('invalide');
+    const us=_unitesDe(cmd).filter(u=>u.state!=='garrison'&&u.type!==UT.TREB&&u.type!==UT.RAM);
+    if(!us.length) return KO('aucune');
+    const cur=G.units.filter(u=>u.state==='garrison'&&u.target===b.id).length;
+    const room=Math.max(0,cap-cur);
+    if(room<=0) return KO('plein');
+    const admis=us.slice(0,room);
+    for(const u of admis){
+      u.state='garrison'; u.target=b.id; u.x=b.x; u.y=b.y;
+      u.moving=false; u.path=null; u.buildTarget=null; u.homeFarm=null; u.inv=0; u.invT=null;
+    }
+    return OK({n:admis.length, refuses:us.length-admis.length});
+  }
+
+  // ── Route commerciale : une caravane fait la navette entre deux Marchés
+  // et rapporte de l'or à chaque arrivée — plus le trajet est long, plus la
+  // caravane paie, mais plus elle expose le joueur (aucune protection en v1 :
+  // la route continue même si le chemin traverse un territoire hostile).
+  case ORD.ROUTE_COMMERCIALE: {
+    const b=_bldDe(cmd); if(!b||b.type!==BT.MARKET||b.constructing) return KO('cible');
+    if(cmd.toId==null){ b.tradeRoute=null; return OK({}); }
+    const to=G.buildings.find(x=>x.id===cmd.toId);
+    if(!to||to.type!==BT.MARKET||to.constructing||to.id===b.id) return KO('cible');
+    const tf=fac(to.owner);
+    if(to.owner!==cmd.f&&(!tf||tf.equipe!==f.equipe)) return KO('cible'); // à soi ou à un allié
+    const dist=Math.hypot(to.x-b.x,to.y-b.y);
+    b.tradeRoute={toId:to.id, dist, t:0, dur:Math.max(20,dist/CARAVAN_SPEED), dir:1};
+    return OK({dist:Math.round(dist/BASE_TILE)});
+  }
+
+  // Un seul Moine à la fois par relique — la validation se fait ici (hôte
+  // autoritaire) pour qu'une double-commande en ligne ne fasse jamais
+  // porter la même relique par deux moines.
+  case ORD.RELIQUE: {
+    const monks=_unitesDe(cmd).filter(u=>u.type===UT.MONK); if(!monks.length) return KO('aucune');
+    const relic=G.relics&&G.relics.find(r=>r.id===cmd.relicId);
+    if(!relic||!relicFree(relic)) return KO('cible');
+    const u=monks[0];
+    relic.carrier=u.id;
+    u.state='relic'; u.target=relic.id; u.homeFarm=null; u.inv=0; u.invT=null; u.moving=false; u.relicHeld=false;
+    return OK({});
+  }
+
+  case ORD.DEGARNIR: {
+    const b=_bldDe(cmd); if(!b) return KO('cible');
+    const tous=G.units.filter(u=>u.owner===cmd.f&&u.state==='garrison'&&u.target===b.id);
+    if(!tous.length) return KO('aucune');
+    const sortants=(cmd.ids&&cmd.ids.length)?tous.filter(u=>cmd.ids.includes(u.id)):tous;
+    sortants.forEach((u,i)=>{
+      const ang=(i/Math.max(1,sortants.length))*Math.PI*2;
+      const r=bldContact(b,0.6);
+      u.x=b.x+Math.cos(ang)*r; u.y=b.y+Math.sin(ang)*r;
+      u.state='idle'; u.target=null;
+    });
+    return OK({n:sortants.length});
+  }
+
   case ORD.DEMOLIR: {
     const b=_bldDe(cmd); if(!b) return KO('cible');
     if(b.type===BT.TC) return KO('invalide');
@@ -6936,8 +7316,9 @@ function appliquerDemolition(b,owner){
   for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++){
     if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=0;
   }
-  // les villageois qui y travaillaient repassent inactifs
-  for(const u of G.units) if(u.target===b.id&&['repair','farm','build'].includes(u.state)){ u.state='idle'; u.target=null; }
+  // les villageois qui y travaillaient repassent inactifs — et la garnison
+  // est éjectée saine et sauve (démolition volontaire, pas une perte au combat).
+  for(const u of G.units) if(u.target===b.id&&['repair','farm','build','garrison'].includes(u.state)){ u.state='idle'; u.target=null; }
   G.buildings=G.buildings.filter(x=>x.id!==b.id);
   G.sel=G.sel.filter(id=>id!==b.id);
   updatePopCap();
@@ -7030,6 +7411,56 @@ function drawCampUpgrade(bar,b,ico,resLabel){
   // pour éviter le double bouton que produit déjà le bloc Tour Défensive.
 }
 
+// Bloc commun aux trois bâtiments garnissables (Centre Ville, Tour, Château) :
+// effectif actuel / capacité, et un bouton pour tout faire ressortir.
+// L'ENTRÉE en garnison ne passe pas par un bouton : elle se fait en
+// sélectionnant des unités puis en tapant le bâtiment (voir handleTap),
+// exactement comme l'affectation à une ferme ou à un chantier.
+function drawGarrisonInfo(bar,b){
+  const cap=BDEF[b.type].garrisonCap; if(!cap) return;
+  const n=G.units.filter(u=>u.state==='garrison'&&u.target===b.id).length;
+  const info=document.createElement('div');
+  info.style.cssText='color:#9fc9e8;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
+  info.textContent=`🏰 Garnison : ${n}/${cap}`+(n===0?' — sélectionnez des unités puis tapez ce bâtiment':'');
+  bar.appendChild(info);
+  if(n>0) mkBtn(bar,'🚪','Sortir\nla garnison',()=>degarrirTous(b));
+}
+function degarrirTous(b){
+  const r=emettreOrdre(ordre(ORD.DEGARNIR,{bId:b.id}));
+  if(!r.ok) return;
+  notify(`🚪 ${r.n} unité(s) sortie(s) de garnison`,'#3498db'); buzz(6);
+  refreshUI();
+}
+
+// Bloc Marché : route commerciale active, ou bouton pour en lancer une.
+function drawTradeRoute(bar,b){
+  if(b.tradeRoute){
+    const to=bldById(b.tradeRoute.toId);
+    const info=document.createElement('div');
+    info.style.cssText='color:#f0c040;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
+    const gold=Math.round(10+(b.tradeRoute.dist/BASE_TILE)*0.6);
+    info.textContent=to?`🐫 Route vers ${BDEF[to.type].nom} — +${gold}💰 par trajet`:'🐫 Route commerciale';
+    bar.appendChild(info);
+    mkBtn(bar,'✖️','Annuler\nla route',()=>{
+      const r=emettreOrdre(ordre(ORD.ROUTE_COMMERCIALE,{bId:b.id,toId:null}));
+      if(r.ok){ notify('🐫 Route commerciale annulée','#95a5a6'); refreshUI(); }
+    });
+  } else {
+    mkBtn(bar,'🐫','Envoyer une\ncaravane',()=>enterRoute(b.id));
+  }
+}
+function enterRoute(bId){
+  G.mode='route'; G.routeFrom=bId;
+  document.getElementById('bcancel').style.display='flex';
+  notify('Tapez un autre Marché (le vôtre ou celui d\'un allié) pour établir la route','#3498db');
+  refreshUI();
+}
+function exitRoute(){
+  G.mode='select'; G.routeFrom=null;
+  document.getElementById('bcancel').style.display='none';
+  refreshUI();
+}
+
 function updateActBar(){
   const bar=document.getElementById('actbar');
   bar.innerHTML='';
@@ -7083,6 +7514,7 @@ const BICO_DEF = [
 const BICO_UPG = [
   [BT.FORGE,    '⚒️','Forge',         {wood:150,stone:100}],
   [BT.UNIV,     '🎓','Université',    {wood:200,stone:150}],
+  [BT.WONDER,   '🏛️','Merveille',     {wood:800,stone:800,gold:400}],
 ];
 
 function fmtCost(cost){
@@ -7117,6 +7549,14 @@ function drawUnitAct(bar,u){
       // construisait dès l'Âge Sombre si on avait les ressources.
       if((bt===BT.CASTLE||bt===BT.SIEGE)&&G.age<2){
         mkBtn(bar,ico,nom+'\n🔒 Âge Châteaux',()=>{},true);
+        continue;
+      }
+      if(bt===BT.WONDER&&G.age<3){
+        mkBtn(bar,ico,nom+'\n🔒 Âge Impérial',()=>{},true);
+        continue;
+      }
+      if(bt===BT.WONDER&&G.buildings.some(bb=>bb.owner===G.me&&bb.type===BT.WONDER)){
+        mkBtn(bar,ico,nom+'\n🏆 Déjà en construction',()=>{},true);
         continue;
       }
       // cost (BICO_ECO/BICO_MIL/BICO_DEF/BICO_UPG) = tarif de base ; le coût
@@ -7208,6 +7648,7 @@ function drawBuildAct(bar,b){
       notify(r.actif?'♾️ Production continue activée':'⏹ Production continue arrêtée',
              r.actif?'#2ecc71':'#95a5a6'); buzz(6);
     });
+    drawGarrisonInfo(bar,b);
   }
 
   // ── Caserne ──
@@ -7252,6 +7693,13 @@ function drawBuildAct(bar,b){
     info.style.cssText='color:#888;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
     info.textContent='Soigne automatiquement les unités blessées';
     bar.appendChild(info);
+    const nRelics=(G.relics||[]).filter(r=>r.bankedBy===G.me).length;
+    if(nRelics>0){
+      const ri=document.createElement('div');
+      ri.style.cssText='color:#f0c040;font-size:10px;padding:2px 6px;width:100%;text-align:center;';
+      ri.textContent=`🏺 ${nRelics} relique(s) — +${(nRelics*RELIC_GOLD_RATE).toFixed(2)}💰/s`;
+      bar.appendChild(ri);
+    }
   }
 
   // ── Château Fort ──
@@ -7276,6 +7724,7 @@ function drawBuildAct(bar,b){
     info.style.cssText='color:#888;font-size:10px;padding:3px 6px;';
     info.textContent='⚔️ Défense auto longue portée';
     bar.appendChild(info);
+    drawGarrisonInfo(bar,b);
   }
 
   // ── Atelier de Siège ──
@@ -7323,6 +7772,7 @@ function drawBuildAct(bar,b){
     mkBtn(bar,'🪵→💰','100🪵\n→60💰',()=>tradeRes('wood',100,'gold',60),false,{wood:100});
     mkBtn(bar,'🪨→💰','100🪨\n→80💰',()=>tradeRes('stone',100,'gold',80),false,{stone:100});
     mkBtn(bar,'💰→🪵','80💰\n→100🪵',()=>tradeRes('gold',80,'wood',100),false,{gold:80});
+    drawTradeRoute(bar,b);
   }
 
   // ── Camp Forestier / Camp Minier / Moulin : récolte + amélioration ──
@@ -7354,7 +7804,20 @@ function drawBuildAct(bar,b){
       maxed.textContent='🏆 Niveau maximum';
       bar.appendChild(maxed);
     }
+    drawGarrisonInfo(bar,b);
     addCommonBuildingBtns(bar,b);
+  }
+
+  // ── Merveille (info + décompte de victoire) ──
+  if(b.type===BT.WONDER){
+    const info=document.createElement('div');
+    info.style.cssText='color:#d8c078;font-family:Cinzel,serif;font-size:12px;padding:5px 8px;text-align:center;';
+    const restant=Math.max(0,MERVEILLE_WIN_TIME-(b.wonderTimer||0));
+    const mm=Math.floor(restant/60), ss=Math.ceil(restant%60);
+    info.innerHTML=`🏛️ Merveille<br><span style="color:#999;font-size:10px;">PV: ${b.hp}/${b.maxHp}</span>`+
+      (restant>0?`<br><span style="color:#f0c040;font-size:11px;">⏳ Victoire dans ${mm}m${String(ss).padStart(2,'0')} si elle tient debout</span>`
+                :`<br><span style="color:#2ecc71;font-size:11px;">🏆 Décompte achevé !</span>`);
+    bar.appendChild(info);
   }
 
   // ── Immeuble HLM (info) ──
@@ -8482,19 +8945,21 @@ function deserialiserBatiment(d){
   return b;
 }
 function serialiserFaction(f){
-  return {i:f.id, g:f.genre, e:f.equipe, t:f.teinte, n:f.nom,
+  return {i:f.id, g:f.genre, e:f.equipe, t:f.teinte, n:f.nom, cv:f.civ,
           ht:f.hostileATous?1:0,
           r:f.res, a:f.age, q:f.ageUpQ, rc:f.research, rq:f.researchQ,
-          p:f.pop, mp:f.maxPop, v:f.vaincu?1:0};
+          p:f.pop, mp:f.maxPop, v:f.vaincu?1:0, mv:f.merveilleAchevee?1:0};
 }
 function appliquerFaction(d){
   let f=G.factions[d.i];
   if(!f){
-    f=mkFaction(d.i,{genre:d.g,equipe:d.e,teinte:d.t,nom:d.n,hostileATous:!!d.ht});
+    f=mkFaction(d.i,{genre:d.g,equipe:d.e,teinte:d.t,nom:d.n,hostileATous:!!d.ht,civ:d.cv});
     G.factions[d.i]=f;
   }
   f.res=d.r; f.age=d.a; f.ageUpQ=d.q; f.research=d.rc; f.researchQ=d.rq;
   f.pop=d.p; f.maxPop=d.mp; f.vaincu=!!d.v; f.nom=d.n; f.teinte=d.t;
+  if(d.cv) f.civ=d.cv;
+  f.merveilleAchevee=!!d.mv;
   return f;
 }
 
@@ -8520,6 +8985,9 @@ function construireSnap(){
     t:'SNAP', tick:RESEAU.tick, gt:+G.gameTime.toFixed(2),
     fac:Object.values(G.factions).map(serialiserFaction),
     nodes:G.nodes.filter(nd=>nd.amt!==nd.max).map(nd=>[nd.id,nd.amt]), // le reste vient de la graine
+    // Reliques : la position vient elle aussi de la graine (genRelics tourne
+    // identiquement des deux côtés) — seul le camp qui l'a mise à l'abri voyage.
+    relics:(G.relics||[]).filter(r=>r.bankedBy).map(r=>[r.id,r.bankedBy]),
     uni:visU.map(serialiserUnite),
     bat:visB.map(serialiserBatiment),
     wave:G.wave, waveTimer:G.waveTimer, waveActive:G.waveActive,
@@ -8548,7 +9016,7 @@ function visiblePour(dest,x,y){
 }
 
 function construireDelta(){
-  const d={t:'D', tick:RESEAU.tick, u:[], b:[], n:[], rm:[], rmb:[]};
+  const d={t:'D', tick:RESEAU.tick, u:[], b:[], n:[], rm:[], rmb:[], rl:[]};
   const vus=new Set(), vusB=new Set();
   // Faction qui RECEVRA ce delta : c'est TOUJOURS l'adversaire (l'hote ne
   // s'envoie pas de messages a lui-meme).
@@ -8619,6 +9087,14 @@ function construireDelta(){
     else if(av!==nd.amt){ d.n.push([nd.id,nd.amt]); RESEAU.dernier.set(cle,nd.amt); }
   }
 
+  // Reliques mises a l'abri depuis le dernier envoi (la position ne bouge
+  // jamais, seul bankedBy — jamais repris une fois livre, voir doRelic).
+  for(const r of (G.relics||[])){
+    if(!r.bankedBy) continue;
+    const cle='rl'+r.id;
+    if(RESEAU.dernier.get(cle)!==r.bankedBy){ d.rl.push([r.id,r.bankedBy]); RESEAU.dernier.set(cle,r.bankedBy); }
+  }
+
   // Factions : caisse, age, population, recherches
   d.fac=Object.values(G.factions).map(serialiserFaction);
   // Projectiles : trop peu nombreux pour meriter un differentiel
@@ -8633,6 +9109,7 @@ function appliquerSnap(m){
   G.gameTime=m.gt;
   for(const f of m.fac) appliquerFaction(f);
   for(const [id,amt] of (m.nodes||[])){ const nd=G.nodes.find(x=>x.id===id); if(nd) nd.amt=amt; }
+  for(const [id,owner] of (m.relics||[])){ const r=G.relics&&G.relics.find(x=>x.id===id); if(r) r.bankedBy=owner; }
   // Les batiments repassent par placeBuilding : la grille de blocage doit
   // refleter exactement celle de l'hote, sinon le pathfinding local diverge.
   G.buildings=[];
@@ -8657,6 +9134,7 @@ function appliquerDelta(m){
   if(m.fac) for(const f of m.fac) appliquerFaction(f);
 
   for(const nd of (m.n||[])){ const x=G.nodes.find(z=>z.id===nd[0]); if(x) x.amt=nd[1]; }
+  for(const rl of (m.rl||[])){ const x=G.relics&&G.relics.find(z=>z.id===rl[0]); if(x&&!x.bankedBy) x.bankedBy=rl[1]; }
 
   for(const bd of (m.newB||[])){
     if(G.buildings.some(b=>b.id===bd.i)) continue;
@@ -8760,6 +9238,7 @@ function updateVisuel(dt){
 
   // Fin de partie : l'hote fait foi, mais l'affichage est local.
   if(moi()&&moi().vaincu&&!G.gameOver){ G.gameOver=true; showGameOver(); }
+  checkMerveilleVictory();
   if(!G.victory&&!G.gameOver){
     const rivaux=factionsJouantes().filter(f=>f.id!==G.me&&f.equipe!==(moi()?moi().equipe:-1));
     if(rivaux.length&&rivaux.every(f=>f.vaincu)){ G.victory=true; showVictory(); }
@@ -9708,6 +10187,7 @@ function buildSaveData(){
       gameTime:G.gameTime, targetWaves:G.targetWaves, victory:G.victory,
       tiles:G.tiles, bmap:G.bmap,
       nodes:G.nodes.map(n=>({...n, gatherers:[]})),
+      relics:(G.relics||[]).map(r=>({...r})),
       buildings:G.buildings.map(b=>({...b, trainQ:[...b.trainQ]})),
       units:G.units.map(u=>({...u, pendingAction:null})),
     };
@@ -9797,7 +10277,7 @@ function migrerSauvegarde(data){
 
     const diff=DIFFS[data.difficulty]||DIFFS.normal;
     const facs={};
-    const p1=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:'Vous',res:data.res||diff.startRes,maxPop:data.maxPop||5});
+    const p1=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:'Vous',res:data.res||diff.startRes,maxPop:data.maxPop||5,civ:data.civ});
     p1.age=data.age||0; p1.ageUpQ=data.ageUpQ||null;
     p1.research=Object.assign(initResearch(),data.research||{});
     p1.researchQ=(data.researchQ||[]).map(r=>({...r}));
@@ -9809,7 +10289,7 @@ function migrerSauvegarde(data){
     facs[FAC.P1]=p1;
     facs[FAC.PILL]=mkFaction(FAC.PILL,{genre:'neutre',equipe:0,hostileATous:true});
     if(data.ai){
-      const ia=mkFaction(FAC.IA,{genre:'ia',equipe:3,nom:'Seigneur rival',res:data.ai.res,maxPop:data.ai.maxPop});
+      const ia=mkFaction(FAC.IA,{genre:'ia',equipe:3,nom:'Seigneur rival',res:data.ai.res,maxPop:data.ai.maxPop,civ:data.ai.civ});
       Object.assign(ia,{
         age:data.ai.age||0, pop:data.ai.pop||0,
         baseX:data.ai.baseX, baseY:data.ai.baseY, tcId:data.ai.tcId,
@@ -9895,6 +10375,9 @@ async function loadGame(key=SAVE_KEY){
       f.fog=g;
     }
     G.nodes=data.nodes.map(n=>({...n, gatherers:[]}));
+    // Anciennes sauvegardes sans reliques (v8 pré-reliques) : liste vide,
+    // sans crash — elles réapparaîtront simplement à la prochaine partie.
+    G.relics=(data.relics||[]).map(r=>({...r, carrier:null}));
     G.buildings=data.buildings.map(b=>({...b, trainQ:[...(b.trainQ||[])], farmers:[],
       level: b.level||1, // anciennes sauvegardes : pas de niveau -> Tour de Guet (niveau 1)
       foodLeft: b.type===BT.FARM ? (b.foodLeft!=null?b.foodLeft:FARM_FOOD) : (b.foodLeft||0)}));
@@ -9955,6 +10438,13 @@ try{
   if(savedDiff&&DIFFS[savedDiff]) selectedDifficulty=savedDiff;
 }catch(e){}
 try{ pickDifficulty(selectedDifficulty); }catch(e){}
+
+// Idem pour la civilisation.
+try{
+  const savedCiv=localStorage.getItem('adc_civ');
+  if(savedCiv&&CIVS[savedCiv]) selectedCiv=savedCiv;
+}catch(e){}
+try{ pickCiv(selectedCiv); }catch(e){}
 
 // Idem pour le mode de partie, puis chargement du profil persistant (succès
 // acquis, parties jouées) : l'écran-titre doit afficher la progression réelle

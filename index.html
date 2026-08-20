@@ -355,6 +355,54 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .modebtn[data-m="conquest"] { --mc:#e05a4e; }
 .modebtn[data-m="conquest2"] { --mc:#b07cc6; }
 .modebtn[data-m="coop2v1"] { --mc:#2ecc71; }
+/* Seul mode qui exige un second joueur en ligne : un badge suffit à éviter
+   la confusion avec les 3 autres, jouables seul dès "Commencer la partie". */
+.modebtn { position:relative; }
+.modebtn .mbadge {
+  position:absolute;top:-7px;right:6px;
+  font-family:'Crimson Text',serif;font-size:8.5px;font-weight:700;letter-spacing:.03em;
+  color:#0a1f10;background:#2ecc71;border-radius:7px;padding:1.5px 5px;
+  box-shadow:0 0 0 2px rgba(20,12,0,.92);white-space:nowrap;
+}
+
+/* ── RÉSUMÉ PLIABLE MODE + DIFFICULTÉ ──
+   Replié par défaut (sauf tout premier lancement) : évite d'imposer 8
+   boutons + leurs descriptions à chaque ouverture pour un joueur qui a déjà
+   choisi ses réglages. Le résumé reflète toujours le choix courant. */
+.cfgsummary {
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:320px;
+  background:rgba(20,12,0,.7);border:1.5px solid var(--gold-d);border-radius:10px;
+  padding:9px 14px;cursor:pointer;font-family:'Cinzel',serif;font-size:13px;color:var(--gold-l);
+  -webkit-tap-highlight-color:transparent;
+}
+.cfgsummary:active { transform:scale(.98); }
+.cfgsummary .cfgchevron { color:#9a8a6a;font-size:15px;transition:transform .2s;flex-shrink:0; }
+.cfgsummary.open .cfgchevron { transform:rotate(90deg); }
+.cfgdetails { display:flex;flex-direction:column;align-items:center;gap:14px;width:100%; }
+
+/* ── RANGÉE D'UTILITAIRES (écran-titre) ──
+   Succès/Classement/Contrôles/Connexion Google : secondaires par nature,
+   ne doivent pas peser autant qu'un bigbtn "Commencer la partie". Même
+   gabarit que le sélecteur de mode, pour rester dans le même langage visuel. */
+.utilrow { display:flex;gap:8px;justify-content:center;width:100%;flex-wrap:wrap;margin-top:2px; }
+.utilbtn {
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:rgba(20,12,0,.7);border:1.5px solid var(--gold-d);border-radius:10px;
+  color:#9a8a6a;font-family:'Cinzel',serif;padding:8px 6px;cursor:pointer;
+  /* flex-grow:0 (contrairement à .modebtn) : le nombre de boutons varie (3
+     sans Connexion Google, 4 avec), un flex:1 étirait alors le DERNIER seul
+     sur sa ligne à pleine largeur dès que 4 ne tenaient pas sur une rangée.
+     Sans grandir, il garde sa taille naturelle et se recentre proprement,
+     quel que soit le nombre de boutons visibles. */
+  flex:0 1 84px;
+  -webkit-tap-highlight-color:transparent;transition:border-color .15s,color .15s,transform .1s;
+}
+.utilbtn:active { transform:scale(.96); }
+.utilbtn .uico { font-size:19px;filter:drop-shadow(0 0 4px rgba(0,0,0,.4)); }
+.utilbtn .ulabel { font-size:10px;white-space:nowrap; }
+@media (hover:hover) and (pointer:fine){
+  .utilbtn:hover { border-color:var(--gold-l);color:var(--gold-l); }
+}
 .seedrow { display:flex;gap:6px;align-items:center;justify-content:center;width:100%;margin-top:2px; }
 .seedrow label { font-size:11px;color:#9a8a6a;letter-spacing:.04em; }
 .seedrow input {
@@ -875,34 +923,42 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <p id="modeintro">Récoltez bois, pierre et or. Bâtissez votre cité. Forgez vos armes.<br>Vous avez <strong id="peacetxt">20 minutes</strong> avant la première attaque !</p>
     <p class="lore">Nouveau : mode Conquête contre une IA vivante, statistiques de fin de partie et succès à débloquer</p>
     <div class="ornament">✦</div>
-    <div class="moderow" id="moderow">
-      <button class="modebtn" data-m="survival" onclick="pickMode('survival')"><span class="mico">🛡️</span><span class="mlabel">Survie</span></button>
-      <button class="modebtn" data-m="conquest" onclick="pickMode('conquest')"><span class="mico">🏴</span><span class="mlabel">Conquête</span></button>
-      <button class="modebtn" data-m="conquest2" onclick="pickMode('conquest2')"><span class="mico">⚔️</span><span class="mlabel">2 rivaux</span></button>
-      <button class="modebtn" data-m="coop2v1" onclick="pickMode('coop2v1')"><span class="mico">🤝</span><span class="mlabel">2v1 coop</span></button>
+    <button type="button" class="cfgsummary" id="cfgsummary" onclick="toggleCfg()">
+      <span id="cfgsummary-txt">🛡️ Survie · ⚔️ Normal</span>
+      <span class="cfgchevron">›</span>
+    </button>
+    <div class="cfgdetails" id="cfgdetails" style="display:none;">
+      <div class="moderow" id="moderow">
+        <button class="modebtn" data-m="survival" onclick="pickMode('survival')"><span class="mico">🛡️</span><span class="mlabel">Survie</span></button>
+        <button class="modebtn" data-m="conquest" onclick="pickMode('conquest')"><span class="mico">🏴</span><span class="mlabel">Conquête</span></button>
+        <button class="modebtn" data-m="conquest2" onclick="pickMode('conquest2')"><span class="mico">⚔️</span><span class="mlabel">2 rivaux</span></button>
+        <button class="modebtn" data-m="coop2v1" onclick="pickMode('coop2v1')"><span class="mico">🤝</span><span class="mlabel">2v1 coop</span><span class="mbadge">👥 En ligne</span></button>
+      </div>
+      <p class="tip" id="modetip">Survie — Repoussez 20 vagues d'assaut pour l'emporter.</p>
+      <div class="diffrow" id="diffrow">
+        <button class="diffbtn" data-d="easy"   onclick="pickDifficulty('easy')"><span class="dico">🌿</span><span class="dlabel">Facile</span></button>
+        <button class="diffbtn" data-d="normal" onclick="pickDifficulty('normal')"><span class="dico">⚔️</span><span class="dlabel">Normal</span></button>
+        <button class="diffbtn" data-d="hard"   onclick="pickDifficulty('hard')"><span class="dico">🔥</span><span class="dlabel">Difficile</span></button>
+        <button class="diffbtn" data-d="brutal" onclick="pickDifficulty('brutal')"><span class="dico">💀</span><span class="dlabel">Brutal</span></button>
+      </div>
+      <p class="tip" id="difftip">Normal — Moins de répit avant la 1ère vague, constructions +15% plus chères.</p>
+      <div class="seedrow">
+        <label for="seedin">Graine</label>
+        <input id="seedin" type="text" inputmode="numeric" placeholder="aléatoire" oninput="setGraine(this.value)">
+        <button type="button" onclick="viderGraine()" title="Carte aléatoire à chaque partie">↺</button>
+      </div>
+      <p class="tip">Deux parties de même graine ont exactement la même carte.</p>
     </div>
-    <p class="tip" id="modetip">Survie — Repoussez 20 vagues d'assaut pour l'emporter.</p>
-    <div class="diffrow" id="diffrow">
-      <button class="diffbtn" data-d="easy"   onclick="pickDifficulty('easy')"><span class="dico">🌿</span><span class="dlabel">Facile</span></button>
-      <button class="diffbtn" data-d="normal" onclick="pickDifficulty('normal')"><span class="dico">⚔️</span><span class="dlabel">Normal</span></button>
-      <button class="diffbtn" data-d="hard"   onclick="pickDifficulty('hard')"><span class="dico">🔥</span><span class="dlabel">Difficile</span></button>
-      <button class="diffbtn" data-d="brutal" onclick="pickDifficulty('brutal')"><span class="dico">💀</span><span class="dlabel">Brutal</span></button>
-    </div>
-    <p class="tip" id="difftip">Normal — Moins de répit avant la 1ère vague, constructions +15% plus chères.</p>
-    <div class="seedrow">
-      <label for="seedin">Graine</label>
-      <input id="seedin" type="text" inputmode="numeric" placeholder="aléatoire" oninput="setGraine(this.value)">
-      <button type="button" onclick="viderGraine()" title="Carte aléatoire à chaque partie">↺</button>
-    </div>
-    <p class="tip">Deux parties de même graine ont exactement la même carte.</p>
     <button class="bigbtn sheen" onclick="startGame()">⚔️ Commencer la partie</button>
     <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la sauvegarde</button>
     <button class="bigbtn" id="mprejoinbtn" onclick="mpReprendrePartieEnLigne()" style="display:none;background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:1.5px solid #2ecc71;">🔌 Reprendre la partie en ligne</button>
     <button class="bigbtn" id="mpbtn-titre" onclick="mpOuvrir()" style="background:linear-gradient(180deg,#0d2a3a,#08161f);color:#7fb8e8;border:1.5px solid #2a6a9a;box-shadow:none;">👥 1v1 en ligne</button>
-    <button class="bigbtn achbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Succès <span id="achcount"></span></button>
-    <button class="bigbtn" onclick="openClassement()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🥇 Classement</button>
-    <button class="bigbtn" onclick="openControls()" style="background:linear-gradient(180deg,#0d2a3a,#08161f);color:#7fb8e8;border:1.5px solid #2a6a9a;box-shadow:none;">🎮 Contrôles</button>
-    <button class="bigbtn" id="gauthbtn-title" onclick="googleAuthClick()" style="display:none;background:rgba(255,255,255,.06);color:#e8e8e8;border:1.5px solid #5a5a5a;box-shadow:none;">☁️ Connexion Google</button>
+    <div class="utilrow">
+      <button class="utilbtn" onclick="openAch()" title="Succès"><span class="uico">🏆</span><span class="ulabel">Succès <span id="achcount"></span></span></button>
+      <button class="utilbtn" onclick="openClassement()" title="Classement"><span class="uico">🥇</span><span class="ulabel">Classement</span></button>
+      <button class="utilbtn" onclick="openControls()" title="Contrôles"><span class="uico">🎮</span><span class="ulabel">Contrôles</span></button>
+      <button class="utilbtn" id="gauthbtn-title" onclick="googleAuthClick()" title="Connexion Google" style="display:none;"><span class="uico">☁️</span><span class="ulabel">Google</span></button>
+    </div>
   </div>
 </div>
 
@@ -1177,8 +1233,29 @@ function pickDifficulty(key){
   const pt=document.getElementById('peacetxt');
   if(pt) pt.textContent=peaceLabel(key);
   try{ localStorage.setItem('adc_diff',key); }catch(e){}
+  updateCfgSummary();
 }
 window.pickDifficulty=pickDifficulty;
+
+// ── RÉSUMÉ PLIABLE MODE + DIFFICULTÉ (écran-titre) ──────────
+// Reflète toujours le choix courant, pour que le résumé reste vrai même
+// replié. Appelé par pickMode()/pickDifficulty() (définis juste après/avant)
+// et une fois au chargement (voir tout en bas du fichier).
+function updateCfgSummary(){
+  const txt=document.getElementById('cfgsummary-txt');
+  if(!txt) return;
+  const m=MODES[selectedMode]||MODES.survival, d=DIFFS[selectedDifficulty]||DIFFS.normal;
+  txt.textContent=`${m.ico} ${m.nom} · ${d.ico} ${d.nom}`;
+}
+function toggleCfg(){
+  const det=document.getElementById('cfgdetails');
+  const btn=document.getElementById('cfgsummary');
+  if(!det||!btn) return;
+  const ouvre=det.style.display==='none';
+  det.style.display=ouvre?'flex':'none';
+  btn.classList.toggle('open',ouvre);
+}
+window.toggleCfg=toggleCfg;
 
 // ── MODES DE JEU ──────────────────────────────────────────
 // survival : le mode historique — des vagues scriptées arrivent des bords,
@@ -1216,6 +1293,7 @@ function pickMode(key){
   const pt=document.getElementById('peacetxt');
   if(pt) pt.textContent=peaceLabel(selectedDifficulty);
   try{ localStorage.setItem('adc_mode',key); }catch(e){}
+  updateCfgSummary();
 }
 window.pickMode=pickMode;
 
@@ -9740,11 +9818,23 @@ try{ pickDifficulty(selectedDifficulty); }catch(e){}
 // Idem pour le mode de partie, puis chargement du profil persistant (succès
 // acquis, parties jouées) : l'écran-titre doit afficher la progression réelle
 // dès l'ouverture, avant toute partie.
+// jamaisChoisi CAPTURÉ AVANT pickMode() : celui-ci écrit lui-même adc_mode,
+// la clé existerait donc déjà si on la lisait après.
+let _jamaisChoisi=true;
 try{
   const savedMode=localStorage.getItem('adc_mode');
+  _jamaisChoisi=!savedMode;
   if(savedMode&&MODES[savedMode]) selectedMode=savedMode;
 }catch(e){}
 try{ pickMode(selectedMode); }catch(e){}
+// Résumé mode+difficulté déplié uniquement au tout premier lancement (aucun
+// mode jamais choisi sur cet appareil) : un nouveau joueur doit voir les
+// options d'emblée, un joueur qui revient préfère un écran-titre court.
+try{
+  const det=document.getElementById('cfgdetails');
+  const btn=document.getElementById('cfgsummary');
+  if(_jamaisChoisi&&det&&btn){ det.style.display='flex'; btn.classList.add('open'); }
+}catch(e){}
 loadProfile().then(refreshAchCount); // storageLoad() : instantané tant que non connecté à Google
 
 // ── VÉRIFIER SAVE AU LANCEMENT ────────────────────────────

@@ -1441,6 +1441,7 @@ function initStats(){
     gathered:{food:0,wood:0,stone:0,gold:0},
     peakPop:0, peakMil:0, peakFarms:0,
     research:0, campsCleared:0, tradesDone:0,
+    wildlifeHunted:0, garrisonUses:0,
   };
 }
 
@@ -1792,6 +1793,7 @@ function doHunt(u,dt){
     if(w.hp<=0){
       killWildlife(w);
       u.state='idle'; u.target=null;
+      const fo=fac(u.owner); if(fo) fo.stats.wildlifeHunted++;
       if(estLocal(u)) notify(`${def.ico} ${def.nom} abattu — ${def.food}🍖 à récolter`,'#8fbc44');
     } else if(def.counter>0){
       dealDmg(u,def.counter,null);
@@ -4498,6 +4500,12 @@ function update(dt){
   fogTimer-=dt;
   if(fogTimer<=0){ revealFog(); fogTimer=0.2; }
 
+  // Indices contextuels liés au temps plutôt qu'à une construction : la
+  // chasse est disponible dès le début, et la garnison mérite un rappel
+  // juste avant le premier vrai danger plutôt qu'en pleine mise en place.
+  if(G.gameTime>=45) hintOnce('hunt',"🦌 Du gibier sauvage rôde sur la carte : envoyez une unité l'attaquer pour un gros bonus de nourriture.",'#8fbc44');
+  if(G.gmode==='survival'&&G.wave===0&&G.waveTimer<=60) hintOnce('garrison',"🏰 Première vague proche : vos villageois peuvent se mettre à l'abri dans le Centre Ville (sélectionnez-les puis tapez le bâtiment).",'#3498db');
+
   // Suivi du taux de ressources (par 2s)
   G.rateTimer+=dt;
   if(G.rateTimer>=2){
@@ -4570,6 +4578,7 @@ function updateAgeUp(dt){ // (auto-sauvegarde déclenchée à la fin du passage 
     notify(`${a.ico} ${a.nom} atteint !`,'#f0c040');
     notify(`Apporte : ${a.bonus}`,'#e8d5a0',true);
     bigBanner(`${a.ico} ${a.nom}`);
+    if(G.age>=3) hintOnce('wonder',"🏛️ Âge Impérial atteint : vous pouvez désormais bâtir une Merveille — la garder debout 5 minutes une fois achevée gagne la partie.",'#d8c078');
 
     // Recalcule proportionnellement les PV des bâtiments et des unités
     // existants (dégâts déjà subis conservés en absolu — même principe que
@@ -5268,6 +5277,13 @@ function doBuild(u,dt){
       sfx('build');
       notify(`${BDEF[b.type].nom} construite !`,'#2ecc71');
       bigBanner(`✅ ${BDEF[b.type].nom}`);
+      // Indices contextuels : signalés une seule fois par partie, au moment
+      // où ils deviennent concrètement utiles — plus efficace qu'un tutoriel
+      // qui les évoquerait tous d'un coup avant même le premier villageois.
+      if(b.type===BT.CASTLE) hintOnce('hero',"⭐ Château bâti : vous pouvez former votre Héros de civilisation (une seule fois par partie).",'#f0c040');
+      if(b.type===BT.MONASTERY) hintOnce('relic',"🏺 Monastère bâti : un Moine peut porter les reliques dispersées sur la carte pour un revenu passif en or.",'#f0c040');
+      if(b.type===BT.MARKET&&G.buildings.filter(x=>x.owner===G.me&&x.type===BT.MARKET&&!x.constructing).length>=1)
+        hintOnce('trade',"🐫 Marché bâti : avec un second Marché, établissez une route commerciale pour un revenu continu en or.",'#f0c040');
     }
     spawnParts(b.x,b.y,'#2ecc71',10);
     updatePopCap();
@@ -6471,6 +6487,7 @@ function updateUneIA(dt,a){
       const curGarr=G.units.filter(u=>u.owner===a.id&&u.state==='garrison'&&u.target===tc.id).length;
       const idleVils=vils.filter(v=>v.state==='idle').slice(0,Math.max(0,cap-curGarr));
       for(const v of idleVils){ v.state='garrison'; v.target=tc.id; v.x=tc.x; v.y=tc.y; v.moving=false; }
+      if(idleVils.length) a.stats.garrisonUses+=idleVils.length;
     } else {
       for(const v of vils) if(v.state==='garrison'&&v.target===tc.id){ v.state='idle'; v.target=null; }
     }
@@ -7491,6 +7508,7 @@ function applyCommand(cmd){
       u.state='garrison'; u.target=b.id; u.x=b.x; u.y=b.y;
       u.moving=false; u.path=null; u.buildTarget=null; u.homeFarm=null; u.inv=0; u.invT=null;
     }
+    if(admis.length) f.stats.garrisonUses+=admis.length;
     return OK({n:admis.length, refuses:us.length-admis.length});
   }
 
@@ -8455,6 +8473,17 @@ function notify(msg,col='#f1c40f',wide=false){
   el.textContent=msg; c.appendChild(el);
   setTimeout(()=>el.remove(),wide?4600:2800);
 }
+// Indice contextuel affiché UNE SEULE FOIS par partie (G.hints), au moment
+// où le système qu'il présente devient concrètement disponible — bien plus
+// efficace qu'un tutoriel figé de 7 étapes qui les évoquerait tous d'un
+// coup avant même le premier villageois. Voir doBuild/updateAgeUp pour les
+// points de déclenchement.
+function hintOnce(key,msg,col){
+  if(!G.hints) G.hints=new Set();
+  if(G.hints.has(key)) return;
+  G.hints.add(key);
+  notify(msg,col||'#f0c040',true);
+}
 
 // Fait clignoter en rouge les ressources manquantes dans la barre du haut —
 // feedback immédiat sur QUOI manque, en plus du message texte générique.
@@ -8566,11 +8595,20 @@ const ACH = [
   { id:'tactician',   ico:'🔥',  nom:'Tacticien',          desc:'Gagner en difficulté Difficile.',             test:(s,c)=>c.won&&c.diff==='hard' },
   { id:'legend',      ico:'☠️',  nom:'Légende',            desc:'Gagner en difficulté Brutal.',                test:(s,c)=>c.won&&c.diff==='brutal' },
   { id:'veteran',     ico:'🎖️',  nom:'Vétéran',            desc:'Terminer 10 parties.',                        test:(s,c)=>c.games>=10 },
+  { id:'reliquaire',  ico:'🏺',  nom:'Reliquaire',         desc:'Mettre 3 reliques à l\'abri en une partie.',  test:(s,c)=>c.relicsBanked>=3 },
+  { id:'posterite',   ico:'🏛️',  nom:'Postérité',          desc:'Achever une Merveille et la garder debout.',  test:(s,c)=>c.merveille },
+  { id:'legendaire',  ico:'⭐',  nom:'Légendaire',         desc:'Former un Héros de civilisation.',            test:(s,c)=>c.heroTrained },
+  { id:'chasseur',    ico:'🏹',  nom:'Chasseur',           desc:'Abattre 10 animaux sauvages en une partie.',  test:(s)=>s.wildlifeHunted>=10 },
+  { id:'negociant',   ico:'🐫',  nom:'Négociant',          desc:'Réaliser 20 opérations commerciales en une partie.', test:(s)=>s.tradesDone>=20 },
+  { id:'forteresse',  ico:'🏰',  nom:'Forteresse',         desc:'Mettre 15 unités à l\'abri en garnison en une partie.', test:(s)=>s.garrisonUses>=15 },
 ];
 
 function achContext(won){
+  const mo=moi();
   return { won:!!won, gmode:G.gmode, diff:G.difficulty, age:G.age,
-           wave:G.wave, time:G.gameTime||0, games:PROFILE.games };
+           wave:G.wave, time:G.gameTime||0, games:PROFILE.games,
+           merveille:!!(mo&&mo.merveilleAchevee), heroTrained:!!(mo&&mo.heroTrained),
+           relicsBanked:(G.relics||[]).filter(r=>r.bankedBy===G.me).length };
 }
 
 // Évalue tous les succès non encore acquis. Renvoie ceux qui viennent d'être

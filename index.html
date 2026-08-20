@@ -470,6 +470,77 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 @keyframes achin  { from{opacity:0;transform:translateY(-14px) scale(.94)} to{opacity:1;transform:none} }
 @keyframes achout { to{opacity:0;transform:translateY(-10px)} }
 
+/* ── PANNEAU DES CONTRÔLES ── (même gabarit que #achpanel) */
+#controlspanel {
+  position:fixed;inset:0;z-index:550;display:none;
+  background:rgba(0,0,0,.92);
+  flex-direction:column;align-items:center;gap:10px;
+  padding:20px 14px;overflow-y:auto;
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);
+}
+#controlspanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px; }
+.ctrlsec {
+  width:100%;max-width:400px;font-family:'Cinzel',serif;font-size:13px;
+  color:var(--parch2);letter-spacing:.06em;text-transform:uppercase;
+  margin-top:4px;
+}
+.ctrlrow {
+  width:100%;max-width:400px;background:rgba(42,22,0,.9);
+  border:1.5px solid #4a3a20;border-radius:9px;padding:8px 12px;
+  display:flex;align-items:center;gap:12px;
+}
+.ctrlrow .ckey {
+  font-family:'Cinzel',serif;font-size:12px;color:var(--gold-l);
+  background:rgba(20,12,0,.8);border:1.5px solid var(--gold-d);border-radius:6px;
+  padding:3px 8px;flex-shrink:0;min-width:64px;text-align:center;
+}
+.ctrlrow .cdesc { font-family:'Crimson Text',serif;font-size:12.5px;color:var(--parch2);line-height:1.35; }
+
+/* ── PANNEAU DU CLASSEMENT ── (même gabarit que #achpanel) */
+#classementpanel {
+  position:fixed;inset:0;z-index:550;display:none;
+  background:rgba(0,0,0,.92);
+  flex-direction:column;align-items:center;gap:10px;
+  padding:20px 14px;overflow-y:auto;
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);
+}
+#classementpanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px; }
+.classec {
+  width:100%;max-width:360px;font-family:'Cinzel',serif;font-size:13px;
+  color:var(--parch2);letter-spacing:.06em;text-transform:uppercase;margin-top:4px;
+}
+.classub { font-family:'Crimson Text',serif;font-size:11.5px;color:#9a8a6a;text-align:center;max-width:340px; }
+.clarow {
+  width:100%;max-width:360px;background:rgba(42,22,0,.9);
+  border:1.5px solid #4a3a20;border-radius:9px;padding:7px 12px;
+  display:flex;align-items:center;gap:10px;
+}
+.clarow.moi { border-color:var(--gold);background:rgba(58,32,4,.92);box-shadow:0 0 14px -6px var(--gold); }
+.clarow .clarang { font-family:'Cinzel',serif;font-size:13px;color:var(--gold-l);width:22px;text-align:center;flex-shrink:0; }
+.clarow .clanom { font-family:'Crimson Text',serif;font-size:13px;color:var(--parch2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.clarow .claval { font-family:'Cinzel',serif;font-size:13px;color:var(--gold-l);flex-shrink:0; }
+
+/* ── TUTORIEL PAS À PAS (première partie) ── */
+#tutopanel {
+  position:fixed;left:50%;bottom:150px;transform:translateX(-50%);
+  z-index:150;display:none;flex-direction:column;gap:7px;align-items:center;
+  background:linear-gradient(180deg,rgba(42,22,0,.97),rgba(20,12,0,.97));
+  border:1.5px solid var(--gold-d);border-radius:12px;
+  padding:11px 15px;max-width:340px;width:calc(100% - 24px);
+  box-shadow:0 8px 26px rgba(0,0,0,.5);
+}
+#tutopanel .tuto-titre { font-family:'Cinzel',serif;font-size:12.5px;color:var(--gold-l); }
+#tutopanel .tuto-txt { font-family:'Crimson Text',serif;font-size:13px;color:var(--parch2);text-align:center;line-height:1.4; }
+#tutopanel .tuto-dots { display:flex;gap:5px; }
+#tutopanel .tuto-dot { width:6px;height:6px;border-radius:50%;background:#5a4a2a; }
+#tutopanel .tuto-dot.on { background:var(--gold-l); }
+#tutopanel .tuto-btns { display:flex;gap:8px;width:100%; }
+#tutopanel .tuto-btns button {
+  flex:1;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer;border-radius:8px;
+  background:rgba(20,12,0,.7);color:var(--gold-l);border:1.5px solid var(--gold-d);
+}
+#tutopanel .tuto-btns button:active { transform:scale(.96); }
+
 /* ── RESEARCH PANEL ── */
 #rpanel {
   position:fixed;inset:0;z-index:300;display:none;
@@ -711,6 +782,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     </div>
   </div>
   <button class="pmenu-btn" style="background:rgba(212,160,23,.12);color:var(--gold-l);border-color:var(--gold-d);" onclick="openAch()">🏆 Succès <span id="achcount2"></span></button>
+  <button class="pmenu-btn" style="background:rgba(127,184,232,.1);color:#7fb8e8;border-color:#2a6a9a;" onclick="openControls()">🎮 Contrôles</button>
   <button class="pmenu-btn pmenu-google" id="gauthbtn" onclick="googleAuthClick()" style="display:none;">☁️ Connexion Google</button>
   <button class="pmenu-btn pmenu-save"   onclick="saveGame()">💾 Sauvegarder</button>
   <button class="pmenu-btn pmenu-load"   onclick="loadGame()">📂 Charger</button>
@@ -808,6 +880,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <button class="bigbtn" id="mprejoinbtn" onclick="mpReprendrePartieEnLigne()" style="display:none;background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:1.5px solid #2ecc71;">🔌 Reprendre la partie en ligne</button>
     <button class="bigbtn" id="mpbtn-titre" onclick="mpOuvrir()" style="background:linear-gradient(180deg,#0d2a3a,#08161f);color:#7fb8e8;border:1.5px solid #2a6a9a;box-shadow:none;">👥 1v1 en ligne</button>
     <button class="bigbtn achbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Succès <span id="achcount"></span></button>
+    <button class="bigbtn" onclick="openClassement()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🥇 Classement</button>
+    <button class="bigbtn" onclick="openControls()" style="background:linear-gradient(180deg,#0d2a3a,#08161f);color:#7fb8e8;border:1.5px solid #2a6a9a;box-shadow:none;">🎮 Contrôles</button>
     <button class="bigbtn" id="gauthbtn-title" onclick="googleAuthClick()" style="display:none;background:rgba(255,255,255,.06);color:#e8e8e8;border:1.5px solid #5a5a5a;box-shadow:none;">☁️ Connexion Google</button>
   </div>
 </div>
@@ -860,6 +934,23 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   <div id="achlist" style="display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;"></div>
   <button class="rclose" onclick="closeAch()">Fermer</button>
 </div>
+
+<!-- ── PANNEAU DES CONTRÔLES ── -->
+<div id="controlspanel">
+  <h2>🎮 Contrôles</h2>
+  <div id="ctrllist" style="display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;"></div>
+  <button class="rclose" onclick="closeControls()">Fermer</button>
+</div>
+
+<!-- ── PANNEAU DU CLASSEMENT ── -->
+<div id="classementpanel">
+  <h2>🥇 Classement</h2>
+  <div id="clalist" style="display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;"></div>
+  <button class="rclose" onclick="closeClassement()">Fermer</button>
+</div>
+
+<!-- ── TUTORIEL PAS À PAS (première partie) ── -->
+<div id="tutopanel"></div>
 
 <!-- ── TOASTS DE SUCCÈS DÉBLOQUÉ ── -->
 <div id="achpop"></div>
@@ -1154,6 +1245,15 @@ const BICO = {
   [BT.BARRACKS]:'⚔️',[BT.STABLE]:'🐴',[BT.MONASTERY]:'⛪',[BT.UNIV]:'🎓',
   [BT.TOWER]:'🗼',[BT.CASTLE]:'🏯',[BT.WALL]:'🪵',
   [BT.SIEGE]:'🛠️',[BT.OUTPOST]:'🚩',[BT.GATE]:'🚪',[BT.HLM]:'🏢',
+};
+
+// Même emoji que le bouton de formation correspondant (voir drawBuildAct) —
+// centralisé ici pour que la file d'attente (drawBuildAct) affiche la bonne
+// icône par unité sans dupliquer les emojis à deux endroits.
+const UNIT_ICO = {
+  [UT.VIL]:'👷', [UT.MIL]:'⚔️', [UT.ARC]:'🏹', [UT.PIKE]:'🔱', [UT.SCOUT]:'💨',
+  [UT.KNIGHT]:'🐴', [UT.MONK]:'⛪', [UT.PALADIN]:'🌟', [UT.XBOW]:'🎯',
+  [UT.TREB]:'🪨', [UT.RAM]:'🐏',
 };
 
 // ── ÉTAT GLOBAL ───────────────────────────────────────────
@@ -6328,7 +6428,7 @@ const ORD = {
   BATIR:'BATIR', FORMER:'FORMER', RECHERCHE:'RECHERCHE', AGE:'AGE',
   RALLIEMENT:'RALLIEMENT', PORTAIL:'PORTAIL', AMELIORER_TOUR:'AMELIORER_TOUR',
   DEMOLIR:'DEMOLIR', AUTO_FORMATION:'AUTO_FORMATION', AUTO_REPARE:'AUTO_REPARE',
-  TROC:'TROC',
+  TROC:'TROC', ANNULER_FORMATION:'ANNULER_FORMATION',
 };
 
 let _ordSeq=0;
@@ -6506,6 +6606,23 @@ function applyCommand(cmd){
     const b=_bldDe(cmd); if(!b||b.type!==BT.TC) return KO('cible');
     b.autoTrain=!!cmd.actif;
     return OK({actif:b.autoTrain});
+  }
+
+  // Retire UN élément précis de la file (pas forcément le dernier) et
+  // rembourse 50% de son coût, comme une annulation de chantier classique.
+  // L'élément retiré si `index===0` était EN COURS de formation : le
+  // suivant repart de zéro plutôt que d'hériter du temps déjà écoulé.
+  case ORD.ANNULER_FORMATION: {
+    const b=_bldDe(cmd); if(!b) return KO('cible');
+    const i=cmd.index;
+    if(!(i>=0)||i>=b.trainQ.length) return KO('invalide');
+    const type=b.trainQ[i];
+    const cost=TCOST[type]||{};
+    const pool=resPool(cmd.f);
+    if(pool) Object.entries(cost).forEach(([r,v])=>{ pool[r]=(pool[r]||0)+(v>>1); });
+    b.trainQ.splice(i,1);
+    if(i===0) b.trainTimer=b.trainQ.length>0?trainTime(b.trainQ[0]):0;
+    return OK({nom:UDEF[type].nom});
   }
 
   case ORD.RECHERCHE: {
@@ -7030,20 +7147,40 @@ function drawBuildAct(bar,b){
     bar.appendChild(info);
   }
 
-  // ── File de formation ──
+  // ── File de formation ── chaque emplacement affiche son icône et, pour
+  // celui en cours, une barre de progression ; un clic l'annule — n'importe
+  // lequel de la file, pas seulement le dernier. Passe par le même circuit
+  // d'ordres (ORD.ANNULER_FORMATION) que la mise en file : l'ancien bouton
+  // unique mutait trainQ et les ressources directement, y compris côté
+  // CLIENT en multijoueur, sans jamais passer par l'hôte autoritaire.
   if(b.trainQ?.length>0){
-    const t=document.createElement('div');
-    t.style.cssText='color:#f1c40f;font-size:10px;padding:3px 6px;';
-    t.textContent=`File: ${b.trainQ.length} unité(s)`;
-    bar.appendChild(t);
-    mkBtn(bar,'❌','Annuler',()=>{
-      if(b.trainQ.length>0){
-        const type=b.trainQ.pop();
-        Object.entries(TCOST[type]).forEach(([r,v])=>G.res[r]+=v>>1);
-        notify('Formation annulée (50% remboursé)','#f39c12');
-        refreshUI();
+    const wrap=document.createElement('div');
+    wrap.style.cssText='display:flex;gap:4px;flex-wrap:wrap;padding:4px 6px;align-items:flex-end;';
+    b.trainQ.forEach((type,i)=>{
+      const slot=document.createElement('button');
+      const enCours=i===0;
+      slot.style.cssText='position:relative;width:32px;height:32px;padding:0;overflow:hidden;'+
+        'border:1.5px solid '+(enCours?'#f1c40f':'#5a4a2a')+';border-radius:6px;'+
+        'background:rgba(20,12,0,.7);cursor:pointer;';
+      slot.title=(enCours?'En formation — ':'En attente — ')+(UDEF[type]?.nom||type)+'\n(clic : annuler, 50% remboursé)';
+      if(enCours){
+        const pct=Math.max(0,Math.min(1,1-b.trainTimer/trainTime(type)));
+        const fond=document.createElement('div');
+        fond.style.cssText=`position:absolute;left:0;bottom:0;width:100%;height:${Math.round(pct*100)}%;`+
+          'background:rgba(241,196,15,.3);pointer-events:none;';
+        slot.appendChild(fond);
       }
+      const ic=document.createElement('span');
+      ic.style.cssText='position:relative;pointer-events:none;';
+      ic.innerHTML=iconImg(UNIT_ICO[type]||'❓',22);
+      slot.appendChild(ic);
+      slot.addEventListener('click',()=>{
+        const r=emettreOrdre(ordre(ORD.ANNULER_FORMATION,{bId:b.id,index:i}));
+        if(r.ok){ sfx('tap'); notify('Formation annulée (50% remboursé)','#f39c12'); refreshUI(); }
+      });
+      wrap.appendChild(slot);
     });
+    bar.appendChild(wrap);
   }
   addCommonBuildingBtns(bar,b); // bouton Démolir sur tous les autres bâtiments
 }
@@ -7494,6 +7631,143 @@ function openAch(){
 function closeAch(){ document.getElementById('achpanel').style.display='none'; }
 window.openAch=openAch; window.closeAch=closeAch;
 
+// ── PANNEAU DES CONTRÔLES ──────────────────────────────────
+// Contenu statique (pas de PROFILE à charger, contrairement aux Succès) —
+// construit une seule fois, à l'ouverture, pour rester bon marché.
+const CONTROLES = [
+  { sec:'Souris / tactile' },
+  { key:'Clic',          desc:'Sélectionner une unité, un bâtiment, ou donner un ordre (déplacement, récolte, attaque) à la sélection en cours.' },
+  { key:'Glisser',        desc:'Rectangle de sélection — plusieurs unités à la fois (priorité aux unités militaires si le rectangle mélange les deux).' },
+  { key:'Double-clic',    desc:'Sur une unité : sélectionne toutes les unités du même type visibles à l’écran. Dans le vide : désélectionne.' },
+  { key:'Clic droit / Échap', desc:'Annule la construction ou la marche d’attaque en cours, sinon désélectionne.' },
+  { key:'Molette / pincement', desc:'Zoom avant/arrière.' },
+  { key:'Glisser le fond', desc:'Déplace la caméra.' },
+  { sec:'Clavier' },
+  { key:'Échap',       desc:'Annule / désélectionne.' },
+  { key:'Ctrl + 1-9',  desc:'Assigne la sélection courante au groupe de contrôle correspondant.' },
+  { key:'1-9',         desc:'Rappelle ce groupe de contrôle. Un second appui rapide sur le même chiffre recentre la caméra dessus.' },
+  { key:'Alt + 1-4',   desc:'En partie en ligne : envoie une émotion rapide à votre allié ou adversaire.' },
+];
+function openControls(){
+  const list=document.getElementById('ctrllist');
+  if(!list) return;
+  list.innerHTML=CONTROLES.map(c=>c.sec
+    ? `<div class="ctrlsec">${c.sec}</div>`
+    : `<div class="ctrlrow"><span class="ckey">${c.key}</span><span class="cdesc">${c.desc}</span></div>`
+  ).join('');
+  document.getElementById('controlspanel').style.display='flex';
+}
+function closeControls(){ document.getElementById('controlspanel').style.display='none'; }
+window.openControls=openControls; window.closeControls=closeControls;
+
+// ── PANNEAU DU CLASSEMENT ──────────────────────────────────
+// Lecture seule ici : l'ENVOI d'un score se fait tout seul en fin de partie
+// (voir soumettreClassement). Nécessite d'être connecté (même compte que le
+// multijoueur, voir mpConnexion) — sans quoi ce panneau se contente
+// d'expliquer comment l'activer plutôt que de rester vide sans explication.
+async function openClassement(){
+  const panel=document.getElementById('classementpanel');
+  const list=document.getElementById('clalist');
+  if(!panel||!list) return;
+  panel.style.display='flex';
+  if(!mpDispo()){
+    list.innerHTML='<p class="classub">Classement indisponible — multijoueur non configuré (voir README).</p>';
+    return;
+  }
+  if(!_mpEtat.uid){
+    list.innerHTML='<p class="classub">Connectez-vous depuis le panneau <b>👥 1v1 en ligne</b> pour voir le classement et y figurer.</p>';
+    return;
+  }
+  list.innerHTML='<p class="classub">Chargement…</p>';
+  const [survie,conquete]=await Promise.all([
+    window.MP.classementLire('survie',10),
+    window.MP.classementLire('conquete',10),
+  ]);
+  const ligne=(r,i,fmt)=>`<div class="clarow${r.uid===_mpEtat.uid?' moi':''}">`
+    +`<span class="clarang">${i+1}</span><span class="clanom">${r.nom||'Joueur'}</span>`
+    +`<span class="claval">${fmt(r.valeur)}</span></div>`;
+  const section=(titre,rows,fmt)=>`<div class="classec">${titre}</div>`
+    +(rows.length?rows.map((r,i)=>ligne(r,i,fmt)).join(''):'<p class="classub">Aucun score pour l\'instant — soyez le premier !</p>');
+  list.innerHTML=
+    section('🛡️ Survie — meilleure vague',survie,v=>`Vague ${v}`)+
+    section('🏴 Conquête — victoire la plus rapide',conquete,v=>fmtDuration(v));
+}
+function closeClassement(){ document.getElementById('classementpanel').style.display='none'; }
+window.openClassement=openClassement; window.closeClassement=closeClassement;
+
+// ── TUTORIEL PAS À PAS (première partie) ────────────────────
+// Ne se déclenche qu'au tout premier lancement en solo (jamais en ligne :
+// contexte partagé avec un allié/adversaire, pas le lieu pour un didacticiel
+// individuel). Chaque étape a sa propre condition d'achèvement, vérifiée par
+// un battement léger (700 ms, pas à chaque image) pendant que le panneau est
+// affiché — passe automatiquement à la suivante dès que le joueur a
+// réellement fait le geste, plutôt que d'attendre un simple clic "Suivant".
+const TUTO_STEPS = [
+  { txt:'Bienvenue à Âge des Conquêtes ! Sélectionnez un de vos 3 villageois en tapant dessus.',
+    fait:()=>G.units.some(u=>estLocal(u)&&u.type===UT.VIL&&G.sel.includes(u.id)) },
+  { txt:'Bien joué ! Tapez maintenant un arbre, un gisement de pierre/or ou un buisson de baies proche pour l\'envoyer récolter.',
+    fait:()=>G.units.some(u=>estLocal(u)&&(u.state==='gather'||u.state==='farm')) },
+  { txt:'Ouvrez le menu de construction (icône 🔨 en bas à gauche) et posez une Maison — chaque Maison augmente votre population maximale.',
+    fait:()=>G.buildings.some(b=>estLocal(b)&&b.type===BT.HOUSE) },
+  { txt:'Sélectionnez votre Centre Ville et formez un nouveau Villageois pour accélérer votre économie.',
+    fait:()=>popDe(G.me)>3 },
+  { txt:'Construisez une Caserne pour lever votre première armée.',
+    fait:()=>G.buildings.some(b=>estLocal(b)&&b.type===BT.BARRACKS) },
+  { txt:'Accumulez de la nourriture puis avancez d\'Âge avec le bouton en haut de l\'écran — de nouvelles unités et bonus vous attendent.',
+    fait:()=>ageOf(G.me)>0 },
+  { txt:'Vous connaissez les bases ! Continuez à récolter, construire et monter en puissance. Bonne chance, seigneur.',
+    fait:null }, // dernier pas : seul le bouton "Terminer" le ferme
+];
+let _tutoIdx=-1, _tutoActif=false, _tutoTimer=null;
+
+function tutoDoitDemarrer(){
+  if(typeof RESEAU!=='undefined'&&RESEAU.actif) return false;
+  if((PROFILE.games||0)>0) return false;
+  try{ if(localStorage.getItem('adc_tuto_vu')) return false; }catch(e){}
+  return true;
+}
+function tutoDemarrer(){
+  if(!tutoDoitDemarrer()) return;
+  try{ localStorage.setItem('adc_tuto_vu','1'); }catch(e){}
+  _tutoActif=true; _tutoIdx=0;
+  tutoAfficher();
+  if(_tutoTimer) clearInterval(_tutoTimer);
+  _tutoTimer=setInterval(()=>{
+    if(!_tutoActif||_tutoIdx<0||_tutoIdx>=TUTO_STEPS.length){ return; }
+    if(!G.running){ tutoArreter(); return; }
+    const etape=TUTO_STEPS[_tutoIdx];
+    if(etape.fait&&etape.fait()) tutoSuivant();
+  },700);
+}
+function tutoAfficher(){
+  const panel=document.getElementById('tutopanel');
+  if(!panel||_tutoIdx<0||_tutoIdx>=TUTO_STEPS.length) return;
+  const etape=TUTO_STEPS[_tutoIdx];
+  const dernier=_tutoIdx===TUTO_STEPS.length-1;
+  panel.innerHTML=
+    `<div class="tuto-titre">📖 Tutoriel (${_tutoIdx+1}/${TUTO_STEPS.length})</div>`+
+    `<div class="tuto-txt">${etape.txt}</div>`+
+    `<div class="tuto-dots">${TUTO_STEPS.map((_,i)=>`<span class="tuto-dot${i<=_tutoIdx?' on':''}"></span>`).join('')}</div>`+
+    `<div class="tuto-btns">`+
+      (dernier?`<button onclick="tutoArreter()">Terminer</button>`
+              :`<button onclick="tutoArreter()">Passer</button><button onclick="tutoSuivant()">Suivant</button>`)+
+    `</div>`;
+  panel.style.display='flex';
+}
+function tutoSuivant(){
+  if(_tutoIdx>=TUTO_STEPS.length-1){ tutoArreter(); return; }
+  _tutoIdx++;
+  tutoAfficher();
+  buzz(6);
+}
+function tutoArreter(){
+  _tutoActif=false;
+  if(_tutoTimer){ clearInterval(_tutoTimer); _tutoTimer=null; }
+  const panel=document.getElementById('tutopanel');
+  if(panel) panel.style.display='none';
+}
+window.tutoSuivant=tutoSuivant; window.tutoArreter=tutoArreter;
+
 // ── BILAN DE FIN DE PARTIE ────────────────────────────────
 function fmtDuration(sec){
   const m=Math.floor(sec/60), s=Math.floor(sec%60);
@@ -7550,9 +7824,25 @@ function finishGame(won){
   if(won) PROFILE.wins++;
   PROFILE.bestWave=Math.max(PROFILE.bestWave,G.wave||0);
   saveProfile();
+  soumettreClassement(won);
   const fresh=checkAchievements(won);
   refreshAchCount();
   return fresh;
+}
+
+// Classement en ligne (léger) : Survie => meilleure vague atteinte (gagnée
+// OU perdue — le mode infini après victoire continue de compter) ; tout
+// autre mode => durée d'une VICTOIRE seulement (une défaite n'a pas de temps
+// à faire valoir). Nécessite d'être connecté au multijoueur (voir
+// window.MP.classementEnvoyer) ; échec ou non-connexion = silencieux, la fin
+// de partie ne dépend jamais de ce petit plus.
+function soumettreClassement(won){
+  if(!mpDispo()||!window.MP.classementEnvoyer) return;
+  if(G.gmode==='survival'){
+    window.MP.classementEnvoyer('survie',G.wave||0).catch(()=>{});
+  } else if(won){
+    window.MP.classementEnvoyer('conquete',Math.round(G.gameTime||0)).catch(()=>{});
+  }
 }
 
 // ── VICTOIRE ──────────────────────────────────────────────
@@ -7786,6 +8076,7 @@ function closePause(){
 
 function quitGame(){
   effacerRejoinEnLigne();
+  tutoArreter();
   G.running=false; G.paused=false;
   document.getElementById('pausemenu').style.display='none';
   document.getElementById('overlay').style.display='flex';
@@ -9612,9 +9903,14 @@ function startGame(){
   refreshUI();
   requestAnimationFrame(loop);
 
-  // Messages de bienvenue
-  setTimeout(()=>notify('Sélectionnez un villageois, puis tapez une ressource !','#f0c040'),600);
-  setTimeout(()=>notify('🪵 Récoltez du bois puis construisez des Maisons !','#e8d5a0'),3200);
+  // Messages de bienvenue — remplacés par le tutoriel pas à pas (ci-dessous)
+  // au tout premier lancement en solo, pour ne pas dire deux fois la même
+  // chose sur l'écran.
+  const premierePartie=tutoDoitDemarrer();
+  if(!premierePartie){
+    setTimeout(()=>notify('Sélectionnez un villageois, puis tapez une ressource !','#f0c040'),600);
+    setTimeout(()=>notify('🪵 Récoltez du bois puis construisez des Maisons !','#e8d5a0'),3200);
+  }
   if(G.gmode!=='survival'){
     const nb=MODES[G.gmode].rivaux||1;
     const coop=!!MODES[G.gmode].coop&&!!G.factions[FAC.P2];
@@ -9627,6 +9923,7 @@ function startGame(){
     setTimeout(()=>notify('🏆 Des points d\'intérêt (or illimité, lourdement gardés) sont dispersés sur la carte !','#f0c040'),9200);
   }
   setTimeout(()=>bigBanner('🌑 Âge Sombre'),900);
+  if(premierePartie) setTimeout(tutoDemarrer,1400);
 }
 window.startGame=startGame;
 
@@ -9712,6 +10009,8 @@ window.MP = {
   rejoindreSalon: async()=>{ throw new Error('Multijoueur non configure'); },
   envoyer:    ()=>false,
   quitter:    async()=>{},
+  classementEnvoyer: async()=>false,
+  classementLire:    async()=>[],
 };
 
 if(!MP_ACTIF){
@@ -9727,7 +10026,8 @@ try {
   const app  = appMod.initializeApp(FIREBASE_CONFIG);
   const auth = authMod.getAuth(app);
   const db   = dbMod.getDatabase(app);
-  const {ref,set,get,child,update,remove,onValue,onChildAdded,push,onDisconnect,serverTimestamp}=dbMod;
+  const {ref,set,get,child,update,remove,onValue,onChildAdded,push,onDisconnect,serverTimestamp,
+         query,orderByChild,limitToLast,limitToFirst}=dbMod;
 
   E.dispo=true; prevenirEtat();
 
@@ -10011,6 +10311,39 @@ try {
       }
       await remove(ref(db,`presence/${code}/${uid}`));
     }catch(e){}
+  };
+
+  // ── CLASSEMENT EN LIGNE (léger) ────────────────────────────────
+  // Une seule entrée par joueur et par catégorie (clé = son uid Firebase) :
+  // pas d'historique, juste son MEILLEUR score. `categorie` vaut 'survie'
+  // (nombre de vagues survécues — plus haut est meilleur) ou 'conquete'
+  // (durée en secondes d'une victoire hors Survie — plus bas est meilleur).
+  // Nécessite les règles RTDB `classement/$categorie/$uid` du README ; sans
+  // elles, échoue silencieusement (permission_denied) comme le reste du
+  // multijoueur optionnel.
+  window.MP.classementEnvoyer = async(categorie,valeur)=>{
+    if(!E.uid) return false;
+    const chemin=`classement/${categorie}/${E.uid}`;
+    try{
+      const snap=await get(ref(db,chemin));
+      if(snap.exists()){
+        const actuel=snap.val().valeur;
+        const progres=categorie==='conquete'?valeur<actuel:valeur>actuel;
+        if(!progres) return false;
+      }
+      await set(ref(db,chemin),{nom:E.nom||'Joueur',valeur,ts:Date.now()});
+      return true;
+    }catch(e){ console.warn('Classement : envoi échoué',e); return false; }
+  };
+  window.MP.classementLire = async(categorie,limite=10)=>{
+    try{
+      const ordre=categorie==='conquete'?limitToFirst(limite):limitToLast(limite);
+      const snap=await get(query(ref(db,`classement/${categorie}`),orderByChild('valeur'),ordre));
+      const out=[];
+      snap.forEach(enfant=>out.push({uid:enfant.key, ...enfant.val()}));
+      if(categorie!=='conquete') out.reverse(); // limitToLast rend l'ordre croissant : on veut le meilleur en tête
+      return out;
+    }catch(e){ console.warn('Classement : lecture échouée',e); return []; }
   };
 
   // ── RECONNEXION (P7) ─────────────────────────────────────────────

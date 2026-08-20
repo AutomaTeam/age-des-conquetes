@@ -152,6 +152,22 @@ ne peut lire ni écrire que dans les salons dont il fait partie.
         ".read": "auth != null",
         "$uid": { ".write": "auth != null && auth.uid === $uid" }
       }
+    },
+    "classement": {
+      "survie": {
+        "$uid": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 9999"
+        }
+      },
+      "conquete": {
+        "$uid": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 36000"
+        }
+      }
     }
   }
 }
@@ -170,6 +186,17 @@ l'écran-titre pendant 15 minutes pour rejoindre le même salon et resynchronise
 l'état courant avec l'hôte (toujours actif, lui, puisque sa simulation n'a
 jamais quitté la mémoire) — limité au rôle client, l'hôte étant seul dépositaire
 de l'état autoritatif.
+
+**Classement en ligne.** Léger et optionnel, réutilise la même connexion
+Firebase que le multijoueur (bouton 🥇 *Classement* sur l'écran-titre) : une
+seule entrée par joueur et par catégorie (sa MEILLEURE valeur, pas un
+historique) — meilleure vague atteinte en Survie, victoire la plus rapide
+dans les autres modes. Envoyé automatiquement en fin de partie si connecté ;
+échoue silencieusement sinon (comme le reste du multijoueur). Les règles
+`classement/…` ci-dessus valident le type et bornent la valeur envoyée
+(0-9999 vagues, 0-36000 s) — une protection minimale, pas une preuve
+d'intégrité : un client signé peut toujours mentir dans cette fourchette,
+il n'y a pas de serveur de jeu faisant autorité pour la partie solo.
 
 ### NAT et TURN
 

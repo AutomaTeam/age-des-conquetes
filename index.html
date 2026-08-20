@@ -1055,7 +1055,7 @@ const DPR       = Math.min(window.devicePixelRatio || 1, 2);
 const T_GRASS = 0, T_WATER = 1, T_SAND = 2;
 
 // Types ressources nœuds
-const RT = { TREE:'T', STONE:'S', GOLD:'G', BERRY:'B' };
+const RT = { TREE:'T', STONE:'S', GOLD:'G', BERRY:'B', MEAT:'VD' };
 
 // Types bâtiments
 const BT = { TC:'TC', HOUSE:'HO', LUMBER:'LU', MINE:'MI', FARM:'FA',
@@ -1090,7 +1090,7 @@ const BDEF = {
 
 // Types unités
 const UT = { VIL:'V', MIL:'M', ARC:'A', KNIGHT:'K', MONK:'MON', PALADIN:'P',
-             PIKE:'PK', XBOW:'XB', TREB:'TR', RAM:'RM', SCOUT:'SC',
+             PIKE:'PK', XBOW:'XB', TREB:'TR', RAM:'RM', SCOUT:'SC', HERO:'HE',
              ENEMI:'E', ENEMIA:'EA', ENEMI_G:'EG', ENEMI_C:'EC', ENEMI_BOSS:'EB' };
 
 // Définitions unités
@@ -1106,6 +1106,7 @@ const UDEF = {
   [UT.TREB]:    { nom:'Trébuchet',     hp:60,  spd:0.8, atk:55, rng:8.0, atkSpd:0.25, siege:true },
   [UT.RAM]:     { nom:'Bélier',        hp:220, spd:1.4, atk:35, rng:1.2, atkSpd:0.5,  siege:true },
   [UT.SCOUT]:   { nom:'Éclaireur',     hp:40,  spd:3.3, atk:5,  rng:1.2, atkSpd:0.9 },
+  [UT.HERO]:    { nom:'Héros',         hp:220, spd:2.6, atk:20, rng:1.4, atkSpd:1.2 }, // nom/stats de combat identiques pour les 4 civs ; seuls le nom et l'icône affichés varient (voir HEROES)
   [UT.ENEMI]:   { nom:'Pillard',       hp:38,  spd:1.6, atk:7,  rng:1.2, atkSpd:1.0 },
   [UT.ENEMIA]:  { nom:'Archer Pillard',hp:28,  spd:1.7, atk:5,  rng:4.0, atkSpd:0.8 },
   [UT.ENEMI_G]: { nom:'Géant',         hp:160, spd:1.2, atk:20, rng:1.2, atkSpd:0.7 },
@@ -1126,6 +1127,7 @@ const TCOST = {
   [UT.TREB]:    { wood:150, gold:140 },
   [UT.RAM]:     { wood:180, gold:60 },
   [UT.SCOUT]:   { food:50 },
+  [UT.HERO]:    { food:250, gold:200 },
 };
 
 // Libellé de coût généré depuis TCOST : plus de valeurs écrites en dur dans les boutons
@@ -1143,7 +1145,7 @@ const TTIME = { [UT.VIL]:20, [UT.MIL]:15, [UT.ARC]:18, [UT.KNIGHT]:25, [UT.MONK]
                 [UT.PIKE]:16, [UT.XBOW]:20, [UT.TREB]:50, [UT.RAM]:40, [UT.SCOUT]:14 };
 
 // Taux de récolte (par seconde)
-const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, farm:1.0, mill:0.38 };
+const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, [RT.MEAT]:1.3, farm:1.0, mill:0.38 };
 // Vitesse de la caravane commerciale (unités-monde/s) — un peu plus rapide
 // qu'un villageois, pour que la route se sente vivante sans dominer l'écran.
 const CARAVAN_SPEED = BASE_TILE*2.4;
@@ -1230,6 +1232,32 @@ window.pickCiv=pickCiv;
 // encore (lecture avant première image, comme rechercheDe/EMPTY_RESEARCH).
 const EMPTY_CIV={};
 function civOf(owner){ const f=fac(owner); return (f&&CIVS[f.civ])||EMPTY_CIV; }
+
+// ── HÉROS DE CIVILISATION ─────────────────────────────────
+// Une unité unique et nommée par civilisation, entraînable UNE SEULE FOIS
+// par partie (même si elle meurt — voir ORD.FORMER et f.heroTrained), au
+// Château. Statistiques de combat identiques pour les 4 civs (voir
+// UDEF[UT.HERO]) : seuls le nom et l'icône changent, plus l'aura de
+// leadership qu'elles apportent toutes (voir heroAuraMult).
+const HEROES = {
+  francs:    { nom:'Charlemagne', ico:'👑' },
+  byzantins: { nom:'Bélisaire',   ico:'🛡️' },
+  chinois:   { nom:'Sun Tzu',     ico:'📯' },
+  mongols:   { nom:'Gengis Khan', ico:'🏇' },
+};
+const HERO_AURA_RADIUS = BASE_TILE*6;
+const HERO_AURA_MULT = 1.15;
+// Multiplicateur d'ATK pour une unité militaire à portée d'un héros allié
+// vivant (le héros lui-même en profite aussi : rien ne l'exclut du calcul).
+function heroAuraMult(u){
+  if(!isMilitary(u.type)) return 1;
+  for(const h of G.units){
+    if(h.type!==UT.HERO||h.hp<=0) continue;
+    if(h.owner!==u.owner) continue;
+    if(Math.hypot(h.x-u.x,h.y-u.y)<=HERO_AURA_RADIUS) return HERO_AURA_MULT;
+  }
+  return 1;
+}
 
 // Coût réel d'un bâtiment, mis à l'échelle par la difficulté en cours.
 // Point de passage UNIQUE pour tout coût de construction/amélioration de
@@ -1396,7 +1424,7 @@ const BICO = {
 const UNIT_ICO = {
   [UT.VIL]:'👷', [UT.MIL]:'⚔️', [UT.ARC]:'🏹', [UT.PIKE]:'🔱', [UT.SCOUT]:'💨',
   [UT.KNIGHT]:'🐴', [UT.MONK]:'⛪', [UT.PALADIN]:'🌟', [UT.XBOW]:'🎯',
-  [UT.TREB]:'🪨', [UT.RAM]:'🐏',
+  [UT.TREB]:'🪨', [UT.RAM]:'🐏', [UT.HERO]:'⭐',
 };
 
 // ── ÉTAT GLOBAL ───────────────────────────────────────────
@@ -1455,6 +1483,7 @@ function mkFaction(id,o){
     autoRepair:false,
     vaincu:false,
     merveilleAchevee:false, // Merveille achevée et restée debout MERVEILLE_WIN_TIME : victoire immédiate
+    heroTrained:false, // Héros déjà formé cette partie (même s'il est mort depuis) — jamais de remplaçant
     // Les factions 'ia' reçoivent en plus, via initAI(), leur cerveau :
     // baseX, baseY, tcId, think, ageQ, atkTimer, atkMin, raids, vilTarget.
   };
@@ -1669,6 +1698,9 @@ function genMap() {
   // séquence RND (déterminisme partagé hôte/client — voir construireSnap,
   // seul r.bankedBy voyage sur le réseau, jamais la position).
   genRelics();
+  // Gibier : même logique de déterminisme (position tirée de la graine,
+  // seuls PV et mise à mort voyagent sur le réseau — voir construireDelta).
+  genWildlife();
 
   // Points d'intérêt : filons infinis gardés. Réservés au mode Survie — leurs
   // garnisons ne ciblent que le joueur (voir updateEnemyAI), elles fausseraient
@@ -1694,6 +1726,76 @@ function genRelics(){
     if(Math.hypot(wx-centerX,wy-centerY)<SC(10)*BASE_TILE) continue; // pas trop près du centre
     if(G.relics.some(r=>Math.hypot(r.x-wx,r.y-wy)<SC(14)*BASE_TILE)) continue; // dispersion
     G.relics.push({id:G.nid++, tx:x, ty:y, x:wx, y:wy, carrier:null, bankedBy:null});
+  }
+}
+
+// Gibier sauvage : cerfs et sangliers dispersés sur la carte, chassables
+// (voir ORD.CHASSER/doHunt) pour un gros bonus ponctuel de nourriture — un
+// « corpse pile » réutilise directement le système de gisements (RT.MEAT,
+// voir GRATE/findDropoff) une fois l'animal abattu (voir killWildlife).
+const WILDLIFE_DEF = {
+  deer: { nom:'Cerf',     ico:'🦌', hp:30, food:150, counter:0 },
+  boar: { nom:'Sanglier', ico:'🐗', hp:80, food:280, counter:3 }, // riposte tant qu'il est vivant
+};
+const WILDLIFE_COUNT = { deer:8, boar:5 };
+function genWildlife(){
+  G.wildlife=[];
+  for(const [type,count] of Object.entries(WILDLIFE_COUNT)){
+    const def=WILDLIFE_DEF[type];
+    let placed=0, tries=0;
+    while(placed<count&&tries<300){
+      tries++;
+      const x=1+Math.floor(RND()*(COLS-2)), y=1+Math.floor(RND()*(ROWS-2));
+      if(G.bmap[y][x]!==0) continue;
+      const wx=x*BASE_TILE+BASE_TILE/2, wy=y*BASE_TILE+BASE_TILE/2;
+      if(G.wildlife.some(w=>Math.hypot(w.x-wx,w.y-wy)<SC(6)*BASE_TILE)) continue; // pas les uns sur les autres
+      G.wildlife.push({id:G.nid++, type, tx:x, ty:y, x:wx, y:wy, hp:def.hp, maxHp:def.hp});
+      placed++;
+    }
+  }
+}
+// Un animal abattu laisse une dépouille : un nœud de ressource ordinaire
+// (RT.MEAT), récolté comme des baies — aucun code de récolte à dupliquer.
+function killWildlife(w){
+  G.wildlife=(G.wildlife||[]).filter(x=>x.id!==w.id);
+  const def=WILDLIFE_DEF[w.type];
+  const carcasse={id:G.nid++, type:RT.MEAT, tx:w.tx, ty:w.ty, x:w.x, y:w.y, amt:def.food, max:def.food, gatherers:[]};
+  G.nodes.push(carcasse);
+  // G.nodes est censé être figé après la génération de carte (voir
+  // rebuildIndex : IN n'est reconstruit QUE si la référence du tableau
+  // change) — un push() en cours de partie laisserait ce nouveau nœud
+  // introuvable par nodeById tant qu'aucune autre unité n'a rejoint entre
+  // temps. On l'ajoute donc explicitement à l'index pour rester immédiatement
+  // ciblable par une récolte.
+  IN.set(carcasse.id,carcasse);
+  spawnParts(w.x,w.y,'#8b3a1a',10);
+}
+// Un moine/villageois/soldat qui chasse : dégâts fixes pour un villageois
+// (arme improvisée), ceux de l'unité pour un militaire. Le sanglier riposte
+// tant qu'il est vivant ; le cerf ne se défend jamais.
+const WILD_VIL_DMG = 4;
+function doHunt(u,dt){
+  const w=(G.wildlife||[]).find(x=>x.id===u.target);
+  if(!w||w.hp<=0){ u.state='idle'; u.target=null; return; }
+  const d=Math.hypot(w.x-u.x,w.y-u.y);
+  const reach=BASE_TILE*0.9;
+  if(d>reach){ u.destX=w.x; u.destY=w.y; moveTo(u,dt,true); return; }
+  u.moving=false;
+  u.huntCd=(u.huntCd||0)-dt;
+  if(u.huntCd<=0){
+    u.huntCd=1/(u.atkSpd||1);
+    const dmg=u.type===UT.VIL?WILD_VIL_DMG:u.atk;
+    w.hp=Math.max(0,w.hp-dmg);
+    spawnParts(w.x,w.y,'#8b3a1a',3);
+    addFText(w.x,w.y-10,`-${dmg}`,'#ff5544');
+    const def=WILDLIFE_DEF[w.type];
+    if(w.hp<=0){
+      killWildlife(w);
+      u.state='idle'; u.target=null;
+      if(estLocal(u)) notify(`${def.ico} ${def.nom} abattu — ${def.food}🍖 à récolter`,'#8fbc44');
+    } else if(def.counter>0){
+      dealDmg(u,def.counter,null);
+    }
   }
 }
 
@@ -1883,7 +1985,7 @@ function refreshNodePos(){
 }
 
 // ── USINES D'ENTITÉS ──────────────────────────────────────
-const MIL_TYPES=[UT.MIL,UT.ARC,UT.KNIGHT,UT.PALADIN,UT.PIKE,UT.XBOW,UT.TREB,UT.RAM,UT.SCOUT];
+const MIL_TYPES=[UT.MIL,UT.ARC,UT.KNIGHT,UT.PALADIN,UT.PIKE,UT.XBOW,UT.TREB,UT.RAM,UT.SCOUT,UT.HERO];
 function isMilitary(type){ return MIL_TYPES.includes(type); }
 
 // Les bonus de recherche et d'âge s'appliquent désormais à TOUT camp, lus
@@ -1912,6 +2014,9 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
   if(mil) atk=Math.round(atk*AGE_BONUS[age].milAtk); // ATK militaire croissant avec l'âge
   let spd=d.spd;
   if(rech.logistics&&mil) spd*=1.15;
+  // Héros : nom/icône affichés selon la civilisation du propriétaire — les
+  // statistiques de combat, elles, restent celles d'UDEF[UT.HERO] pour tous.
+  const heroDef=(type===UT.HERO)?(HEROES[fac(owner)&&fac(owner).civ]||HEROES.francs):null;
   return {
     id:G.nid++, type, owner,
     x:wx, y:wy, destX:wx, destY:wy,
@@ -1923,6 +2028,7 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
     pendingAction:null,
     animT:(G.nid*2.399)%6.283, dir:0, moving:false, // dérivé de l'id : déterministe, et un champ d'aléa en moins dans l'état
     homeNode:null, // mémoire du dernier nœud récolté
+    heroNom:heroDef&&heroDef.nom, heroIco:heroDef&&heroDef.ico,
   };
 }
 
@@ -3705,7 +3811,7 @@ function render(){
     ctx.translate((Math.random()-0.5)*G.shake.mag,(Math.random()-0.5)*G.shake.mag);
   }
 
-  drawMap(); drawNodes(); drawRelics(); drawBuildings(); drawCaravans(); drawDeathFx(); drawUnits();
+  drawMap(); drawNodes(); drawRelics(); drawWildlife(); drawBuildings(); drawCaravans(); drawDeathFx(); drawUnits();
   drawHoverRing();
   drawProjs(); drawParts(); drawFTexts(); drawSelRings();
   if(G.mode==='build'&&G.ghost) drawGhost();
@@ -3955,7 +4061,7 @@ const UCOL={
   [UT.VIL]:'#3498db',[UT.MIL]:'#2176ae',[UT.ARC]:'#16a085',
   [UT.KNIGHT]:'#8e44ad',[UT.MONK]:'#d4ac0d',[UT.PALADIN]:'#9b59b6',
   [UT.PIKE]:'#2980b9',[UT.XBOW]:'#1abc9c',[UT.TREB]:'#7f6a4a',
-  [UT.RAM]:'#6a4a28',[UT.SCOUT]:'#27ae60',
+  [UT.RAM]:'#6a4a28',[UT.SCOUT]:'#27ae60',[UT.HERO]:'#d4af37',
   [UT.ENEMI]:'#e74c3c',[UT.ENEMIA]:'#c0392b',[UT.ENEMI_G]:'#7b241c',
   [UT.ENEMI_C]:'#a93226',[UT.ENEMI_BOSS]:'#641e16',
 };
@@ -3997,6 +4103,29 @@ function drawRelics(){
     ctx.font=Math.round(TILE*0.65)+'px sans-serif';
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('🏺',sx,sy);
+  }
+}
+
+// Gibier sauvage encore en vie — une fois abattu il disparaît de G.wildlife
+// (voir killWildlife) et sa dépouille prend le relais via drawNodes (RT.MEAT).
+function drawWildlife(){
+  if(!G.wildlife||!G.wildlife.length) return;
+  for(const w of G.wildlife){
+    if(w.hp<=0) continue;
+    const{x:sx,y:sy}=ws(w.x,w.y);
+    if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
+    if(G.fog.length){
+      const fx=(w.tx|0), fy=(w.ty|0);
+      if(G.fog[fy]&&G.fog[fy][fx]!==2) continue;
+    }
+    ctx.font=Math.round(TILE*0.65)+'px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(WILDLIFE_DEF[w.type].ico,sx,sy);
+    if(w.hp<w.maxHp){ // barre de PV uniquement si déjà entamé
+      const bw=TILE*0.6, by=sy-TILE*0.42;
+      ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(sx-bw/2,by,bw,3);
+      ctx.fillStyle='#e74c3c'; ctx.fillRect(sx-bw/2,by,bw*Math.max(0,w.hp/w.maxHp),3);
+    }
   }
 }
 
@@ -4503,6 +4632,7 @@ function updatePlayerUnit(u,dt){
     case 'return':  doReturn(u,dt); break;
     case 'build':   doBuild(u,dt); break;
     case 'relic':   doRelic(u,dt); break;
+    case 'hunt':    doHunt(u,dt); break;
     case 'attack':  doAttack(u,dt); break;
     case 'amove':   doAMove(u,dt); break;
     case 'heal':    doHeal(u,dt); break;
@@ -4847,7 +4977,7 @@ function doGather(u,dt){
   }
   if(!n.gatherers.includes(u.id)) n.gatherers.push(u.id);
   u.homeNode=n.id;
-  const nKind = n.type===RT.TREE?'wood' : n.type===RT.BERRY?'food' : 'ore';
+  const nKind = n.type===RT.TREE?'wood' : (n.type===RT.BERRY||n.type===RT.MEAT)?'food' : 'ore';
   u.gTimer+=dt*gatherMult(u.owner)*campRateMult(u.owner,nKind);
   if(u.gTimer>=1/GRATE[n.type]){
     u.gTimer=0;
@@ -4857,7 +4987,7 @@ function doGather(u,dt){
     if(!n.infinite) n.amt-=a;
     u.inv+=a; u.invT=n.type;
     addFText(u.x,u.y-14,'+1','#f1c40f');
-    sfx(n.type===RT.TREE?'chop':n.type===RT.BERRY?'pick':'mine');
+    sfx(n.type===RT.TREE?'chop':(n.type===RT.BERRY||n.type===RT.MEAT)?'pick':'mine');
     if(u.inv>=GCAP||(!n.infinite&&n.amt<=0)){
       n.gatherers=n.gatherers.filter(id=>id!==u.id);
       u.dropoff=findDropoff(u);
@@ -5052,6 +5182,7 @@ function findDropoff(u){
     if(u.invT===RT.TREE&&b.type!==BT.TC&&b.type!==BT.LUMBER) continue;
     if((u.invT===RT.STONE||u.invT===RT.GOLD)&&b.type!==BT.TC&&b.type!==BT.MINE) continue;
     if(u.invT===RT.BERRY&&b.type!==BT.TC&&b.type!==BT.MILL) continue;
+    if(u.invT===RT.MEAT&&b.type!==BT.TC&&b.type!==BT.MILL) continue; // viande de chasse : TC ou Moulin, comme les baies
     if(u.invT==='farm'&&b.type!==BT.TC&&b.type!==BT.MILL) continue; // nourriture de ferme : TC ou Moulin
     const dx=b.x-u.x,dy=b.y-u.y,dist=Math.sqrt(dx*dx+dy*dy);
     if(dist<bd){bd=dist;best=b;}
@@ -5067,7 +5198,7 @@ function doReturn(u,dt){
   const dc=bldContact(b);
   if(d>dc){ const ap=bldApproach(u,b,0.45); u.destX=ap.x; u.destY=ap.y; moveTo(u,dt,true); return; }
   // Dépose
-  const rm={[RT.TREE]:'wood',[RT.STONE]:'stone',[RT.GOLD]:'gold',[RT.BERRY]:'food',farm:'food'};
+  const rm={[RT.TREE]:'wood',[RT.STONE]:'stone',[RT.GOLD]:'gold',[RT.BERRY]:'food',[RT.MEAT]:'food',farm:'food'};
   const rk=rm[u.invT];
   if(rk){
     const pool=resPool(u.owner);
@@ -5153,7 +5284,7 @@ function doAttack(u,dt){
   u.dir=Math.atan2(dy,dx);
   if(u.atkCd<=0){
     u.atkCd=1/u.atkSpd;
-    let dmg=u.atk;
+    let dmg=Math.round(u.atk*heroAuraMult(u));
     // Bonus piquier vs cavalerie
     const cav=[UT.KNIGHT,UT.PALADIN,UT.ENEMI_C].includes(tgt.type);
     if(u.type===UT.PIKE&&cav) dmg=Math.round(dmg*2);
@@ -6833,6 +6964,18 @@ function handleTap(sx,sy){
     }
   }
 
+  // Gibier touché ? N'importe quelle unité sélectionnée peut être envoyée
+  // chasser (villageois compris, à ses risques face à un sanglier).
+  const tWild=(G.wildlife||[]).find(w=>w.hp>0&&Math.hypot(w.x-wx,w.y-wy)<BASE_TILE*.9);
+  if(tWild){
+    const hunters=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)&&u.type!==UT.MONK);
+    if(hunters.length>0){
+      const r=emettreOrdre(ordre(ORD.CHASSER,{ids:hunters.map(u=>u.id), wildlifeId:tWild.id}));
+      if(r.ok){ G.moveTarget={x:tWild.x,y:tWild.y}; G.mtTimer=1.5; notify(`${WILDLIFE_DEF[tWild.type].ico} En chasse…`,'#8fbc44'); }
+      return;
+    }
+  }
+
   // Sol : déplacer les unités sélectionnées
   if(G.sel.length>0){
     const selUnits=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u));
@@ -6950,7 +7093,7 @@ const ORD = {
   DEMOLIR:'DEMOLIR', AUTO_FORMATION:'AUTO_FORMATION', AUTO_REPARE:'AUTO_REPARE',
   TROC:'TROC', ANNULER_FORMATION:'ANNULER_FORMATION', AMELIORER_CAMP:'AMELIORER_CAMP',
   GARNIR:'GARNIR', DEGARNIR:'DEGARNIR', ROUTE_COMMERCIALE:'ROUTE_COMMERCIALE',
-  RELIQUE:'RELIQUE',
+  RELIQUE:'RELIQUE', CHASSER:'CHASSER',
 };
 
 let _ordSeq=0;
@@ -7118,10 +7261,16 @@ function applyCommand(cmd){
   case ORD.FORMER: {
     const b=_bldDe(cmd); if(!b||b.constructing) return KO('cible');
     const cost=TCOST[cmd.unitType]; if(!cost) return KO('invalide');
+    // Héros : un seul par partie, même mort — pas de remplaçant (voir HEROES).
+    if(cmd.unitType===UT.HERO){
+      if(f.heroTrained||b.trainQ.includes(UT.HERO)) return KO('deja');
+      if(G.units.some(u=>u.owner===cmd.f&&u.type===UT.HERO&&u.hp>0)) return KO('deja');
+    }
     if(!canAfford(cost,cmd.f)) return KO('ressources');
     if(f.pop+b.trainQ.length>=f.maxPop) return KO('pop');
     spend(cost,cmd.f);
     b.trainQ.push(cmd.unitType);
+    if(cmd.unitType===UT.HERO) f.heroTrained=true;
     if(b.trainQ.length===1) b.trainTimer=trainTime(cmd.unitType);
     return OK({nom:UDEF[cmd.unitType].nom});
   }
@@ -7146,6 +7295,8 @@ function applyCommand(cmd){
     if(pool) Object.entries(cost).forEach(([r,v])=>{ pool[r]=(pool[r]||0)+(v>>1); });
     b.trainQ.splice(i,1);
     if(i===0) b.trainTimer=b.trainQ.length>0?trainTime(b.trainQ[0]):0;
+    // Formation de Héros annulée : rend la seule chance de la partie.
+    if(type===UT.HERO) f.heroTrained=false;
     return OK({nom:UDEF[type].nom});
   }
 
@@ -7243,6 +7394,18 @@ function applyCommand(cmd){
     return OK({});
   }
 
+  // Chasse : n'importe quelle unité (villageois compris, à ses risques) peut
+  // être envoyée sur un animal — plusieurs chasseurs peuvent viser la même
+  // proie, pas d'exclusivité comme pour les reliques (pas de risque de
+  // blocage : un animal mort disparaît simplement de G.wildlife).
+  case ORD.CHASSER: {
+    const us=_unitesDe(cmd); if(!us.length) return KO('aucune');
+    const w=(G.wildlife||[]).find(x=>x.id===cmd.wildlifeId);
+    if(!w||w.hp<=0) return KO('cible');
+    for(const u of us){ u.state='hunt'; u.target=w.id; u.homeNode=null; u.moving=false; }
+    return OK({n:us.length});
+  }
+
   case ORD.DEGARNIR: {
     const b=_bldDe(cmd); if(!b) return KO('cible');
     const tous=G.units.filter(u=>u.owner===cmd.f&&u.state==='garrison'&&u.target===b.id);
@@ -7300,6 +7463,7 @@ function trainUnit(b,type){
         el._insuffT=setTimeout(()=>el.classList.remove('insuff'),820);
       }
     }
+    else if(r.raison==='deja') notify('Déjà formé cette partie !','#e67e22');
     return;
   }
   notify(`Formation de ${r.nom}…`,'#3498db'); buzz(8);
@@ -7582,7 +7746,8 @@ function drawUnitAct(bar,u){
     mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:[u.id]})));
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:4px 6px;line-height:1.6;';
-    info.innerHTML=`ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
+    const heroLine=u.type===UT.HERO?`${u.heroIco} <strong style="color:#f0c040">${u.heroNom}</strong> — aura : +${Math.round((HERO_AURA_MULT-1)*100)}% ATK aux alliés proches<br>`:'';
+    info.innerHTML=`${heroLine}ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
     bar.appendChild(info);
   }
 }
@@ -7720,6 +7885,11 @@ function drawBuildAct(bar,b){
       t.textContent='🎓 Foi Divine requise (Université)';
       bar.appendChild(t);
     }
+    // Héros : une seule fois par partie, même s'il meurt — voir HEROES/ORD.FORMER.
+    const heroDone=G.factions[G.me].heroTrained;
+    const heroDef=HEROES[G.factions[G.me].civ]||HEROES.francs;
+    mkBtn(bar,heroDef.ico,(heroDone?'Déjà formé\n':'')+heroDef.nom+'\n'+costLabel(TCOST[UT.HERO]),
+      ()=>trainUnit(b,UT.HERO), heroDone, TCOST[UT.HERO]);
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:3px 6px;';
     info.textContent='⚔️ Défense auto longue portée';
@@ -8847,7 +9017,7 @@ const RESEAU = {
   accDelta:0,
   pret:false,         // le client a fini de generer sa carte
   dernier:new Map(),  // id -> derniere valeur envoyee (hote)
-  connusU:new Set(), connusB:new Set(),
+  connusU:new Set(), connusB:new Set(), connusW:new Set(),
   attente:new Map(),  // seq -> ordre en attente d'acquittement (client)
   latence:0,
   // Robustesse (P7)
@@ -8953,7 +9123,7 @@ function serialiserFaction(f){
   return {i:f.id, g:f.genre, e:f.equipe, t:f.teinte, n:f.nom, cv:f.civ,
           ht:f.hostileATous?1:0,
           r:f.res, a:f.age, q:f.ageUpQ, rc:f.research, rq:f.researchQ,
-          p:f.pop, mp:f.maxPop, v:f.vaincu?1:0, mv:f.merveilleAchevee?1:0};
+          p:f.pop, mp:f.maxPop, v:f.vaincu?1:0, mv:f.merveilleAchevee?1:0, hr:f.heroTrained?1:0};
 }
 function appliquerFaction(d){
   let f=G.factions[d.i];
@@ -8965,6 +9135,7 @@ function appliquerFaction(d){
   f.pop=d.p; f.maxPop=d.mp; f.vaincu=!!d.v; f.nom=d.n; f.teinte=d.t;
   if(d.cv) f.civ=d.cv;
   f.merveilleAchevee=!!d.mv;
+  f.heroTrained=!!d.hr;
   return f;
 }
 
@@ -8983,6 +9154,7 @@ function construireSnap(){
   });
   RESEAU.connusU=new Set(visU.map(u=>u.id));
   RESEAU.connusB=new Set(visB.map(b=>b.id));
+  RESEAU.connusW=new Set((G.wildlife||[]).map(w=>w.id));
   RESEAU.dernier.clear();
   for(const u of visU) RESEAU.dernier.set('u'+u.id,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir});
   for(const b of visB) RESEAU.dernier.set('b'+b.id,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing});
@@ -8993,6 +9165,9 @@ function construireSnap(){
     // Reliques : la position vient elle aussi de la graine (genRelics tourne
     // identiquement des deux côtés) — seul le camp qui l'a mise à l'abri voyage.
     relics:(G.relics||[]).filter(r=>r.bankedBy).map(r=>[r.id,r.bankedBy]),
+    // Gibier : la position vient elle aussi de la graine ; seuls les PV
+    // voyagent. Un animal absent de cette liste = déjà abattu côté hôte.
+    wildlife:(G.wildlife||[]).map(w=>[w.id,w.hp]),
     uni:visU.map(serialiserUnite),
     bat:visB.map(serialiserBatiment),
     wave:G.wave, waveTimer:G.waveTimer, waveActive:G.waveActive,
@@ -9021,7 +9196,7 @@ function visiblePour(dest,x,y){
 }
 
 function construireDelta(){
-  const d={t:'D', tick:RESEAU.tick, u:[], b:[], n:[], rm:[], rmb:[], rl:[]};
+  const d={t:'D', tick:RESEAU.tick, u:[], b:[], n:[], rm:[], rmb:[], rl:[], w:[], rmw:[]};
   const vus=new Set(), vusB=new Set();
   // Faction qui RECEVRA ce delta : c'est TOUJOURS l'adversaire (l'hote ne
   // s'envoie pas de messages a lui-meme).
@@ -9100,6 +9275,17 @@ function construireDelta(){
     if(RESEAU.dernier.get(cle)!==r.bankedBy){ d.rl.push([r.id,r.bankedBy]); RESEAU.dernier.set(cle,r.bankedBy); }
   }
 
+  // Gibier : PV entames depuis le dernier envoi, et retrait des animaux abattus.
+  const vusW=new Set();
+  for(const w of (G.wildlife||[])){
+    vusW.add(w.id);
+    const cle='w'+w.id, av=RESEAU.dernier.get(cle);
+    if(av===undefined){ if(w.hp!==w.maxHp){ d.w.push([w.id,w.hp]); RESEAU.dernier.set(cle,w.hp); } }
+    else if(av!==w.hp){ d.w.push([w.id,w.hp]); RESEAU.dernier.set(cle,w.hp); }
+  }
+  for(const id of RESEAU.connusW) if(!vusW.has(id)){ d.rmw.push(id); RESEAU.dernier.delete('w'+id); }
+  RESEAU.connusW=vusW;
+
   // Factions : caisse, age, population, recherches
   d.fac=Object.values(G.factions).map(serialiserFaction);
   // Projectiles : trop peu nombreux pour meriter un differentiel
@@ -9115,6 +9301,11 @@ function appliquerSnap(m){
   for(const f of m.fac) appliquerFaction(f);
   for(const [id,amt] of (m.nodes||[])){ const nd=G.nodes.find(x=>x.id===id); if(nd) nd.amt=amt; }
   for(const [id,owner] of (m.relics||[])){ const r=G.relics&&G.relics.find(x=>x.id===id); if(r) r.bankedBy=owner; }
+  if(m.wildlife){
+    const vus=new Set(m.wildlife.map(w=>w[0]));
+    G.wildlife=(G.wildlife||[]).filter(w=>vus.has(w.id)); // absent du SNAP = déjà abattu
+    for(const [id,hp] of m.wildlife){ const w=G.wildlife.find(x=>x.id===id); if(w) w.hp=hp; }
+  }
   // Les batiments repassent par placeBuilding : la grille de blocage doit
   // refleter exactement celle de l'hote, sinon le pathfinding local diverge.
   G.buildings=[];
@@ -9140,6 +9331,8 @@ function appliquerDelta(m){
 
   for(const nd of (m.n||[])){ const x=G.nodes.find(z=>z.id===nd[0]); if(x) x.amt=nd[1]; }
   for(const rl of (m.rl||[])){ const x=G.relics&&G.relics.find(z=>z.id===rl[0]); if(x&&!x.bankedBy) x.bankedBy=rl[1]; }
+  for(const wd of (m.w||[])){ const x=G.wildlife&&G.wildlife.find(z=>z.id===wd[0]); if(x) x.hp=wd[1]; }
+  for(const id of (m.rmw||[])){ G.wildlife=(G.wildlife||[]).filter(z=>z.id!==id); }
 
   for(const bd of (m.newB||[])){
     if(G.buildings.some(b=>b.id===bd.i)) continue;
@@ -10193,6 +10386,7 @@ function buildSaveData(){
       tiles:G.tiles, bmap:G.bmap,
       nodes:G.nodes.map(n=>({...n, gatherers:[]})),
       relics:(G.relics||[]).map(r=>({...r})),
+      wildlife:(G.wildlife||[]).map(w=>({...w})),
       buildings:G.buildings.map(b=>({...b, trainQ:[...b.trainQ]})),
       units:G.units.map(u=>({...u, pendingAction:null})),
     };
@@ -10383,6 +10577,8 @@ async function loadGame(key=SAVE_KEY){
     // Anciennes sauvegardes sans reliques (v8 pré-reliques) : liste vide,
     // sans crash — elles réapparaîtront simplement à la prochaine partie.
     G.relics=(data.relics||[]).map(r=>({...r, carrier:null}));
+    // Anciennes sauvegardes sans gibier : liste vide, sans crash.
+    G.wildlife=(data.wildlife||[]).map(w=>({...w}));
     G.buildings=data.buildings.map(b=>({...b, trainQ:[...(b.trainQ||[])], farmers:[],
       level: b.level||1, // anciennes sauvegardes : pas de niveau -> Tour de Guet (niveau 1)
       foodLeft: b.type===BT.FARM ? (b.foodLeft!=null?b.foodLeft:FARM_FOOD) : (b.foodLeft||0)}));

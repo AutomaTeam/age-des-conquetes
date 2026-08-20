@@ -1995,7 +1995,16 @@ function nearestBy(x,y,r,pred){
 // Chaque faction humaine explore sa propre carte : en 1v1, ce que voit
 // l'adversaire ne doit rien révéler à l'autre. L'IA et les pillards n'ont
 // pas de calque (ils voient tout, comme avant).
+// 0 (plein jour) .. 1 (cœur de la nuit) — même courbe que le voile visuel
+// (drawNightTint/drawNightGlow) : une seule définition de "à quel point il
+// fait nuit", partagée entre l'habillage et le gameplay.
+function nightFactor(){ return Math.max(0,Math.sin(G.dayPhase*Math.PI*2-Math.PI/2)); }
+// Vision réduite d'un quart au plus noir de la nuit : la carte se rétrécit
+// vraiment, pas seulement à l'écran — un raid nocturne peut approcher plus
+// près avant d'être repéré.
+const VISION_NIGHT_MULT = 0.75;
 function revealFog(){
+  const visMult=1-(1-VISION_NIGHT_MULT)*nightFactor();
   for(const f of factionsHumaines()){
     const fog=f.fog;
     if(!fog||!fog.length) continue;
@@ -2008,10 +2017,10 @@ function revealFog(){
     };
     // Décroît visible -> exploré
     for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) if(fog[y][x]===2) fog[y][x]=1;
-    for(const u of G.units) if(u.owner===f.id) reveal((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0, u.type===UT.ARC||u.type===UT.XBOW?7:5);
+    for(const u of G.units) if(u.owner===f.id) reveal((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0, Math.max(2,Math.round((u.type===UT.ARC||u.type===UT.XBOW?7:5)*visMult)));
     for(const b of G.buildings) if(b.owner===f.id){
       const rad=b.type===BT.TOWER||b.type===BT.CASTLE?10:b.type===BT.TC?9:b.type===BT.OUTPOST?8:6;
-      reveal((b.tx+b.w/2)|0,(b.ty+b.h/2)|0,rad);
+      reveal((b.tx+b.w/2)|0,(b.ty+b.h/2)|0,Math.max(3,Math.round(rad*visMult)));
     }
   }
 }
@@ -3888,8 +3897,7 @@ function drawVignette(){
 }
 
 function drawNightTint(){
-  // dayPhase 0 = plein jour, 0.5 = nuit
-  const night=Math.max(0,Math.sin(G.dayPhase*Math.PI*2-Math.PI/2))*0.28;
+  const night=nightFactor()*0.28;
   if(night>0.01){
     ctx.fillStyle=`rgba(20,30,70,${night})`;
     ctx.fillRect(0,54,W,gameH());
@@ -3901,7 +3909,7 @@ function drawNightTint(){
 // coucher du soleil, sans toucher au pixel art des sprites eux-mêmes.
 const GLOW_BLDS=[BT.TC,BT.TOWER,BT.CASTLE,BT.BARRACKS];
 function drawNightGlow(){
-  const night=Math.max(0,Math.sin(G.dayPhase*Math.PI*2-Math.PI/2));
+  const night=nightFactor();
   if(night<0.12) return;
   ctx.save();
   ctx.globalCompositeOperation='lighter';
@@ -4549,6 +4557,7 @@ function update(dt){
   // chasse est disponible dès le début, et la garnison mérite un rappel
   // juste avant le premier vrai danger plutôt qu'en pleine mise en place.
   if(G.gameTime>=45) hintOnce('hunt',"🦌 Du gibier sauvage rôde sur la carte : envoyez une unité l'attaquer pour un gros bonus de nourriture.",'#8fbc44');
+  if(nightFactor()>0.5) hintOnce('night',"🌙 La nuit tombe : votre champ de vision se réduit jusqu'au lever du jour.",'#7fb8e8');
   if(G.gmode==='survival'&&G.wave===0&&G.waveTimer<=60) hintOnce('garrison',"🏰 Première vague proche : vos villageois peuvent se mettre à l'abri dans le Centre Ville (sélectionnez-les puis tapez le bâtiment).",'#3498db');
 
   // Suivi du taux de ressources (par 2s)

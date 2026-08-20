@@ -1142,7 +1142,7 @@ function missingLabel(cost){
     .join(' ');
 }
 const TTIME = { [UT.VIL]:20, [UT.MIL]:15, [UT.ARC]:18, [UT.KNIGHT]:25, [UT.MONK]:22, [UT.PALADIN]:35,
-                [UT.PIKE]:16, [UT.XBOW]:20, [UT.TREB]:50, [UT.RAM]:40, [UT.SCOUT]:14 };
+                [UT.PIKE]:16, [UT.XBOW]:20, [UT.TREB]:50, [UT.RAM]:40, [UT.SCOUT]:14, [UT.HERO]:60 };
 
 // Taux de récolte (par seconde)
 const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, [RT.MEAT]:1.3, farm:1.0, mill:0.38 };
@@ -1985,7 +1985,15 @@ function refreshNodePos(){
 }
 
 // ── USINES D'ENTITÉS ──────────────────────────────────────
-const MIL_TYPES=[UT.MIL,UT.ARC,UT.KNIGHT,UT.PALADIN,UT.PIKE,UT.XBOW,UT.TREB,UT.RAM,UT.SCOUT,UT.HERO];
+// Les archétypes ENEMI_* (roster propre à l'IA de Conquête et aux vagues de
+// Survie — voir AI_TRAINERS) comptent aussi comme « militaires » : sans ça,
+// les recherches génériques (Armure de Fer, Tactiques…) que l'IA peut
+// désormais lancer (voir updateUneIA) n'auraient AUCUN effet sur sa propre
+// armée. Inerte pour les vagues de Survie : spawnWave écrase hp/atk juste
+// après mkUnit avec sa propre formule d'échelle, et FAC.PILL n'a ni âge ni
+// recherche qui pourraient déclencher ces bonus entre-temps.
+const MIL_TYPES=[UT.MIL,UT.ARC,UT.KNIGHT,UT.PALADIN,UT.PIKE,UT.XBOW,UT.TREB,UT.RAM,UT.SCOUT,UT.HERO,
+                 UT.ENEMI,UT.ENEMIA,UT.ENEMI_G,UT.ENEMI_C,UT.ENEMI_BOSS];
 function isMilitary(type){ return MIL_TYPES.includes(type); }
 
 // Les bonus de recherche et d'âge s'appliquent désormais à TOUT camp, lus
@@ -4590,7 +4598,11 @@ function updateUnits(dt){
     if(u.pathCd) u.pathCd=Math.max(0,u.pathCd-dt);
     if(u.hitFlash) u.hitFlash=Math.max(0,u.hitFlash-dt);
     const fu=fac(u);
-    if(fu&&fu.genre==='humain') updatePlayerUnit(u,dt);
+    // Le Moine de l'IA de Conquête réutilise TEL QUEL l'automate du joueur
+    // (porter une relique — voir doRelic — ou soigner un allié blessé au
+    // repos, voir le cas 'idle'/UT.MONK d'updatePlayerUnit) plutôt qu'une
+    // copie : un seul comportement à maintenir pour les deux camps.
+    if(fu&&(fu.genre==='humain'||(fu.genre==='ia'&&u.type===UT.MONK))) updatePlayerUnit(u,dt);
     else if(estIA(u)&&u.type===UT.VIL) updateAIVillager(u,dt);
     if(u.moving) u.animT+=dt; // anim de marche uniquement en mouvement
   }
@@ -5486,8 +5498,9 @@ function updateEnemyAI(dt){
     // Les villageois de l'IA de Conquête vivent sur la machine à états du
     // joueur (récolte, dépôt, chantier — voir updateAIVillager) : les faire
     // aussi passer par la boucle de combat les enverrait charger l'ennemi
-    // au lieu de travailler.
-    if(estIA(u)&&u.type===UT.VIL) continue;
+    // au lieu de travailler. Le Moine de l'IA (voir updateUnits) vit
+    // maintenant sur ce même automate — même exclusion, pour la même raison.
+    if(estIA(u)&&(u.type===UT.VIL||u.type===UT.MONK)) continue;
     u.atkCd=Math.max(0,u.atkCd-dt);
     // Reciblage 4×/s au lieu de 60×/s : le déplacement reste fluide, mais on
     // ne rebalaie plus tout le voisinage à chaque image (c'était 70% du CPU).
@@ -5847,6 +5860,7 @@ const AI_TCOST = {
   [UT.ENEMI_C]:    { food:70,  gold:35 },
   [UT.ENEMI_G]:    { food:110, gold:60 },
   [UT.ENEMI_BOSS]: { food:400, gold:300 },
+  [UT.MONK]:       { food:45,  gold:20 }, // même tarif que le Moine du joueur — voir AI_TRAINERS[BT.MONASTERY]
 };
 const AI_TTIME = { [UT.VIL]:20, [UT.ENEMI]:16, [UT.ENEMIA]:19, [UT.ENEMI_C]:26, [UT.ENEMI_G]:34, [UT.ENEMI_BOSS]:70 };
 // Durée d'entraînement, quel que soit le camp : la file de formation partagée
@@ -5859,6 +5873,9 @@ const AI_TRAINERS = {
   [BT.BARRACKS]: [UT.ENEMI,UT.ENEMIA,UT.ENEMI_G],
   [BT.STABLE]:   [UT.ENEMI_C],
   [BT.CASTLE]:   [UT.ENEMI_BOSS],
+  // Le Moine n'a pas de reskin « guerrier » : civil des deux côtés, il sert
+  // uniquement à ramasser les reliques (voir aiRelicHunt) — jamais au combat.
+  [BT.MONASTERY]:[UT.MONK],
 };
 // Âge minimum requis pour chaque unité adverse (même logique de palier que
 // les déblocages du joueur).
@@ -5956,13 +5973,14 @@ function aiBuild(type,nearX,nearY,a){
   if(!spot) return false;
   aiSpend(d.cost,a);
   const b=mkBuilding(type,spot.tx,spot.ty,a.id);
+  // mkBuilding lit déjà l'âge, la recherche (Maçonnerie) ET la civilisation
+  // du PROPRIÉTAIRE passé en paramètre (ici a.id) — génériquement, pour
+  // n'importe quel camp. L'ancien recalcul ici (ne tenant compte que de
+  // l'âge) datait d'avant ce refactor et écrasait silencieusement les
+  // bonus de recherche/civ de l'IA ; supprimé, mkBuilding suffit.
   b.ai=true; b.constructing=true; b.progress=0;
   b.aiStartT=G.gameTime; // sert de garde-fou anti-blocage — voir aiWatchSites
   b.aiCost=d.cost;
-  // mkBuilding réserve les bonus de PV au joueur : on applique ici ceux de
-  // l'âge de l'IA, pour que ses murs vieillissent comme les nôtres.
-  const mhp=Math.round(d.hp*AGE_BONUS[a.age].bldHp);
-  b.hp=b.maxHp=mhp;
   placeBuilding(b);
   // 2 bâtisseurs : les villageois les plus proches, en priorité les inactifs
   const vils=G.units.filter(u=>u.owner===a.id&&u.type===UT.VIL&&u.state!=='build')
@@ -6016,12 +6034,22 @@ function aiNextBuild(vilCount,a){
     if(t) return {type:BT.MINE,x:t.x,y:t.y};
   }
   if(!n(BT.BARRACKS)) return {type:BT.BARRACKS};
+  // Forge dès la défense minimale assurée : sans elle, l'IA n'a jamais accès
+  // aux recherches (voir aiResearch) et prend un retard technologique que le
+  // joueur, lui, peut toujours combler.
+  if(!n(BT.FORGE)) return {type:BT.FORGE};
   // Fermes supplémentaires : seulement si la nourriture stagne réellement,
   // jamais comme un quota théorique qui repousserait indéfiniment la suite.
   if(n(BT.FARM)<farmTarget&&a.res.food<300) return {type:BT.FARM};
   if(n(BT.TOWER)<1+a.age) return {type:BT.TOWER};
   if(a.age>=1&&!n(BT.STABLE)) return {type:BT.STABLE};
   if(a.age>=1&&n(BT.BARRACKS)<2) return {type:BT.BARRACKS};
+  // Économie avancée : Marché ×2 (route commerciale, voir aiTradeRoute),
+  // Monastère (reliques, voir aiRelicHunt) et Université (recherches
+  // avancées) — une fois la défense et la production de base en place.
+  if(a.age>=1&&n(BT.MARKET)<2) return {type:BT.MARKET};
+  if(a.age>=1&&!n(BT.MONASTERY)) return {type:BT.MONASTERY};
+  if(a.age>=1&&!n(BT.UNIV)) return {type:BT.UNIV};
   if(a.age>=2&&!n(BT.CASTLE)) return {type:BT.CASTLE};
   if(n(BT.FARM)<farmTarget) return {type:BT.FARM}; // en dernier recours, jamais bloquant
   if(a.maxPop<AGE_BONUS[a.age].popCap) return {type:BT.HOUSE};
@@ -6360,6 +6388,107 @@ function updateUneIA(dt,a){
       aiSpend(cost,a);
       const t=[0,60,90,120][a.age+1]||90;
       a.ageQ={timer:t,total:t};
+    }
+  }
+
+  // ── Recherches ── une seule à la fois, comme le joueur ; les effets
+  // rétroactifs (updateResearchFaction) sont déjà génériques par faction,
+  // il ne manquait que la décision de lancer la recherche.
+  if(!a.researchQ.length){
+    const forgeReady=G.buildings.some(b=>b.owner===a.id&&b.type===BT.FORGE&&!b.constructing);
+    const univReady=G.buildings.some(b=>b.owner===a.id&&b.type===BT.UNIV&&!b.constructing);
+    // L'IA aligne un roster d'unités ENEMI_* propre (voir AI_TRAINERS), pas
+    // celui du joueur : les recherches ciblant un type précis (Épée de Fer
+    // pour Milicien/Piquier, Arc Long pour Archer…) ne lui servent à rien.
+    // Elle ne pioche donc que dans les techs génériques (isMilitary ou
+    // bâtiments), les seules qui profitent réellement à son armée.
+    const AI_RESEARCH_POOL=['iron_armor','masonry','tactics','engineering','fortification'];
+    const pool=[];
+    if(forgeReady) for(const k of AI_RESEARCH_POOL) if(RDEF[k].cat==='forge') pool.push(k);
+    if(univReady)  for(const k of AI_RESEARCH_POOL) if(RDEF[k].cat==='univ')  pool.push(k);
+    const choix=pool.filter(k=>!a.research[k]&&aiAfford(RDEF[k].cost,saving,a));
+    if(choix.length){
+      const key=choix[(Math.random()*choix.length)|0];
+      aiSpend(RDEF[key].cost,a);
+      a.researchQ.push({type:key,timer:RDEF[key].time});
+    }
+  }
+
+  // ── Route commerciale ── entre ses deux Marchés, dès qu'ils sont bâtis.
+  const aiMarkets=G.buildings.filter(b=>b.owner===a.id&&b.type===BT.MARKET&&!b.constructing);
+  if(aiMarkets.length>=2&&!aiMarkets[0].tradeRoute){
+    const dist=Math.hypot(aiMarkets[1].x-aiMarkets[0].x,aiMarkets[1].y-aiMarkets[0].y);
+    aiMarkets[0].tradeRoute={toId:aiMarkets[1].id,dist,t:0,dur:Math.max(20,dist/CARAVAN_SPEED),dir:1};
+  }
+
+  // ── Reliques ── un Moine libre part récupérer la relique libre la plus
+  // proche (relicFree() protège déjà contre toute double-réclamation).
+  {
+    const idleMonk=G.units.find(u=>u.owner===a.id&&u.type===UT.MONK&&u.state==='idle');
+    if(idleMonk){
+      let best=null,bd=Infinity;
+      for(const r of (G.relics||[])){
+        if(!relicFree(r)) continue;
+        const d=Math.hypot(r.x-idleMonk.x,r.y-idleMonk.y);
+        if(d<bd){bd=d;best=r;}
+      }
+      if(best){ best.carrier=idleMonk.id; idleMonk.state='relic'; idleMonk.target=best.id; idleMonk.relicHeld=false; }
+    }
+  }
+
+  // ── Héros ── une seule fois par partie (voir HEROES), dès que le Château
+  // le permet — même garde-fou que côté joueur (f.heroTrained).
+  if(!a.heroTrained){
+    const castle=G.buildings.find(b=>b.owner===a.id&&b.type===BT.CASTLE&&!b.constructing);
+    if(castle&&castle.trainQ.length<3&&a.pop<a.maxPop&&aiAfford(TCOST[UT.HERO],saving,a)){
+      aiSpend(TCOST[UT.HERO],a);
+      castle.trainQ.push(UT.HERO);
+      if(castle.trainQ.length===1) castle.trainTimer=trainTime(UT.HERO);
+      a.heroTrained=true;
+    }
+  }
+
+  // ── Merveille ── dernier palier, seulement une fois une armée conséquente
+  // déjà levée : bâtir une Merveille sans pouvoir la défendre serait un
+  // cadeau offert au joueur, pas une vraie menace.
+  if(a.age>=3&&army.length>=10&&!G.buildings.some(b=>b.owner===a.id&&b.type===BT.WONDER)){
+    aiBuild(BT.WONDER,a.baseX,a.baseY,a);
+  }
+
+  // ── Amélioration des camps ── Forestier/Minier/Moulin, comme le joueur ;
+  // appliquerUpgradeCamp() vérifie déjà elle-même le coût et l'âge requis.
+  for(const b of G.buildings){
+    if(b.owner!==a.id||b.constructing) continue;
+    if(CAMP_LEVELS[b.type]) appliquerUpgradeCamp(b,a.id);
+  }
+
+  // ── Garnison défensive ── un ennemi rôde près de la base : les villageois
+  // inactifs se mettent à l'abri ; ils ressortent une fois la menace passée.
+  if(tc){
+    const threat=nearestBy(tc.x,tc.y,GUARD_AGGRO_RADIUS,e=>e.hp>0&&estHostile(a.id,e));
+    if(threat){
+      const cap=BDEF[BT.TC].garrisonCap||0;
+      const curGarr=G.units.filter(u=>u.owner===a.id&&u.state==='garrison'&&u.target===tc.id).length;
+      const idleVils=vils.filter(v=>v.state==='idle').slice(0,Math.max(0,cap-curGarr));
+      for(const v of idleVils){ v.state='garrison'; v.target=tc.id; v.x=tc.x; v.y=tc.y; v.moving=false; }
+    } else {
+      for(const v of vils) if(v.state==='garrison'&&v.target===tc.id){ v.state='idle'; v.target=null; }
+    }
+  }
+
+  // ── Chasse occasionnelle ── un villageois inactif part de temps en temps
+  // chercher le gibier le plus proche : un bonus de nourriture gratuit,
+  // jamais prioritaire sur le reste de l'économie.
+  if(Math.random()<0.1){
+    const hunter=vils.find(v=>v.state==='idle');
+    if(hunter){
+      let bestW=null,bdw=60*BASE_TILE;
+      for(const w of (G.wildlife||[])){
+        if(w.hp<=0) continue;
+        const d=Math.hypot(w.x-hunter.x,w.y-hunter.y);
+        if(d<bdw){bdw=d;bestW=w;}
+      }
+      if(bestW){ hunter.state='hunt'; hunter.target=bestW.id; }
     }
   }
 }

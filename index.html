@@ -1093,14 +1093,14 @@ const DPR       = Math.min(window.devicePixelRatio || 1, 2);
 const T_GRASS = 0, T_WATER = 1, T_SAND = 2;
 
 // Types ressources nœuds
-const RT = { TREE:'T', STONE:'S', GOLD:'G', BERRY:'B', MEAT:'VD' };
+const RT = { TREE:'T', STONE:'S', GOLD:'G', BERRY:'B', MEAT:'VD', FISH:'PO' };
 
 // Types bâtiments
 const BT = { TC:'TC', HOUSE:'HO', LUMBER:'LU', MINE:'MI', FARM:'FA',
              FORGE:'FO', BARRACKS:'BA', TOWER:'TW',
              MILL:'ML', MARKET:'MK', STABLE:'ST', CASTLE:'CS',
              MONASTERY:'MO', WALL:'WL', UNIV:'UV',
-             SIEGE:'SG', OUTPOST:'OP', GATE:'GT', HLM:'HL', WONDER:'WD' };
+             SIEGE:'SG', OUTPOST:'OP', GATE:'GT', HLM:'HL', WONDER:'WD', DOCK:'DK' };
 
 // Définitions bâtiments
 const BDEF = {
@@ -1124,11 +1124,12 @@ const BDEF = {
   [BT.OUTPOST]:  { nom:'Avant-poste',    w:1,h:1, hp:260,  cost:{wood:50},                    col:'#6a5a3a',cld:'#443620' },
   [BT.GATE]:     { nom:'Portail',        w:1,h:1, hp:400,  cost:{wood:40,stone:20},           col:'#7a5a34',cld:'#4a3620' },
   [BT.WONDER]:   { nom:'Merveille',      w:3,h:3, hp:3500, cost:{wood:800,stone:800,gold:400},col:'#d8c078',cld:'#8a7838', popBonus:10 },
+  [BT.DOCK]:     { nom:'Quai',           w:2,h:2, hp:300,  cost:{wood:100},                   col:'#6a5030',cld:'#3a2810', drops:true },
 };
 
 // Types unités
 const UT = { VIL:'V', MIL:'M', ARC:'A', KNIGHT:'K', MONK:'MON', PALADIN:'P',
-             PIKE:'PK', XBOW:'XB', TREB:'TR', RAM:'RM', SCOUT:'SC', HERO:'HE',
+             PIKE:'PK', XBOW:'XB', TREB:'TR', RAM:'RM', SCOUT:'SC', HERO:'HE', BOAT:'BO',
              ENEMI:'E', ENEMIA:'EA', ENEMI_G:'EG', ENEMI_C:'EC', ENEMI_BOSS:'EB' };
 
 // Définitions unités
@@ -1145,6 +1146,7 @@ const UDEF = {
   [UT.RAM]:     { nom:'Bélier',        hp:220, spd:1.4, atk:35, rng:1.2, atkSpd:0.5,  siege:true },
   [UT.SCOUT]:   { nom:'Éclaireur',     hp:40,  spd:3.3, atk:5,  rng:1.2, atkSpd:0.9 },
   [UT.HERO]:    { nom:'Héros',         hp:220, spd:2.6, atk:20, rng:1.4, atkSpd:1.2 }, // nom/stats de combat identiques pour les 4 civs ; seuls le nom et l'icône affichés varient (voir HEROES)
+  [UT.BOAT]:    { nom:'Barque de Pêche', hp:50, spd:2.2, atk:0,  rng:1,   atkSpd:1.0, naval:true }, // sans combat en v1 — voir advanceNaval
   [UT.ENEMI]:   { nom:'Pillard',       hp:38,  spd:1.6, atk:7,  rng:1.2, atkSpd:1.0 },
   [UT.ENEMIA]:  { nom:'Archer Pillard',hp:28,  spd:1.7, atk:5,  rng:4.0, atkSpd:0.8 },
   [UT.ENEMI_G]: { nom:'Géant',         hp:160, spd:1.2, atk:20, rng:1.2, atkSpd:0.7 },
@@ -1166,6 +1168,7 @@ const TCOST = {
   [UT.RAM]:     { wood:180, gold:60 },
   [UT.SCOUT]:   { food:50 },
   [UT.HERO]:    { food:250, gold:200 },
+  [UT.BOAT]:    { wood:60 },
 };
 
 // Libellé de coût généré depuis TCOST : plus de valeurs écrites en dur dans les boutons
@@ -1180,10 +1183,10 @@ function missingLabel(cost){
     .join(' ');
 }
 const TTIME = { [UT.VIL]:20, [UT.MIL]:15, [UT.ARC]:18, [UT.KNIGHT]:25, [UT.MONK]:22, [UT.PALADIN]:35,
-                [UT.PIKE]:16, [UT.XBOW]:20, [UT.TREB]:50, [UT.RAM]:40, [UT.SCOUT]:14, [UT.HERO]:60 };
+                [UT.PIKE]:16, [UT.XBOW]:20, [UT.TREB]:50, [UT.RAM]:40, [UT.SCOUT]:14, [UT.HERO]:60, [UT.BOAT]:18 };
 
 // Taux de récolte (par seconde)
-const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, [RT.MEAT]:1.3, farm:1.0, mill:0.38 };
+const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, [RT.MEAT]:1.3, [RT.FISH]:1.1, farm:1.0, mill:0.38 };
 // Vitesse de la caravane commerciale (unités-monde/s) — un peu plus rapide
 // qu'un villageois, pour que la route se sente vivante sans dominer l'écran.
 const CARAVAN_SPEED = BASE_TILE*2.4;
@@ -1492,7 +1495,7 @@ const BICO = {
   [BT.FARM]:'🌾',[BT.MILL]:'💨',[BT.MARKET]:'🏪',[BT.FORGE]:'⚒️',
   [BT.BARRACKS]:'⚔️',[BT.STABLE]:'🐴',[BT.MONASTERY]:'⛪',[BT.UNIV]:'🎓',
   [BT.TOWER]:'🗼',[BT.CASTLE]:'🏯',[BT.WALL]:'🪵',
-  [BT.SIEGE]:'🛠️',[BT.OUTPOST]:'🚩',[BT.GATE]:'🚪',[BT.HLM]:'🏢',[BT.WONDER]:'🏛️',
+  [BT.SIEGE]:'🛠️',[BT.OUTPOST]:'🚩',[BT.GATE]:'🚪',[BT.HLM]:'🏢',[BT.WONDER]:'🏛️',[BT.DOCK]:'⛵',
 };
 
 // Même emoji que le bouton de formation correspondant (voir drawBuildAct) —
@@ -1501,7 +1504,7 @@ const BICO = {
 const UNIT_ICO = {
   [UT.VIL]:'👷', [UT.MIL]:'⚔️', [UT.ARC]:'🏹', [UT.PIKE]:'🔱', [UT.SCOUT]:'💨',
   [UT.KNIGHT]:'🐴', [UT.MONK]:'⛪', [UT.PALADIN]:'🌟', [UT.XBOW]:'🎯',
-  [UT.TREB]:'🪨', [UT.RAM]:'🐏', [UT.HERO]:'⭐',
+  [UT.TREB]:'🪨', [UT.RAM]:'🐏', [UT.HERO]:'⭐', [UT.BOAT]:'⛵',
 };
 
 // ── ÉTAT GLOBAL ───────────────────────────────────────────
@@ -1780,6 +1783,11 @@ function genMap() {
   // Gibier : même logique de déterminisme (position tirée de la graine,
   // seuls PV et mise à mort voyagent sur le réseau — voir construireDelta).
   genWildlife();
+  // Poissons : nœuds ordinaires (comme le gibier abattu, RT.MEAT) mais posés
+  // directement sur l'eau — aucune synchronisation réseau supplémentaire,
+  // ils voyagent déjà comme n'importe quel gisement (voir construireDelta,
+  // section "Gisements entames").
+  genFish();
 
   // Points d'intérêt : filons infinis gardés. Réservés au mode Survie — leurs
   // garnisons ne ciblent que le joueur (voir updateEnemyAI), elles fausseraient
@@ -1833,6 +1841,25 @@ function genWildlife(){
     }
   }
 }
+// Bancs de poissons : posés directement sur des tuiles d'eau (T_WATER),
+// jamais épuisés trop vite (gros stock — une seule Barque doit pouvoir en
+// vivre un moment). Un lac est un disque plein (voir les cercles semés en
+// tête de genMap) donc convexe : une Barque peut le rejoindre en ligne
+// droite depuis n'importe quel Quai bordant le MÊME lac sans jamais
+// traverser la terre (voir advanceNaval).
+const FISH_COUNT = 14, FISH_STOCK = 400;
+function genFish(){
+  let placed=0, tries=0;
+  while(placed<FISH_COUNT&&tries<600){
+    tries++;
+    const x=1+Math.floor(RND()*(COLS-2)), y=1+Math.floor(RND()*(ROWS-2));
+    if(G.tiles[y][x]!==T_WATER) continue;
+    const wx=x*BASE_TILE+BASE_TILE/2, wy=y*BASE_TILE+BASE_TILE/2;
+    if(G.nodes.some(n=>n.type===RT.FISH&&Math.hypot(n.x-wx,n.y-wy)<BASE_TILE*3)) continue;
+    G.nodes.push({id:G.nid++, type:RT.FISH, tx:x, ty:y, x:wx, y:wy, amt:FISH_STOCK, max:FISH_STOCK, gatherers:[]});
+    placed++;
+  }
+}
 // Un animal abattu laisse une dépouille : un nœud de ressource ordinaire
 // (RT.MEAT), récolté comme des baies — aucun code de récolte à dupliquer.
 function killWildlife(w){
@@ -1877,6 +1904,77 @@ function doHunt(u,dt){
       dealDmg(u,def.counter,null);
     }
   }
+}
+
+// ── DÉPLACEMENT NAVAL ────────────────────────────────────────
+// Volontairement séparé du pathfinding terrestre (moveTo/advance/wallAt,
+// partagés par TOUTES les unités) plutôt que d'y ajouter un domaine
+// eau/terre : une Barque ne franchit jamais la moindre côte, et un lac est
+// un disque plein donc convexe (voir genFish) — une ligne droite entre deux
+// points du même lac reste toujours dans l'eau, aucune recherche de chemin
+// n'est nécessaire. `false` = en route, `true` = terre droit devant (arrêt net).
+function advanceNaval(u,gx,gy,dt){
+  u.destX=gx; u.destY=gy;
+  const dx=gx-u.x, dy=gy-u.y, d=Math.hypot(dx,dy);
+  if(d<4) return false;
+  u.moving=true; u.dir=Math.atan2(dy,dx);
+  const spd=u.spd*BASE_TILE*dt;
+  const nx=u.x+dx/d*spd, ny=u.y+dy/d*spd;
+  const tx=(nx/BASE_TILE)|0, ty=(ny/BASE_TILE)|0;
+  if(tx>=0&&ty>=0&&tx<COLS&&ty<ROWS&&G.tiles[ty][tx]===T_WATER){ u.x=nx; u.y=ny; return false; }
+  return true;
+}
+function doFish(u,dt){
+  const n=nodeById(u.target);
+  if(!n||n.amt<=0){
+    if(u.inv>0){ u.dropoff=findDropoff(u); u.state='fishReturn'; return; }
+    u.state='idle'; u.target=null; return;
+  }
+  if(Math.hypot(n.x-u.x,n.y-u.y)>BASE_TILE*0.9){
+    if(advanceNaval(u,n.x,n.y,dt)){ u.state='idle'; u.target=null; } // terre entre-temps (banc près de la rive) : abandonne proprement
+    return;
+  }
+  u.moving=false;
+  u.gTimer=(u.gTimer||0)+dt*gatherMult(u.owner);
+  if(u.gTimer>=1/GRATE[RT.FISH]){
+    u.gTimer=0;
+    const a=Math.min(1,n.amt); n.amt-=a; u.inv=(u.inv||0)+a; u.invT=RT.FISH;
+    if(u.inv>=GCAP){ u.dropoff=findDropoff(u); u.state='fishReturn'; }
+  }
+}
+// Déplacement libre d'une Barque (pas de récolte en cours) : arrêt net à la
+// côte plutôt que de se laisser glisser sur la terre via le déplacement
+// terrestre partagé (voir la note sur wallAt/"déjà dans un mur" en tête
+// d'advanceNaval — une Barque est TOUJOURS considérée "dans un mur" du
+// point de vue du pathfinding terrestre puisqu'elle vit sur l'eau).
+function doSail(u,dt){
+  if(advanceNaval(u,u.destX,u.destY,dt)) u.state='idle';
+  else if(Math.hypot(u.destX-u.x,u.destY-u.y)<4) u.state='idle';
+}
+function doFishReturn(u,dt){
+  const b=bldById(u.dropoff);
+  if(!b){ u.dropoff=findDropoff(u); if(!u.dropoff){u.state='idle';return;} return; }
+  const d=Math.hypot(b.x-u.x,b.y-u.y);
+  // Le Quai est planté sur la terre (seule son emprise touche l'eau, voir
+  // hasAdjacentWater) : son CENTRE n'est jamais atteignable en bateau. Une
+  // Barque livre donc dès qu'elle touche le rivage assez près du Quai —
+  // "bloqué par la côte" vaut accostage, pas échec — et n'abandonne que
+  // si la côte qui la bloque est trop loin pour être celle du bon Quai.
+  if(d>bldContact(b,0.5)){
+    const blockedByShore=advanceNaval(u,b.x,b.y,dt);
+    if(!blockedByShore) return; // encore en route sur l'eau libre
+    if(d>BASE_TILE*2.6){ u.state='idle'; return; } // rivage sans rapport avec ce Quai
+    // sinon : assez près, on livre quand même malgré la côte qui bloque la ligne droite vers le centre
+  }
+  u.moving=false;
+  const pool=resPool(u.owner);
+  if(pool) pool.food+=u.inv;
+  const fg=fac(u.owner); if(fg) fg.stats.gathered.food+=u.inv;
+  if(estLocal(u)){ addFText(b.x,b.y-16,`+${u.inv}`,'#e8d5a0'); G.rateAcc.food=(G.rateAcc.food||0)+u.inv; sfx('drop'); }
+  u.inv=0; u.invT=null;
+  const orig=nodeById(u.target);
+  if(orig&&orig.amt>0) u.state='fish';
+  else { u.state='idle'; u.target=null; }
 }
 
 function place(cx,cy,rx,cnt,type,amt){
@@ -4158,7 +4256,7 @@ const UCOL={
   [UT.VIL]:'#3498db',[UT.MIL]:'#2176ae',[UT.ARC]:'#16a085',
   [UT.KNIGHT]:'#8e44ad',[UT.MONK]:'#d4ac0d',[UT.PALADIN]:'#9b59b6',
   [UT.PIKE]:'#2980b9',[UT.XBOW]:'#1abc9c',[UT.TREB]:'#7f6a4a',
-  [UT.RAM]:'#6a4a28',[UT.SCOUT]:'#27ae60',[UT.HERO]:'#d4af37',
+  [UT.RAM]:'#6a4a28',[UT.SCOUT]:'#27ae60',[UT.HERO]:'#d4af37',[UT.BOAT]:'#4a90d9',
   [UT.ENEMI]:'#e74c3c',[UT.ENEMIA]:'#c0392b',[UT.ENEMI_G]:'#7b241c',
   [UT.ENEMI_C]:'#a93226',[UT.ENEMI_BOSS]:'#641e16',
 };
@@ -4747,6 +4845,9 @@ function updatePlayerUnit(u,dt){
     case 'build':   doBuild(u,dt); break;
     case 'relic':   doRelic(u,dt); break;
     case 'hunt':    doHunt(u,dt); break;
+    case 'fish':       doFish(u,dt); break;
+    case 'fishReturn': doFishReturn(u,dt); break;
+    case 'sailing':    doSail(u,dt); break;
     case 'attack':  doAttack(u,dt); break;
     case 'amove':   doAMove(u,dt); break;
     case 'heal':    doHeal(u,dt); break;
@@ -4764,7 +4865,11 @@ function updatePlayerUnit(u,dt){
             const b=nearestDamagedBuilding(u.x,u.y);
             if(b){ u.state='repair'; u.target=b.id; }
           }
-        } else if(u.type!==UT.VIL){
+        } else if(u.type!==UT.VIL&&u.type!==UT.BOAT){
+          // La Barque (sans combat en v1, voir UDEF[UT.BOAT].naval) ne
+          // scanne jamais d'hostile : passer en 'attack' la ferait tenter
+          // d'utiliser le déplacement terrestre partagé (doAttack/moveTo),
+          // hors de son domaine — voir advanceNaval.
           const st=u.stance||'agg';
           // Tenir position : ne riposte que si l'ennemi entre dans sa portée
           const r=st==='hold'?u.rng+8:st==='def'?u.rng*1.8:u.rng*3.5;
@@ -5297,6 +5402,7 @@ function findDropoff(u){
     if((u.invT===RT.STONE||u.invT===RT.GOLD)&&b.type!==BT.TC&&b.type!==BT.MINE) continue;
     if(u.invT===RT.BERRY&&b.type!==BT.TC&&b.type!==BT.MILL) continue;
     if(u.invT===RT.MEAT&&b.type!==BT.TC&&b.type!==BT.MILL) continue; // viande de chasse : TC ou Moulin, comme les baies
+    if(u.invT===RT.FISH&&b.type!==BT.DOCK) continue; // le poisson ne se dépose qu'au Quai, jamais au TC (trop loin de l'eau)
     if(u.invT==='farm'&&b.type!==BT.TC&&b.type!==BT.MILL) continue; // nourriture de ferme : TC ou Moulin
     const dx=b.x-u.x,dy=b.y-u.y,dist=Math.sqrt(dx*dx+dy*dy);
     if(dist<bd){bd=dist;best=b;}
@@ -7201,8 +7307,9 @@ function handleTap(sx,sy){
     else { cmdAttack(tBuilding); return; }
   }
 
-  // Nœud de ressource touché ?
-  const tNode=G.nodes.find(n=>n.amt>0&&Math.hypot(n.x-wx,n.y-wy)<BASE_TILE*.9);
+  // Nœud de ressource touché ? Le poisson est un gisement à part (RT.FISH,
+  // voir plus bas) : un villageois ne sait pas nager, donc exclu ici.
+  const tNode=G.nodes.find(n=>n.amt>0&&n.type!==RT.FISH&&Math.hypot(n.x-wx,n.y-wy)<BASE_TILE*.9);
   if(tNode){
     const vils=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
     if(vils.length>0){
@@ -7213,6 +7320,17 @@ function handleTap(sx,sy){
           ? `${r.placed} villageois → ${r.spread} gisement${r.spread>1?'s':''}`
           : 'Villageois en route récolter…','#f1c40f');
       }
+      return;
+    }
+  }
+
+  // Banc de poisson touché ? Seules les Barques savent y pêcher.
+  const tFish=G.nodes.find(n=>n.type===RT.FISH&&n.amt>0&&Math.hypot(n.x-wx,n.y-wy)<BASE_TILE*.9);
+  if(tFish){
+    const boats=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)&&u.type===UT.BOAT);
+    if(boats.length>0){
+      const r=emettreOrdre(ordre(ORD.PECHER,{ids:boats.map(u=>u.id), nodeId:tFish.id}));
+      if(r.ok){ G.moveTarget={x:tFish.x,y:tFish.y}; G.mtTimer=1.5; notify('🐟 Barque en route vers le banc…','#7fb8e8'); }
       return;
     }
   }
@@ -7244,8 +7362,17 @@ function handleTap(sx,sy){
   if(G.sel.length>0){
     const selUnits=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u));
     if(selUnits.length>0){
-      const r=emettreOrdre(ordre(ORD.DEPL,{ids:selUnits.map(u=>u.id), x:wx, y:wy}));
-      if(r.ok){ G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5; }
+      // Les Barques vivent sur un déplacement dédié (voir advanceNaval) :
+      // le déplacement terrestre partagé les traiterait à tort comme
+      // "déjà bloquées" (l'eau est un mur pour tout le reste) et les
+      // laisserait dériver n'importe où, y compris sur la terre ferme.
+      const boats=selUnits.filter(u=>u.type===UT.BOAT);
+      const others=selUnits.filter(u=>u.type!==UT.BOAT);
+      if(boats.length) emettreOrdre(ordre(ORD.NAVIGUER,{ids:boats.map(u=>u.id), x:wx, y:wy}));
+      if(others.length){
+        const r=emettreOrdre(ordre(ORD.DEPL,{ids:others.map(u=>u.id), x:wx, y:wy}));
+        if(r.ok){ G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5; }
+      } else if(boats.length){ G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5; }
       return;
     }
     // Bâtiment militaire sélectionné => poser point de ralliement
@@ -7298,11 +7425,23 @@ function cmdAttack(tgt){
   emettreOrdre(ordre(ORD.ATK,{ids, cible:tgt.id, genreCible:bldById(tgt.id)?'b':'u'}));
 }
 
+// Le Quai doit toucher l'eau (sinon aucune barque n'a d'endroit où prendre
+// la mer) : une case d'eau adjacente à son emprise, pas forcément dessous —
+// la case elle-même reste solide comme n'importe quel bâtiment.
+function hasAdjacentWater(tx,ty,w,h){
+  for(let dy=-1;dy<=h;dy++) for(let dx=-1;dx<=w;dx++){
+    if(dy>=0&&dy<h&&dx>=0&&dx<w) continue; // intérieur de l'emprise, pas le pourtour
+    const x=tx+dx, y=ty+dy;
+    if(x>=0&&y>=0&&x<COLS&&y<ROWS&&G.tiles[y][x]===T_WATER) return true;
+  }
+  return false;
+}
 function updateGhost(tx,ty){
   if(!G.buildType) return;
   const d=BDEF[G.buildType];
   let valid=tx>=0&&ty>=0&&tx+d.w<=COLS&&ty+d.h<=ROWS;
   if(valid) for(let dy=0;dy<d.h&&valid;dy++) for(let dx=0;dx<d.w&&valid;dx++) if(G.bmap[ty+dy][tx+dx]!==0) valid=false;
+  if(valid&&G.buildType===BT.DOCK&&!hasAdjacentWater(tx,ty,d.w,d.h)) valid=false;
   G.ghost={tx,ty,valid};
 }
 
@@ -7357,7 +7496,7 @@ const ORD = {
   DEMOLIR:'DEMOLIR', AUTO_FORMATION:'AUTO_FORMATION', AUTO_REPARE:'AUTO_REPARE',
   TROC:'TROC', ANNULER_FORMATION:'ANNULER_FORMATION', AMELIORER_CAMP:'AMELIORER_CAMP',
   GARNIR:'GARNIR', DEGARNIR:'DEGARNIR', ROUTE_COMMERCIALE:'ROUTE_COMMERCIALE',
-  RELIQUE:'RELIQUE', CHASSER:'CHASSER', DIPLOMATIE:'DIPLOMATIE',
+  RELIQUE:'RELIQUE', CHASSER:'CHASSER', DIPLOMATIE:'DIPLOMATIE', PECHER:'PECHER', NAVIGUER:'NAVIGUER',
 };
 
 let _ordSeq=0;
@@ -7511,6 +7650,7 @@ function applyCommand(cmd){
     if(!(tx>=0&&ty>=0&&tx+d.w<=COLS&&ty+d.h<=ROWS)) return KO('invalide');
     for(let dy=0;dy<d.h;dy++) for(let dx=0;dx<d.w;dx++)
       if(G.bmap[ty+dy][tx+dx]!==0) return KO('occupe');
+    if(cmd.type===BT.DOCK&&!hasAdjacentWater(tx,ty,d.w,d.h)) return KO('invalide'); // doit toucher l'eau
     const cost=scaleCost(d.cost);
     if(!canAfford(cost,cmd.f)) return KO('ressources');
     spend(cost,cmd.f);
@@ -7663,6 +7803,20 @@ function applyCommand(cmd){
   // être envoyée sur un animal — plusieurs chasseurs peuvent viser la même
   // proie, pas d'exclusivité comme pour les reliques (pas de risque de
   // blocage : un animal mort disparaît simplement de G.wildlife).
+  case ORD.NAVIGUER: {
+    const us=_unitesDe(cmd).filter(u=>u.type===UT.BOAT); if(!us.length) return KO('aucune');
+    for(const u of us){ u.state='sailing'; u.destX=cmd.x; u.destY=cmd.y; u.target=null; }
+    return OK({n:us.length});
+  }
+
+  case ORD.PECHER: {
+    const us=_unitesDe(cmd).filter(u=>u.type===UT.BOAT); if(!us.length) return KO('aucune');
+    const n=G.nodes.find(x=>x.id===cmd.nodeId&&x.type===RT.FISH&&x.amt>0);
+    if(!n) return KO('cible');
+    for(const u of us){ u.state='fish'; u.target=n.id; u.homeNode=n.id; }
+    return OK({n:us.length});
+  }
+
   case ORD.CHASSER: {
     const us=_unitesDe(cmd); if(!us.length) return KO('aucune');
     const w=(G.wildlife||[]).find(x=>x.id===cmd.wildlifeId);
@@ -7955,6 +8109,7 @@ const BICO_ECO = [
   [BT.LUMBER,   '🪵','Camp Bois',     {wood:80}],
   [BT.MINE,     '⛏️','Minier',        {wood:80}],
   [BT.MARKET,   '🏪','Marché',        {wood:150,gold:50}],
+  [BT.DOCK,     '⛵','Quai',          {wood:100}],
 ];
 const BICO_MIL = [
   [BT.BARRACKS, '⚔️','Caserne',       {wood:200,stone:80}],
@@ -8238,6 +8393,15 @@ function drawBuildAct(bar,b){
     mkBtn(bar,'🪨→💰','100🪨\n→80💰',()=>tradeRes('stone',100,'gold',80),false,{stone:100});
     mkBtn(bar,'💰→🪵','80💰\n→100🪵',()=>tradeRes('gold',80,'wood',100),false,{gold:80});
     drawTradeRoute(bar,b);
+  }
+
+  // ── Quai ──
+  if(b.type===BT.DOCK){
+    mkBtn(bar,'⛵','Barque de\nPêche\n'+costLabel(TCOST[UT.BOAT]),()=>trainUnit(b,UT.BOAT),false,TCOST[UT.BOAT]);
+    const info=document.createElement('div');
+    info.style.cssText='color:#888;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
+    info.textContent='🐟 Envoyez une Barque pêcher un banc de poissons visible sur l\'eau';
+    bar.appendChild(info);
   }
 
   // ── Camp Forestier / Camp Minier / Moulin : récolte + amélioration ──

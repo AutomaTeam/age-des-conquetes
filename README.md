@@ -156,6 +156,7 @@ ne peut lire ni écrire que dans les salons dont il fait partie.
     "classement": {
       "survie": {
         ".read": "auth != null",
+        ".indexOn": "valeur",
         "$uid": {
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 9999"
@@ -163,6 +164,7 @@ ne peut lire ni écrire que dans les salons dont il fait partie.
       },
       "conquete": {
         ".read": "auth != null",
+        ".indexOn": "valeur",
         "$uid": {
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 36000"

@@ -1259,6 +1259,45 @@ function heroAuraMult(u){
   return 1;
 }
 
+// ── VÉTÉRANCE ────────────────────────────────────────────
+// Une unité militaire qui survit à ses combats gagne de l'XP à chaque
+// ennemi qu'elle achève (un coup porté ne suffit pas — il faut le kill,
+// comme un Chef de Guerre le reconnaîtrait) et monte en grade par paliers
+// cumulatifs. Donne une vraie raison de protéger ses troupes plutôt que de
+// les sacrifier en vagues jetables.
+const RANK_THRESHOLDS = [
+  { kills:3, mult:1.15, nom:'Vétéran', ico:'🎖️' },
+  { kills:8, mult:1.30, nom:'Élite',   ico:'⭐' },
+];
+function veterancyRank(xp){
+  let r=0;
+  for(let i=0;i<RANK_THRESHOLDS.length;i++) if(xp>=RANK_THRESHOLDS[i].kills) r=i+1;
+  return r;
+}
+// `killerId` : identifiant de l'unité ayant porté le coup fatal — voir
+// doAttack (mêlée, référence directe) et updateProjs (tir, via
+// p.shooterId, seul moyen de remonter jusqu'au tireur une fois la flèche
+// partie). Balayage direct plutôt que unitById : peut être appelé juste
+// après une mort, avant la prochaine reconstruction de l'index.
+function awardKillXP(killerId){
+  if(killerId==null) return;
+  const u=G.units.find(x=>x.id===killerId);
+  if(!u||u.hp<=0||!isMilitary(u.type)) return;
+  u.xp=(u.xp||0)+1;
+  const rank=veterancyRank(u.xp);
+  if(rank<=(u.rank||0)) return;
+  const cfg=RANK_THRESHOLDS[rank-1];
+  const prevMult=rank>1?RANK_THRESHOLDS[rank-2].mult:1;
+  const dmg=u.maxHp-u.hp;
+  u.maxHp=Math.round(u.maxHp/prevMult*cfg.mult);
+  u.hp=Math.max(1,u.maxHp-dmg);
+  u.atk=Math.round(u.atk/prevMult*cfg.mult);
+  u.rank=rank;
+  const fo=fac(u.owner);
+  if(fo&&rank>=RANK_THRESHOLDS.length) fo.stats.hadEliteUnit=true; // survit à la mort de l'unité, pour le succès 'elite_unit'
+  if(estLocal(u)){ notify(`${cfg.ico} Une unité devient ${cfg.nom} !`,'#f0c040'); addFText(u.x,u.y-24,cfg.nom,'#f0c040'); }
+}
+
 // Coût réel d'un bâtiment, mis à l'échelle par la difficulté en cours.
 // Point de passage UNIQUE pour tout coût de construction/amélioration de
 // bâtiment : le menu de construction, la confirmation de pose et
@@ -1441,7 +1480,7 @@ function initStats(){
     gathered:{food:0,wood:0,stone:0,gold:0},
     peakPop:0, peakMil:0, peakFarms:0,
     research:0, campsCleared:0, tradesDone:0,
-    wildlifeHunted:0, garrisonUses:0,
+    wildlifeHunted:0, garrisonUses:0, hadEliteUnit:false,
   };
 }
 
@@ -2039,6 +2078,7 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
     animT:(G.nid*2.399)%6.283, dir:0, moving:false, // dérivé de l'id : déterministe, et un champ d'aléa en moins dans l'état
     homeNode:null, // mémoire du dernier nœud récolté
     heroNom:heroDef&&heroDef.nom, heroIco:heroDef&&heroDef.ico,
+    xp:0, rank:0, // vétérance — voir awardKillXP
   };
 }
 
@@ -4220,6 +4260,11 @@ function drawUnits(){
     if(u.type===UT.ENEMI_BOSS){
       ctx.font='13px serif'; ctx.textAlign='center'; ctx.fillText('👑',sx,drawY-6);
     }
+    // insigne de vétérance
+    if(u.rank>0){
+      ctx.font='10px serif'; ctx.textAlign='center';
+      ctx.fillText(RANK_THRESHOLDS[u.rank-1].ico,sx-S*0.32,drawY-2);
+    }
     // icône d'état
     let icon=null;
     if(u.state==='gather') icon='⛏'; else if(u.state==='return') icon='📦';
@@ -5320,7 +5365,7 @@ function doAttack(u,dt){
     const isB=bldById(tgt.id);
     if(UDEF[u.type].siege&&isB) dmg=Math.round(dmg*1.5);
     if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,dmg);
-    else dealDmg(tgt,dmg,u);
+    else { dealDmg(tgt,dmg,u); if(tgt.hp<=0) awardKillXP(u.id); }
   }
 }
 
@@ -5572,11 +5617,11 @@ function updateEnemyAI(dt){
       u.state='attack'; u.moving=false; u.dir=Math.atan2(dy,dx);
       if(u.atkCd<=0){
         u.atkCd=1/u.atkSpd;
-        let dmg=u.atk;
+        let dmg=Math.round(u.atk*heroAuraMult(u));
         const isB=bldById(tgt.id);
         if(u.type===UT.ENEMI_BOSS&&isB) dmg=Math.round(dmg*1.6); // boss casse les murs vite
         if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,dmg);
-        else dealDmg(tgt,dmg,u);
+        else { dealDmg(tgt,dmg,u); if(tgt.hp<=0) awardKillXP(u.id); }
       }
     }
   }
@@ -5656,7 +5701,11 @@ function shootProj(from,tgt,dmg){
   const d0=Math.max(1,Math.hypot(tgt.x-from.x,tgt.y-from.y));
   G.projs.push({id:G.nid++,x:from.x,y:from.y,tx:tgt.x,ty:tgt.y,
     targetId:tgt.id,atk:dmg!=null?dmg:from.atk,spd:8*BASE_TILE,owner:from.owner,life:1,d0,
-    siege:!!(from.type&&UDEF[from.type]&&UDEF[from.type].siege)});
+    siege:!!(from.type&&UDEF[from.type]&&UDEF[from.type].siege),
+    // Tireur exact, pour créditer l'XP de vétérance au bon endroit (voir
+    // awardKillXP) — undefined pour un tir de bâtiment (Tour/Château, objet
+    // sans id d'unité), qui n'a de toute façon pas de rang à gagner.
+    shooterId:from.id});
 }
 
 // shake : secoue la caméra d'autant de pixels max (décroît vite, voir update()).
@@ -5689,14 +5738,14 @@ function updateProjs(dt){
         shakeScreen(7);
         const splash=2*BASE_TILE;
         for(const u of G.units){
-          if(estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash) dealDmg(u,p.atk,p);
+          if(estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash){ dealDmg(u,p.atk,p); if(u.hp<=0) awardKillXP(p.shooterId); }
         }
         for(const b of G.buildings){
           if(estHostile(p,b)&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash) dealDmg(b,p.atk,p);
         }
       } else {
         const t=unitById(p.targetId)||bldById(p.targetId);
-        if(t&&t.hp>0) dealDmg(t,p.atk,p);
+        if(t&&t.hp>0){ dealDmg(t,p.atk,p); if(t.hp<=0) awardKillXP(p.shooterId); }
       }
       p.life=0;
     } else {
@@ -7894,7 +7943,8 @@ function drawUnitAct(bar,u){
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:4px 6px;line-height:1.6;';
     const heroLine=u.type===UT.HERO?`${u.heroIco} <strong style="color:#f0c040">${u.heroNom}</strong> — aura : +${Math.round((HERO_AURA_MULT-1)*100)}% ATK aux alliés proches<br>`:'';
-    info.innerHTML=`${heroLine}ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
+    const rankLine=u.rank>0?`${RANK_THRESHOLDS[u.rank-1].ico} <strong style="color:#f0c040">${RANK_THRESHOLDS[u.rank-1].nom}</strong> (${u.xp||0} victoires)<br>`:'';
+    info.innerHTML=`${heroLine}${rankLine}ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
     bar.appendChild(info);
   }
 }
@@ -8601,6 +8651,7 @@ const ACH = [
   { id:'chasseur',    ico:'🏹',  nom:'Chasseur',           desc:'Abattre 10 animaux sauvages en une partie.',  test:(s)=>s.wildlifeHunted>=10 },
   { id:'negociant',   ico:'🐫',  nom:'Négociant',          desc:'Réaliser 20 opérations commerciales en une partie.', test:(s)=>s.tradesDone>=20 },
   { id:'forteresse',  ico:'🏰',  nom:'Forteresse',         desc:'Mettre 15 unités à l\'abri en garnison en une partie.', test:(s)=>s.garrisonUses>=15 },
+  { id:'elite_unit',  ico:'⭐',  nom:'Aguerrie',           desc:'Faire passer une unité au rang Élite (8 victoires).', test:(s)=>!!s.hadEliteUnit },
 ];
 
 function achContext(won){

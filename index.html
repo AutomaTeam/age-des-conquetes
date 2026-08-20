@@ -569,6 +569,36 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   color:var(--parch2);letter-spacing:.06em;text-transform:uppercase;margin-top:4px;
 }
 .classub { font-family:'Crimson Text',serif;font-size:11.5px;color:#9a8a6a;text-align:center;max-width:340px; }
+
+/* ── PANNEAU DIPLOMATIE ── (même gabarit que #achpanel) */
+#diplopanel {
+  /* z-index au-dessus de #pausemenu (600) : contrairement aux autres
+     panneaux du même gabarit (Succès/Contrôles/Classement, tous à 550,
+     ouverts depuis l'écran-titre où rien ne les recouvre), celui-ci
+     s'ouvre DEPUIS le menu pause lui-même — sans être au-dessus, il
+     resterait peint dessous et ses boutons, inatteignables. */
+  position:fixed;inset:0;z-index:610;display:none;
+  background:rgba(0,0,0,.92);
+  flex-direction:column;align-items:center;gap:10px;
+  padding:20px 14px;overflow-y:auto;touch-action:pan-y;
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);
+}
+#diplopanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px; }
+.diprow {
+  width:100%;max-width:360px;background:rgba(42,22,0,.9);
+  border:1.5px solid #4a3a20;border-radius:10px;padding:10px 14px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.diprow.allie { border-color:#2ecc71;background:rgba(20,50,28,.7); }
+.diprow .dipnom { font-family:'Cinzel',serif;font-size:13px;color:var(--parch2); }
+.diprow .dipetat { font-family:'Crimson Text',serif;font-size:11px;color:#9a8a6a; }
+.diprow.allie .dipetat { color:#2ecc71; }
+.dipbtn {
+  font-family:'Cinzel',serif;font-size:11.5px;padding:6px 12px;border-radius:7px;
+  border:1.5px solid var(--gold-d);background:rgba(212,160,23,.14);color:var(--gold-l);
+  cursor:pointer;white-space:nowrap;
+}
+.dipbtn.rompre { border-color:#c0392b;background:rgba(192,57,43,.14);color:#e88; }
 .clarow {
   width:100%;max-width:360px;background:rgba(42,22,0,.9);
   border:1.5px solid #4a3a20;border-radius:9px;padding:7px 12px;
@@ -850,6 +880,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     </div>
   </div>
   <button class="pmenu-btn" style="background:rgba(212,160,23,.12);color:var(--gold-l);border-color:var(--gold-d);" onclick="openAch()">🏆 Succès <span id="achcount2"></span></button>
+  <button class="pmenu-btn" id="diplobtn" style="display:none;background:rgba(46,204,113,.1);color:#7fd8a0;border-color:#2ecc71;" onclick="openDiplo()">🤝 Diplomatie</button>
   <button class="pmenu-btn" style="background:rgba(127,184,232,.1);color:#7fb8e8;border-color:#2a6a9a;" onclick="openControls()">🎮 Contrôles</button>
   <button class="pmenu-btn pmenu-google" id="gauthbtn" onclick="googleAuthClick()" style="display:none;">☁️ Connexion Google</button>
   <button class="pmenu-btn pmenu-save"   onclick="saveGame()">💾 Sauvegarder</button>
@@ -1030,6 +1061,13 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   <h2>🥇 Classement</h2>
   <div id="clalist" style="display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;"></div>
   <button class="rclose" onclick="closeClassement()">Fermer</button>
+</div>
+
+<!-- ── PANNEAU DIPLOMATIE (mode 2 rivaux) ── -->
+<div id="diplopanel">
+  <h2>🤝 Diplomatie</h2>
+  <div id="diplolist" style="display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;"></div>
+  <button class="rclose" onclick="closeDiplo()">Fermer</button>
 </div>
 
 <!-- ── TUTORIEL PAS À PAS (première partie) ── -->
@@ -1524,6 +1562,7 @@ function mkFaction(id,o){
     vaincu:false,
     merveilleAchevee:false, // Merveille achevée et restée debout MERVEILLE_WIN_TIME : victoire immédiate
     heroTrained:false, // Héros déjà formé cette partie (même s'il est mort depuis) — jamais de remplaçant
+    allieDe:null, // faction humaine qui a conclu une alliance avec ce camp IA — voir ORD.DIPLOMATIE
     // Les factions 'ia' reçoivent en plus, via initAI(), leur cerveau :
     // baseX, baseY, tcId, think, ageQ, atkTimer, atkMin, raids, vilTarget.
   };
@@ -6566,6 +6605,27 @@ function updateUneIA(dt,a){
       if(bestW){ hunter.state='hunt'; hunter.target=bestW.id; }
     }
   }
+
+  // ── Trahison ── une IA alliée (voir ORD.DIPLOMATIE) rompt d'elle-même si
+  // elle prend nettement le dessus sur celui qui l'a alliée : une trêve
+  // n'est jamais définitive, juste une pause tant que l'IA y a intérêt.
+  if(a.allieDe!=null){
+    const allieF=G.factions[a.allieDe];
+    if(!allieF||allieF.vaincu||allieF.equipe!==a.equipe){
+      a.allieDe=null; // l'allié a disparu ou l'a déjà rompue de son côté
+    } else {
+      const armeeDe=id=>G.units.filter(u=>u.owner===id&&u.hp>0&&isMilitary(u.type)).length;
+      const armeeA=armeeDe(a.id), armeeAllie=armeeDe(a.allieDe);
+      if(armeeA>=10&&armeeA>=armeeAllie*1.5&&Math.random()<0.02){
+        a.equipe=a._equipeAvant!=null?a._equipeAvant:a.equipe;
+        const traheId=a.allieDe; a.allieDe=null;
+        if(traheId===G.me){
+          bigBanner(`⚔️ TRAHISON DE ${a.nom.toUpperCase()}`);
+          notify(`⚔️ ${a.nom} rompt son alliance et vous attaque !`,'#e74c3c');
+        }
+      }
+    }
+  }
 }
 
 // Barre du haut en mode Conquête : elle affiche l'état de l'adversaire au
@@ -7297,7 +7357,7 @@ const ORD = {
   DEMOLIR:'DEMOLIR', AUTO_FORMATION:'AUTO_FORMATION', AUTO_REPARE:'AUTO_REPARE',
   TROC:'TROC', ANNULER_FORMATION:'ANNULER_FORMATION', AMELIORER_CAMP:'AMELIORER_CAMP',
   GARNIR:'GARNIR', DEGARNIR:'DEGARNIR', ROUTE_COMMERCIALE:'ROUTE_COMMERCIALE',
-  RELIQUE:'RELIQUE', CHASSER:'CHASSER',
+  RELIQUE:'RELIQUE', CHASSER:'CHASSER', DIPLOMATIE:'DIPLOMATIE',
 };
 
 let _ordSeq=0;
@@ -7609,6 +7669,35 @@ function applyCommand(cmd){
     if(!w||w.hp<=0) return KO('cible');
     for(const u of us){ u.state='hunt'; u.target=w.id; u.homeNode=null; u.moving=false; }
     return OK({n:us.length});
+  }
+
+  // Diplomatie : une alliance FUSIONNE l'équipe du rival avec celle du
+  // proposant — estHostile() est purement basée sur l'équipe, donc les deux
+  // camps cessent immédiatement de se combattre (les unités déjà engagées
+  // se désengagent au prochain recalcul de cible, voir updateEnemyAI).
+  // Rompre restaure l'équipe d'origine, mémorisée à la conclusion.
+  case ORD.DIPLOMATIE: {
+    const cible=G.factions[cmd.cibleId];
+    if(!cible||cible.genre!=='ia'||cible.vaincu) return KO('cible');
+    if(cmd.action==='proposer'){
+      if(cible.equipe===f.equipe) return KO('deja');
+      // L'IA n'accepte que si elle n'est pas clairement la plus forte des
+      // rivaux IA restants : sans intérêt à se lier si elle domine déjà.
+      const autres=factionsIA().filter(x=>x.id!==cible.id&&!x.vaincu);
+      const armeeDe=id=>G.units.filter(u=>u.owner===id&&u.hp>0&&isMilitary(u.type)).length;
+      const armeeCible=armeeDe(cible.id);
+      const armeeAutre=autres.length?Math.max(...autres.map(x=>armeeDe(x.id))):0;
+      if(autres.length&&armeeCible>armeeAutre*1.1) return {ok:false,raison:'refuse',nom:cible.nom};
+      cible._equipeAvant=cible.equipe;
+      cible.equipe=f.equipe;
+      cible.allieDe=cmd.f;
+      return OK({nom:cible.nom});
+    } else {
+      if(cible.equipe!==f.equipe) return KO('pasallie');
+      cible.equipe=cible._equipeAvant!=null?cible._equipeAvant:cible.equipe;
+      cible.allieDe=null;
+      return OK({nom:cible.nom});
+    }
   }
 
   case ORD.DEGARNIR: {
@@ -8730,6 +8819,61 @@ function openAch(){
 function closeAch(){ document.getElementById('achpanel').style.display='none'; }
 window.openAch=openAch; window.closeAch=closeAch;
 
+// ── PANNEAU DIPLOMATIE (mode 2 rivaux) ──────────────────────
+// Un rival IA peut être allié le temps d'une trêve — les deux camps
+// cessent de se combattre (voir estHostile, purement basé sur l'équipe) —
+// mais l'IA peut y mettre fin d'elle-même si elle prend nettement le
+// dessus (voir updateUneIA). Sans intérêt en Survie/Conquête à un seul
+// rival (une seule cible possible) ni en coop (l'allié y est déjà humain) :
+// le bouton du menu pause ne s'affiche que si ≥2 rivaux IA existent.
+function openDiplo(){
+  const list=document.getElementById('diplolist');
+  if(!list) return;
+  list.innerHTML='';
+  const rivaux=factionsIA();
+  if(!rivaux.length){
+    list.innerHTML='<p class="classub">Aucun rival dans ce mode.</p>';
+  }
+  for(const a of rivaux){
+    const allie=a.equipe===moi().equipe;
+    const row=document.createElement('div');
+    row.className='diprow'+(allie?' allie':'');
+    const etat=a.vaincu?'Vaincu':allie?'🤝 Allié — peut trahir si elle prend le dessus':'⚔️ Hostile';
+    row.innerHTML=`<div><div class="dipnom">${a.nom}</div><div class="dipetat">${etat}</div></div>`;
+    if(!a.vaincu){
+      const btn=document.createElement('button');
+      btn.className='dipbtn'+(allie?' rompre':'');
+      btn.textContent=allie?'Rompre':'Proposer une alliance';
+      btn.onclick=()=>diplomatieAction(a.id,allie?'rompre':'proposer');
+      row.appendChild(btn);
+    }
+    list.appendChild(row);
+  }
+  document.getElementById('diplopanel').style.display='flex';
+}
+function closeDiplo(){ document.getElementById('diplopanel').style.display='none'; }
+window.openDiplo=openDiplo; window.closeDiplo=closeDiplo;
+
+function diplomatieAction(cibleId,action){
+  const r=emettreOrdre(ordre(ORD.DIPLOMATIE,{cibleId,action}));
+  if(!r.ok){
+    if(r.raison==='refuse') notify(`🤝 ${r.nom||'Le rival'} refuse votre alliance — trop confiant en ses propres forces.`,'#e67e22');
+    else notify('Action diplomatique impossible.','#e74c3c');
+    return;
+  }
+  notify(action==='proposer'?`🤝 Alliance conclue avec ${r.nom} !`:`⚔️ Alliance rompue avec ${r.nom}.`,
+         action==='proposer'?'#2ecc71':'#e67e22');
+  buzz(8);
+  openDiplo(); // rafraîchit la liste tout de suite plutôt qu'à la prochaine ouverture
+}
+// Bouton du menu pause : visible seulement s'il y a au moins un rival IA
+// vivant à qui parler (donc jamais en Survie, jamais après leur défaite).
+function updateDiploBtn(){
+  const btn=document.getElementById('diplobtn');
+  if(!btn) return;
+  btn.style.display=(G.running&&factionsIA().some(a=>!a.vaincu))?'block':'none';
+}
+
 // ── PANNEAU DES CONTRÔLES ──────────────────────────────────
 // Contenu statique (pas de PROFILE à charger, contrairement aux Succès) —
 // construit une seule fois, à l'ouverture, pour rester bon marché.
@@ -9160,6 +9304,7 @@ function openPause(){
   afficherVoilePause(false); // le menu complet remplace le voile leger, le cas echeant
   document.getElementById('pausemenu').style.display='flex';
   document.getElementById('mpbtn-abandon').style.display=reseauActif()?'block':'none';
+  updateDiploBtn();
   refreshSaveInfo();
   document.getElementById('pausebtn-inner').innerHTML=iconImg('▶',16);
   checkSaveExists().then(exists=>{

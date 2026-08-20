@@ -22,6 +22,11 @@ Le mode se choisit sur l'écran-titre, en plus de la difficulté.
   une seule condition de victoire de chaque côté : raser le Centre Ville
   adverse. Détruire ses fermes affame vraiment sa production, tuer ses
   villageois ralentit vraiment ses chantiers.
+- **2 rivaux** — deux seigneurs IA, hostiles à vous ET entre eux. Le dernier
+  Centre Ville debout l'emporte.
+- **2v1 Coop** — vous et un allié (via le *1v1 en ligne*, voir plus bas)
+  affrontez ensemble un seul seigneur IA, à la difficulté choisie sur
+  l'écran-titre. Lancé seul, ce mode se joue comme la Conquête.
 
 ## Contenu
 
@@ -32,8 +37,12 @@ Le mode se choisit sur l'écran-titre, en plus de la difficulté.
   zones explorées mais hors champ de vision en brouillard translucide).
 - Bilan chiffré en fin de partie (guerre, empire, récolte) affiché aussi bien
   sur la victoire que sur la défaite.
-- 22 succès persistants (stockés en local), consultables depuis l'écran-titre
-  et le menu pause, avec bandeau de déblocage en cours de partie.
+- 22 succès persistants (locaux, ou synchronisés sur Google Drive une fois
+  connecté — voir *Sauvegarde cloud*), consultables depuis l'écran-titre et
+  le menu pause, avec bandeau de déblocage en cours de partie.
+- Groupes de contrôle : `Ctrl+1..9` assigne la sélection courante, `1..9` la
+  rappelle, un second appui rapide sur le même chiffre recentre la caméra
+  dessus (fiable au clavier AZERTY comme QWERTY).
 
 Tout le rendu (bâtiments, unités, icônes) est généré en pixel art par code,
 directement en `<canvas>`.
@@ -153,6 +162,14 @@ ne peut lire ni écrire que dans les salons dont il fait partie.
 brute si beaucoup de salons coexistent : le salon passe donc à `plein` dès
 l'arrivée du second joueur, expire au bout de 2 h, et ne contient aucune
 information sensible. L'hôte le supprime en partant (`onDisconnect`).
+
+**Reconnexion.** Une coupure de lien (wifi, onglet en arrière-plan) laisse
+3 minutes pour revenir avant que l'hôte ne bascule le camp absent en IA. Si
+c'est votre PROPRE page qui recharge ou plante, un bouton apparaît à
+l'écran-titre pendant 15 minutes pour rejoindre le même salon et resynchroniser
+l'état courant avec l'hôte (toujours actif, lui, puisque sa simulation n'a
+jamais quitté la mémoire) — limité au rôle client, l'hôte étant seul dépositaire
+de l'état autoritatif.
 
 ### NAT et TURN
 

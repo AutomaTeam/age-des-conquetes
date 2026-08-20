@@ -805,6 +805,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <p class="tip">Deux parties de même graine ont exactement la même carte.</p>
     <button class="bigbtn sheen" onclick="startGame()">⚔️ Commencer la partie</button>
     <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la sauvegarde</button>
+    <button class="bigbtn" id="mprejoinbtn" onclick="mpReprendrePartieEnLigne()" style="display:none;background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:1.5px solid #2ecc71;">🔌 Reprendre la partie en ligne</button>
     <button class="bigbtn" id="mpbtn-titre" onclick="mpOuvrir()" style="background:linear-gradient(180deg,#0d2a3a,#08161f);color:#7fb8e8;border:1.5px solid #2a6a9a;box-shadow:none;">👥 1v1 en ligne</button>
     <button class="bigbtn achbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Succès <span id="achcount"></span></button>
     <button class="bigbtn" id="gauthbtn-title" onclick="googleAuthClick()" style="display:none;background:rgba(255,255,255,.06);color:#e8e8e8;border:1.5px solid #5a5a5a;box-shadow:none;">☁️ Connexion Google</button>
@@ -1300,6 +1301,7 @@ function initState() {
     tiles:[], bmap:[], // carte + blocage (le brouillard est par faction)
     running:false, gameOver:false,
     dayPhase:0, // 0..1 cycle jour/nuit
+    groupes:{}, // groupes de contrôle Ctrl+1..9 → [id, id, ...] (voir plus bas)
   };
   // Le joueur local. Les adversaires IA sont créés par initAI(), les pillards
   // ne servent qu'en Survie (vagues + garnisons des points d'intérêt).
@@ -5981,6 +5983,47 @@ canvas.addEventListener('contextmenu',e=>{
 window.addEventListener('keydown',e=>{
   if(e.key==='Escape') cancelOrDeselect();
 });
+
+// ── GROUPES DE CONTRÔLE ──────────────────────────────────────
+// Ctrl+1..9 assigne la sélection courante, 1..9 la rappelle ; un second
+// appui rapide (<400 ms) sur le même chiffre recentre la caméra dessus —
+// standard du genre (AoE2, StarCraft...), absent jusqu'ici. Les unités
+// mortes ou passées à un autre camp sont purgées du groupe au RAPPEL
+// seulement (jamais à l'assignation, sans quoi un groupe pourrait "fondre"
+// pendant que le joueur regarde ailleurs).
+// `e.code` (touche physique) plutôt que `e.key` : sur un clavier AZERTY,
+// les chiffres nus produisent des caractères ('&','é','"'...) sans Shift —
+// seul `e.code` ('Digit1'..'Digit9') reste fiable quel que soit le clavier.
+let _dernierGroupeAppui=0, _dernierGroupeTouche=null;
+function assignerGroupe(n){
+  const ids=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)).map(u=>u.id);
+  if(!ids.length) return;
+  G.groupes[n]=ids;
+  notify(`Groupe ${n} : ${ids.length} unité(s) assignée(s)`,'#3498db');
+}
+function rappelerGroupe(n){
+  const ids=(G.groupes[n]||[]).filter(id=>{ const u=unitById(id); return u&&estLocal(u); });
+  G.groupes[n]=ids;
+  if(!ids.length){ notify(`Groupe ${n} vide`,'#95a5a6'); return; }
+  const maintenant=Date.now();
+  const recentrer=_dernierGroupeTouche===n&&(maintenant-_dernierGroupeAppui)<400;
+  _dernierGroupeTouche=n; _dernierGroupeAppui=maintenant;
+  G.sel=ids.slice(); G.mode='select';
+  refreshUI();
+  if(recentrer){ const u=unitById(ids[0]); if(u) camCenterOn(u.x,u.y); }
+  notify(`Groupe ${n} sélectionné (${ids.length})`,'#f0c040');
+}
+window.addEventListener('keydown',e=>{
+  if(!G.running) return;
+  const cible=e.target;
+  if(cible&&(cible.tagName==='INPUT'||cible.tagName==='TEXTAREA')) return;
+  const m=/^Digit([1-9])$/.exec(e.code)||/^Numpad([1-9])$/.exec(e.code);
+  if(!m) return;
+  const n=+m[1];
+  if(e.ctrlKey||e.metaKey){ assignerGroupe(n); e.preventDefault(); }
+  else { rappelerGroupe(n); }
+});
+
 // Point d'entrée commun Échap / clic droit : annule d'abord le mode en cours
 // (construction, marche d'attaque), sinon désélectionne.
 function cancelOrDeselect(){
@@ -7307,17 +7350,57 @@ function bigBanner(txt){
 // difficulté.
 const PROFILE_KEY='adc_profile_v1';
 let PROFILE={ unlocked:[], games:0, wins:0, bestWave:0 };
-function loadProfile(){
+// Chargement initial : storageLoad() suit déjà la même cascade Drive → Canvas
+// → localStorage que la sauvegarde de partie (voir plus bas dans le fichier),
+// mais tant que le joueur ne s'est pas connecté à Google (cas du tout premier
+// appel, avant même que le SDK Google ne soit chargé) elle retombe sans délai
+// sur localStorage — aucun ralentissement au démarrage pour qui ne l'utilise
+// jamais.
+async function loadProfile(){
   try{
-    const raw=localStorage.getItem(PROFILE_KEY);
-    if(raw){
-      const p=JSON.parse(raw);
+    const p=await storageLoad(PROFILE_KEY);
+    if(p){
       PROFILE={ unlocked:Array.isArray(p.unlocked)?p.unlocked:[],
                 games:p.games||0, wins:p.wins||0, bestWave:p.bestWave||0 };
     }
   }catch(e){}
 }
-function saveProfile(){ try{ localStorage.setItem(PROFILE_KEY,JSON.stringify(PROFILE)); }catch(e){} }
+// Écriture asynchrone (Drive quand connecté, sinon repli local automatique) :
+// un garde anti-chevauchement rejoue le dernier appel une fois l'écriture en
+// cours terminée plutôt que de laisser deux requêtes Drive se doubler et
+// risquer qu'une réponse tardive écrase un déblocage plus récent.
+let _profilSauveEnCours=false, _profilSauveEnAttente=false;
+function saveProfile(){
+  try{ localStorage.setItem(PROFILE_KEY,JSON.stringify(PROFILE)); }catch(e){}
+  if(_profilSauveEnCours){ _profilSauveEnAttente=true; return; }
+  _profilSauveEnCours=true;
+  storageSave(PROFILE,PROFILE_KEY).catch(()=>{}).then(()=>{
+    _profilSauveEnCours=false;
+    if(_profilSauveEnAttente){ _profilSauveEnAttente=false; saveProfile(); }
+  });
+}
+// Appelée juste après une connexion Google réussie : fusionne le profil
+// Drive (parties jouées sur un autre appareil) avec celui déjà en mémoire au
+// lieu de l'écraser dans un sens ou l'autre — un succès débloqué localement
+// avant la toute première connexion ne doit jamais disparaître, et
+// inversement pour un succès débloqué ailleurs.
+async function syncProfilAvecDrive(){
+  try{
+    const cloud=await driveLoad(PROFILE_KEY+'.json');
+    if(cloud){
+      const fusion=new Set([...(PROFILE.unlocked||[]), ...(Array.isArray(cloud.unlocked)?cloud.unlocked:[])]);
+      PROFILE={
+        unlocked:[...fusion],
+        games:Math.max(PROFILE.games||0, cloud.games||0),
+        wins:Math.max(PROFILE.wins||0, cloud.wins||0),
+        bestWave:Math.max(PROFILE.bestWave||0, cloud.bestWave||0),
+      };
+      refreshAchCount();
+      if(document.getElementById('achpanel').style.display==='flex') openAch();
+    }
+  }catch(e){ console.warn('Synchronisation des succès Drive échouée',e); }
+  saveProfile(); // republie le résultat fusionné (utile côté Drive si le profil local était en avance)
+}
 
 // Chaque succès porte sa propre condition, évaluée contre un contexte unique
 // (compteurs de la partie + issue + profil). Aucune n'est câblée ailleurs
@@ -7462,6 +7545,7 @@ function freshAchBlock(fresh){
 function finishGame(won){
   if(G._ended) return [];
   G._ended=true;
+  effacerRejoinEnLigne();
   PROFILE.games++;
   if(won) PROFILE.wins++;
   PROFILE.bestWave=Math.max(PROFILE.bestWave,G.wave||0);
@@ -7701,6 +7785,7 @@ function closePause(){
 }
 
 function quitGame(){
+  effacerRejoinEnLigne();
   G.running=false; G.paused=false;
   document.getElementById('pausemenu').style.display='none';
   document.getElementById('overlay').style.display='flex';
@@ -8175,7 +8260,33 @@ function recevoirReseau(m){
     case 'ABANDON':traiterAbandon(m); break;
     case 'EMOTE':  afficherEmote(m.par,m.code,false); break;
     case 'FIN':    RESEAU.finRecue=m; break;
+    case 'RESYNC': traiterResync(); break;
+    case 'RESYNC_ECHEC':
+      notify('🔌 Impossible de reprendre : '+(m.raison||'la partie est terminée'),'#e74c3c');
+      effacerRejoinEnLigne();
+      break;
   }
+}
+
+// Hôte : un client revenu d'un rechargement de page demande l'état courant
+// (pas l'état initial) — on lui renvoie le même message SALUT qu'au tout
+// premier lancement ; demarrerPartieClient() le traite alors exactement
+// comme un lancement normal, sans code séparé à maintenir. RESEAU.adversaire
+// n'a pas bougé : le salon (même code, même uid Firebase) désigne toujours
+// le même camp.
+function traiterResync(){
+  if(RESEAU.role!=='hote'||!RESEAU.actif){
+    envoyerReseau({t:'RESYNC_ECHEC',raison:'la partie est terminée'});
+    return;
+  }
+  const f=RESEAU.adversaire&&G.factions[RESEAU.adversaire.id];
+  if(!f||f.genre!=='humain'||f.vaincu){
+    envoyerReseau({t:'RESYNC_ECHEC',
+      raison:(f&&f.genre==='ia')?'votre camp a été repris par l\'IA en votre absence':'la partie est terminée'});
+    return;
+  }
+  envoyerReseau(construireSalut());
+  notify('🔌 '+(f.nom||'Votre allié')+' a rejoint la partie en cours','#2ecc71');
 }
 
 // Hote : un ordre venu du client. applyCommand revalide TOUT (P3) — c'est la
@@ -8202,6 +8313,19 @@ function traiterRejet(m){
 }
 
 // ── DEMARRAGE D'UNE PARTIE EN RESEAU ───────────────────────────
+// Construit le message SALUT decrivant l'etat courant (pas forcement
+// l'etat INITIAL : reutilise tel quel pour renvoyer un etat a jour a un
+// client qui revient d'un rechargement de page, voir RESYNC plus bas).
+function construireSalut(){
+  return {
+    t:'SALUT', proto:PROTO_VERSION,
+    seed:G.seed, gmode:G.gmode, difficulty:G.difficulty,
+    cols:COLS, rows:ROWS, simHz:SIM_HZ,
+    fac:Object.values(G.factions).map(serialiserFaction),
+    toi:FAC.P2,
+  };
+}
+
 // L'hote lance la partie, puis decrit au client ce qu'il doit generer.
 function demarrerPartieHote(adversaire){
   RESEAU.actif=true; RESEAU.role='hote';
@@ -8211,13 +8335,7 @@ function demarrerPartieHote(adversaire){
   startGame();
   mpVerrouillerVitesse();
   demarrerVeilleReseau();
-  envoyerReseau({
-    t:'SALUT', proto:PROTO_VERSION,
-    seed:G.seed, gmode:G.gmode, difficulty:G.difficulty,
-    cols:COLS, rows:ROWS, simHz:SIM_HZ,
-    fac:Object.values(G.factions).map(serialiserFaction),
-    toi:FAC.P2,
-  });
+  envoyerReseau(construireSalut());
 }
 
 // Le client regenere la MEME carte a partir de la graine (P4) : seuls les
@@ -8251,6 +8369,7 @@ function demarrerPartieClient(m){
   RESEAU.pausesRestantes=3; RESEAU.finRecue=null;
   mpVerrouillerVitesse();
   demarrerVeilleReseau();
+  sauverRejoinEnLigne(_mpEtat.code);
   envoyerReseau({t:'PRET'});
   requestAnimationFrame(loop);
   notify('Partie en ligne — en attente de l\'etat initial…','#3498db');
@@ -8338,6 +8457,7 @@ function mpAbandonner(){
     ? 'Abandonner la partie ? Votre alli\u00e9 continuera seul contre l\'IA.'
     : 'Abandonner la partie ? Votre adversaire remportera la victoire.';
   if(!confirm(texteAbandon)) return;
+  effacerRejoinEnLigne();
   envoyerReseau({t:'ABANDON', par:G.me});
   const f=G.factions[G.me]; if(f) f.vaincu=true;
   if(!G.gameOver){ G.gameOver=true; showGameOver(); }
@@ -8369,14 +8489,16 @@ function afficherEmote(par,code,local){
   if(!local) notify(e.ico+' '+nom+' : '+e.texte,'#f0c040');
   buzz(6);
 }
-// Touches 1-4 : indispensable sur mobile ou le clavier est penible. On
-// evite de capter la touche si le joueur est en train d'ecrire ailleurs.
+// Touches Alt+1-4 : raccourci clavier pour les emotes (le bouton tactile
+// reste le chemin principal, indispensable sur mobile). Alt et non les
+// chiffres nus : 1-9 sont deja pris par les groupes de controle.
 window.addEventListener('keydown',e=>{
   if(!reseauActif()) return;
+  if(!e.altKey) return;
   const cible=e.target;
   if(cible&&(cible.tagName==='INPUT'||cible.tagName==='TEXTAREA')) return;
   const idx='1234'.indexOf(e.key);
-  if(idx>=0&&EMOTES[idx]) mpEmote(EMOTES[idx].code);
+  if(idx>=0&&EMOTES[idx]){ mpEmote(EMOTES[idx].code); e.preventDefault(); }
 });
 
 // \u2500\u2500 VITESSE VERROUILLEE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -8423,7 +8545,46 @@ function convertirEnIA(factionId){
 
 // \u2500\u2500 FENETRE DE RECONNEXION \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 const DELAI_GEL_RECO = 3000;   // silence avant de considerer la connexion perdue
-const FENETRE_RECO   = 60000;  // duree de la tentative de reconnexion
+const FENETRE_RECO   = 180000; // duree de la tentative de reconnexion (3 min : coupures wifi/4G, pas seulement un blip)
+
+// ── REPRISE APRÈS RECHARGEMENT DE MA PROPRE PAGE ────────────────
+// La fenêtre de reconnexion ci-dessus ne couvre que les coupures de LIEN
+// (wifi, onglet mis en arrière-plan) : les deux G restent en mémoire, seul
+// le canal WebRTC est renégocié. Si c'est MA page qui recharge ou plante,
+// mon G disparaît entièrement — jusqu'ici la partie était perdue sans appel.
+// On mémorise donc le code du salon en cours ; au prochain chargement, un
+// bouton sur l'écran-titre permet de rejoindre à nouveau CE salon (le canal
+// se renégocie normalement) puis de demander à l'hôte (toujours vivant, lui,
+// puisque son G n'a jamais disparu) un état à jour via RESYNC — voir plus
+// bas. Portée volontairement limitée au rôle CLIENT : côté hôte, c'est tout
+// l'état autoritatif de la partie qui vit en mémoire, rien à récupérer d'un
+// simple code de salon.
+const REJOIN_KEY = 'adc_mp_rejoin_v1';
+const REJOIN_TTL = 900000; // 15 min : au-delà, on ne propose plus le bouton (l'hôte a sûrement refermé)
+function sauverRejoinEnLigne(code){
+  if(!code) return;
+  try{ localStorage.setItem(REJOIN_KEY, JSON.stringify({code, ts:Date.now()})); }catch(e){}
+}
+function effacerRejoinEnLigne(){
+  try{ localStorage.removeItem(REJOIN_KEY); }catch(e){}
+}
+function lireRejoinEnLigne(){
+  try{
+    const raw=localStorage.getItem(REJOIN_KEY);
+    if(!raw) return null;
+    const r=JSON.parse(raw);
+    if(!r||!r.code||Date.now()-r.ts>REJOIN_TTL) return null;
+    return r;
+  }catch(e){ return null; }
+}
+// Averti AVANT de perdre la partie plutôt que de compter sur le bouton de
+// reprise après coup : un rechargement accidentel reste la cause la plus
+// fréquente d'abandon involontaire d'une partie en ligne.
+window.addEventListener('beforeunload',e=>{
+  if(!reseauActif()) return;
+  e.preventDefault(); e.returnValue='';
+});
+
 let _minuteurVeille=null, _minuteurDecision=null;
 function demarrerVeilleReseau(){
   RESEAU.dernierRecu=Date.now();
@@ -8500,6 +8661,7 @@ window.mpDecisionTerminer=mpDecisionTerminer;
 // \u2014 c'est le pire ressenti possible : il repart soit avec sa sauvegarde,
 // soit vers le menu.
 function afficherEcranHoteParti(){
+  effacerRejoinEnLigne();
   G.paused=true; RESEAU.actif=false;
   const ov=document.getElementById('overlay');
   ov.style.display='flex'; ov.classList.add('endscreen');
@@ -8572,6 +8734,26 @@ function mpOuvrir(){
 window.mpOuvrir=mpOuvrir;
 function mpFermer(){ document.getElementById('mppanel').style.display='none'; }
 window.mpFermer=mpFermer;
+
+// Écran-titre : reprendre une partie en ligne dont MA page a redémarré (voir
+// REJOIN_KEY plus haut). Rejoint le même salon puis, dès que le canal est de
+// nouveau ouvert, demande à l'hôte un RESYNC — voir traiterResync().
+let _enAttenteResync=false;
+async function mpReprendrePartieEnLigne(){
+  const r=lireRejoinEnLigne();
+  if(!r){ notify('Aucune partie en ligne à reprendre','#95a5a6'); return; }
+  if(!mpDispo()){ notify('Multijoueur indisponible pour l\'instant','#e74c3c'); return; }
+  _enAttenteResync=true;
+  notify('🔌 Reconnexion à la partie '+r.code+'…','#3498db');
+  try{ await window.MP.rejoindreSalon(r.code); }
+  catch(err){
+    _enAttenteResync=false;
+    notify('Impossible de rejoindre : '+err.message,'#e74c3c');
+    effacerRejoinEnLigne();
+    const btn=document.getElementById('mprejoinbtn'); if(btn) btn.style.display='none';
+  }
+}
+window.mpReprendrePartieEnLigne=mpReprendrePartieEnLigne;
 
 function mpLigne(txt,cls){
   const c=document.getElementById('mpchat');
@@ -8720,6 +8902,7 @@ window.mpEnvoyerChat=mpEnvoyerChat;
       // false -> true de e.connecte EST la preuve que le canal revit ; on
       // s'en sert directement plutot que d'attendre un hypothetique delta.
       if(e.connecte&&!_connecteAvant&&RESEAU.enAttenteReconnexion) sortirAttenteReconnexion();
+      if(e.connecte&&!_connecteAvant&&_enAttenteResync){ _enAttenteResync=false; window.MP.envoyer({t:'RESYNC'}); }
       _connecteAvant=e.connecte;
       _mpEtat=e; mpRafraichir();
     });
@@ -8787,6 +8970,7 @@ function initGoogleAuth(){
       notify(gAuth.email?`✅ Connecté : ${gAuth.email}`:'✅ Connecté à Google','#2ecc71');
       refreshGoogleUI();
       if(typeof refreshSaveInfo==='function') refreshSaveInfo();
+      if(typeof syncProfilAvecDrive==='function') syncProfilAvecDrive();
     },
   });
   refreshGoogleUI();
@@ -9250,8 +9434,7 @@ try{
   if(savedMode&&MODES[savedMode]) selectedMode=savedMode;
 }catch(e){}
 try{ pickMode(selectedMode); }catch(e){}
-loadProfile();
-refreshAchCount();
+loadProfile().then(refreshAchCount); // storageLoad() : instantané tant que non connecté à Google
 
 // ── VÉRIFIER SAVE AU LANCEMENT ────────────────────────────
 (async()=>{
@@ -9265,6 +9448,15 @@ refreshAchCount();
   btn.innerHTML=(useAuto?'⏱️ Reprendre (auto)':'📂 Reprendre la sauvegarde')+
     `<div style="font-size:11px;opacity:.75;font-weight:400;margin-top:2px;">${saveLabel(d)}</div>`;
   btn.onclick=()=>loadGame(useAuto?AUTO_KEY:SAVE_KEY);
+})();
+
+// Partie en ligne interrompue par un rechargement de MA page : proposer de
+// la reprendre (voir REJOIN_KEY). Purement local à localStorage : aucune
+// requête réseau tant que le joueur n'a pas cliqué.
+(function(){
+  const r=lireRejoinEnLigne();
+  const btn=document.getElementById('mprejoinbtn');
+  if(btn&&r) btn.style.display='block';
 })();
 
 // ── BOUCLE DE JEU ─────────────────────────────────────────

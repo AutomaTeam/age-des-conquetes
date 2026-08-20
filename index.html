@@ -8555,9 +8555,11 @@ function showVictory(){
   const ov=document.getElementById('overlay');
   ov.style.display='flex';
   ov.classList.add('endscreen');
-  // Le mode Conquête n'a pas de vague à comptabiliser : son exploit est la
-  // chute du Centre Ville adverse, pas un compteur de survie.
-  const exploit=G.gmode!=='survival'
+  // La Merveille prime sur l'exploit habituel du mode (vagues repoussées ou
+  // Centre Ville rival abattu) : c'est elle qui a réellement tranché la partie.
+  const exploit=moi()&&moi().merveilleAchevee
+    ? `Votre Merveille est restée debout ${Math.round(MERVEILLE_WIN_TIME/60)} minutes après son achèvement. La postérité s'en souviendra.`
+    : G.gmode!=='survival'
     ? `Le Centre Ville rival est tombé. La carte est à vous.`
     : `Vous avez repoussé ${G.targetWaves} vagues et bâti un empire légendaire !`;
   ov.innerHTML=`
@@ -8587,7 +8589,10 @@ function showGameOver(){
   G.running=false;
   envoyerBilanReseau();
   const fresh=finishGame(false);
-  const cause=G.gmode!=='survival'
+  const gagnantMerveille=factionsJouantes().find(f=>f.merveilleAchevee&&f.id!==G.me);
+  const cause=gagnantMerveille
+    ? `${gagnantMerveille.nom} a achevé sa Merveille et l'a gardée debout — la partie est terminée.`
+    : G.gmode!=='survival'
     ? `Le seigneur rival a rasé votre Centre Ville.`
     : `Votre Centre Ville a été détruit lors de la vague ${G.wave}.`;
   document.getElementById('overlay').style.display='flex';

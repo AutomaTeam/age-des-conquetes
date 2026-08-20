@@ -1304,10 +1304,14 @@ const RDEF = {
   cavalry:    { nom:'Cavalerie',      ico:'🐴', cost:{gold:100,food:80},   time:45,  desc:'+20% PV Chevaliers, Paladins et Éclaireurs', cat:'forge' },
   iron_armor: { nom:'Armure de Fer',  ico:'🛡️', cost:{gold:120,stone:80},  time:45,  desc:'+30% PV aux unités militaires',      cat:'forge' },
   masonry:    { nom:'Maçonnerie',     ico:'🧱', cost:{stone:120,food:80},  time:40,  desc:'+25% PV aux bâtiments',              cat:'forge' },
+  siege_smithing:{ nom:'Forge de Siège', ico:'🐏', cost:{gold:150,stone:100}, time:50,  desc:'+25% ATK Béliers et Trébuchets',   cat:'forge' },
+  cavalry_lance:{ nom:'Lance de Cavalerie', ico:'🗡️', cost:{gold:120,wood:60}, time:40,  desc:'+20% ATK Chevaliers, Paladins et Éclaireurs', cat:'forge' },
   longbow:    { nom:'Arc Long',       ico:'🎯', cost:{gold:150,wood:80},   time:60,  desc:'+50% portée des Archers',            cat:'univ'  },
   tactics:    { nom:'Tactiques',      ico:'📜', cost:{gold:200,food:100},  time:75,  desc:'+20% ATK à toutes vos unités',       cat:'univ'  },
   faith:      { nom:'Foi Divine',     ico:'✝️', cost:{gold:200,stone:150}, time:90,  desc:'Débloque le Paladin',                cat:'univ'  },
   engineering:{ nom:'Génie Civil',    ico:'🔧', cost:{stone:200,gold:80},  time:60,  desc:'+40% PV des Tours et Château',       cat:'univ'  },
+  fortification:{ nom:'Fortifications', ico:'🏯', cost:{stone:220,gold:90}, time:65,  desc:'+25% PV Murs, Portails et Avant-postes', cat:'univ' },
+  logistics:  { nom:'Logistique',     ico:'🥾', cost:{gold:180,food:120},  time:70,  desc:'+15% vitesse de déplacement des unités militaires', cat:'univ' },
 };
 
 // ── SYSTÈME D'ÂGES ────────────────────────────────────────
@@ -1385,7 +1389,8 @@ const TEINTE_DEF = { p1:'bleu', p2:'vert', ia:'rouge', ia2:'violet', pillards:'r
 
 function initResearch(){
   return { iron_sword:false, bow_craft:false, iron_armor:false, masonry:false,
-           cavalry:false, longbow:false, tactics:false, faith:false, engineering:false };
+           cavalry:false, longbow:false, tactics:false, faith:false, engineering:false,
+           siege_smithing:false, cavalry_lance:false, fortification:false, logistics:false };
 }
 // Lecture seule : recherches d'un camp qui n'en a pas (pillards).
 const EMPTY_RESEARCH = initResearch();
@@ -1816,18 +1821,22 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
   mhp=Math.round(mhp*AGE_BONUS[age].unitHp); // robustesse croissante avec l'âge
   let rng=d.rng*BASE_TILE; // portée en unités-monde (BASE_TILE), fixe : ne dépend pas du zoom
   if(rech.longbow&&(type===UT.ARC||type===UT.XBOW)) rng*=1.5;
-  const MELEE=[UT.MIL,UT.PIKE], RANGED=[UT.ARC,UT.XBOW], CAV=[UT.KNIGHT,UT.PALADIN,UT.SCOUT];
+  const MELEE=[UT.MIL,UT.PIKE], RANGED=[UT.ARC,UT.XBOW], CAV=[UT.KNIGHT,UT.PALADIN,UT.SCOUT], SIEGE=[UT.RAM,UT.TREB];
   if(rech.cavalry&&CAV.includes(type)) mhp=Math.round(mhp*1.2);
   let atk=d.atk;
   if(rech.iron_sword&&MELEE.includes(type)) atk=Math.round(atk*1.25);
   if(rech.bow_craft&&RANGED.includes(type)) atk=Math.round(atk*1.25);
+  if(rech.cavalry_lance&&CAV.includes(type)) atk=Math.round(atk*1.2);
+  if(rech.siege_smithing&&SIEGE.includes(type)) atk=Math.round(atk*1.25);
   if(rech.tactics&&mil) atk=Math.round(atk*1.2);
   if(mil) atk=Math.round(atk*AGE_BONUS[age].milAtk); // ATK militaire croissant avec l'âge
+  let spd=d.spd;
+  if(rech.logistics&&mil) spd*=1.15;
   return {
     id:G.nid++, type, owner,
     x:wx, y:wy, destX:wx, destY:wy,
     hp:mhp, maxHp:mhp,
-    spd:d.spd, atk, rng, atkSpd:d.atkSpd, atkCd:0,
+    spd, atk, rng, atkSpd:d.atkSpd, atkCd:0,
     state:'idle', target:null,
     gTimer:0, inv:0, invT:null, dropoff:null,
     buildTarget:null,
@@ -1844,6 +1853,7 @@ function mkBuilding(type,tx,ty,owner=FAC.P1){
   if(rech.masonry) mhp=Math.round(mhp*1.25);
   mhp=Math.round(mhp*AGE_BONUS[ageOf(owner)].bldHp); // PV bâtiments croissants avec l'âge
   if(rech.engineering&&(type===BT.TOWER||type===BT.CASTLE)) mhp=Math.round(mhp*1.4);
+  if(rech.fortification&&(type===BT.WALL||type===BT.GATE||type===BT.OUTPOST)) mhp=Math.round(mhp*1.25);
   return {
     id:G.nid++, type, owner,
     tx,ty, w:d.w, h:d.h,
@@ -1954,6 +1964,86 @@ function upgradeTower(b){
   }
   spawnParts(b.x,b.y,'#f0c040',12);
   notify(`🏗️ ${r.next.nom} — Tour améliorée !`,'#2ecc71');
+  sfx('build'); buzz(10);
+  refreshUI();
+}
+
+// ── AMÉLIORATION DES BÂTIMENTS DE RESSOURCE ─────────────────
+// Même principe que les Tours : deux paliers pour le Camp Forestier, le
+// Camp Minier et le Moulin, qui accélèrent la récolte du villageois (et
+// renforcent un peu le bâtiment). Le niveau est propre à CHAQUE bâtiment,
+// mais la récolte prend le meilleur niveau possédé par la faction pour le
+// type concerné (voir campRateMult) : pas besoin de courir vers un camp
+// précis, l'amélioration profite à toute la récolte de la ressource.
+const LUMBER_LEVELS = {
+  1: { nom:'Camp Forestier', hpMult:1.00, rate:1.00 },
+  2: { nom:'Scierie',        hpMult:1.20, rate:1.20, cost:{wood:120,gold:60},          reqAge:1 },
+  3: { nom:'Grande Scierie', hpMult:1.45, rate:1.40, cost:{wood:200,gold:140,stone:80}, reqAge:2 },
+};
+const MINE_LEVELS = {
+  1: { nom:'Camp Minier',    hpMult:1.00, rate:1.00 },
+  2: { nom:'Mine Étayée',    hpMult:1.20, rate:1.20, cost:{wood:100,gold:80},           reqAge:1 },
+  3: { nom:'Mine Profonde',  hpMult:1.45, rate:1.40, cost:{wood:160,gold:160,stone:100},reqAge:2 },
+};
+const MILL_LEVELS = {
+  1: { nom:'Moulin',         hpMult:1.00, rate:1.00 },
+  2: { nom:'Moulin à Aubes', hpMult:1.20, rate:1.20, cost:{wood:120,gold:70},           reqAge:1 },
+  3: { nom:'Grand Moulin',   hpMult:1.45, rate:1.40, cost:{wood:200,gold:150,stone:60}, reqAge:2 },
+};
+const CAMP_LEVELS = { [BT.LUMBER]:LUMBER_LEVELS, [BT.MINE]:MINE_LEVELS, [BT.MILL]:MILL_LEVELS };
+
+// PV max d'un bâtiment de ressource à un niveau donné — même logique que
+// towerMaxHp, pour ne jamais faire perdre le bénéfice de Maçonnerie/âge.
+function campMaxHp(type,level,owner){
+  owner=owner||G.me;
+  const tbl=CAMP_LEVELS[type]; if(!tbl) return BDEF[type].hp;
+  const rech=rechercheDe(owner);
+  let hp=BDEF[type].hp*(tbl[level].hpMult||1);
+  if(rech.masonry) hp*=1.25;
+  hp*=AGE_BONUS[ageOf(owner)].bldHp;
+  return Math.round(hp);
+}
+// Meilleur niveau possédé par la faction pour ce type de camp — sert à
+// moduler la vitesse de récolte de la ressource correspondante.
+function campBestLevel(owner,type){
+  let lvl=1;
+  for(const b of G.buildings) if(b.owner===owner&&b.type===type&&!b.constructing) lvl=Math.max(lvl,b.level||1);
+  return lvl;
+}
+// Multiplicateur de récolte pour un type de ressource ('wood'/'ore'/'food'),
+// à combiner avec gatherMult (bonus d'âge) dans doGather/doFarm.
+function campRateMult(owner,kind){
+  const type = kind==='wood'?BT.LUMBER : kind==='ore'?BT.MINE : BT.MILL;
+  const tbl=CAMP_LEVELS[type];
+  return tbl[campBestLevel(owner,type)].rate;
+}
+// Mutation pure — valide et applique, sans toucher à l'interface.
+function appliquerUpgradeCamp(b,owner){
+  if(b.constructing) return {ok:false,raison:'cible'};
+  const tbl=CAMP_LEVELS[b.type]; if(!tbl) return {ok:false,raison:'cible'};
+  const cur=b.level||1, next=tbl[cur+1];
+  if(!next) return {ok:false,raison:'max'};
+  if(next.reqAge!=null&&ageOf(owner)<next.reqAge) return {ok:false,raison:'age',reqAge:next.reqAge};
+  const cost=scaleCost(next.cost);
+  if(!canAfford(cost,owner)) return {ok:false,raison:'ressources',cost};
+  spend(cost,owner);
+  const dmg=b.maxHp-b.hp;
+  b.maxHp=campMaxHp(b.type,cur+1,owner);
+  b.hp=Math.max(1,b.maxHp-dmg);
+  b.level=cur+1;
+  return {ok:true,next};
+}
+function upgradeCamp(b){
+  if(!CAMP_LEVELS[b.type]||b.constructing) return;
+  const r=emettreOrdre(ordre(ORD.AMELIORER_CAMP,{bId:b.id}));
+  if(!r.ok){
+    if(r.raison==='max') notify('🏆 Niveau maximum atteint','#f0c040');
+    else if(r.raison==='age') notify(`🔒 Nécessite ${AGES[r.reqAge].nom}`,'#e74c3c');
+    else if(r.raison==='ressources'){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(r.cost); }
+    return;
+  }
+  spawnParts(b.x,b.y,'#8fbc44',12);
+  notify(`🏗️ ${r.next.nom} — récolte améliorée !`,'#2ecc71');
   sfx('build'); buzz(10);
   refreshUI();
 }
@@ -4626,7 +4716,8 @@ function doGather(u,dt){
   }
   if(!n.gatherers.includes(u.id)) n.gatherers.push(u.id);
   u.homeNode=n.id;
-  u.gTimer+=dt*gatherMult(u.owner);
+  const nKind = n.type===RT.TREE?'wood' : n.type===RT.BERRY?'food' : 'ore';
+  u.gTimer+=dt*gatherMult(u.owner)*campRateMult(u.owner,nKind);
   if(u.gTimer>=1/GRATE[n.type]){
     u.gTimer=0;
     // Gisement infini (point d'intérêt gardé) : jamais épuisé, se récolte
@@ -4675,7 +4766,7 @@ function doFarm(u,dt){
     }
     return;
   }
-  u.gTimer+=dt*gatherMult(u.owner);
+  u.gTimer+=dt*gatherMult(u.owner)*campRateMult(u.owner,'food');
   if(u.gTimer>=1/GRATE.farm){
     u.gTimer=0;
     const a=Math.min(1,f.foodLeft); f.foodLeft-=a; u.inv+=a; u.invT='farm';
@@ -5965,6 +6056,25 @@ function updateResearchFaction(dt,f){
         }
       if(local) notify('🔧 Tours et Château renforcés !','#95a5a6');
     }
+    if(r.type==='siege_smithing'){
+      for(const u of G.units) if(u.owner===owner&&[UT.RAM,UT.TREB].includes(u.type)) u.atk=Math.round(u.atk*1.25);
+      if(local) notify('🐏 Machines de siège renforcées !','#c0392b');
+    }
+    if(r.type==='cavalry_lance'){
+      for(const u of G.units) if(u.owner===owner&&[UT.KNIGHT,UT.PALADIN,UT.SCOUT].includes(u.type)) u.atk=Math.round(u.atk*1.2);
+      if(local) notify('🗡️ Cavalerie plus offensive !','#9b59b6');
+    }
+    if(r.type==='fortification'){
+      for(const b of G.buildings)
+        if(b.owner===owner&&(b.type===BT.WALL||b.type===BT.GATE||b.type===BT.OUTPOST)){
+          b.maxHp=Math.round(b.maxHp*1.25); b.hp=Math.min(Math.round(b.hp*1.25),b.maxHp);
+        }
+      if(local) notify('🏯 Murs, Portails et Avant-postes renforcés !','#95a5a6');
+    }
+    if(r.type==='logistics'){
+      for(const u of G.units) if(u.owner===owner&&isMilitary(u.type)) u.spd*=1.15;
+      if(local) notify('🥾 Vos troupes se déplacent plus vite !','#3498db');
+    }
   }
 }
 
@@ -6526,7 +6636,7 @@ const ORD = {
   BATIR:'BATIR', FORMER:'FORMER', RECHERCHE:'RECHERCHE', AGE:'AGE',
   RALLIEMENT:'RALLIEMENT', PORTAIL:'PORTAIL', AMELIORER_TOUR:'AMELIORER_TOUR',
   DEMOLIR:'DEMOLIR', AUTO_FORMATION:'AUTO_FORMATION', AUTO_REPARE:'AUTO_REPARE',
-  TROC:'TROC', ANNULER_FORMATION:'ANNULER_FORMATION',
+  TROC:'TROC', ANNULER_FORMATION:'ANNULER_FORMATION', AMELIORER_CAMP:'AMELIORER_CAMP',
 };
 
 let _ordSeq=0;
@@ -6762,6 +6872,11 @@ function applyCommand(cmd){
     return appliquerUpgradeTour(b,cmd.f);
   }
 
+  case ORD.AMELIORER_CAMP: {
+    const b=_bldDe(cmd); if(!b||!CAMP_LEVELS[b.type]) return KO('cible');
+    return appliquerUpgradeCamp(b,cmd.f);
+  }
+
   case ORD.DEMOLIR: {
     const b=_bldDe(cmd); if(!b) return KO('cible');
     if(b.type===BT.TC) return KO('invalide');
@@ -6884,6 +6999,35 @@ function updateHUD(){
   // Barre d'âge
   updateAgeBar();
   updateBandeauAdverse();
+}
+
+// Panneau commun aux trois bâtiments de ressource améliorables (Camp
+// Forestier, Camp Minier, Moulin) : rappel du rôle, niveau courant, et
+// bouton d'amélioration façon Tour Défensive (voir drawBuildAct/TOWER).
+function drawCampUpgrade(bar,b,ico,resLabel){
+  const tbl=CAMP_LEVELS[b.type], lv=b.level||1, cfg=tbl[lv], next=tbl[lv+1];
+  const info=document.createElement('div');
+  info.style.cssText='color:#d4ac0d;font-size:11px;padding:5px 8px;text-align:center;font-family:Crimson Text,serif;';
+  info.innerHTML=`${ico} ${cfg.nom} (Niv.${lv}/3) — récolte de ${resLabel}<br>`+
+    `<span style="color:#999;font-size:10px;">Vitesse de récolte ×${cfg.rate.toFixed(2)}</span>`;
+  bar.appendChild(info);
+  if(next){
+    const locked=next.reqAge!=null&&G.age<next.reqAge;
+    const upCost=scaleCost(next.cost);
+    mkBtn(bar,'⬆️',locked?`Améliorer\n🔒 ${AGES[next.reqAge].nom}`:'Améliorer\n'+costLabel(upCost),
+      ()=>upgradeCamp(b), locked, upCost);
+    const preview=document.createElement('div');
+    preview.style.cssText='color:#8fbc44;font-size:9px;padding:0 4px 3px;width:100%;text-align:center;';
+    preview.textContent=`→ ${next.nom} : récolte ×${next.rate.toFixed(2)}`;
+    bar.appendChild(preview);
+  } else {
+    const maxed=document.createElement('div');
+    maxed.style.cssText='color:#f0c040;font-size:10px;padding:2px 4px;width:100%;text-align:center;';
+    maxed.textContent='🏆 Niveau maximum';
+    bar.appendChild(maxed);
+  }
+  // Démolir est ajouté par le catch-all en fin de drawBuildAct — pas ici,
+  // pour éviter le double bouton que produit déjà le bloc Tour Défensive.
 }
 
 function updateActBar(){
@@ -7181,13 +7325,10 @@ function drawBuildAct(bar,b){
     mkBtn(bar,'💰→🪵','80💰\n→100🪵',()=>tradeRes('gold',80,'wood',100),false,{gold:80});
   }
 
-  // ── Moulin ──
-  if(b.type===BT.MILL){
-    const info=document.createElement('div');
-    info.style.cssText='color:#d4ac0d;font-size:11px;padding:5px 8px;text-align:center;font-family:Crimson Text,serif;';
-    info.textContent='🌿 Dépôt de nourriture (baies et fermes) — rapproche-le de tes champs';
-    bar.appendChild(info);
-  }
+  // ── Camp Forestier / Camp Minier / Moulin : récolte + amélioration ──
+  if(b.type===BT.LUMBER) drawCampUpgrade(bar,b,'🪵','bois');
+  if(b.type===BT.MINE)   drawCampUpgrade(bar,b,'⛏️','pierre et or');
+  if(b.type===BT.MILL)   drawCampUpgrade(bar,b,'🌿','nourriture (baies et fermes)');
 
   // ── Tour Défensive : stats actuelles + amélioration ──
   if(b.type===BT.TOWER){

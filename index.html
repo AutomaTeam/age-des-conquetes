@@ -331,18 +331,19 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
    Même gabarit que le sélecteur de difficulté, mais deux choix seulement et
    un libellé plus large : le mode change la nature de la partie (vagues
    scriptées vs adversaire vivant), pas seulement son dosage. */
-.moderow { display:flex;gap:8px;justify-content:center;width:100%; }
+.moderow { display:flex;gap:8px;justify-content:center;width:100%;flex-wrap:wrap; }
 .modebtn {
   --mc:var(--gold-l);
   display:flex;flex-direction:column;align-items:center;gap:2px;
   background:rgba(20,12,0,.7);border:1.5px solid var(--gold-d);border-radius:10px;
-  color:#999;font-family:'Cinzel',serif;padding:9px 10px;cursor:pointer;flex:1;
+  color:#999;font-family:'Cinzel',serif;padding:9px 10px;cursor:pointer;flex:1 1 130px;
   -webkit-tap-highlight-color:transparent;transition:border-color .15s,color .15s,background .15s,transform .1s;
 }
 .modebtn:active { transform:scale(.96); }
 .modebtn[data-m="survival"] { --mc:#5dade2; }
 .modebtn[data-m="conquest"] { --mc:#e05a4e; }
 .modebtn[data-m="conquest2"] { --mc:#b07cc6; }
+.modebtn[data-m="coop2v1"] { --mc:#2ecc71; }
 .seedrow { display:flex;gap:6px;align-items:center;justify-content:center;width:100%;margin-top:2px; }
 .seedrow label { font-size:11px;color:#9a8a6a;letter-spacing:.04em; }
 .seedrow input {
@@ -786,6 +787,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
       <button class="modebtn" data-m="survival" onclick="pickMode('survival')"><span class="mico">🛡️</span><span class="mlabel">Survie</span></button>
       <button class="modebtn" data-m="conquest" onclick="pickMode('conquest')"><span class="mico">🏴</span><span class="mlabel">Conquête</span></button>
       <button class="modebtn" data-m="conquest2" onclick="pickMode('conquest2')"><span class="mico">⚔️</span><span class="mlabel">2 rivaux</span></button>
+      <button class="modebtn" data-m="coop2v1" onclick="pickMode('coop2v1')"><span class="mico">🤝</span><span class="mlabel">2v1 coop</span></button>
     </div>
     <p class="tip" id="modetip">Survie — Repoussez 20 vagues d'assaut pour l'emporter.</p>
     <div class="diffrow" id="diffrow">
@@ -1041,7 +1043,11 @@ function peaceLabel(diffKey,modeKey){
   const mk=modeKey||(typeof selectedMode!=='undefined'?selectedMode:'survival');
   // Conquête : le répit n'est pas dicté par le minuteur de vagues mais par le
   // délai avant le premier raid de l'adversaire (AI_TUNE.firstAtk).
-  const sec=mk==='conquest'
+  // Tout mode sans vagues scriptees (targetWaves:0 -- Conquete, 2 rivaux,
+  // 2v1 coop) est rythme par le premier raid de l'IA, pas par le minuteur
+  // de vagues de Survie.
+  const sansVagues=(MODES[mk]||{}).targetWaves===0;
+  const sec=sansVagues
     ? (AI_TUNE[dk]||AI_TUNE.normal).firstAtk
     : FIRST_WAVE_DELAY*(DIFFS[dk]||DIFFS.normal).waveDelayMult;
   const m=Math.round(sec/60);
@@ -1079,6 +1085,9 @@ const MODES = {
   conquest: { nom:'Conquête', ico:'🏴', targetWaves:0, rivaux:1,
               desc:'Un seigneur rival bâtit sa propre cité. Détruisez son Centre Ville — avant qu\'il ne détruise le vôtre.',
               intro:'Un rival récolte, construit, monte les âges et lève ses armées en même temps que vous.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong> — pas de vagues, un seul adversaire.' },
+  coop2v1:  { nom:'2v1 Coop',  ico:'🤝', targetWaves:0, rivaux:1, coop:true,
+              desc:'Deux joueurs alliés (via le 1v1 en ligne) contre un seul seigneur IA, à la difficulté choisie ci-dessous.',
+              intro:'Rejoignez-vous à un allié (menu « 1v1 en ligne ») pour affronter ensemble un seul seigneur rival.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong>. Lancé seul, ce mode se joue comme la Conquête.' },
 };
 let selectedMode='survival';
 function pickMode(key){
@@ -1300,7 +1309,14 @@ function initState() {
   // l'etat, car mkBuilding/mkUnit lisent l'age et les recherches de leur
   // proprietaire — sa faction doit preexister a sa base.
   if(typeof RESEAU!=='undefined'&&RESEAU.actif&&RESEAU.role==='hote'){
-    G.factions[FAC.P2]=mkFaction(FAC.P2,{genre:'humain',equipe:2,
+    // Mode « 2v1 coop » : le second humain est un ALLIÉ (même équipe que
+    // FAC.P1), pas un adversaire — équipe 2 partout ailleurs (1v1 classique).
+    // C'est cette seule bascule qui transforme le duel en coopération : le
+    // reste (victoire par équipe, brouillard partagé... non, brouillard reste
+    // propre à chacun, ciblage IA, bascule en IA à la déconnexion) suit déjà
+    // le système d'équipes sans rien connaître de plus sur le mode.
+    const allie=(MODES[mode]||{}).coop;
+    G.factions[FAC.P2]=mkFaction(FAC.P2,{genre:'humain',equipe:allie?1:2,
       nom:(RESEAU.adversaire&&RESEAU.adversaire.nom)||'Adversaire',
       res:diff.startRes,maxPop:5});
   }
@@ -8318,7 +8334,10 @@ window.mpLeverPauseDepuisVoile=mpLeverPauseDepuisVoile;
 // \u2500\u2500 ABANDON \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 function mpAbandonner(){
   if(!reseauActif()) return;
-  if(!confirm('Abandonner la partie ? Votre adversaire remportera la victoire.')) return;
+  const texteAbandon=mpEstCoop()
+    ? 'Abandonner la partie ? Votre alli\u00e9 continuera seul contre l\'IA.'
+    : 'Abandonner la partie ? Votre adversaire remportera la victoire.';
+  if(!confirm(texteAbandon)) return;
   envoyerReseau({t:'ABANDON', par:G.me});
   const f=G.factions[G.me]; if(f) f.vaincu=true;
   if(!G.gameOver){ G.gameOver=true; showGameOver(); }
@@ -8535,10 +8554,19 @@ let _mpEtat={dispo:false};
 
 function mpDispo(){ return !!(window.MP&&_mpEtat.dispo); }
 
+// Le second joueur est-il un ALLIÉ (mode 2v1 coop) ou un adversaire (1v1
+// classique) ? Avant le lancement, seul le mode choisi sur l'écran-titre le
+// dit (selectedMode) ; une fois en partie, la vérité est G.gmode.
+function mpEstCoop(){ return !!(MODES[typeof G!=='undefined'&&G&&G.gmode?G.gmode:selectedMode]||{}).coop; }
+
 function mpOuvrir(){
   document.getElementById('mppanel').style.display='flex';
   const ps=document.getElementById('mppseudo');
   if(ps&&!ps.value) ps.value=localStorage.getItem('adc_pseudo')||'';
+  const intro=document.getElementById('mpintro');
+  if(intro) intro.textContent=mpEstCoop()
+    ? "Rejoignez-vous à un ami pour affronter ensemble un seul seigneur IA — réglez sa difficulté sur l'écran-titre."
+    : "Affrontez un ami sur la même carte, avec l'IA rivale en troisième camp.";
   mpRafraichir();
 }
 window.mpOuvrir=mpOuvrir;
@@ -8598,9 +8626,10 @@ function mpRafraichir(){
   const lancer=document.getElementById('mpbtn-lancer');
   if(lancer) lancer.style.display=(e.role==='hote'&&e.connecte&&e.adversaire)?'':'none';
   const parts=[];
+  const labelAutre=mpEstCoop()?'Allié':'Adversaire';
   if(e.code) parts.push(`Salon <b>${e.code}</b> — ${e.role==='hote'?'vous h\u00e9bergez':'vous avez rejoint'}`);
-  if(e.adversaire) parts.push(`Adversaire : <b>${e.adversaire.nom||'…'}</b>`);
-  else if(e.code&&e.role==='hote') parts.push('<span class="warn">En attente d\'un adversaire…</span>');
+  if(e.adversaire) parts.push(`${labelAutre} : <b>${e.adversaire.nom||'…'}</b>`);
+  else if(e.code&&e.role==='hote') parts.push(`<span class="warn">En attente ${mpEstCoop()?"d'un allié":"d'un adversaire"}…</span>`);
   if(e.connecte){
     parts.push(e.canal==='p2p'
       ? `<span class="ok">P2P \u00e9tabli</span>${e.rtt!=null?` (RTT ${e.rtt} ms)`:''}`
@@ -8631,7 +8660,7 @@ async function mpCreer(){
       seed:(grainePartie!=null?grainePartie:(Math.random()*2147483646|0)+1),
       avecIA:(MODES[selectedMode]||{}).rivaux||0,
     });
-    mpLigne(`Partie cr\u00e9\u00e9e — code ${code}. Transmettez-le \u00e0 votre adversaire.`,'sys');
+    mpLigne(`Partie cr\u00e9\u00e9e — code ${code}. Transmettez-le \u00e0 ${mpEstCoop()?'votre alli\u00e9':'votre adversaire'}.`,'sys');
   }catch(err){ mpLigne('Impossible de cr\u00e9er : '+err.message,'sys'); }
 }
 window.mpCreer=mpCreer;
@@ -9396,7 +9425,9 @@ function startGame(){
   setTimeout(()=>notify('🪵 Récoltez du bois puis construisez des Maisons !','#e8d5a0'),3200);
   if(G.gmode!=='survival'){
     const nb=MODES[G.gmode].rivaux||1;
-    setTimeout(()=>notify(nb>1?'🏴 Deux seigneurs rivaux bâtissent leurs cités — et se combattent entre eux.'
+    const coop=!!MODES[G.gmode].coop&&!!G.factions[FAC.P2];
+    setTimeout(()=>notify(coop?'🤝 Vous et votre allié affrontez ensemble un seul seigneur rival.'
+                              :nb>1?'🏴 Deux seigneurs rivaux bâtissent leurs cités — et se combattent entre eux.'
                               :'🏴 Un seigneur rival bâtit sa cité à l\'autre bout de la carte.','#e67e22'),6200);
     setTimeout(()=>notify('🏰 Rasez leur Centre Ville pour l\'emporter — explorez pour les trouver !','#f0c040'),9200);
   } else {

@@ -197,7 +197,12 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 /* ── NOTIFICATIONS ── */
 #notif {
   position:fixed;top:calc(var(--topH) + 32px);left:50%;transform:translateX(-50%);
-  z-index:200;pointer-events:none;
+  /* Au-dessus de TOUS les panneaux (le plus haut d'entre eux est à 610) :
+     contrairement à la pause, ouvrir la Recherche (#rpanel, z:300) ne met
+     pas le jeu en pause — sans ce z-index, les notifications déclenchées
+     pendant qu'on consulte l'arbre technique restaient invisibles derrière
+     le fond opaque du panneau. */
+  z-index:620;pointer-events:none;
   display:flex;flex-direction:column;align-items:center;gap:4px;width:260px;
 }
 .nmsg {
@@ -489,7 +494,11 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── PANNEAU DES SUCCÈS ── */
 #achpanel {
-  position:fixed;inset:0;z-index:550;display:none;
+  /* z-index au-dessus de #pausemenu (600) : ce panneau est aussi ouvert
+     depuis un bouton DANS #pausemenu (openAch()), qui ne se ferme pas
+     avant de l'afficher — sous 600 il resterait peint dessous et ses
+     boutons, inatteignables (même bug que #diplopanel avant correction). */
+  position:fixed;inset:0;z-index:610;display:none;
   background:rgba(0,0,0,.92);
   flex-direction:column;align-items:center;gap:10px;
   padding:20px 14px;overflow-y:auto;touch-action:pan-y;
@@ -513,7 +522,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* Bandeau de succès débloqué en cours de partie */
 #achpop {
-  position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:260;
+  position:fixed;top:64px;left:50%;transform:translateX(-50%);
+  z-index:620; /* voir #notif */
   display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;
 }
 .achtoast {
@@ -531,7 +541,9 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── PANNEAU DES CONTRÔLES ── (même gabarit que #achpanel) */
 #controlspanel {
-  position:fixed;inset:0;z-index:550;display:none;
+  /* z-index au-dessus de #pausemenu (600) : ouvert aussi depuis un bouton
+     DANS #pausemenu (openControls()) — voir commentaire sur #achpanel. */
+  position:fixed;inset:0;z-index:610;display:none;
   background:rgba(0,0,0,.92);
   flex-direction:column;align-items:center;gap:10px;
   padding:20px 14px;overflow-y:auto;touch-action:pan-y;
@@ -557,7 +569,10 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── PANNEAU DU CLASSEMENT ── (même gabarit que #achpanel) */
 #classementpanel {
-  position:fixed;inset:0;z-index:550;display:none;
+  /* z-index au-dessus de #pausemenu (600) : même gabarit qu'#achpanel/
+     #controlspanel, aligné par cohérence même s'il n'est pour l'instant
+     ouvert que depuis l'écran-titre. */
+  position:fixed;inset:0;z-index:610;display:none;
   background:rgba(0,0,0,.92);
   flex-direction:column;align-items:center;gap:10px;
   padding:20px 14px;overflow-y:auto;touch-action:pan-y;
@@ -572,11 +587,10 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── PANNEAU DIPLOMATIE ── (même gabarit que #achpanel) */
 #diplopanel {
-  /* z-index au-dessus de #pausemenu (600) : contrairement aux autres
-     panneaux du même gabarit (Succès/Contrôles/Classement, tous à 550,
-     ouverts depuis l'écran-titre où rien ne les recouvre), celui-ci
-     s'ouvre DEPUIS le menu pause lui-même — sans être au-dessus, il
-     resterait peint dessous et ses boutons, inatteignables. */
+  /* z-index au-dessus de #pausemenu (600) : comme les autres panneaux du
+     même gabarit (Succès/Contrôles/Classement, cf. leurs commentaires),
+     puisque celui-ci s'ouvre lui aussi DEPUIS le menu pause — sans être
+     au-dessus, il resterait peint dessous et ses boutons, inatteignables. */
   position:fixed;inset:0;z-index:610;display:none;
   background:rgba(0,0,0,.92);
   flex-direction:column;align-items:center;gap:10px;
@@ -763,7 +777,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── GRANDE BANNIÈRE ── */
 #bigbanner {
-  position:fixed;top:38%;left:50%;transform:translateX(-50%);z-index:250;
+  position:fixed;top:38%;left:50%;transform:translateX(-50%);
+  z-index:620; /* voir #notif */
   font-family:'Cinzel',serif;font-size:30px;font-weight:700;color:var(--gold-l);
   text-shadow:0 0 24px rgba(0,0,0,.9),0 0 40px rgba(212,160,23,.6);
   pointer-events:none;opacity:0;white-space:nowrap;text-align:center;
@@ -1171,6 +1186,19 @@ const TCOST = {
   [UT.BOAT]:    { wood:60 },
 };
 
+// Taux de troc autorisés au Marché — table faisant AUTORITÉ côté hôte pour
+// ORD.TROC (voir applyCommand) : les boutons de tradeRes() doivent s'y
+// tenir, mais un ordre réseau, lui, ne peut pas être pris au mot pour les
+// quantités — sans cette table, un client (mal intentionné ou buggé) qui
+// forge {donne:'wood',qteDonne:1,recoit:'gold',qteRecoit:999999} se voyait
+// appliquer l'échange tel quel, sans aucune vérification du taux.
+const TROC_TAUX = [
+  {donne:'food', qteDonne:100, recoit:'gold', qteRecoit:60},
+  {donne:'wood', qteDonne:100, recoit:'gold', qteRecoit:60},
+  {donne:'stone',qteDonne:100, recoit:'gold', qteRecoit:80},
+  {donne:'gold', qteDonne:80,  recoit:'wood', qteRecoit:100},
+];
+
 // Libellé de coût généré depuis TCOST : plus de valeurs écrites en dur dans les boutons
 const RICO={food:'🍖',wood:'🪵',stone:'🪨',gold:'💰'};
 function costLabel(cost){ return Object.entries(cost||{}).map(([r,v])=>v+RICO[r]).join(' '); }
@@ -1295,6 +1323,11 @@ function heroAuraMult(u){
   for(const h of G.units){
     if(h.type!==UT.HERO||h.hp<=0) continue;
     if(h.owner!==u.owner) continue;
+    // Un héros à l'abri (ORD.GARNIR) est retiré du champ de bataille comme
+    // n'importe quelle autre unité garnie (voir doAttack/updateProjs) — sans
+    // cette garde, un héros caché continuait de galvaniser les troupes à
+    // distance depuis les coordonnées mêmes du bâtiment qui l'abrite.
+    if(h.state==='garrison') continue;
     if(Math.hypot(h.x-u.x,h.y-u.y)<=HERO_AURA_RADIUS) return HERO_AURA_MULT;
   }
   return 1;
@@ -2140,8 +2173,15 @@ function nightFactor(){ return Math.max(0,Math.sin(G.dayPhase*Math.PI*2-Math.PI/
 // vraiment, pas seulement à l'écran — un raid nocturne peut approcher plus
 // près avant d'être repéré.
 const VISION_NIGHT_MULT = 0.75;
+// Même courbe que revealFog() ci-dessous, factorisée pour aussi s'appliquer
+// à la détection auto d'hostiles (prochainHostileUnite/Toute) : sans elle,
+// unités et tours repéraient et engageaient des ennemis à une portée fixe,
+// de jour comme de nuit, alors que le brouillard de guerre qu'elles
+// révèlent réellement se rétrécit d'un quart la nuit — l'IA et les tours
+// « voyaient » au-delà de ce que le joueur voit lui-même sur son écran.
+function visionMult(){ return 1-(1-VISION_NIGHT_MULT)*nightFactor(); }
 function revealFog(){
-  const visMult=1-(1-VISION_NIGHT_MULT)*nightFactor();
+  const visMult=visionMult();
   for(const f of factionsHumaines()){
     const fog=f.fog;
     if(!fog||!fog.length) continue;
@@ -2319,6 +2359,7 @@ function towerMaxHp(level,owner){
   if(rech.masonry) hp*=1.25;
   hp*=AGE_BONUS[ageOf(owner)].bldHp;
   if(rech.engineering) hp*=1.4;
+  const civBldMult=civOf(owner).bldHpMult; if(civBldMult) hp*=civBldMult; // même bonus de civilisation qu'à la construction (mkBuilding) — sans lui, la mise à niveau l'effaçait
   return Math.round(hp);
 }
 // Mutation pure — valide et applique, sans toucher à l'interface.
@@ -2384,6 +2425,7 @@ function campMaxHp(type,level,owner){
   let hp=BDEF[type].hp*(tbl[level].hpMult||1);
   if(rech.masonry) hp*=1.25;
   hp*=AGE_BONUS[ageOf(owner)].bldHp;
+  const civBldMult=civOf(owner).bldHpMult; if(civBldMult) hp*=civBldMult; // voir towerMaxHp
   return Math.round(hp);
 }
 // Meilleur niveau possédé par la faction pour ce type de camp — sert à
@@ -2789,6 +2831,43 @@ function buildBerry(T){
       cx.fillStyle='rgba(255,255,255,.5)'; cx.fillRect((bx-st*0.28)|0,(by-st*0.28)|0,1,1);
     }
     SPR.berry.push({c,cx,S:S/SS});
+  }
+}
+
+// ── BANC DE POISSONS (silhouettes argentées, vues du dessus) ──
+// Même gabarit que buildBerry/buildStoneNode (ombre + éléments répartis,
+// variantes pour casser la répétition) : sans lui, RT.FISH retombait dans
+// le "else" de drawNodes() et se dessinait avec le sprite des baies — un
+// banc de poissons visuellement identique à un buisson, illisible sur l'eau.
+function buildFish(T){
+  SPR.fish=[];
+  for(let v=0;v<2;v++){
+    const S=Math.round(T*0.95);
+    const{c,cx}=offCanvas(S,S);
+    const cxp=S/2, cyp=S*0.56;
+    cx.fillStyle='rgba(10,40,60,.25)';
+    cx.beginPath(); cx.ellipse(cxp,cyp+S*0.05,S*0.34,S*0.15,0,0,Math.PI*2); cx.fill();
+    const back='#3f6a86', flank='#7fa8c4', belly='#dce9f2';
+    const fish=(ox,oy,len,ang)=>{
+      const bx=cxp+ox*S, by=cyp+oy*S, l=len*S;
+      cx.save(); cx.translate(bx,by); cx.rotate(ang);
+      cx.fillStyle=back;
+      cx.beginPath(); cx.moveTo(-l*0.5,0); cx.lineTo(-l*0.74,-l*0.17); cx.lineTo(-l*0.74,l*0.17); cx.closePath(); cx.fill(); // queue
+      cx.beginPath(); cx.ellipse(0,0,l*0.5,l*0.2,0,0,Math.PI*2); cx.fill(); // corps
+      cx.fillStyle=flank;
+      cx.beginPath(); cx.ellipse(l*0.05,0,l*0.36,l*0.13,0,0,Math.PI*2); cx.fill();
+      cx.fillStyle=belly;
+      cx.beginPath(); cx.ellipse(l*0.08,l*0.06,l*0.26,l*0.06,0,0,Math.PI*2); cx.fill();
+      cx.restore();
+    };
+    // 4 poissons répartis, tailles/angles variés — statique (pas de rnd())
+    // pour rester identique à chaque frame, le seul mouvement venant du
+    // léger amincissement d'échelle que drawNodes() applique déjà.
+    fish(-0.16,-0.06,0.40,-Math.PI/7);
+    fish( 0.14, 0.00,0.34, Math.PI/10);
+    fish(-0.02, 0.14,0.30,-Math.PI/5);
+    fish( 0.20,-0.12,0.24, Math.PI/4);
+    SPR.fish.push({c,cx,S:S/SS});
   }
 }
 
@@ -3987,6 +4066,7 @@ function buildSprites(){
   buildStoneNode(T);
   buildGoldNode(T);
   buildBerry(T);
+  buildFish(T);
   buildBuildings(T);
   buildUnits(T);
   buildIcons();        // icônes UI (taille fixe, générées une seule fois)
@@ -4156,6 +4236,7 @@ function drawNodes(){
     if(n.type===RT.TREE)      spr=SPR.tree[n.id%SPR.tree.length];
     else if(n.type===RT.STONE)spr=SPR.stone[n.id%SPR.stone.length];
     else if(n.type===RT.GOLD) spr=SPR.gold[n.id%SPR.gold.length];
+    else if(n.type===RT.FISH) spr=SPR.fish[n.id%SPR.fish.length];
     else                      spr=SPR.berry[n.id%SPR.berry.length];
     if(spr){
       // léger amincissement quand la ressource s'épuise
@@ -5320,6 +5401,12 @@ function doRelic(u,dt){
     }
     u.relicHeld=true; // relique ramassée : elle voyage désormais avec le moine
   }
+  // Sans ce suivi, relic.x/y restaient figées à leur point de GÉNÉRATION
+  // pendant tout le trajet : si le moine meurt ou est réaffecté en route
+  // (relicFree() la libère alors tout seule), la relique "téléportait" en
+  // arrière jusqu'à ce point d'origine au lieu de rester là où elle a
+  // réellement été lâchée — potentiellement à l'autre bout de la carte.
+  relic.x=u.x; relic.y=u.y;
   u.moving=false;
   const mon=findNearestMonastery(u.x,u.y,u.owner);
   if(!mon) return; // pas de Monastère : attente sur place, relique en main
@@ -5492,7 +5579,15 @@ function doBuild(u,dt){
 
 function doAttack(u,dt){
   const tgt=unitById(u.target)||bldById(u.target);
-  if(!tgt||tgt.hp<=0){
+  // Comme updateEnemyAI (recalcul de cible IA) : une cible déjà engagée doit
+  // se désengager si une alliance (ORD.DIPLOMATIE) la fait changer de camp
+  // en cours de combat — sans ce recheck, cette unité continuait de lui
+  // taper dessus (et pouvait la tuer, XP de vétérance incluse) même alliée.
+  // `tgt.state==='garrison'` : une unité mise à l'abri (ORD.GARNIR) est
+  // documentée comme invulnérable (retirée de la grille spatiale) — sans ce
+  // garde-fou, une attaque déjà verrouillée dessus AVANT qu'elle ne rentre
+  // continuait de la blesser/tuer, contredisant cette garantie.
+  if(!tgt||tgt.hp<=0||!estHostile(u,tgt)||tgt.state==='garrison'){
     u.target=null;
     // cible abattue : on reprend la marche d'attaque là où elle s'était arrêtée
     if(u.amove){ u.destX=u.amove.x; u.destY=u.amove.y; u.state='amove'; return; }
@@ -5662,15 +5757,43 @@ function checkMerveilleVictory(){
   if(G.victory||G.gameOver) return false;
   const gagnant=factionsJouantes().find(f=>f.merveilleAchevee);
   if(!gagnant) return false;
-  if(gagnant.id===G.me){ G.victory=true; showVictory(); }
+  // Même comparaison d'équipe que la victoire par élimination (ci-dessus/
+  // updateVisuel) : sans elle, un ALLIÉ qui achève sa Merveille (mode coop
+  // ou alliance conclue via ORD.DIPLOMATIE) affichait un écran de DÉFAITE
+  // au joueur alors que son propre camp venait de gagner.
+  if(gagnant.id===G.me||gagnant.equipe===(moi()?moi().equipe:-1)){ G.victory=true; showVictory(); }
   else { G.gameOver=true; showGameOver(); }
   return true;
 }
 
+// Cherche une tuile d'eau au pourtour du Quai (même parcours que
+// hasAdjacentWater, qui a validé la construction) pour y faire naître une
+// Barque. Sans ça, spawnUnit() faisait toujours naître la Barque au SUD du
+// bâtiment quel que soit le côté réellement bordé d'eau — un Quai construit
+// rive sud d'un lac (eau au nord, placement pourtant parfaitement valide)
+// faisait naître chaque Barque sur la terre ferme, où advanceNaval() la
+// bloque net dès le premier pas (elle n'atteint jamais l'eau).
+function findDockWaterSpawn(building,d){
+  const tx=building.tx, ty=building.ty, w=d.w, h=d.h;
+  for(let dy=-1;dy<=h;dy++) for(let dx=-1;dx<=w;dx++){
+    if(dy>=0&&dy<h&&dx>=0&&dx<w) continue; // intérieur de l'emprise, pas le pourtour
+    const x=tx+dx, y=ty+dy;
+    if(x>=0&&y>=0&&x<COLS&&y<ROWS&&G.tiles[y][x]===T_WATER) return {x:(x+.5)*BASE_TILE,y:(y+.5)*BASE_TILE};
+  }
+  // Repli — ne devrait jamais servir puisque hasAdjacentWater() a déjà
+  // validé la construction, mais garde l'ancien comportement par sécurité.
+  return {x:(tx+w/2)*BASE_TILE,y:(ty+h)*BASE_TILE+BASE_TILE*.6};
+}
 function spawnUnit(type,building,owner){
   const d=BDEF[building.type];
-  const wx=(building.tx+d.w/2)*BASE_TILE+(Math.random()-.5)*BASE_TILE;
-  const wy=(building.ty+d.h)*BASE_TILE+BASE_TILE*.6;
+  let wx,wy;
+  if(type===UT.BOAT){
+    const spawn=findDockWaterSpawn(building,d);
+    wx=spawn.x; wy=spawn.y;
+  } else {
+    wx=(building.tx+d.w/2)*BASE_TILE+(Math.random()-.5)*BASE_TILE;
+    wy=(building.ty+d.h)*BASE_TILE+BASE_TILE*.6;
+  }
   const u=mkUnit(type,wx,wy,owner);
   // Point de ralliement
   if(building.rally){
@@ -5808,13 +5931,13 @@ function nearPlayerBuildingSmart(x,y,src){
 // qui connaît les équipes : indispensable dès qu'un troisième camp existe.
 // `src` est l'entité qui cherche une cible (on lit son owner).
 function prochainHostileUnite(x,y,r,src){
-  return nearestBy(x,y,r,u=>u.hp>0&&estHostile(src,u));
+  return nearestBy(x,y,r*visionMult(),u=>u.hp>0&&estHostile(src,u));
 }
 // Unités ET bâtiments hostiles (les tours prennent aussi les bâtiments).
 function prochainHostileToute(x,y,r,src){
   const u=prochainHostileUnite(x,y,r,src);
   if(u) return u;
-  let best=null,bd=r;
+  let best=null,bd=r*visionMult();
   for(const b of G.buildings){
     if(b.hp<=0||!estHostile(src,b)) continue;
     const d=Math.hypot(b.x-x,b.y-y);
@@ -5892,14 +6015,26 @@ function updateProjs(dt){
         shakeScreen(7);
         const splash=2*BASE_TILE;
         for(const u of G.units){
-          if(estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash){ dealDmg(u,p.atk,p); if(u.hp<=0) awardKillXP(p.shooterId); }
+          // u.hp>0 : sans cette garde (contrairement à la branche tir direct
+          // juste en dessous), un cadavre encore présent dans G.units jusqu'au
+          // ménage de la prochaine image reprenait des dégâts et créditait un
+          // second kill/XP de vétérance pour une mort déjà survenue ce tour.
+          // u.state!=='garrison' : une unité à l'abri est postée aux
+          // coordonnées mêmes du bâtiment (voir ORD.GARNIR) — sans cette
+          // garde, un impact de zone sur ce bâtiment la blessait quand même,
+          // contredisant l'invulnérabilité documentée de la garnison.
+          if(u.hp>0&&u.state!=='garrison'&&estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash){ dealDmg(u,p.atk,p); if(u.hp<=0) awardKillXP(p.shooterId); }
         }
         for(const b of G.buildings){
-          if(estHostile(p,b)&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash) dealDmg(b,p.atk,p);
+          if(b.hp>0&&estHostile(p,b)&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash) dealDmg(b,p.atk,p);
         }
       } else {
         const t=unitById(p.targetId)||bldById(p.targetId);
-        if(t&&t.hp>0){ dealDmg(t,p.atk,p); if(t.hp<=0) awardKillXP(p.shooterId); }
+        // estHostile(p,t) : sans cette garde, un projectile déjà en vol
+        // (jusqu'à plus d'une seconde de trajet) continuait de frapper sa
+        // cible même si une alliance l'a fait changer de camp entre-temps.
+        // t.state!=='garrison' : voir la même garde sur la branche siège.
+        if(t&&t.hp>0&&t.state!=='garrison'&&estHostile(p,t)){ dealDmg(t,p.atk,p); if(t.hp<=0) awardKillXP(p.shooterId); }
       }
       p.life=0;
     } else {
@@ -6002,6 +6137,21 @@ function spawnWave(){
       else if(e==='left')  {x=BASE_TILE*2; y=Math.random()*ROWS*BASE_TILE;}
       else                 {x=(COLS-2)*BASE_TILE; y=Math.random()*ROWS*BASE_TILE;}
     } while(++tries<40 && tileBlocked((x/BASE_TILE)|0,(y/BASE_TILE)|0));
+    if(tileBlocked((x/BASE_TILE)|0,(y/BASE_TILE)|0)){
+      // Repli : 40 tirages épuisés sans tuile libre (bordure entièrement
+      // muraillée/bâtie par le joueur) — sans lui, le pillard naissait
+      // quand même dans le mur/l'eau et pouvait rester coincé à jamais,
+      // hors d'atteinte comme inoffensif. Cherche en s'enfonçant vers le
+      // centre depuis ce point plutôt que d'abandonner sur une case bloquée.
+      outer:
+      for(let step=1;step<=COLS;step++){
+        for(const[nx,ny] of [[x+step*BASE_TILE,y],[x-step*BASE_TILE,y],[x,y+step*BASE_TILE],[x,y-step*BASE_TILE]]){
+          const tx=(nx/BASE_TILE)|0, ty=(ny/BASE_TILE)|0;
+          if(tx<0||ty<0||tx>=COLS||ty>=ROWS) continue;
+          if(!tileBlocked(tx,ty)){ x=nx; y=ny; break outer; }
+        }
+      }
+    }
     const u=mkUnit(type,x,y,FAC.PILL);
     u.hp=Math.round(u.hp*(1+G.wave*.07)*scaleHp*diff.enemyHp); u.maxHp=u.hp;
     u.atk=Math.round(u.atk*(1+G.wave*.05)*scaleAtk*diff.enemyAtk);
@@ -6676,7 +6826,11 @@ function updateUneIA(dt,a){
 
   // ── Amélioration des camps ── Forestier/Minier/Moulin, comme le joueur ;
   // appliquerUpgradeCamp() vérifie déjà elle-même le coût et l'âge requis.
-  for(const b of G.buildings){
+  // Mais elle dépense directement via canAfford/spend sur la réserve RÉELLE,
+  // sans connaître `saving` (l'épargne de montée d'âge, ci-dessus) — sans ce
+  // garde-fou, l'IA piochait dans cette épargne à chaque tick pour un camp,
+  // et pouvait rester bloquée à ne jamais monter d'âge malgré `saving`.
+  if(!saving) for(const b of G.buildings){
     if(b.owner!==a.id||b.constructing) continue;
     if(CAMP_LEVELS[b.type]) appliquerUpgradeCamp(b,a.id);
   }
@@ -6955,6 +7109,15 @@ function gestureEnd(pts,ended){
     if(pts.length===1){ anchorPan(pts[0]); return; } // reprise du déplacement, sans saut
     return;                             // plus aucun doigt
   }
+  // Deux doigts qui se lèvent l'un après l'autre (le cas normal en pratique)
+  // déclenchent DEUX gestureEnd : le premier passe par le bloc `pinching`
+  // ci-dessus (qui repasse `pinching` à false), le second arrive ici avec
+  // `pinching` déjà faux — sans ce garde-fou (même fenêtre que noGlideUntil,
+  // posée par endPinch()), il retombait jusqu'au handleTap() en bas de cette
+  // fonction et déclenchait un vrai ordre (attaque/déplacement/sélection) à
+  // l'endroit où le second doigt s'est relevé, alors que le joueur voulait
+  // seulement zoomer.
+  if(Date.now()<noGlideUntil) return;
 
   if(boxSelecting&&G.selBox){
     applyBoxSelection(G.selBox);
@@ -7060,6 +7223,11 @@ canvas.addEventListener('contextmenu',e=>{
   cancelOrDeselect();
 });
 window.addEventListener('keydown',e=>{
+  // Même garde que le handler de groupes de contrôle juste en dessous : sans
+  // elle, Échap tapé pour quitter un champ texte (chat, graine, code de
+  // partie) annulait aussi silencieusement la sélection / le mode en cours.
+  const cible=e.target;
+  if(cible&&(cible.tagName==='INPUT'||cible.tagName==='TEXTAREA')) return;
   if(e.key==='Escape') cancelOrDeselect();
 });
 
@@ -7088,6 +7256,11 @@ function rappelerGroupe(n){
   const recentrer=_dernierGroupeTouche===n&&(maintenant-_dernierGroupeAppui)<400;
   _dernierGroupeTouche=n; _dernierGroupeAppui=maintenant;
   G.sel=ids.slice(); G.mode='select';
+  // Rappeler un groupe annule net un mode construction/marche d'attaque en
+  // cours, mais sans ceci le bouton ✕ (bcancel) — affiché par ces modes —
+  // restait visible alors qu'il n'y a plus rien à annuler avec, contrairement
+  // à toute autre sortie de ces modes (exitBuild/cancelOrDeselect/handleTap).
+  document.getElementById('bcancel').style.display='none';
   refreshUI();
   if(recentrer){ const u=unitById(ids[0]); if(u) camCenterOn(u.x,u.y); }
   notify(`Groupe ${n} sélectionné (${ids.length})`,'#f0c040');
@@ -7671,7 +7844,14 @@ function applyCommand(cmd){
       if(G.units.some(u=>u.owner===cmd.f&&u.type===UT.HERO&&u.hp>0)) return KO('deja');
     }
     if(!canAfford(cost,cmd.f)) return KO('ressources');
-    if(f.pop+b.trainQ.length>=f.maxPop) return KO('pop');
+    // Total des files de TOUS les bâtiments d'entraînement de la faction,
+    // pas juste celle de `b` : sinon, queue-t-un depuis la Caserne A puis
+    // immédiatement depuis la Caserne B (place restante pour une seule
+    // recrue) passait les deux vérifications — chacune ne voyant que sa
+    // propre file, toujours vide de son point de vue — et payait deux
+    // unités pour une seule place de population réellement disponible.
+    const enFile=G.buildings.reduce((s,bb)=>bb.owner===cmd.f?s+bb.trainQ.length:s,0);
+    if(f.pop+enFile>=f.maxPop) return KO('pop');
     spend(cost,cmd.f);
     b.trainQ.push(cmd.unitType);
     if(cmd.unitType===UT.HERO) f.heroTrained=true;
@@ -7880,10 +8060,15 @@ function applyCommand(cmd){
   }
 
   case ORD.TROC: {
+    // Ignore qteDonne/qteRecoit envoyés par le client : seule la table
+    // TROC_TAUX fait foi pour les quantités (voir sa note) — cmd ne sert
+    // qu'à choisir LEQUEL des échanges autorisés on déclenche.
+    const taux=TROC_TAUX.find(t=>t.donne===cmd.donne&&t.recoit===cmd.recoit);
+    if(!taux) return KO('invalide');
     const p=resPool(cmd.f); if(!p) return KO('faction');
-    if((p[cmd.donne]||0)<cmd.qteDonne) return KO('ressources');
-    p[cmd.donne]-=cmd.qteDonne;
-    p[cmd.recoit]=(p[cmd.recoit]||0)+cmd.qteRecoit;
+    if((p[taux.donne]||0)<taux.qteDonne) return KO('ressources');
+    p[taux.donne]-=taux.qteDonne;
+    p[taux.recoit]=(p[taux.recoit]||0)+taux.qteRecoit;
     f.stats.tradesDone++;
     return OK();
   }
@@ -9255,6 +9440,10 @@ function soumettreClassement(won){
 // ── VICTOIRE ──────────────────────────────────────────────
 function showVictory(){
   G.running=false;
+  // Ferme le menu pause s'il était ouvert (ex: victoire déclenchée pendant
+  // qu'on le consultait) : #pausemenu (z:600) recouvre #overlay (z:500) et
+  // rendrait l'écran de victoire invisible/inatteignable sinon.
+  document.getElementById('pausemenu').style.display='none';
   envoyerBilanReseau();
   const fresh=finishGame(true);
   const ov=document.getElementById('overlay');
@@ -9292,6 +9481,10 @@ window.continuePlay=continuePlay;
 // ── GAME OVER ─────────────────────────────────────────────
 function showGameOver(){
   G.running=false;
+  // Idem showVictory() : ferme #pausemenu (z:600) s'il était ouvert (ex:
+  // "Abandonner la partie" cliqué DEPUIS le menu pause), sans quoi il reste
+  // peint par-dessus #overlay (z:500) et l'écran de défaite est invisible.
+  document.getElementById('pausemenu').style.display='none';
   envoyerBilanReseau();
   const fresh=finishGame(false);
   const gagnantMerveille=factionsJouantes().find(f=>f.merveilleAchevee&&f.id!==G.me);
@@ -9487,9 +9680,28 @@ function closePause(){
   requestAnimationFrame(loop);
 }
 
+// Coupe tout ce qu'une partie réseau a pu armer : sans ça, RESEAU.actif
+// restait vrai après un simple "Quitter la partie" (ou un abandon), et
+// estHote() (qui se fie à RESEAU.actif/role) désignait encore la partie
+// SOLO suivante, dans le même onglet, comme un client réseau — elle ne se
+// simulait alors plus jamais (loop() n'appelait que updateVisuel()). Les
+// minuteurs de veille réseau et de ping WebRTC continuaient aussi de
+// tourner en fond et pouvaient faire apparaître bannière de reconnexion /
+// décision hôte par-dessus une session sans rapport, minutes plus tard.
+function nettoyerReseauApresPartie(){
+  if(_minuteurVeille){ clearInterval(_minuteurVeille); _minuteurVeille=null; }
+  if(_minuteurDecision){ clearTimeout(_minuteurDecision); _minuteurDecision=null; }
+  if(window.MP&&window.MP.quitter) window.MP.quitter();
+  RESEAU.actif=false; RESEAU.role=null; RESEAU.pret=false;
+  RESEAU.enAttenteReconnexion=false; RESEAU.decisionRequise=false;
+  RESEAU.adversaire=null; RESEAU.dernier=new Map();
+  RESEAU.connusU=new Set(); RESEAU.connusB=new Set(); RESEAU.connusW=new Set();
+  RESEAU.attente=new Map();
+}
 function quitGame(){
   effacerRejoinEnLigne();
   tutoArreter();
+  if(reseauActif()) nettoyerReseauApresPartie();
   G.running=false; G.paused=false;
   document.getElementById('pausemenu').style.display='none';
   document.getElementById('overlay').style.display='flex';
@@ -9630,11 +9842,16 @@ function serialiserUnite(u){
           x:Math.round(u.x), y:Math.round(u.y),
           h:u.hp, m:u.maxHp, s:u.state, g:u.target||null,
           d:+(u.dir||0).toFixed(2), v:u.inv||0, w:u.invT||null,
-          c:u.camp||null, k:u.stance||null};
+          c:u.camp||null, k:u.stance||null,
+          // Vétérance (voir awardKillXP) : maxHp/hp suivent déjà via m/h,
+          // mais sans xp/rk/ak le client ne voit jamais l'icône vétéran/élite
+          // (RANK_THRESHOLDS[u.rank-1]) ni le bonus d'attaque réel.
+          xp:u.xp||0, rk:u.rank||0, ak:u.atk};
 }
 function deserialiserUnite(d){
   const u=mkUnit(d.t, d.x, d.y, d.o);
   u.id=d.i; u.hp=d.h; u.maxHp=d.m; u.state=d.s; u.target=d.g;
+  u.xp=d.xp||0; u.rank=d.rk||0; if(d.ak!=null) u.atk=d.ak;
   u.dir=d.d; u.inv=d.v; u.invT=d.w; u.camp=d.c; u.stance=d.k;
   u._netX=d.x; u._netY=d.y;
   return u;
@@ -9669,6 +9886,10 @@ function appliquerFaction(d){
   }
   f.res=d.r; f.age=d.a; f.ageUpQ=d.q; f.research=d.rc; f.researchQ=d.rq;
   f.pop=d.p; f.maxPop=d.mp; f.vaincu=!!d.v; f.nom=d.n; f.teinte=d.t;
+  // Sans ça, une alliance/rupture (ORD.DIPLOMATIE) qui change f.equipe côté
+  // hôte ne remonte jamais côté client une fois la faction déjà connue :
+  // seule la branche de création ci-dessus lisait d.e.
+  f.equipe=d.e;
   if(d.cv) f.civ=d.cv;
   f.merveilleAchevee=!!d.mv;
   f.heroTrained=!!d.hr;
@@ -9712,7 +9933,7 @@ function construireSnap(){
 
 // ── HOTE : delta ───────────────────────────────────────────────
 // Masque de bits par entite ; seuls les champs qui ont bouge voyagent.
-const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32;
+const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32, M_MAXHP=64, M_ATK=128;
 
 // Brouillard d'une faction ARBITRAIRE (pas forcement la locale, contrairement
 // a fogTileAt/G.fog) : sert a filtrer ce que l'hote envoie a l'adversaire.
@@ -9748,7 +9969,7 @@ function construireDelta(){
     const cle='u'+u.id, av=RESEAU.dernier.get(cle);
     if(!av){                                   // nouvelle unite : complete
       (d.newU||(d.newU=[])).push(serialiserUnite(u));
-      RESEAU.dernier.set(cle,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir});
+      RESEAU.dernier.set(cle,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir,mh:u.maxHp,ak:u.atk});
       continue;
     }
     let masque=0; const ch=[];
@@ -9758,6 +9979,13 @@ function construireDelta(){
     if(u.state!==av.s){ masque|=M_ETAT; ch.push(u.state); av.s=u.state; }
     if((u.target||null)!==(av.g||null)){ masque|=M_CIBLE; ch.push(u.target||null); av.g=u.target; }
     if(Math.abs((u.dir||0)-(av.d||0))>0.25){ masque|=M_DIR; ch.push(+(u.dir||0).toFixed(2)); av.d=u.dir; }
+    // maxHp/atk : sans eux, un boost de recherche (Fer forgé, Longue portée…)
+    // appliqué en cours de partie à des unités DÉJÀ connues du client (donc
+    // jamais repassées par newU/serialiserUnite) ne lui parvenait jamais —
+    // sa barre de vie pouvait dépasser 100% (hp synchronisé > maxHp resté
+    // à l'ancienne valeur) et son attaque affichée restait la valeur de base.
+    if(u.maxHp!==av.mh){ masque|=M_MAXHP; ch.push(u.maxHp); av.mh=u.maxHp; }
+    if(u.atk!==av.ak){ masque|=M_ATK; ch.push(u.atk); av.ak=u.atk; }
     if(masque) d.u.push([u.id,masque].concat(ch));
   }
   for(const id of RESEAU.connusU) if(!vus.has(id)){ d.rm.push(id); RESEAU.dernier.delete('u'+id); }
@@ -9889,6 +10117,8 @@ function appliquerDelta(m){
     if(masque&M_ETAT)  u.state=e[k++];
     if(masque&M_CIBLE) u.target=e[k++];
     if(masque&M_DIR)   u.dir=e[k++];
+    if(masque&M_MAXHP) u.maxHp=e[k++];
+    if(masque&M_ATK)   u.atk=e[k++];
   }
   for(const e of (m.b||[])){
     const b=bldById(e[0]); if(!b) continue;
@@ -10203,6 +10433,12 @@ function mpAbandonner(){
   effacerRejoinEnLigne();
   envoyerReseau({t:'ABANDON', par:G.me});
   const f=G.factions[G.me]; if(f) f.vaincu=true;
+  // La partie est terminée de notre point de vue : on n'a plus besoin que le
+  // guet-apens de reconnexion continue de tourner en fond — sans ça, sa
+  // bannière pouvait surgir par-dessus l'écran de fin affiché juste après
+  // (RESEAU.actif lui-même n'est PAS remis à false ici : envoyerBilanReseau(),
+  // appelé par showGameOver(), a encore besoin du canal ouvert pour partir).
+  if(_minuteurVeille){ clearInterval(_minuteurVeille); _minuteurVeille=null; }
   if(!G.gameOver){ G.gameOver=true; showGameOver(); }
 }
 window.mpAbandonner=mpAbandonner;
@@ -10341,6 +10577,11 @@ function entrerAttenteReconnexion(){
   if(RESEAU.enAttenteReconnexion) return;
   RESEAU.enAttenteReconnexion=true;
   G.paused=true;
+  // Ce voile (z:540) est déclenché par un minuteur réseau, indépendamment de
+  // ce qui est affiché à l'écran : si le joueur avait le menu pause ouvert
+  // (z:600) au moment de la coupure, il resterait peint par-dessus et le
+  // voile deviendrait invisible/inatteignable.
+  document.getElementById('pausemenu').style.display='none';
   afficherBandeauReconnexion(true);
   if(typeof RESEAU.tenterReconnexion==='function'){ try{ RESEAU.tenterReconnexion(); }catch(e){} }
   _minuteurDecision=setTimeout(()=>{
@@ -10379,6 +10620,7 @@ RESEAU.onSalonSupprime=signalerSalonSupprime;
 // Hote : la fenetre de reconnexion a expire sans nouvelles de l'invite.
 function ouvrirDecisionHote(){
   RESEAU.decisionRequise=true;
+  document.getElementById('pausemenu').style.display='none'; // voir entrerAttenteReconnexion()
   const el=document.getElementById('mp-decision-hote');
   if(el){ el.style.display='flex'; el.querySelector('.mpd-nom').textContent=(RESEAU.adversaire&&RESEAU.adversaire.nom)||'Votre adversaire'; }
 }
@@ -10406,6 +10648,7 @@ window.mpDecisionTerminer=mpDecisionTerminer;
 function afficherEcranHoteParti(){
   effacerRejoinEnLigne();
   G.paused=true; RESEAU.actif=false;
+  document.getElementById('pausemenu').style.display='none'; // voir entrerAttenteReconnexion()
   const ov=document.getElementById('overlay');
   ov.style.display='flex'; ov.classList.add('endscreen');
   ov.innerHTML=
@@ -10467,7 +10710,7 @@ function mpEstCoop(){ return !!(MODES[typeof G!=='undefined'&&G&&G.gmode?G.gmode
 function mpOuvrir(){
   document.getElementById('mppanel').style.display='flex';
   const ps=document.getElementById('mppseudo');
-  if(ps&&!ps.value) ps.value=localStorage.getItem('adc_pseudo')||'';
+  if(ps&&!ps.value){ try{ ps.value=localStorage.getItem('adc_pseudo')||''; }catch(e){} }
   const intro=document.getElementById('mpintro');
   if(intro) intro.textContent=mpEstCoop()
     ? "Rejoignez-vous à un ami pour affronter ensemble un seul seigneur IA — réglez sa difficulté sur l'écran-titre."
@@ -11097,11 +11340,22 @@ async function loadGame(key=SAVE_KEY){
     G.me=(data.me&&G.factions[data.me])?data.me:FAC.P1;
     G.seed=data.seed||G.seed;
     G.campTotal=data.campTotal||0;
-    G.wave=data.wave; G.waveTimer=data.waveTimer; G.waveActive=data.waveActive;
-    G.cam={...data.cam};
+    // Comme gameTime/targetWaves/victory trois lignes plus bas : une
+    // sauvegarde ancienne ou corrompue sans ces champs laissait sinon
+    // G.wave/waveTimer à `undefined` (HUD "Vague undefined", comparaisons
+    // NaN dans la logique de vagues) plutôt que de repartir à zéro.
+    G.wave=data.wave!=null?data.wave:0;
+    G.waveTimer=data.waveTimer!=null?data.waveTimer:FIRST_WAVE_DELAY*(DIFFS[G.difficulty]||DIFFS.normal).waveDelayMult;
+    G.waveActive=data.waveActive||false;
+    // {...data.cam} tout court donnait {} sur une sauvegarde sans ce champ,
+    // d'où G.cam.x/y undefined puis NaN dès le clampCam() qui suit.
+    G.cam={x:0,y:0,...data.cam};
     clampCam(); // même défaut que pour les bâtiments : une vieille sauvegarde
                 // sans le zoom exact peut placer la caméra hors de la carte
-    G.gameTime=data.gameTime||0; G.targetWaves=data.targetWaves||20; G.victory=data.victory||false;
+    // `||20` traiterait `targetWaves:0` (Conquête/2 rivaux/coop, où 0 est la
+    // valeur légitime — pas de vagues scriptées) comme "absent" et le
+    // remplacerait à tort par 20 : `!=null` seul garde le 0 tel quel.
+    G.gameTime=data.gameTime||0; G.targetWaves=data.targetWaves!=null?data.targetWaves:20; G.victory=data.victory||false;
     G.tiles=data.tiles; G.bmap=data.bmap;
     // Compat : brouillard absent (très vieille sauvegarde) = tout révélé
     for(const f of factionsHumaines()){
@@ -11109,13 +11363,17 @@ async function loadGame(key=SAVE_KEY){
       const g=[]; for(let y=0;y<ROWS;y++){ g[y]=[]; for(let x=0;x<COLS;x++) g[y][x]=1; }
       f.fog=g;
     }
-    G.nodes=data.nodes.map(n=>({...n, gatherers:[]}));
+    // (data.nodes||[]) etc. : comme relics/wildlife juste en dessous, une
+    // sauvegarde corrompue ou d'un ancien format sans ces champs faisait
+    // sinon planter le chargement ICI — après que G.factions/wave/cam aient
+    // déjà écrasé la partie en cours, donc sans espoir de rattrapage.
+    G.nodes=(data.nodes||[]).map(n=>({...n, gatherers:[]}));
     // Anciennes sauvegardes sans reliques (v8 pré-reliques) : liste vide,
     // sans crash — elles réapparaîtront simplement à la prochaine partie.
     G.relics=(data.relics||[]).map(r=>({...r, carrier:null}));
     // Anciennes sauvegardes sans gibier : liste vide, sans crash.
     G.wildlife=(data.wildlife||[]).map(w=>({...w}));
-    G.buildings=data.buildings.map(b=>({...b, trainQ:[...(b.trainQ||[])], farmers:[],
+    G.buildings=(data.buildings||[]).map(b=>({...b, trainQ:[...(b.trainQ||[])], farmers:[],
       level: b.level||1, // anciennes sauvegardes : pas de niveau -> Tour de Guet (niveau 1)
       foodLeft: b.type===BT.FARM ? (b.foodLeft!=null?b.foodLeft:FARM_FOOD) : (b.foodLeft||0)}));
     // Recalcule TOUJOURS x,y depuis tx,ty (indices de tuile, indépendants du
@@ -11125,7 +11383,7 @@ async function loadGame(key=SAVE_KEY){
     // décalées pour toujours — c'est ce qui rendait les bâtiments non
     // cliquables (le clic teste tx*TILE, le rendu dessinait l'ancien x,y).
     refreshNodePos();
-    G.units=data.units.map(u=>({...u, pendingAction:null}));
+    G.units=(data.units||[]).map(u=>({...u, pendingAction:null}));
     // Filet de sécurité pour les mêmes vieilles sauvegardes (zoom perdu) :
     // sans repère de grille pour une unité, on ne peut pas recalculer sa
     // position exacte comme pour les bâtiments — on s'assure juste qu'elle
@@ -11426,9 +11684,23 @@ document.getElementById('idlebtn-inner').addEventListener('click',()=>{
 window.addEventListener('resize',()=>{ resizeCanvas(); });
 
 // ── PREVENT SCROLL ────────────────────────────────────────
+// touchmove doit rester borné au canvas comme touchstart juste au-dessus :
+// sans le `if`, ce preventDefault() global tuait le scroll tactile dans TOUS
+// les panneaux (pause, succès, contrôles, classement, diplomatie, multi...),
+// malgré leur touch-action:pan-y — un événement touch garde le même `target`
+// (celui du touchstart) pendant toute la durée du geste, donc ce garde-fou
+// suffit à couvrir un drag caméra qui déborde du canvas en cours de geste.
 document.body.addEventListener('touchstart',e=>{if(e.target===canvas)e.preventDefault();},{passive:false});
-document.body.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
-document.body.addEventListener('contextmenu',e=>e.preventDefault());
+document.body.addEventListener('touchmove',e=>{if(e.target===canvas)e.preventDefault();},{passive:false});
+// Idem : sans garde de cible, ce blocage empêchait aussi le clic droit
+// natif (copier/coller/orthographe) dans les vrais champs texte (graine,
+// code de partie, chat) — le clic droit sur le canvas a de toute façon déjà
+// son propre handler dédié (juste au-dessus dans ce fichier) qui gère le
+// preventDefault ET l'annulation de sélection/construction.
+document.body.addEventListener('contextmenu',e=>{
+  if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')) return;
+  e.preventDefault();
+});
 </script>
 
 <!-- ══ TRANSPORT MULTIJOUEUR (Firebase + WebRTC) ══════════════
@@ -11513,9 +11785,14 @@ try {
   // Cohabitation volontaire avec le gAuth GIS existant (qui sert la
   // sauvegarde Drive) : on ne touche pas a ce qui marche. Le cout est un
   // second consentement Google possible ; l'unification viendra plus tard.
+  // localStorage peut lever (contexte de stockage restreint : iframe
+  // verrouillée, réglage de confidentialité) — jamais laissé remonter ici,
+  // sans quoi ce callback d'auth s'arrêterait à mi-chemin (E.uid posé,
+  // E.nom jamais assigné, prevenirEtat() jamais appelé).
+  function lirePseudoStocke(){ try{ return localStorage.getItem('adc_pseudo'); }catch(e){ return null; } }
   authMod.onAuthStateChanged(auth, u=>{
     E.uid = u?u.uid:null;
-    E.nom = u?(localStorage.getItem('adc_pseudo')||u.displayName||'Joueur'):null;
+    E.nom = u?(lirePseudoStocke()||u.displayName||'Joueur'):null;
     prevenirEtat();
   });
 
@@ -11523,14 +11800,14 @@ try {
     const p = new authMod.GoogleAuthProvider();
     const res = await authMod.signInWithPopup(auth,p);
     E.uid=res.user.uid;
-    E.nom=localStorage.getItem('adc_pseudo')||res.user.displayName||'Joueur';
+    E.nom=lirePseudoStocke()||res.user.displayName||'Joueur';
     prevenirEtat();
     return {uid:E.uid, nom:E.nom};
   };
   window.MP.deconnecter = async()=>{ await authMod.signOut(auth); prevenirEtat(); };
   window.MP.definirPseudo = nom=>{
     const t=String(nom||'').trim().slice(0,18);
-    if(t){ localStorage.setItem('adc_pseudo',t); E.nom=t; prevenirEtat(); }
+    if(t){ try{ localStorage.setItem('adc_pseudo',t); }catch(e){} E.nom=t; prevenirEtat(); }
   };
 
   // ── SALON ─────────────────────────────────────────────────

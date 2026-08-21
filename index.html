@@ -3128,18 +3128,33 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
     }
     break; }
 
-  // ── MOULIN : ailes en croix ──
+  // ── MOULIN : ailes en X plaquées sur le pignon, pas un piquet planté
+  // dans la porte. L'ancienne croix droite (bras full-hauteur non tournés)
+  // traversait le corps du bâtiment jusqu'au sol et écrasait porte/fenêtres
+  // — illisible comme moulin, lu comme une maison à l'échafaudage cassé.
+  // Ailes tournées à 45°, ancrées haut sur le toit : la portée diagonale
+  // reste courte verticalement, elle n'empiète plus sur la façade. ──
   case BT.MILL: {
     body(); roofTri(roofLt,roofCol,0.32); door(0.15); windows();
-    const mx=pw/2, my=oy+ph*0.30, arm=Math.min(pw,ph)*0.40, tw=Math.max(3,T*0.055);
-    fill(mx-tw/2,my-arm,tw,arm*2,'#6a4a24');
-    fill(mx-arm,my-tw/2,arm*2,tw,'#6a4a24');
-    const sail=ec('#e8d9b0');
-    fill(mx-tw*2.4,my-arm,tw*1.9,arm*0.55,sail);
-    fill(mx+tw*0.5,my+arm*0.45,tw*1.9,arm*0.55,sail);
-    fill(mx-arm,my+tw*0.5,arm*0.55,tw*1.9,sail);
-    fill(mx+arm*0.45,my-tw*2.4,arm*0.55,tw*1.9,sail);
-    disc(mx,my,tw*1.1,'#3a2818');
+    const mx=pw/2, my=oy+ph*0.16, arm=Math.min(pw,ph)*0.34, tw=Math.max(2,T*0.045);
+    const wood=ec('#6a4a24'), sail=ec('#e8d9b0');
+    cx.save(); cx.translate(mx,my); cx.rotate(Math.PI/4);
+    for(let k=0;k<4;k++){
+      cx.save(); cx.rotate(k*Math.PI/2);
+      // bras
+      fill(-tw/2,0,tw,arm,wood);
+      // toile triangulaire tendue sur le bras, effilée vers la pointe
+      cx.fillStyle=sail;
+      cx.beginPath();
+      cx.moveTo(-tw*0.4,arm*0.16); cx.lineTo(tw*3.1,arm*0.3); cx.lineTo(-tw*0.4,arm*0.92);
+      cx.closePath(); cx.fill();
+      // lattis : 2 barreaux perpendiculaires, lisent "voile" plutôt que planche pleine
+      fill(-tw*1.3,arm*0.42,tw*3.3,Math.max(1,tw*0.4),wood);
+      fill(-tw*1.1,arm*0.68,tw*2.7,Math.max(1,tw*0.4),wood);
+      cx.restore();
+    }
+    cx.restore();
+    disc(mx,my,tw*1.35,'#3a2818');
     break; }
 
   // ── CAMP FORESTIER : abri ouvert + rondins ──
@@ -4772,6 +4787,7 @@ function drawUnits(){
     else if(u.state==='build') icon='🔨'; else if(u.state==='heal') icon='✨';
     else if(u.state==='farm') icon='🌾';
     else if(u.state==='repair') icon='🛠';
+    else if(u.state==='relic') icon=u.relicHeld?'🏺':'➡️'; // relique en main vs. simple trajet vers elle
     if(icon){ ctx.font='9px serif'; ctx.textAlign='center'; ctx.fillText(icon,sx,drawY-6); }
     // badge : ressources portées
     if(u.inv>0&&u.type===UT.VIL){

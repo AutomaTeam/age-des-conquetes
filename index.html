@@ -126,12 +126,54 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 }
 #seltitle { font-family:'Cinzel',serif;color:var(--gold-l);font-size:13px;margin-bottom:3px; }
 #hprow { display:flex;align-items:center;gap:6px;margin-bottom:2px; }
-#hpbar { flex:1;height:5px;background:rgba(255,255,255,.15);border-radius:3px;overflow:hidden; }
-#hpfill { height:100%;background:#2ecc71;border-radius:3px;transition:width .3s; }
+/* Jauge de PV : creusée dans le panneau (ombre interne) et remplie d'un
+   dégradé surmonté d'un filet clair, plutôt qu'un aplat vert de 5 px de haut
+   qui traversait tout l'écran comme un trait de surligneur. */
+#hpbar {
+  flex:1;height:7px;border-radius:4px;overflow:hidden;
+  background:rgba(0,0,0,.55);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.6),0 0 0 1px rgba(212,160,23,.22);
+}
+#hpfill {
+  height:100%;border-radius:4px;transition:width .3s;
+  background:linear-gradient(180deg,#5ee08c,#2ecc71 55%,#1f9d55);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35);
+}
 #seldesc { font-size:11px;color:#999;font-family:'Crimson Text',serif; }
 #actbar {
   padding:6px 8px 8px;
   display:flex;flex-wrap:wrap;gap:5px;justify-content:center;min-height:72px;align-items:center;
+}
+
+/* ── MISE EN PAGE LARGE (ordinateur / tablette) ──
+   Toute l'interface a été dessinée pour un téléphone : barres tendues d'un
+   bord à l'autre. Sur un écran de 1 280 px, les quatre ressources se
+   retrouvaient éparpillées à 300 px les unes des autres et la jauge de PV du
+   bâtiment sélectionné faisait 1 250 px de long. On regroupe donc le contenu
+   au centre, dans une largeur lisible, sans rien changer au rendu mobile. */
+@media (min-width:760px) {
+  #topbar { justify-content:center;gap:22px; }
+  .tb-spacer { display:none; }          /* pause et badge ont la place hors du groupe */
+  .ri, .pi {
+    background:rgba(0,0,0,.34);
+    border:1px solid rgba(212,160,23,.22);
+    padding:2px 11px;border-radius:9px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .ri .val { text-shadow:0 1px 2px rgba(0,0,0,.8); }
+  /* Le fond du panneau reste pleine largeur (il ancre la barre au bas de
+     l'écran) ; seul son CONTENU est ramené au centre. */
+  /* Nommer les enfants un par un plutôt qu'un `> *` : #deselbtn est un enfant
+     de #selinfo en position absolue, et lui donner une largeur de 920 px le
+     transformait en bandeau qui recouvrait toute la jauge de PV. */
+  /* Mini-carte : 88 px, c'était la taille d'un pouce sur téléphone. Sur un
+     écran de bureau, elle devient réellement consultable — la résolution
+     interne (176) suit déjà. */
+  #minimap { width:132px;height:132px; }
+  #seltitle, #hprow, #seldesc, #actbar {
+    width:100%;max-width:920px;margin-left:auto;margin-right:auto;
+  }
+  #selinfo { padding-left:14px;padding-right:46px; }
 }
 
 /* ── BUTTONS ── */
@@ -235,6 +277,29 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   animation:overlayIn .5s ease-out;
 }
 @keyframes overlayIn { from{opacity:0} to{opacity:1} }
+/* Deux torches qui respirent derrière la bannière. Le fond de l'écran-titre
+   était entièrement statique : sur un écran large, ça faisait beaucoup de
+   brun immobile autour de la carte. Deux pseudo-éléments animés en
+   opacité/échelle seulement — donc composés par le GPU, sans repeindre le
+   dégradé de fond à chaque image — suffisent à faire vaciller la salle.
+   Neutralisés si le joueur a demandé moins d'animations (voir plus bas). */
+#overlay::before, #overlay::after {
+  content:'';position:absolute;z-index:-1;pointer-events:none;
+  width:46vmax;height:46vmax;border-radius:50%;
+  background:radial-gradient(circle, rgba(255,168,54,.13), rgba(255,120,20,.05) 45%, transparent 70%);
+  animation:torch 5.5s ease-in-out infinite alternate;
+  will-change:opacity,transform;
+}
+#overlay::before { top:-12vmax;left:-10vmax; }
+#overlay::after  { bottom:-14vmax;right:-12vmax;animation-duration:7.3s;animation-delay:-2.6s;
+                   background:radial-gradient(circle, rgba(226,74,44,.11), rgba(150,30,10,.05) 45%, transparent 70%); }
+@keyframes torch {
+  from { opacity:.55;transform:scale(.94); }
+  to   { opacity:1;  transform:scale(1.06); }
+}
+@media (prefers-reduced-motion:reduce) {
+  #overlay::before, #overlay::after { animation:none;opacity:.8; }
+}
 /* Écran de fin de partie : bien plus haut que l'écran-titre (bilan chiffré +
    succès). Un conteneur flex centré verticalement rogne le HAUT du contenu
    dès qu'il déborde — on repasse donc en alignement haut, seul moyen de
@@ -917,7 +982,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 <div id="bigbanner"></div>
 
 <!-- ── MINIMAP ── -->
-<div id="minimap"><canvas id="mm" width="88" height="88"></canvas></div>
+<div id="minimap"><canvas id="mm" width="176" height="176"></canvas></div>
 
 <!-- ── RACCOURCIS RAPIDES ──
      Le zoom se fait à la molette/au pincement (déjà supporté) : plus besoin
@@ -2472,6 +2537,7 @@ const SPR={ terrain:{}, tree:[], stone:[], gold:[], berry:[], bld:{}, unit:{} };
 const PIXEL=4; // résolution interne du pixel art (px logiques par "gros pixel")
 const SS=3;    // supersampling : sprites générés en 3×, dessinés réduits (lissés) => rendu fin
 const GRASS_VARIANTS=8; // nb de textures d'herbe distinctes (buildTerrain ↔ drawMap doivent s'accorder)
+const WATER_VARIANTS=6; // idem pour l'eau (buildTerrain ↔ drawMap)
 
 // Crée un canvas hors-écran
 function offCanvas(w,h){
@@ -2495,7 +2561,13 @@ function srnd(seed){ let s=seed%2147483647; if(s<=0)s+=2147483646; return ()=>(s
 // et une décoration signature par variante — 8 textures d'herbe distinctes
 // au lieu de 6, pour casser la répétition sur une grande carte.
 function buildTerrain(T){
-  const grassBase=['#4c7a30','#568636','#5f9140','#4a7a33','#608f3d','#537e35','#588a39','#4e7d34'];
+  // Base QUASI UNIE d'une variante à l'autre (±2 sur chaque composante) :
+  // l'ancienne palette s'étalait de #4a7a33 à #609140, soit ~20 % d'écart de
+  // luminosité — assez pour que chaque tuile se lise comme un carré distinct
+  // et que la carte entière apparaisse en damier. La variété doit venir des
+  // DÉTAILS (touffes, fleurs, galets), jamais du fond : lui doit être
+  // invisible d'une case à l'autre.
+  const grassBase=['#54832f','#568530','#538130','#55842e','#568331','#54822f','#558430','#538230'];
   for(let v=0;v<GRASS_VARIANTS;v++){
     const{c,cx}=offCanvas(T,T);
     const rnd=srnd(v*97+13);
@@ -2504,11 +2576,14 @@ function buildTerrain(T){
     // Touffes organiques (ombre/lumière) en ellipses douces plutôt qu'en
     // carrés alignés sur une grille : une fois le sprite réduit avec
     // lissage, ça se lit comme des zones naturelles, pas un damier.
-    const nBlobs=7+((rnd()*4)|0);
+    // Touffes plus nombreuses mais BEAUCOUP plus discrètes : une grosse tache
+    // à 20 % d'opacité tenant sur une seule case se lit comme « cette tuile-là
+    // est plus sombre » ; dix taches à 8 % se lisent comme du relief.
+    const nBlobs=11+((rnd()*5)|0);
     for(let i=0;i<nBlobs;i++){
-      const bx=rnd()*T, by=rnd()*T, br=T*(0.10+rnd()*0.16);
+      const bx=rnd()*T, by=rnd()*T, br=T*(0.07+rnd()*0.11);
       cx.beginPath(); cx.ellipse(bx,by,br,br*0.72,rnd()*Math.PI,0,Math.PI*2);
-      cx.fillStyle=rnd()<0.55?'rgba(35,62,22,.20)':'rgba(140,185,95,.16)';
+      cx.fillStyle=rnd()<0.55?'rgba(35,62,22,.09)':'rgba(150,195,105,.08)';
       cx.fill();
     }
 
@@ -2532,8 +2607,15 @@ function buildTerrain(T){
     // brindille, marguerite, feuilles mortes, pousse claire) : avec 8
     // variantes bien différenciées, aucune tuile ne ressemble vraiment à sa
     // voisine même sur une grande carte.
+    // Une variante sur deux seulement porte son détail : avec un détail par
+    // tuile, le tapis d'herbe se couvrait de confettis colorés (fleurs,
+    // trèfles, champignons) dès qu'on zoomait. Les variantes impaires restent
+    // de l'herbe nue et servent de respiration entre les autres.
     const dx=(rnd()*(T-12)|0)+6, dy=(rnd()*(T-12)|0)+6;
-    switch(v%8){
+    // …et parmi les huit décors dessinés plus bas, on ne garde que les quatre
+    // discrets (fleur jaune, galets, marguerite, brindille) : trèfle mauve,
+    // champignon rouge et feuilles mortes tranchaient trop sur le vert.
+    if(v%2===0) switch([0,1,5,4][v>>1]){
       case 0: // fleur jaune
         px(cx,dx,dy,1,3,'#3a6024');
         cx.fillStyle='#f0d55a'; cx.beginPath(); cx.arc(dx,dy-2,2.6,0,Math.PI*2); cx.fill();
@@ -2572,14 +2654,30 @@ function buildTerrain(T){
         px(cx,dx,dy,2,5,'#3f6b28'); px(cx,dx+2,dy+2,2,3,'#4a7d30');
     }
 
-    // Touffes sur les bords : estompe la limite entre tuiles voisines
-    for(let i=0;i<10;i++){
-      const e=(rnd()*4)|0, o=(rnd()*T)|0, dth=Math.max(2,T/12|0);
-      cx.fillStyle=rnd()<0.5?'rgba(70,110,45,.28)':'rgba(105,150,70,.22)';
+    // Touffes sur les bords : estompe la limite entre tuiles voisines.
+    // Réparties sur les QUATRE bords à chaque fois (et non tirées au hasard),
+    // pour qu'aucune tuile ne présente un côté nu contre un côté chargé —
+    // c'est ce déséquilibre qui dessinait des lignes de séparation nettes.
+    for(let e=0;e<4;e++) for(let i=0;i<4;i++){
+      const o=(rnd()*T)|0, dth=Math.max(2,T/14|0);
+      cx.fillStyle=rnd()<0.5?'rgba(70,110,45,.16)':'rgba(110,155,72,.13)';
       if(e===0) cx.fillRect(o,0,dth,dth); else if(e===1) cx.fillRect(o,T-dth,dth,dth);
       else if(e===2) cx.fillRect(0,o,dth,dth); else cx.fillRect(T-dth,o,dth,dth);
     }
     SPR.terrain['grass'+v]={c,cx};
+    // Trois copies miroir par variante (H, V, HV). 8 textures deviennent 32
+    // orientations : sur une carte de 3 600 cases, deux tuiles identiques
+    // côte à côte deviennent rares, et le motif répétitif disparaît sans
+    // coûter une seule texture supplémentaire à dessiner à la main.
+    for(const m of [1,2,3]){
+      const f=offCanvas(T,T);
+      f.cx.save();
+      f.cx.translate((m&1)?T:0,(m&2)?T:0);
+      f.cx.scale((m&1)?-1:1,(m&2)?-1:1);
+      f.cx.drawImage(c,0,0);
+      f.cx.restore();
+      SPR.terrain['grass'+v+'m'+m]=f;
+    }
   }
 
   // Sable (rives) — grain plus riche, dégradé et quelques galets/bois flotté
@@ -2601,35 +2699,65 @@ function buildTerrain(T){
     SPR.terrain.sand={c,cx};
   }
 
-  // Eau : 4 frames d'animation — deux trains de vaguelettes croisés et des
-  // éclats de soleil qui scintillent, pour une surface vivante plutôt qu'un
-  // aplat bleu. Teinte de fond UNIE (pas de dégradé) : un dégradé qui se
-  // répète à chaque tuile recrée une bande claire/sombre à chaque bord de
-  // case — visible comme une grille sur toute la carte une fois assemblée.
-  for(let f=0;f<4;f++){
-    const{c,cx}=offCanvas(T,T); const rnd=srnd(f*31+7);
+  // ── EAU ───────────────────────────────────────────────────────────
+  // La version d'origine posait, sur CHAQUE tuile, quatre barres claires
+  // horizontales pleine largeur et trois barres verticales pleine hauteur,
+  // toujours aux mêmes coordonnées. Assemblées, ces barres se prolongeaient
+  // d'une tuile à l'autre sur toute la longueur du lac : un lac entier se
+  // lisait comme du papier millimétré, de loin le pire défaut du rendu.
+  //
+  // Ici, deux principes :
+  //  1. Aucune ligne droite. Les crêtes sont des sinusoïdes dont le déphasage
+  //     revient exactement à zéro aux bords gauche et droit de la tuile
+  //     (période entière sur T) — elles se raccordent donc parfaitement à la
+  //     tuile voisine sans jamais former de segment rectiligne.
+  //  2. WATER_VARIANTS jeux de crêtes différents, choisis par un hachage de
+  //     la position (comme l'herbe) : deux tuiles voisines n'ont ni les mêmes
+  //     hauteurs de crête ni les mêmes amplitudes, donc plus rien ne s'aligne
+  //     à l'échelle du lac.
+  // Les barres verticales, elles, disparaissent purement et simplement : rien
+  // dans une surface d'eau vue de dessus ne justifie un réseau orthogonal.
+  for(let v=0;v<WATER_VARIANTS;v++) for(let f=0;f<4;f++){
+    const{c,cx}=offCanvas(T,T); const rnd=srnd(v*131+f*31+7);
     px(cx,0,0,T,T,'#215f92');
-    // vaguelettes principales (horizontales, défilent avec la frame)
-    for(let i=0;i<4;i++){
-      const wy=((i*T/4 + f*T/5)%T)|0;
-      // pleine largeur (pas de marge) : une vaguelette qui s'arrête avant le
-      // bord de la tuile se recolle mal à celle de la tuile voisine et se
-      // lit comme un pointillé au niveau de chaque jointure.
-      cx.fillStyle='rgba(210,235,255,.24)'; cx.fillRect(0,wy,T,3);
-      cx.fillStyle='rgba(255,255,255,.22)'; cx.fillRect(T/3|0,wy+2,T/3|0,2);
-    }
-    // ondulations croisées (fréquence et sens différents) : casse l'effet
-    // « bandes parallèles » d'un seul train de vagues.
+    // Fonds : deux bandes très sombres et très douces, elles aussi ondulées,
+    // qui donnent un peu de profondeur sans marquer de bord de tuile.
+    const bande=(base,amp,per,ph,thick,col)=>{
+      cx.strokeStyle=col; cx.lineWidth=thick; cx.lineCap='round'; cx.lineJoin='round';
+      // Tracé répété en -T / 0 / +T : une crête qui déborde par le haut
+      // ressort par le bas, donc la tuile reste raccordable verticalement.
+      for(const off of [-T,0,T]){
+        cx.beginPath();
+        for(let x=0;x<=T;x+=2){
+          const y=base+off+Math.sin(x/T*Math.PI*2*per+ph)*amp;
+          if(x===0) cx.moveTo(x,y); else cx.lineTo(x,y);
+        }
+        cx.stroke();
+      }
+    };
+    // Ces bandes-là sont volontairement IDENTIQUES d'une variante à l'autre
+    // (aucun `v` dans leur position ni leur phase) : larges et sombres, elles
+    // laisseraient une marche visible à chaque jointure si elles sautaient de
+    // niveau entre deux tuiles voisines. Ce sont les crêtes claires, fines et
+    // ondulées, qui portent toute la variété — leur décalage se lit comme du
+    // clapot, pas comme une grille.
+    for(let i=0;i<2;i++) bande((i+0.35)*T/2+f*T/9, T*0.07, 1, i*1.9, T*0.16, 'rgba(14,48,80,.16)');
+    // Crêtes claires : 3 par tuile, hauteurs/amplitudes/périodes dépendantes
+    // de la variante, décalées d'un quart de tuile par image d'animation.
     for(let i=0;i<3;i++){
-      const wx=((i*T/3 - f*T/6 + T*2)%T)|0;
-      cx.fillStyle='rgba(160,210,240,.14)'; cx.fillRect(wx,0,2,T);
+      const base=((i+0.5)*T/3 + v*T*0.11 + f*T/4)%T;
+      const amp=T*(0.025+0.030*(((v+i)%3)/2));
+      const per=1+((v+i)%2);           // 1 ou 2 ondulations complètes
+      const ph=(v*2.1+i*1.3);
+      bande(base, amp, per, ph, Math.max(1.2,T*0.028), 'rgba(206,234,255,.20)');
+      bande(base-T*0.035, amp, per, ph, Math.max(1,T*0.016), 'rgba(255,255,255,.16)');
     }
     // éclats de soleil scintillants
-    for(let i=0;i<3;i++){
+    for(let i=0;i<4;i++){
       const sx2=(rnd()*T)|0, sy2=(rnd()*T)|0;
-      cx.fillStyle='rgba(255,255,255,.55)'; cx.fillRect(sx2,sy2,1,1);
+      cx.fillStyle='rgba(255,255,255,.5)'; cx.fillRect(sx2,sy2,Math.max(1,T*0.012|0),Math.max(1,T*0.012|0));
     }
-    SPR.terrain['water'+f]={c,cx};
+    SPR.terrain['water'+v+'_'+f]={c,cx};
   }
 }
 
@@ -3237,19 +3365,49 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
       disc(sx2,bodyTop+bodyH*0.3,T*0.11,enemy?'#8a2a2a':'#b0b6bc');
       disc(sx2,bodyTop+bodyH*0.3,T*0.05,'#e8c84a');
     }
-    // habillage qui s'enrichit avec l'âge du joueur (voir buildBuildings)
-    if(age>=1){ // Âge Féodal : second étendard
-      fill(pw*0.85,bodyTop+bodyH*0.08,bw2,bodyH*0.5,enemy?'#c0392b':'#2c5aa0');
-      fill(pw*0.85,bodyTop+bodyH*0.08,bw2,Math.max(2,T*0.05),'#caa83a');
+    // ── Habillage qui s'enrichit avec l'âge du propriétaire ──
+    // Les trois paliers d'origine étaient là mais invisibles : mesurés, ils ne
+    // changeaient que 0,9 % puis 0,7 % des pixels du sprite (contre 17 % à
+    // 53 % pour le Mur, où la progression se voit vraiment). Un étendard collé
+    // au bord droit et à moitié mangé par le biseau, un parapet de trois
+    // pixels de haut, un râtelier filiforme : au format de jeu, les quatre
+    // Casernes étaient rigoureusement identiques. Chaque palier change
+    // désormais la SILHOUETTE ou une grande surface.
+    if(age>=1){ // Âge Féodal : second étendard + auvent de bois sur l'entrée
+      fill(pw*0.75,bodyTop+bodyH*0.08,bw2,bodyH*0.62,enemy?'#c0392b':'#2c5aa0');
+      fill(pw*0.75,bodyTop+bodyH*0.08,bw2,Math.max(2,T*0.05),'#caa83a');
+      const aw=pw*0.46, ay=bodyTop+bodyH*0.42;
+      fill(pw/2-aw/2,ay,aw,Math.max(3,T*0.09),'#6a4a24');                       // toit d'auvent
+      fill(pw/2-aw/2,ay,aw,Math.max(1,T*0.03),'#8a6438');
+      fill(pw/2-aw/2,ay,Math.max(2,T*0.045),bodyH*0.4,'#5a3c1c');               // poteaux
+      fill(pw/2+aw/2-Math.max(2,T*0.045),ay,Math.max(2,T*0.045),bodyH*0.4,'#5a3c1c');
     }
-    if(age>=2){ // Âge des Châteaux : parapet renforcé sur le toit
-      const mw=pw*0.9/6;
-      for(let k=0;k<6;k++) if(k%2===0) fill(pw*0.05+k*mw,bodyTop-T*0.06,mw*0.8,T*0.1,roofDk);
+    if(age>=2){ // Âge des Châteaux : soubassement de pierre + vrai parapet crénelé
+      const stc=enemy?'#7a6a68':'#9a968c', stcDk=darken(stc,26);
+      fill(0,H-bodyH*0.34,pw,bodyH*0.34,stc);
+      fill(0,H-bodyH*0.34,pw,Math.max(2,T*0.04),lighten(stc,16));
+      const bwS=Math.max(4,T*0.2), bhS=Math.max(3,T*0.12);
+      let rowS=0;
+      for(let yy=H-bodyH*0.34+bhS;yy<H;yy+=bhS){
+        const offS=(rowS++%2)*bwS*0.5;
+        for(let xx=offS;xx<pw-1;xx+=bwS) fill(xx,yy,Math.max(1,bwS*0.9),1,'rgba(0,0,0,.22)');
+      }
+      fill(0,H-Math.max(3,T*0.06),pw,Math.max(3,T*0.06),stcDk);
+      const mw=pw/7;                                                            // parapet, deux fois plus haut
+      fill(0,bodyTop-T*0.10,pw,T*0.10,stcDk);
+      for(let k=0;k<7;k++) if(k%2===0) fill(k*mw,bodyTop-T*0.26,Math.ceil(mw),T*0.17,stc);
     }
-    if(age>=3){ // Âge Impérial : râtelier d'armes doré à l'entrée
-      fill(pw*0.42,H-bodyH*0.42,Math.max(2,T*0.03),bodyH*0.34,'#caa83a');
-      fill(pw*0.58,H-bodyH*0.42,Math.max(2,T*0.03),bodyH*0.34,'#caa83a');
-      fill(pw*0.4,H-bodyH*0.46,pw*0.2,Math.max(2,T*0.03),'#caa83a');
+    if(age>=3){ // Âge Impérial : faîtage doré, oriflamme au sommet, râtelier garni
+      fill(0,bodyTop-T*0.30,pw,Math.max(2,T*0.045),'#caa83a');
+      fill(pw/2-Math.max(2,T*0.035),oy-T*0.16,Math.max(3,T*0.07),T*0.5,'#caa83a');  // hampe
+      fill(pw/2,oy-T*0.16,T*0.34,T*0.2,enemy?'#8b1a1a':'#2980b9');                  // oriflamme
+      fill(pw/2,oy-T*0.16,T*0.34,Math.max(1,T*0.035),'#e8c84a');
+      const rky=H-bodyH*0.5;                                                        // râtelier : 4 lances + bouclier
+      fill(pw*0.34,rky+bodyH*0.3,pw*0.32,Math.max(2,T*0.045),'#6a4a24');
+      for(let k=0;k<4;k++) fill(pw*0.36+k*pw*0.08,rky,Math.max(2,T*0.03),bodyH*0.32,'#cfcfd6');
+      for(let k=0;k<4;k++) fill(pw*0.355+k*pw*0.08,rky,Math.max(2,T*0.045),Math.max(2,T*0.05),'#e8e8ee');
+      disc(pw*0.22,rky+bodyH*0.16,T*0.13,'#caa83a');
+      disc(pw*0.22,rky+bodyH*0.16,T*0.06,enemy?'#8b1a1a':'#2980b9');
     }
     break; }
 
@@ -3355,9 +3513,23 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
         fill(tx2,bodyTop-T*0.22,tw2,T*0.08,roofDk);
       }
     }
-    if(age>=3){ // Âge Impérial : liseré doré + bannières supplémentaires
-      fill(0,bodyTop-2,pw,2,'#caa83a');
-      flag(pw*0.22); flag(pw*0.78);
+    if(age>=3){
+      // Âge Impérial. Le palier se limitait à un liseré de 2 px et deux
+      // fanions : 4 % de pixels changés, invisible en jeu alors que c'est
+      // l'aboutissement de toute une partie. On ajoute une grande tenture
+      // armoriée sur la façade et des merlons dorés — deux grandes surfaces,
+      // donc lisibles d'un coup d'œil sur la carte.
+      fill(0,bodyTop-2,pw,Math.max(2,T*0.05),'#caa83a');
+      const n4=Math.max(3,Math.round(pw/(T*0.5))), cw4=pw/n4;
+      for(let k=0;k<n4;k++) if(k%2===0) fill(k*cw4,bodyTop-T*0.3,Math.ceil(cw4),Math.max(2,T*0.05),'#caa83a');
+      const tw4=pw*0.2, ty4=bodyTop+T*0.06;
+      for(const tx4 of [pw*0.3-tw4/2,pw*0.7-tw4/2]){
+        fill(tx4,ty4,tw4,bodyH*0.42,enemy?'#8b1a1a':'#2c5aa0');
+        fill(tx4,ty4,tw4,Math.max(2,T*0.04),'#caa83a');
+        fill(tx4,ty4+bodyH*0.42,tw4/2,Math.max(3,T*0.07),enemy?'#8b1a1a':'#2c5aa0'); // pointe de tenture
+        disc(tx4+tw4/2,ty4+bodyH*0.2,T*0.09,'#caa83a');
+      }
+      flag(pw*0.16); flag(pw*0.84);
     }
     break; }
 
@@ -3395,16 +3567,51 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
     break; }
 
   // ── AVANT-POSTE : petite palissade + brasero de guet ──
+  // ── AVANT-POSTE : échafaudage + plateforme de guet + brasier de signal ──
+  // Trois poteaux verticaux, une traverse et une pastille orange : ça se
+  // lisait comme une cage de but avec un ballon. Un avant-poste sert à VOIR
+  // loin — la silhouette doit donc raconter un poste surélevé : jambes de
+  // bois écartées vers le bas (contreventement), plancher de guet nettement
+  // marqué, garde-corps ajouré et feu de signal posé DESSUS, pas au milieu.
   case BT.OUTPOST: {
-    const pw2=Math.max(2,T*0.06);
-    for(const px3 of [pw*0.08,pw*0.5,pw*0.92]) fill(px3-pw2/2,bodyTop-T*0.1,pw2,bodyH+T*0.1,ec('#7a5a34'));
-    fill(0,bodyTop+bodyH*0.3,pw,Math.max(2,T*0.06),ec('#5a3e20'));
-    const bx=pw*0.5, by=bodyTop+bodyH*0.14;
-    fill(bx-Math.max(2,T*0.05),by,Math.max(3,T*0.1),T*0.16,'#3a2c1c'); // brasero
-    cx.fillStyle='rgba(255,140,40,.85)';
-    cx.beginPath(); cx.arc(bx,by-T*0.03,T*0.07,0,Math.PI*2); cx.fill();
-    cx.fillStyle='rgba(255,210,120,.7)';
-    cx.beginPath(); cx.arc(bx,by-T*0.06,T*0.035,0,Math.PI*2); cx.fill();
+    const bois=ec('#7a5a34'), boisDk=ec('#4a3218'), boisLt=ec('#9a7448');
+    const pw2=Math.max(2,T*0.055);
+    const plancher=bodyTop+bodyH*0.30;
+    // pieds évasés : deux montants qui s'écartent vers le sol
+    cx.save();
+    cx.strokeStyle=bois; cx.lineWidth=pw2; cx.lineCap='butt';
+    cx.beginPath();
+    cx.moveTo(pw*0.24,plancher); cx.lineTo(pw*0.10,H);
+    cx.moveTo(pw*0.76,plancher); cx.lineTo(pw*0.90,H);
+    cx.moveTo(pw*0.40,plancher); cx.lineTo(pw*0.36,H);
+    cx.moveTo(pw*0.60,plancher); cx.lineTo(pw*0.64,H);
+    cx.stroke();
+    // croix de Saint-André : c'est ce détail qui dit « échafaudage »
+    cx.strokeStyle=boisDk; cx.lineWidth=Math.max(1.5,T*0.035);
+    cx.beginPath();
+    cx.moveTo(pw*0.16,H-bodyH*0.06); cx.lineTo(pw*0.84,plancher+bodyH*0.12);
+    cx.moveTo(pw*0.84,H-bodyH*0.06); cx.lineTo(pw*0.16,plancher+bodyH*0.12);
+    cx.stroke();
+    cx.restore();
+    // plancher de guet
+    fill(pw*0.06,plancher,pw*0.88,Math.max(3,T*0.085),bois);
+    fill(pw*0.06,plancher,pw*0.88,Math.max(1,T*0.03),boisLt);
+    fill(pw*0.06,plancher+Math.max(3,T*0.085),pw*0.88,Math.max(1,T*0.025),boisDk);
+    // garde-corps ajouré
+    fill(pw*0.10,plancher-T*0.16,Math.max(2,T*0.045),T*0.16,bois);
+    fill(pw*0.86,plancher-T*0.16,Math.max(2,T*0.045),T*0.16,bois);
+    fill(pw*0.10,plancher-T*0.16,pw*0.80,Math.max(2,T*0.04),boisLt);
+    // brasier de signal, posé SUR la plateforme
+    const bx=pw*0.5, by=plancher-T*0.30;
+    fill(bx-Math.max(2,T*0.075),by+T*0.14,Math.max(3,T*0.15),Math.max(2,T*0.05),'#2e2418'); // trépied
+    fill(bx-Math.max(2,T*0.09),by+T*0.06,Math.max(4,T*0.18),T*0.10,'#3a2c1c');              // vasque
+    fill(bx-Math.max(2,T*0.09),by+T*0.06,Math.max(4,T*0.18),Math.max(1,T*0.025),'#5a4830');
+    cx.fillStyle='rgba(255,120,30,.9)';
+    cx.beginPath(); cx.arc(bx,by+T*0.02,T*0.085,0,Math.PI*2); cx.fill();
+    cx.fillStyle='rgba(255,190,90,.95)';
+    cx.beginPath(); cx.arc(bx,by-T*0.02,T*0.05,0,Math.PI*2); cx.fill();
+    cx.fillStyle='rgba(255,240,190,.9)';
+    cx.beginPath(); cx.arc(bx,by-T*0.05,T*0.025,0,Math.PI*2); cx.fill();
     break; }
 
   // ── PORTAIL : montants de pierre + vantail de bois, ouvert ou fermé ──
@@ -3649,33 +3856,115 @@ function buildUnits(T){
 // AVANT le cavalier (arrière-plan) : sans elle, ces unités n'étaient qu'un
 // rectangle brun accolé au torse, illisible comme "monté".
 function drawHorse(cx,cxp,S,enemy){
-  // Contraste renforcé + crinière + tête agrandie : la version précédente
-  // (pattes fines rapprochées + tête minuscule de la même teinte que le
-  // corps) se lisait comme un tabouret à 4 pieds plutôt qu'un cheval,
-  // surtout une fois le cavalier assis dessus. cf. relecture graphique.
-  const hCol=enemy?'#2a1e18':'#7a4f2c', hDk=shade(hCol,-28), hLt=shade(hCol,22);
-  const maneCol=shade(hCol,-42), hoofCol='#2a1c10';
-  const gy=S*0.66;                                             // ligne du dos
-  // 4 pattes : paire avant légèrement avancée, paire arrière plantée — une
-  // posture, pas un aplomb de mobilier — + sabots clairs qui les ancrent au sol.
-  px(cx,cxp-0.27*S,gy-S*0.015,S*0.06,S*0.27,hDk);
-  px(cx,cxp-0.15*S,gy+S*0.01, S*0.06,S*0.24,hDk);
-  px(cx,cxp+0.11*S,gy+S*0.01, S*0.06,S*0.24,hDk);
-  px(cx,cxp+0.25*S,gy-S*0.015,S*0.06,S*0.27,hDk);
-  px(cx,cxp-0.27*S,gy+S*0.23,S*0.06,S*0.03,hoofCol);
-  px(cx,cxp+0.25*S,gy+S*0.23,S*0.06,S*0.03,hoofCol);
-  px(cx,cxp-S*0.3,gy-S*0.17,S*0.56,S*0.22,hCol);                // corps, large et net
-  px(cx,cxp-S*0.3,gy-S*0.17,S*0.56,Math.max(2,S*0.05),hLt);     // reflet dorsal, plus large : casse le bloc
-  px(cx,cxp-S*0.3,gy+S*0.03,S*0.56,Math.max(2,S*0.05),hDk);     // ombre de ventre, plus large
-  px(cx,cxp+0.16*S,gy-S*0.37,S*0.14,S*0.28,hCol);               // encolure tendue vers l'avant, plus haute
-  px(cx,cxp+0.14*S,gy-S*0.33,S*0.06,S*0.24,maneCol);            // crinière : identifie « cheval » d'un coup d'œil
-  px(cx,cxp+0.25*S,gy-S*0.46,S*0.18,S*0.15,hCol);                // tête, bien plus grande que la version précédente
-  px(cx,cxp+0.25*S,gy-S*0.46,S*0.06,S*0.15,maneCol);             // toupet sombre entre les oreilles
-  px(cx,cxp+0.39*S,gy-S*0.42,S*0.05,S*0.07,'#1a1410');           // œil
-  px(cx,cxp+0.37*S,gy-S*0.33,S*0.07,S*0.04,hDk);                 // museau ombré : détache la tête du corps
-  px(cx,cxp-S*0.35,gy-S*0.14,S*0.07,S*0.28,hDk);                 // queue
-  px(cx,cxp-S*0.02,gy-S*0.19,S*0.18,S*0.07,enemy?'#4a2020':'#5a3a1a'); // selle
-  px(cx,cxp-S*0.02,gy-S*0.19,S*0.18,Math.max(1,S*0.02),'rgba(255,255,255,.2)');
+  // Réécrit : la version précédente empilait un corps rectangulaire plat, une
+  // encolure filiforme et quatre pattes droites régulièrement espacées — vu
+  // de loin, et surtout une fois le cavalier assis dessus, ça se lisait comme
+  // un banc à quatre pieds. Trois changements portent toute la lisibilité :
+  //   • une silhouette COURBE (poitrail bombé, croupe ronde, ligne de ventre
+  //     remontante) au lieu d'un rectangle ;
+  //   • une encolure épaisse qui descend vers l'avant et une tête nettement
+  //     plus grande, avec chanfrein clair et naseau — c'est la tête qui fait
+  //     dire « cheval » en un coup d'œil ;
+  //   • des pattes COUDÉES et décalées deux à deux (une paire proche foncée,
+  //     une paire lointaine plus sombre encore), ce qui interdit la lecture
+  //     « pieds de meuble ».
+  // La robe ennemie passe de #2a1e18 (quasi noir) à un bai brûlé : sur du
+  // presque-noir, crinière, sabots et reflets disparaissaient purement et
+  // simplement, ce qui expliquait une bonne part de l'effet « planche ».
+  const hCol=enemy?'#4a3423':'#7a4f2c';
+  const hDk=shade(hCol,-26), hDk2=shade(hCol,-42), hLt=shade(hCol,20);
+  const mane=shade(hCol,-58), hoof='#221a12', belly=shade(hCol,26);
+  const yBack=S*0.50, yBelly=S*0.71, yHoof=S*0.90;
+  const xAv=cxp+S*0.20, xAr=cxp-S*0.34;   // poitrail / croupe
+
+  // ── pattes ── deux plans : la paire éloignée d'abord, plus sombre, ce qui
+  // creuse la profondeur sous le ventre au lieu d'aligner quatre bâtons.
+  const patte=(x,col,dec)=>{
+    const w=Math.max(1.6,S*0.055);
+    px(cx,x,yBelly-S*0.03,w,S*0.11,col);              // haut (épaule/cuisse)
+    px(cx,x+dec,yBelly+S*0.07,w*0.82,S*0.09,col);     // canon, légèrement coudé
+    px(cx,x+dec,yHoof-S*0.035,w*0.9,S*0.035,hoof);    // sabot
+  };
+  patte(cxp+S*0.02,hDk2,S*0.012);   // antérieur éloigné
+  patte(cxp-S*0.20,hDk2,-S*0.012);  // postérieur éloigné
+  patte(cxp+S*0.12,hDk,S*0.018);    // antérieur proche
+  patte(cxp-S*0.29,hDk,-S*0.018);   // postérieur proche
+
+  // ── queue ── un trait effilé, pas une nappe : remplie comme une surface,
+  // elle couvrait toute la croupe d'un aplat presque noir qui se lisait comme
+  // une aile repliée.
+  cx.strokeStyle=hDk2; cx.lineCap='round';
+  cx.lineWidth=Math.max(2,S*0.075);
+  cx.beginPath();
+  cx.moveTo(xAr+S*0.04,yBack+S*0.02);
+  cx.quadraticCurveTo(xAr-S*0.05,yBack+S*0.12,xAr-S*0.03,yBelly+S*0.08);
+  cx.stroke();
+  cx.strokeStyle=mane; cx.lineWidth=Math.max(1,S*0.035);
+  cx.beginPath();
+  cx.moveTo(xAr+S*0.04,yBack+S*0.04);
+  cx.quadraticCurveTo(xAr-S*0.04,yBack+S*0.13,xAr-S*0.025,yBelly+S*0.06);
+  cx.stroke();
+
+  // ── tronc ── un seul tracé fermé : croupe ronde, dos droit, poitrail bombé,
+  // ligne de ventre qui remonte vers l'arrière (le « creux du flanc »).
+  cx.fillStyle=hCol;
+  cx.beginPath();
+  cx.moveTo(xAr+S*0.03,yBack+S*0.03);
+  cx.quadraticCurveTo(xAr-S*0.02,yBack-S*0.02,xAr+S*0.10,yBack-S*0.03);  // croupe
+  cx.lineTo(xAv-S*0.06,yBack-S*0.02);                                     // dos
+  cx.quadraticCurveTo(xAv+S*0.06,yBack+S*0.01,xAv+S*0.05,yBack+S*0.12);   // poitrail
+  cx.quadraticCurveTo(xAv+S*0.02,yBelly+S*0.02,xAv-S*0.10,yBelly);        // sous-poitrail
+  cx.quadraticCurveTo(xAr+S*0.14,yBelly-S*0.03,xAr+S*0.04,yBelly-S*0.06); // ventre remontant
+  cx.closePath(); cx.fill();
+  px(cx,xAr+S*0.06,yBack-S*0.02,S*0.46,Math.max(2,S*0.045),hLt);          // reflet de dos
+  px(cx,xAr+S*0.08,yBelly-S*0.09,S*0.36,Math.max(2,S*0.04),belly);        // ventre clair
+  px(cx,xAv-S*0.16,yBack+S*0.06,Math.max(1,S*0.02),S*0.11,hDk);           // pli de l'épaule
+
+  // ── encolure ── large en bas, qui s'incline vers l'avant en montant
+  cx.fillStyle=hCol;
+  cx.beginPath();
+  cx.moveTo(xAv-S*0.09,yBack-S*0.01);
+  cx.quadraticCurveTo(xAv+S*0.02,yBack-S*0.13,cxp+S*0.30,S*0.31);   // ligne de crinière
+  cx.lineTo(cxp+S*0.39,S*0.35);                                      // gorge, en haut
+  cx.quadraticCurveTo(cxp+S*0.28,S*0.47,xAv+S*0.07,yBack+S*0.14);    // bord avant, bombé
+  cx.closePath(); cx.fill();
+  // ombre de gorge : détache l'encolure du poitrail au lieu d'un bloc continu
+  px(cx,cxp+S*0.24,S*0.42,Math.max(1,S*0.025),S*0.10,hDk);
+
+  // ── crinière ── le long du bord SUPÉRIEUR de l'encolure, du garrot aux oreilles
+  cx.strokeStyle=mane; cx.lineWidth=Math.max(2,S*0.048); cx.lineCap='round';
+  cx.beginPath();
+  cx.moveTo(xAv-S*0.10,yBack-S*0.01);
+  cx.quadraticCurveTo(xAv+S*0.01,yBack-S*0.13,cxp+S*0.30,S*0.30);
+  cx.stroke();
+
+  // ── tête ── museau tendu vers l'avant-bas ; c'est la pièce qui identifie
+  // l'animal, donc large, contrastée et détachée de l'encolure par une ombre.
+  cx.fillStyle=hCol;
+  cx.beginPath();
+  cx.moveTo(cxp+S*0.25,S*0.25);
+  cx.lineTo(cxp+S*0.37,S*0.245);
+  cx.quadraticCurveTo(cxp+S*0.47,S*0.30,cxp+S*0.455,S*0.385);  // chanfrein
+  cx.lineTo(cxp+S*0.36,S*0.425);
+  cx.quadraticCurveTo(cxp+S*0.27,S*0.41,cxp+S*0.25,S*0.34);    // ganache
+  cx.closePath(); cx.fill();
+  px(cx,cxp+S*0.30,S*0.25,S*0.14,Math.max(1,S*0.035),hLt);                      // arête du chanfrein éclairée
+  px(cx,cxp+S*0.40,S*0.345,S*0.055,S*0.045,belly);                              // bout du nez clair
+  px(cx,cxp+S*0.405,S*0.365,Math.max(1,S*0.025),Math.max(1,S*0.025),hDk);       // naseau
+  px(cx,cxp+S*0.32,S*0.30,Math.max(1,S*0.04),Math.max(1,S*0.04),'#15100c');     // œil
+  // oreilles dressées, écartées : deuxième repère de « tête » après le museau
+  px(cx,cxp+S*0.255,S*0.195,Math.max(1,S*0.032),S*0.06,mane);
+  px(cx,cxp+S*0.315,S*0.19,Math.max(1,S*0.032),S*0.065,mane);
+
+  // ── harnachement ── selle sous le cavalier + tapis, filet et rêne : trois
+  // traits qui disent « monture sellée » et non « animal sauvage ».
+  const selle=enemy?'#3a1c1c':'#4a2c14';
+  px(cx,cxp-S*0.10,yBack-S*0.05,S*0.24,S*0.06,selle);
+  px(cx,cxp-S*0.10,yBack-S*0.05,S*0.24,Math.max(1,S*0.02),'rgba(255,255,255,.22)');
+  px(cx,cxp-S*0.13,yBack+S*0.01,S*0.30,Math.max(2,S*0.04),enemy?'#6a2424':'#8a3a2a'); // tapis de selle
+  cx.strokeStyle=selle; cx.lineWidth=Math.max(1,S*0.022);
+  cx.beginPath(); cx.moveTo(cxp+S*0.33,S*0.36); cx.lineTo(cxp+S*0.09,yBack+S*0.02); cx.stroke(); // rêne
+  px(cx,cxp+S*0.335,S*0.325,S*0.06,Math.max(1,S*0.022),selle);                                  // filet
 }
 
 // Trébuchet : engin de siège à part entière (roues, bâti en A, bras, contre-
@@ -3743,34 +4032,81 @@ function drawRamSprite(cx,cxp,S,enemy){
 // tunique bleue debout sur l'herbe. Coque en amande vue de dessus, banc,
 // rames croisées, prise du jour ; sillage clair en guise d'ombre au sol. ──
 function drawBoatSprite(cx,cxp,S,enemy){
-  const hull=enemy?'#7a4a3a':'#8a6a44', hullDk=shade(hull,-24), hullLt=shade(hull,20);
-  const gy=S*0.56;
-  cx.strokeStyle='rgba(255,255,255,.28)'; cx.lineWidth=Math.max(1,S*0.018);
-  cx.beginPath(); cx.moveTo(cxp-S*0.4,gy+S*0.24); cx.lineTo(cxp-S*0.28,gy+S*0.18); cx.lineTo(cxp-S*0.4,gy+S*0.12); cx.stroke();
-  cx.beginPath(); cx.moveTo(cxp-S*0.48,gy+S*0.32); cx.lineTo(cxp-S*0.34,gy+S*0.24); cx.lineTo(cxp-S*0.48,gy+S*0.16); cx.stroke();
-  cx.fillStyle=hull; // coque en amande, pointue à l'arrière (gauche), large à l'avant (droite)
-  cx.beginPath();
-  cx.moveTo(cxp-S*0.42,gy);
-  cx.quadraticCurveTo(cxp-S*0.2,gy-S*0.15,cxp+S*0.3,gy-S*0.1);
-  cx.quadraticCurveTo(cxp+S*0.44,gy-S*0.02,cxp+S*0.44,gy+S*0.04);
-  cx.quadraticCurveTo(cxp+S*0.3,gy+S*0.14,cxp-S*0.2,gy+S*0.15);
-  cx.quadraticCurveTo(cxp-S*0.36,gy+S*0.12,cxp-S*0.42,gy);
-  cx.fill();
-  cx.strokeStyle=hullLt; cx.lineWidth=Math.max(1,S*0.03); // plat-bord éclairé
-  cx.beginPath(); cx.moveTo(cxp-S*0.4,gy-S*0.02); cx.quadraticCurveTo(cxp-S*0.2,gy-S*0.14,cxp+S*0.29,gy-S*0.09); cx.stroke();
-  cx.fillStyle=hullDk; // creux intérieur
-  cx.beginPath(); cx.ellipse(cxp+S*0.02,gy+S*0.02,S*0.28,S*0.075,0,0,Math.PI*2); cx.fill();
-  px(cx,cxp-S*0.06,gy-S*0.02,S*0.16,Math.max(1,S*0.03),hullLt); // banc de nage
-  cx.strokeStyle=hullDk; cx.lineWidth=Math.max(1,S*0.025); // rames croisées
-  cx.beginPath(); cx.moveTo(cxp-S*0.1,gy-S*0.05); cx.lineTo(cxp-S*0.32,gy-S*0.28); cx.stroke();
-  cx.beginPath(); cx.moveTo(cxp+S*0.1,gy+S*0.06); cx.lineTo(cxp+S*0.34,gy+S*0.26); cx.stroke();
-  for(const [fx,fy] of [[-0.06,0.02],[0.08,0.05]]){ // prise du jour : poissons argentés au fond de la coque
-    const bx=cxp+fx*S, by=gy+fy*S, fs=S*0.07;
-    cx.fillStyle='#b8c8d8';
-    cx.beginPath(); cx.ellipse(bx,by,fs,fs*0.45,0.3,0,Math.PI*2); cx.fill();
-    cx.fillStyle=hullDk;
-    cx.beginPath(); cx.moveTo(bx-fs,by-fs*0.1); cx.lineTo(bx-fs*1.5,by-fs*0.35); cx.lineTo(bx-fs*1.5,by+fs*0.15); cx.closePath(); cx.fill();
+  // Réécrit en vue de PROFIL. La version précédente montrait la barque de
+  // dessus : une amande brune posée à plat, creusée d'une grande ellipse
+  // sombre, avec deux avirons tracés en foncé sur foncé. Résultat, à la
+  // taille de jeu, une assiette marron — et un point de vue qui jurait avec
+  // toutes les autres unités, dessinées de face/de profil. Ici : coque avec
+  // étrave relevée, ligne de flottaison, mât et voile. La voile est la pièce
+  // décisive : c'est la seule forme claire et haute de la silhouette, celle
+  // qui fait reconnaître un bateau avant tout le reste.
+  const hull=enemy?'#7a4436':'#8a6a44', hullDk=shade(hull,-30), hullLt=shade(hull,22);
+  const deck=shade(hull,14);
+  const sail=enemy?'#d8a898':'#ece2c6', sailDk=shade(sail,-16);
+  const wl=S*0.66;                       // ligne de flottaison
+  const xAr=cxp-S*0.40, xAv=cxp+S*0.42;  // poupe (gauche) / proue (droite)
+
+  // ── sillage ── deux arcs d'écume, plus larges à l'arrière : pose le bateau
+  // sur l'eau (aucune ombre au sol n'est dessinée pour cette unité).
+  cx.strokeStyle='rgba(232,244,255,.5)'; cx.lineWidth=Math.max(1,S*0.022); cx.lineCap='round';
+  for(const [dy,ext] of [[0.06,0.10],[0.11,0.18]]){
+    cx.beginPath();
+    cx.moveTo(xAr-S*ext,wl+S*dy);
+    cx.quadraticCurveTo(cxp,wl+S*(dy+0.05),xAv+S*0.04,wl+S*dy);
+    cx.stroke();
   }
+
+  // ── coque ── croissant : quille creuse, étrave nettement relevée à droite,
+  // étambot plus court à gauche.
+  cx.fillStyle=hull;
+  cx.beginPath();
+  cx.moveTo(xAr,S*0.50);
+  cx.lineTo(xAv,S*0.455);                                        // ligne de plat-bord
+  cx.quadraticCurveTo(xAv-S*0.02,S*0.60,xAv-S*0.10,S*0.70);      // étrave
+  cx.quadraticCurveTo(cxp,S*0.78,xAr+S*0.09,S*0.685);            // quille
+  cx.quadraticCurveTo(xAr-S*0.01,S*0.62,xAr,S*0.50);             // étambot
+  cx.closePath(); cx.fill();
+  px(cx,xAr+S*0.02,S*0.475,S*0.78,Math.max(2,S*0.04),deck);      // plat-bord éclairé
+  px(cx,xAr+S*0.05,S*0.555,S*0.72,Math.max(1,S*0.025),hullDk);   // virure de bordé
+  // partie immergée, plus sombre et plus froide
+  cx.save(); cx.beginPath();
+  cx.rect(xAr-S*0.05,wl,S*0.95,S*0.16); cx.clip();
+  cx.fillStyle='rgba(16,52,86,.42)';
+  cx.fillRect(xAr-S*0.05,wl,S*0.95,S*0.16);
+  cx.restore();
+
+  // ── mât et vergue ──
+  const mx=cxp-S*0.06, myTop=S*0.10;
+  px(cx,mx,myTop,Math.max(2,S*0.035),S*0.42,'#6a4a28');
+  px(cx,mx-S*0.09,myTop+S*0.03,S*0.24,Math.max(2,S*0.028),'#5a3e20'); // vergue
+  // ── voile ── carrée, ventrue vers l'avant : la forme qui dit « bateau »
+  cx.fillStyle=sail;
+  cx.beginPath();
+  cx.moveTo(mx-S*0.08,myTop+S*0.05);
+  cx.lineTo(mx+S*0.15,myTop+S*0.05);
+  cx.quadraticCurveTo(mx+S*0.25,S*0.28,mx+S*0.16,S*0.40);
+  cx.lineTo(mx-S*0.07,S*0.40);
+  cx.quadraticCurveTo(mx-S*0.02,S*0.28,mx-S*0.08,myTop+S*0.05);
+  cx.closePath(); cx.fill();
+  px(cx,mx-S*0.06,S*0.245,S*0.21,Math.max(2,S*0.03),enemy?'#a85a4a':'#c0392b'); // bande de couleur
+  cx.fillStyle=sailDk;                                            // pli d'ombre au guindant
+  cx.beginPath();
+  cx.moveTo(mx-S*0.08,myTop+S*0.05); cx.lineTo(mx-S*0.03,myTop+S*0.05);
+  cx.quadraticCurveTo(mx+S*0.02,S*0.28,mx-S*0.02,S*0.40); cx.lineTo(mx-S*0.07,S*0.40);
+  cx.quadraticCurveTo(mx-S*0.02,S*0.28,mx-S*0.08,myTop+S*0.05);
+  cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(60,40,20,.55)'; cx.lineWidth=Math.max(1,S*0.018); // étai vers l'étrave
+  cx.beginPath(); cx.moveTo(mx+S*0.01,myTop); cx.lineTo(xAv-S*0.03,S*0.46); cx.stroke();
+
+  // ── aviron de gouverne à la poupe, bien détaché sur le fond ──
+  cx.strokeStyle=hullLt; cx.lineWidth=Math.max(1,S*0.03);
+  cx.beginPath(); cx.moveTo(xAr+S*0.06,S*0.50); cx.lineTo(xAr-S*0.10,S*0.70); cx.stroke();
+  px(cx,xAr-S*0.13,S*0.68,S*0.07,S*0.05,hullLt);
+
+  // ── cageot de pêche sur le pont : rappelle à quoi sert la barque ──
+  px(cx,cxp+S*0.14,S*0.40,S*0.14,S*0.08,'#a5844f');
+  px(cx,cxp+S*0.14,S*0.40,S*0.14,Math.max(1,S*0.02),'#c9a869');
+  px(cx,cxp+S*0.17,S*0.375,S*0.08,S*0.03,'#b8c8d8');  // poisson qui dépasse
 }
 
 function buildUnitSprite(type,T,legPhase){
@@ -3889,6 +4225,12 @@ function buildUnitSprite(type,T,legPhase){
     px(cx,cxp-S*0.16,S*0.3,S*0.32,S*0.34,'#d8cba0');   // robe claire
     px(cx,cxp-S*0.17,S*0.14,S*0.34,S*0.08,'#c0b18a');  // capuchon rabattu sur les épaules
     px(cx,cxp-S*0.16,S*0.5,S*0.32,Math.max(2,S*0.03),'#8a6a3a'); // corde de ceinture nouée
+    // Étole colorée sur la robe : la teinte de camp est appliquée par rotation
+    // de teinte (voir sprTeinte), or une bure quasi blanche n'a presque pas de
+    // saturation à faire tourner — le Moine adverse ressortait identique au
+    // nôtre. Cette bande, elle, prend la couleur du camp.
+    px(cx,cxp-S*0.08,S*0.3,S*0.05,S*0.28,enemy?'#8b1a1a':'#2c5aa0');
+    px(cx,cxp+S*0.05,S*0.3,S*0.05,S*0.28,enemy?'#8b1a1a':'#2c5aa0');
     px(cx,cxp-S*0.02,S*0.16,ln,S*0.12,'#caa83a');       // croix
     px(cx,cxp-S*0.06,S*0.2,S*0.12,ln,'#caa83a');
   } else if(type===UT.PIKE){
@@ -3906,6 +4248,29 @@ function buildUnitSprite(type,T,legPhase){
     }
   }
 
+  if(type===UT.HERO){
+    // Le héros de civilisation ne traversait AUCUNE branche d'habillage : il
+    // sortait en simple bonhomme jaune, alors que c'est l'unité unique de la
+    // partie (une seule par camp, jamais reformée) et qu'il porte une aura de
+    // commandement. Cape écarlate, panache et harnois doré : il doit se
+    // repérer instantanément au milieu de sa propre armée.
+    cx.fillStyle='#a01f2a';                                        // cape
+    cx.beginPath();
+    cx.moveTo(cxp-S*0.15,torsoY-S*0.02); cx.lineTo(cxp-S*0.36,torsoY+S*0.26);
+    cx.lineTo(cxp-S*0.2,torsoY+S*0.34); cx.lineTo(cxp-S*0.1,torsoY+S*0.04);
+    cx.closePath(); cx.fill();
+    px(cx,cxp-S*0.17,torsoY-S*0.03,S*0.34,Math.max(2,S*0.05),'#f0d878');   // épaulières dorées
+    px(cx,cxp-S*0.17,torsoY+S*0.13,S*0.34,Math.max(2,S*0.035),'#f0d878');  // ceinturon doré
+    px(cx,cxp-S*0.05,torsoY+S*0.04,S*0.11,S*0.11,'#8b1a1a');               // écu de poitrine
+    px(cx,cxp-S*0.03,torsoY+S*0.06,S*0.07,S*0.07,'#f0d878');
+    px(cx,cxp-S*0.12,headY-S*0.05,S*0.24,Math.max(2,S*0.05),'#f0d878');    // bandeau du heaume
+    px(cx,cxp-S*0.02,headY-S*0.19,Math.max(2,S*0.05),S*0.16,'#e03a3a');    // panache
+    px(cx,cxp-S*0.05,headY-S*0.21,S*0.1,Math.max(2,S*0.05),'#f05050');
+    px(cx,cxp+S*0.19,S*0.12,ln+1,S*0.46,'#f0e8c0');                        // épée à lame claire
+    px(cx,cxp+S*0.16,S*0.12,S*0.12,Math.max(2,S*0.05),'#f0d878');          // garde dorée
+    px(cx,cxp-S*0.28,torsoY+S*0.04,S*0.12,S*0.2,'#8b1a1a');                // bouclier
+    px(cx,cxp-S*0.28,torsoY+S*0.04,S*0.12,Math.max(2,S*0.035),'#f0d878');
+  }
   if(type===UT.KNIGHT||type===UT.PALADIN){ // cape flottant depuis l'épaule, sous le bouclier : la cavalerie noble se distingue du simple soldat
     const capeCol=enemy?'#5a1414':shade(body,-8);
     cx.fillStyle=capeCol;
@@ -3942,15 +4307,30 @@ function buildWildlifeSprite(type,T){
   cx.fillStyle='rgba(0,0,0,.22)';
   cx.beginPath(); cx.ellipse(cxp,S*0.82,S*0.22,S*0.05,0,0,Math.PI*2); cx.fill();
   if(type==='boar'){
-    const col='#5a4a3a', dk=shade(col,-24);
-    for(const ox of [-0.16,-0.06,0.07,0.16]) px(cx,cxp+ox*S,gy-S*0.02,S*0.05,S*0.2,dk);
-    px(cx,cxp-0.22*S,gy-S*0.16,S*0.44,S*0.2,col);                    // corps trapu
-    px(cx,cxp-0.22*S,gy-S*0.2,S*0.44,Math.max(2,S*0.035),dk);        // crête de soies hérissées
-    px(cx,cxp+0.15*S,gy-S*0.24,S*0.1,S*0.12,col);                    // tête basse
-    px(cx,cxp+0.16*S,gy-S*0.16,S*0.03,S*0.05,'#e8e0d0');             // défense claire
-    px(cx,cxp+0.09*S,gy-S*0.3,S*0.045,S*0.06,dk);                    // oreille
-    px(cx,cxp+0.24*S,gy-S*0.19,Math.max(1,S*0.03),Math.max(1,S*0.03),'#1a1410'); // œil
-    px(cx,cxp-0.26*S,gy-S*0.06,S*0.045,S*0.1,dk);                    // petite queue
+    // Tout était peint dans deux bruns sombres très proches (#5a4a3a et sa
+    // version -24) : à 62 % d'une case, le sanglier n'était qu'une tache
+    // sombre informe — contrairement au cerf, lisible grâce à son ventre
+    // clair et à ses bois. On lui donne ici les mêmes appuis : une robe plus
+    // claire, une crête de soies contrastée, un groin clair, et surtout une
+    // tête ET une défense assez grandes pour se voir.
+    const col='#6f5a44', dk=shade(col,-32), lt=shade(col,22), soie=shade(col,-46);
+    for(const ox of [-0.15,-0.05]) px(cx,cxp+ox*S,gy-S*0.02,S*0.055,S*0.2,dk);   // pattes éloignées
+    px(cx,cxp-0.24*S,gy-S*0.17,S*0.44,S*0.22,col);                   // corps trapu
+    px(cx,cxp-0.24*S,gy-S*0.05,S*0.4,Math.max(2,S*0.04),lt);         // flanc éclairé
+    px(cx,cxp-0.24*S,gy-S*0.21,S*0.42,Math.max(2,S*0.05),soie);      // crête de soies hérissées
+    for(let k=0;k<5;k++) px(cx,cxp+(-0.2+k*0.09)*S,gy-S*0.26,Math.max(1,S*0.025),S*0.06,soie); // épis dressés
+    for(const ox of [0.06,0.16]) px(cx,cxp+ox*S,gy-S*0.02,S*0.06,S*0.2,shade(col,-20)); // pattes proches
+    px(cx,cxp+0.16*S,gy-S*0.26,S*0.16,S*0.17,col);                   // tête, nettement agrandie
+    px(cx,cxp+0.28*S,gy-S*0.2,S*0.09,S*0.08,lt);                     // groin clair : repère de museau
+    px(cx,cxp+0.30*S,gy-S*0.18,Math.max(1,S*0.03),Math.max(1,S*0.03),dk); // narine
+    cx.fillStyle='#f0e8d8';                                          // défense recourbée
+    cx.beginPath();
+    cx.moveTo(cxp+0.27*S,gy-S*0.15); cx.quadraticCurveTo(cxp+0.32*S,gy-S*0.2,cxp+0.30*S,gy-S*0.27);
+    cx.lineTo(cxp+0.27*S,gy-S*0.26); cx.quadraticCurveTo(cxp+0.28*S,gy-S*0.2,cxp+0.25*S,gy-S*0.15);
+    cx.closePath(); cx.fill();
+    px(cx,cxp+0.14*S,gy-S*0.33,S*0.06,S*0.08,soie);                  // oreille
+    px(cx,cxp+0.235*S,gy-S*0.235,Math.max(1,S*0.035),Math.max(1,S*0.035),'#120e0a'); // œil
+    px(cx,cxp-0.28*S,gy-S*0.08,S*0.05,S*0.11,soie);                  // petite queue
   } else { // deer (par défaut)
     const col='#a9784a', dk=shade(col,-24), lt=shade(col,20);
     for(const ox of [-0.16,-0.07,0.06,0.15]) px(cx,cxp+ox*S,gy,S*0.045,S*0.22,dk);
@@ -4403,8 +4783,82 @@ function buildSprites(){
   buildBuildings(T);
   buildUnits(T);
   buildWildlife(T);
+  buildShadow();
+  buildGlow();
+  buildMacro();
   buildIcons();        // icônes UI (taille fixe, générées une seule fois)
   applyStaticIcons();  // injecte les icônes dans le DOM persistant
+}
+
+// ── OMBRE PORTÉE (sprite unique, étiré à la demande) ──────────────────
+// Tout ce qui se dresse sur le sol — arbre, rocher, bâtiment, unité — se
+// détachait jusqu'ici sur l'herbe sans rien qui l'y rattache : la scène
+// donnait l'impression d'autocollants posés sur un fond. Une tache douce
+// sous chaque objet suffit à lui donner du poids, et la faire du MÊME côté
+// pour tout le monde (décalée en bas-à-droite, cohérente avec le biseau
+// clair-en-haut-à-gauche des bâtiments) donne au décor une lumière unique.
+//
+// Un seul dégradé radial pré-rendu, réétiré à chaque appel : autrement il
+// faudrait recréer un createRadialGradient par objet et par image, ce qui
+// coûte bien plus cher qu'un drawImage.
+// Halo chaud de torche, pré-rendu comme l'ombre et pour la même raison :
+// il est désormais dessiné sous CHAQUE bâtiment habité (et non plus sous
+// quatre types seulement), ce qui interdit de recréer un dégradé par
+// bâtiment et par image.
+// ── VARIATION DE GRANDE ÉCHELLE DU SOL ────────────────────────────────
+// Une fois le fond d'herbe rendu quasi uniforme (indispensable pour tuer le
+// damier), une grande plaine devient plate : partout exactement le même vert.
+// Ce calque corrige le problème par l'autre bout — de larges taches douces,
+// bien PLUS GRANDES que la case (une douzaine de cases de côté), plaquées en
+// coordonnées MONDE. L'œil y lit des reliefs et des variations de sol, sans
+// qu'aucune limite ne coïncide jamais avec une frontière de tuile.
+//
+// Une seule texture répétée en motif : un unique fillRect par image, quel que
+// soit le nombre de cases à l'écran.
+function buildMacro(){
+  const P=Math.max(128,Math.round(TILE*12));
+  const{c,cx}=offCanvas(P,P); const rnd=srnd(4242);
+  for(let i=0;i<26;i++){
+    const bx=rnd()*P, by=rnd()*P, r=P*(0.10+rnd()*0.17);
+    const sombre=rnd()<0.5;
+    // Chaque tache est peinte neuf fois (les huit décalages ±P plus la
+    // position d'origine) : celles qui débordent d'un bord réapparaissent sur
+    // le bord opposé, donc la texture se répète sans couture visible.
+    for(let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++){
+      const g=cx.createRadialGradient(bx+ox*P,by+oy*P,0,bx+ox*P,by+oy*P,r);
+      g.addColorStop(0,sombre?'rgba(26,46,18,.23)':'rgba(170,206,124,.18)');
+      g.addColorStop(1,'rgba(0,0,0,0)');
+      cx.fillStyle=g;
+      cx.fillRect(bx+ox*P-r,by+oy*P-r,r*2,r*2);
+    }
+  }
+  SPR.macro={c,cx,P};
+  SPR.macroPat=ctx.createPattern(c,'repeat');
+}
+function buildGlow(){
+  const R=64, {c,cx}=offCanvas(R*2,R*2);
+  const g=cx.createRadialGradient(R,R,0,R,R,R);
+  g.addColorStop(0,'rgba(255,186,92,.88)');
+  g.addColorStop(0.42,'rgba(255,158,64,.34)');
+  g.addColorStop(1,'rgba(255,150,60,0)');
+  cx.fillStyle=g; cx.fillRect(0,0,R*2,R*2);
+  SPR.glow={c,cx};
+}
+function buildShadow(){
+  const R=64, {c,cx}=offCanvas(R*2,R*2);
+  const g=cx.createRadialGradient(R,R,0,R,R,R);
+  g.addColorStop(0,'rgba(0,0,0,.55)');
+  g.addColorStop(0.45,'rgba(0,0,0,.34)');
+  g.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle=g; cx.fillRect(0,0,R*2,R*2);
+  SPR.shadow={c,cx};
+}
+// rx/ry = demi-largeur / demi-hauteur au sol ; a = opacité globale.
+function groundShadow(sx,sy,rx,ry,a){
+  if(!SPR.shadow) return;
+  ctx.globalAlpha=a;
+  ctx.drawImage(SPR.shadow.c,sx-rx,sy-ry,rx*2,ry*2);
+  ctx.globalAlpha=1;
 }
 
 
@@ -4421,7 +4875,7 @@ function render(){
     ctx.translate((Math.random()-0.5)*G.shake.mag,(Math.random()-0.5)*G.shake.mag);
   }
 
-  drawMap(); drawNodes(); drawRelics(); drawWildlife(); drawBuildings(); drawCaravans(); drawDeathFx(); drawUnits();
+  drawMap(); drawNodes(); drawRelics(); drawWildlife(); drawBuildings(); drawCaravans(); drawDeathFx(); drawHeroAuras(); drawUnits();
   drawHoverRing();
   drawProjs(); drawParts(); drawFTexts(); drawSelRings();
   if(G.mode==='build'&&G.ghost) drawGhost();
@@ -4448,9 +4902,14 @@ function drawVignette(){
 }
 
 function drawNightTint(){
-  const night=nightFactor()*0.28;
+  // 0.28 d'un bleu déjà pâle ne se voyait tout simplement pas : le cycle
+  // jour/nuit — qui RÉDUIT pourtant le champ de vision, donc change la façon
+  // de jouer — passait complètement inaperçu à l'écran. Voile plus dense et
+  // plus froid, dosé pour rester très en deçà du brouillard de guerre : on
+  // doit continuer à lire ses unités et ses bâtiments sans effort.
+  const night=nightFactor()*0.44;
   if(night>0.01){
-    ctx.fillStyle=`rgba(20,30,70,${night})`;
+    ctx.fillStyle=`rgba(12,20,56,${night})`;
     ctx.fillRect(0,54,W,gameH());
   }
 }
@@ -4458,44 +4917,76 @@ function drawNightTint(){
 // Lueur chaude de torches sur les bâtiments-clés du joueur la nuit — casse
 // la platitude du voile bleu uniforme et fait vivre la carte après le
 // coucher du soleil, sans toucher au pixel art des sprites eux-mêmes.
-const GLOW_BLDS=[BT.TC,BT.TOWER,BT.CASTLE,BT.BARRACKS];
+// Ce qui NE s'éclaire pas la nuit : rien n'habite un mur, un portail, un
+// champ ni un avant-poste. Tout le reste — maisons comprises, ce qui donne
+// enfin à une ville de vingt bâtiments l'allure d'une ville éclairée — porte
+// un feu. La liste est en négatif pour qu'un futur bâtiment soit allumé par
+// défaut plutôt qu'oublié dans le noir.
+const NO_GLOW=[BT.WALL,BT.GATE,BT.FARM,BT.OUTPOST];
 function drawNightGlow(){
   const night=nightFactor();
-  if(night<0.12) return;
+  if(night<0.12||!SPR.glow) return;
   ctx.save();
   ctx.globalCompositeOperation='lighter';
-  const amp=0.85+Math.sin(G.gameTime*3)*0.15; // vacillement doux de flamme
   for(const b of G.buildings){
-    if(!estLocal(b)||b.constructing||!GLOW_BLDS.includes(b.type)) continue;
+    if(b.constructing||NO_GLOW.includes(b.type)) continue;
+    // Les feux ennemis se voient aussi — mais seulement là où l'on VOIT :
+    // hors du champ de vision, un halo trahirait une base dans le brouillard.
+    if(!estLocal(b)&&G.fog.length){
+      const fx=(b.tx|0), fy=(b.ty|0);
+      if(G.fog[fy]&&G.fog[fy][fx]!==2) continue;
+    }
     const{x:sx,y:sy}=ws(b.x,b.y);
-    if(sx<-80||sx>W+80||sy<0||sy>H+80) continue;
-    const r=TILE*1.7;
-    const g=ctx.createRadialGradient(sx,sy,0,sx,sy,r);
-    g.addColorStop(0,`rgba(255,180,80,${0.24*night*amp})`);
-    g.addColorStop(0.6,`rgba(255,150,60,${0.10*night*amp})`);
-    g.addColorStop(1,'rgba(255,150,60,0)');
-    ctx.fillStyle=g;
-    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
+    if(sx<-120||sx>W+120||sy<0||sy>H+120) continue;
+    // Vacillement propre à chaque bâtiment (déphasé par son id) : un village
+    // dont toutes les fenêtres pulsent à l'unisson ne ressemble à rien.
+    const amp=0.82+Math.sin(G.gameTime*2.6+b.id*1.7)*0.18;
+    const r=TILE*(0.85+0.42*(b.w+b.h));
+    ctx.globalAlpha=Math.min(1,0.42*night*amp);
+    ctx.drawImage(SPR.glow.c,sx-r,sy-r*0.85,r*2,r*1.7);
   }
   ctx.restore();
 }
 
-// Brouillard de guerre
+// Brouillard de guerre — bords DOUX.
+// La version d'origine peignait un carré noir opaque par case : la limite du
+// champ de vision se lisait comme un escalier de gros pixels, de loin le
+// défaut le plus voyant du rendu. Ici on compose le voile dans un canevas
+// minuscule (un pixel par case), qu'on étire ensuite à l'échelle de l'écran
+// avec le lissage du navigateur : l'interpolation bilinéaire transforme
+// gratuitement l'escalier en dégradé continu, façon AoE2. C'est aussi plus
+// rapide que l'ancienne boucle de fillRect (un seul drawImage).
+let _fogBuf=null,_fogImg=null;
 function drawFog(){
   if(!G.fog.length) return;
   const cx=G.cam.x, cy=G.cam.y;
-  const sx=Math.max(0,cx/TILE|0), sy=Math.max(0,(cy/TILE)|0);
-  const ex=Math.min(COLS-1,(cx+W)/TILE|0), ey=Math.min(ROWS-1,(cy+gameH())/TILE|0);
-  for(let y=sy;y<=ey;y++) for(let x=sx;x<=ex;x++){
-    const f=G.fog[y][x];
-    if(f===2) continue; // visible : rien
-    const px=x*TILE-cx, py=y*TILE-cy+54;
-    // Inexploré (jamais vu) : noir opaque, façon AoE2 — on ne doit rien deviner
-    // en dessous. Exploré mais hors de vue actuelle : brouillard translucide
-    // habituel, qui laisse deviner le terrain/bâtiments mémorisés.
-    ctx.fillStyle=f===0?'#000':'rgba(0,0,0,.30)';
-    ctx.fillRect(px,py,TILE+1,TILE+1);
+  // Une case de marge de chaque côté : sans elle, le lissage échantillonne
+  // au-delà du buffer sur les bords de l'écran et y laisse une frange claire.
+  const sx=Math.max(0,(cx/TILE|0)-1), sy=Math.max(0,((cy/TILE)|0)-1);
+  const ex=Math.min(COLS-1,((cx+W)/TILE|0)+1), ey=Math.min(ROWS-1,((cy+gameH())/TILE|0)+1);
+  const w=ex-sx+1, h=ey-sy+1;
+  if(w<1||h<1) return;
+  if(!_fogBuf||_fogBuf.c.width<w||_fogBuf.c.height<h) _fogBuf=offCanvas(Math.max(w,96),Math.max(h,96));
+  // Tampon de pixels réutilisé tant que la fenêtre visible garde la même
+  // taille en cases : sinon on rallouerait un ImageData à chaque image, pour
+  // rien, soixante fois par seconde.
+  if(!_fogImg||_fogImg.width!==w||_fogImg.height!==h) _fogImg=_fogBuf.cx.createImageData(w,h);
+  const img=_fogImg, d=img.data;
+  for(let y=0;y<h;y++){
+    const row=G.fog[sy+y];
+    for(let x=0;x<w;x++){
+      // 0 = jamais exploré (noir opaque, on ne doit rien deviner dessous)
+      // 1 = exploré mais hors de vue (voile translucide sur le souvenir)
+      // 2 = visible (rien)
+      const f=row[sx+x];
+      d[(y*w+x)*4+3]= f===2?0 : f===0?255 : 92;
+    }
   }
+  _fogBuf.cx.putImageData(img,0,0);
+  ctx.save();
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(_fogBuf.c, 0,0,w,h, sx*TILE-cx, sy*TILE-cy+54, w*TILE, h*TILE);
+  ctx.restore();
 }
 
 function drawSelBox(){
@@ -4528,37 +5019,70 @@ function drawMap(){
     const tile=G.tiles[y][x];
     const px2=Math.round(x*TILE-cx), py2=Math.round(y*TILE-cy+54);
     if(tile===T_WATER){
-      const s=SPR.terrain['water'+waterFrame];
+      // variante stable par tuile (même principe que l'herbe) : sans elle,
+      // toutes les cases d'un lac porteraient les crêtes aux mêmes hauteurs
+      // et se rejoindraient en longues bandes rectilignes.
+      let hw=(x*2246822519+y*3266489917)|0; hw=(hw^(hw>>15))*668265263|0; hw=(hw^(hw>>13))|0;
+      const vw=((hw%WATER_VARIANTS)+WATER_VARIANTS)%WATER_VARIANTS;
+      const s=SPR.terrain['water'+vw+'_'+waterFrame];
       if(s) ctx.drawImage(s.c,px2,py2,TILE,TILE);
     } else {
-      // herbe : variante stable par tuile
+      // herbe : variante ET orientation stables par tuile (8 textures × 4
+      // miroirs = 32 aspects distincts). Le miroir est tiré d'un second
+      // brassage du même hash, pour qu'il ne soit pas corrélé à la variante :
+      // sinon la variante 3 serait toujours retournée de la même façon et on
+      // retomberait sur 8 aspects.
       let h=(x*374761393+y*668265263)|0; h=(h^(h>>13))*1274126177|0;
-      const v=((h^(h>>16))%GRASS_VARIANTS+GRASS_VARIANTS)%GRASS_VARIANTS;
-      const s=SPR.terrain['grass'+v];
+      h=(h^(h>>16))|0;
+      const v=((h%GRASS_VARIANTS)+GRASS_VARIANTS)%GRASS_VARIANTS;
+      const m=(((h>>5)%4)+4)%4;
+      const s=SPR.terrain[m?('grass'+v+'m'+m):('grass'+v)];
       if(s) ctx.drawImage(s.c,px2,py2,TILE,TILE);
       // rive : si une tuile voisine est de l'eau, dessiner un liseré sableux
       drawShore(x,y,px2,py2);
     }
   }
+  // Calque de variation lente, en coordonnées monde (voir buildMacro).
+  if(SPR.macroPat){
+    const P=SPR.macro.P, gh=gameH();
+    ctx.save();
+    ctx.fillStyle=SPR.macroPat;
+    ctx.translate(-(((cx%P)+P)%P), 54-(((cy%P)+P)%P));
+    ctx.fillRect(0,0,W+P,gh+P);
+    ctx.restore();
+  }
 }
 
 // Liseré de rive (transition herbe→eau façon AoE2)
+//
+// Deux corrections par rapport à la version d'origine, toutes deux visibles
+// sur une berge droite :
+//  • les coins étaient peints APRÈS les bandes, en sable seul : sur une rive
+//    horizontale, les deux diagonales du bas sont de l'eau, donc chaque tuile
+//    voyait son écume recouverte de sable à gauche et à droite — la ligne
+//    d'écume se lisait en pointillés réguliers tout le long du lac. Ils sont
+//    désormais peints d'abord, et seulement là où ils comblent une vraie
+//    encoche (les deux voisins orthogonaux étant de la terre).
+//  • l'épaisseur de l'écume varie légèrement d'une tuile à l'autre (hachage
+//    de position, donc stable) : la rive n'est plus un trait à la règle.
 function drawShore(x,y,px2,py2){
   const isW=(xx,yy)=> xx>=0&&yy>=0&&xx<COLS&&yy<ROWS&&G.tiles[yy][xx]===T_WATER;
-  const t=TILE, b=Math.max(3,t*0.18), foam=Math.max(1,b*0.32);
-  // Bande de sable (foncé, humide) + liseré d'écume clair au contact direct
-  // de l'eau — deux tons au lieu d'un bloc plat, cohérent avec la richesse
-  // ajoutée au reste du terrain. Coût identique (quelques fillRect de plus).
-  if(isW(x,y-1)){ ctx.fillStyle='#c9ab72'; ctx.fillRect(px2,py2,t,b); ctx.fillStyle='#f0e4b8'; ctx.fillRect(px2,py2,t,foam); }
-  if(isW(x,y+1)){ ctx.fillStyle='#c9ab72'; ctx.fillRect(px2,py2+t-b,t,b); ctx.fillStyle='#f0e4b8'; ctx.fillRect(px2,py2+t-foam,t,foam); }
-  if(isW(x-1,y)){ ctx.fillStyle='#c9ab72'; ctx.fillRect(px2,py2,b,t); ctx.fillStyle='#f0e4b8'; ctx.fillRect(px2,py2,foam,t); }
-  if(isW(x+1,y)){ ctx.fillStyle='#c9ab72'; ctx.fillRect(px2+t-b,py2,b,t); ctx.fillStyle='#f0e4b8'; ctx.fillRect(px2+t-foam,py2,foam,t); }
-  // coins (diagonales) pour des rives continues
-  ctx.fillStyle='#c9ab72';
-  if(isW(x-1,y-1)) ctx.fillRect(px2,py2,b,b);
-  if(isW(x+1,y-1)) ctx.fillRect(px2+t-b,py2,b,b);
-  if(isW(x-1,y+1)) ctx.fillRect(px2,py2+t-b,b,b);
-  if(isW(x+1,y+1)) ctx.fillRect(px2+t-b,py2+t-b,b,b);
+  const t=TILE, b=Math.max(3,t*0.18);
+  let hs=(x*1597334677+y*2654435761)|0; hs=(hs^(hs>>14))|0;
+  const jitter=(((hs>>3)&3)-1.5)*0.14;                  // −0.21 … +0.21
+  const foam=Math.max(1,b*(0.34+jitter));
+  const SAND='#c9ab72', FOAM='#f0e4b8';
+  // 1) coins : uniquement les encoches réelles (diagonale mouillée, côtés secs)
+  ctx.fillStyle=SAND;
+  if(isW(x-1,y-1)&&!isW(x-1,y)&&!isW(x,y-1)) ctx.fillRect(px2,py2,b,b);
+  if(isW(x+1,y-1)&&!isW(x+1,y)&&!isW(x,y-1)) ctx.fillRect(px2+t-b,py2,b,b);
+  if(isW(x-1,y+1)&&!isW(x-1,y)&&!isW(x,y+1)) ctx.fillRect(px2,py2+t-b,b,b);
+  if(isW(x+1,y+1)&&!isW(x+1,y)&&!isW(x,y+1)) ctx.fillRect(px2+t-b,py2+t-b,b,b);
+  // 2) bandes de sable humide, puis écume au contact direct de l'eau
+  if(isW(x,y-1)){ ctx.fillStyle=SAND; ctx.fillRect(px2,py2,t,b); ctx.fillStyle=FOAM; ctx.fillRect(px2,py2,t,foam); }
+  if(isW(x,y+1)){ ctx.fillStyle=SAND; ctx.fillRect(px2,py2+t-b,t,b); ctx.fillStyle=FOAM; ctx.fillRect(px2,py2+t-foam,t,foam); }
+  if(isW(x-1,y)){ ctx.fillStyle=SAND; ctx.fillRect(px2,py2,b,t); ctx.fillStyle=FOAM; ctx.fillRect(px2,py2,foam,t); }
+  if(isW(x+1,y)){ ctx.fillStyle=SAND; ctx.fillRect(px2+t-b,py2,b,t); ctx.fillStyle=FOAM; ctx.fillRect(px2+t-foam,py2,foam,t); }
 }
 
 function drawNodes(){
@@ -4577,6 +5101,13 @@ function drawNodes(){
       // léger amincissement quand la ressource s'épuise
       const r=(0.55+0.45*(n.amt/n.max))*(TILE/(SPR.refT||TILE));
       const w=spr.S*r, h=spr.S*r;
+      // Ombre au sol (sauf poissons : ils SONT dans l'eau, une tache sous
+      // eux se lirait comme un trou dans le lac). Les arbres, plus hauts,
+      // en projettent une plus longue et plus marquée que les buissons.
+      if(n.type!==RT.FISH){
+        const tall=n.type===RT.TREE;
+        groundShadow(sx+w*0.12, sy+h*(tall?0.05:0.03), w*(tall?0.38:0.30), w*(tall?0.17:0.13), tall?0.65:0.5);
+      }
       ctx.drawImage(spr.c, Math.round(sx-w/2), Math.round(sy-h*0.78), Math.round(w), Math.round(h));
     }
     // points de récolteurs
@@ -4589,7 +5120,17 @@ function drawNodes(){
   }
 }
 
+// Cases occupées par un mur ou un portail, reconstruites à chaque image.
+// Sert uniquement au raccord vertical des murs (voir plus bas) ; un Set
+// reconstruit coûte moins qu'un balayage de G.buildings par mur.
+let _murSet=new Set();
+function indexerMurs(){
+  _murSet.clear();
+  for(const b of G.buildings) if(b.type===BT.WALL||b.type===BT.GATE) _murSet.add(b.tx+','+b.ty);
+}
+
 function drawBuildings(){
+  indexerMurs();
   for(const b of G.buildings){
     const pw=b.w*TILE, ph=b.h*TILE;
     const{x:sx,y:sy}=ws(b.x,b.y);
@@ -4606,10 +5147,27 @@ function drawBuildings(){
     const suf=(teinte==='bleu')?'':'_E';
     const spr=sprTeinte('bld',b.type+lvlSuffix+suf,teinte)||sprTeinte('bld',b.type+suf,teinte);
     const k=TILE/(SPR.refT||TILE); // facteur si zoom en cours (sprites pas encore régénérés)
+    // Ombre portée au pied du bâtiment — dessinée AVANT le sprite pour ne
+    // jamais mordre dessus, et débordant un peu sur la droite (source de
+    // lumière en haut à gauche, comme le biseau des murs).
+    groundShadow(sx+pw*0.13, by+ph-Math.max(2,ph*0.04), pw*0.70, ph*0.30, b.constructing?0.35:0.85);
     if(spr){
       // le sprite a une marge haute (oy) pour les toits en relief
       const sy0=Math.round(by-spr.oy*k), dw=spr.dw*k, dh=spr.dh*k;
-      if(b.constructing&&b.progress<1&&b.progress>0){
+      // ── Raccord vertical des murs ──
+      // Le sprite de mur est une palissade vue de face : empilé pour un tronçon
+      // nord-sud, il répétait ses pointes de rondins à chaque case et le mur se
+      // lisait comme une échelle. Dès qu'une case de mur en a une autre
+      // AU-DESSUS, on ne dessine plus que le corps du sprite (source rognée
+      // au-dessus des pointes/créneaux), étiré sur toute la hauteur de la case :
+      // le tronçon devient un mur continu, et seule la case de tête garde ses
+      // pointes. Un tronçon est-ouest, lui, n'a jamais de mur au-dessus et reste
+      // rendu tel quel.
+      const murSuite=(b.type===BT.WALL||b.type===BT.GATE)&&!b.constructing&&_murSet.has(b.tx+','+(b.ty-1));
+      if(murSuite){
+        const src=spr.c, cut=src.height*0.53;   // au-dessus : pointes et créneaux
+        ctx.drawImage(src, 0, cut, src.width, src.height-cut, Math.round(bx), Math.round(by), pw, ph);
+      } else if(b.constructing&&b.progress<1&&b.progress>0){
         // Le bâtiment "sort de terre" au lieu d'un simple fondu d'opacité :
         // silhouette fantôme complète (aperçu de la forme finale) + partie
         // basse déjà bâtie révélée nettement, qui grandit avec b.progress.
@@ -4627,10 +5185,23 @@ function drawBuildings(){
     } else {
       ctx.fillStyle=(teinte==='bleu')?'#8a6a3a':couleurMinimap(b,false); ctx.fillRect(bx,by,pw,ph);
     }
-    // contour de sélection
+    // Contour de sélection : quatre équerres d'angle plutôt qu'un rectangle
+    // plein. Un cadre continu autour d'un bâtiment de 2×2 cases masque le
+    // liseré du toit et se confond avec les murs ; les équerres désignent
+    // sans rien recouvrir, et se lisent tout de suite comme un viseur.
     if(G.sel.includes(b.id)){
-      ctx.strokeStyle='#f1c40f'; ctx.lineWidth=2;
-      ctx.strokeRect(Math.round(bx)-1,Math.round(by)-1,pw+2,ph+2);
+      const rx=Math.round(bx)-2, ry=Math.round(by)-2, rw=pw+4, rh=ph+4;
+      const a=Math.max(5,Math.min(rw,rh)*0.28); // longueur de branche
+      ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=4; ctx.lineCap='butt';
+      for(let pass=0;pass<2;pass++){
+        if(pass) { ctx.strokeStyle='#f1c40f'; ctx.lineWidth=2; }
+        ctx.beginPath();
+        ctx.moveTo(rx,ry+a); ctx.lineTo(rx,ry); ctx.lineTo(rx+a,ry);
+        ctx.moveTo(rx+rw-a,ry); ctx.lineTo(rx+rw,ry); ctx.lineTo(rx+rw,ry+a);
+        ctx.moveTo(rx+rw,ry+rh-a); ctx.lineTo(rx+rw,ry+rh); ctx.lineTo(rx+rw-a,ry+rh);
+        ctx.moveTo(rx+a,ry+rh); ctx.lineTo(rx,ry+rh); ctx.lineTo(rx,ry+rh-a);
+        ctx.stroke();
+      }
     }
     // Barre PV
     const hpr=b.hp/b.maxHp;
@@ -4742,6 +5313,7 @@ function drawWildlife(){
     const spr=SPR.wildlife&&SPR.wildlife[w.type];
     if(spr){
       const S=spr.S*(TILE/(SPR.refT||TILE));
+      groundShadow(sx+S*0.06,sy+S*0.30,S*0.28,S*0.11,0.4);
       ctx.drawImage(spr.c,sx-S/2,sy-S/2,S,S);
     } else { // repli tant que buildSprites() n'a pas encore tourné
       ctx.font=Math.round(TILE*0.65)+'px sans-serif';
@@ -4756,8 +5328,52 @@ function drawWildlife(){
   }
 }
 
-function drawUnits(){
+// Ordre de dessin des unités : de haut en bas de l'écran, pour que celle qui
+// est DEVANT (plus bas) recouvre celle qui est derrière. Sans ce tri, deux
+// unités superposées se recouvraient selon leur ordre de création — un
+// villageois né il y a dix minutes passait devant un chevalier planté un
+// demi-sprite plus bas. Sur une COPIE : l'ordre de G.units sert au reste du
+// moteur (ciblage, réseau, sauvegardes) et ne doit pas bouger pour un
+// détail d'affichage.
+let _drawOrder=[];
+// Aura de commandement des héros : +15 % d'ATK à tout allié dans un rayon de
+// 6 cases (voir heroAuraMult). Cet effet ne se voyait NULLE PART — il fallait
+// ouvrir la fiche de l'unité pour apprendre son existence, et rien à l'écran
+// ne disait où placer ses troupes pour en profiter. Un cercle au sol, dessiné
+// avant les unités pour passer dessous, rend la portée directement jouable.
+function drawHeroAuras(){
   for(const u of G.units){
+    if(u.type!==UT.HERO||u.hp<=0||u.state==='garrison') continue;
+    const allie=!estHostile(u,G.me);
+    if(!allie&&G.fog.length){ // aura ennemie : seulement si le héros est vu
+      const fx=(u.x/BASE_TILE)|0, fy=(u.y/BASE_TILE)|0;
+      if(G.fog[fy]&&G.fog[fy][fx]!==2) continue;
+    }
+    const{x:sx,y:sy}=ws(u.x,u.y);
+    const r=HERO_AURA_RADIUS*(TILE/BASE_TILE);
+    if(sx+r<0||sx-r>W||sy+r<54||sy-r>H) continue;
+    const col=allie?'241,196,15':'231,76,60';
+    ctx.save();
+    ctx.setLineDash([9,7]);
+    ctx.lineDashOffset=-(G.gameTime*10)%16;   // rotation lente : vivant sans clignoter
+    // Cercle PARFAIT, pas une ellipse : la carte est rendue en projection
+    // orthogonale stricte (ws() applique la même échelle en x et en y), et la
+    // portée est testée par Math.hypot. Une ellipse aplatie promettrait un
+    // rayon deux fois plus court vers le haut et vers le bas qu'il ne l'est.
+    ctx.strokeStyle=`rgba(${col},.34)`; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle=`rgba(${col},.12)`; ctx.lineWidth=6;
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawUnits(){
+  _drawOrder.length=0;
+  for(let i=0;i<G.units.length;i++) _drawOrder.push(G.units[i]);
+  _drawOrder.sort((a,b)=>a.y-b.y);
+  for(const u of _drawOrder){
     if(u.state==='garrison') continue; // à l'abri dans le bâtiment : invisible
     const{x:sx,y:sy}=ws(u.x,u.y);
     if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
@@ -4793,9 +5409,12 @@ function drawUnits(){
     }
     const drawY=Math.round(sy-S*0.78-bob+lungeY);
     const drawX=Math.round(sx-S/2+lungeX);
-    // ombre (toujours au sol)
-    ctx.fillStyle='rgba(0,0,0,.22)';
-    ctx.beginPath(); ctx.ellipse(sx,sy,S*0.26,S*0.12,0,0,Math.PI*2); ctx.fill();
+    // ombre (toujours au sol, jamais soulevée par le bobbing : c'est le
+    // décalage entre l'unité qui monte et son ombre qui reste plaquée qui
+    // donne la sensation de pas)
+    // Pas d'ombre portée sous une embarcation : sur l'eau, la tache sombre se
+    // lirait comme un trou dans le lac. Sa coque dessine déjà son sillage.
+    if(u.type!==UT.BOAT) groundShadow(sx+S*0.08,sy,S*0.40,S*0.18,0.85);
     // Liseré d'appartenance sous les unités ennemies. En mode Conquête,
     // l'adversaire aligne des VILLAGEOIS — dont le sprite est identique à
     // ceux du joueur : sans ce repère au sol, impossible de distinguer un
@@ -4943,7 +5562,9 @@ function drawParts(){
 // de jeu (l'unité est déjà retirée de G.units à cet instant).
 function drawDeathFx(){
   for(const d of G.deathfx){
-    const spr=SPR.unit[d.type];
+    // Teinte du camp d'origine : sans elle, un assaillant ennemi mourait en
+    // reprenant les couleurs du joueur le temps de sa chute.
+    const spr=d.teinte?sprTeinte('unit',d.type,d.teinte):SPR.unit[d.type];
     if(!spr) continue;
     const{x:sx,y:sy}=ws(d.x,d.y);
     const S=spr.S*(TILE/(SPR.refT||TILE));
@@ -4951,6 +5572,9 @@ function drawDeathFx(){
     const up=S*(0.78-fall*0.68);
     const rot=(Math.cos(d.dir)<-0.01?-1:1)*fall*1.15;
     const scale=1-fall*0.2;
+    // L'ombre s'étale et pâlit à mesure que le corps s'affaisse : sans elle,
+    // la silhouette semblait basculer dans le vide.
+    groundShadow(sx+S*0.08,sy,S*(0.30+fall*0.14),S*(0.13+fall*0.04),Math.max(0,d.life)*0.6);
     ctx.save();
     ctx.globalAlpha=Math.max(0,d.life)*0.9;
     ctx.translate(sx,sy-up);
@@ -4967,8 +5591,12 @@ function drawFTexts(){
     const{x:sx,y:sy}=ws(ft.x,ft.y);
     ctx.globalAlpha=Math.max(0,ft.life);
     ctx.font='bold 12px Cinzel,serif';
-    ctx.fillStyle=ft.col||'#f1c40f';
     ctx.textAlign='center'; ctx.textBaseline='middle';
+    // Contour sombre : un « +10 » doré sur de l'herbe éclairée était presque
+    // illisible, et c'est précisément l'information qu'on lit du coin de l'œil.
+    ctx.lineWidth=3; ctx.lineJoin='round'; ctx.strokeStyle='rgba(0,0,0,.75)';
+    ctx.strokeText(ft.txt,sx,sy);
+    ctx.fillStyle=ft.col||'#f1c40f';
     ctx.fillText(ft.txt,sx,sy);
   }
   ctx.globalAlpha=1;
@@ -4977,9 +5605,19 @@ function drawFTexts(){
 function drawSelRings(){
   if(G.moveTarget&&G.mtTimer>0){
     const{x:sx,y:sy}=ws(G.moveTarget.x,G.moveTarget.y);
-    ctx.strokeStyle='rgba(241,196,15,'+(G.mtTimer).toFixed(2)+')';
-    ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.arc(sx,sy,9,0,Math.PI*2); ctx.stroke();
+    // Deux anneaux qui se resserrent vers le point cliqué (au lieu d'un
+    // cercle figé) : l'œil suit le mouvement et retrouve l'endroit visé même
+    // au milieu d'une mêlée.
+    const t=Math.max(0,Math.min(1,G.mtTimer));
+    for(let i=0;i<2;i++){
+      const f=Math.max(0,Math.min(1,t+i*0.28));
+      const r=3+f*13;
+      ctx.strokeStyle='rgba(241,196,15,'+(t*(1-i*0.45)).toFixed(2)+')';
+      ctx.lineWidth=i?1:1.8;
+      ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.fillStyle='rgba(241,196,15,'+(t*0.8).toFixed(2)+')';
+    ctx.beginPath(); ctx.arc(sx,sy,1.6,0,Math.PI*2); ctx.fill();
   }
   // Point de ralliement du bâtiment sélectionné
   if(G.sel.length===1){
@@ -5030,21 +5668,26 @@ function drawGhost(){
   const g=G.ghost, d=BDEF[G.buildType];
   const sx=Math.round(g.tx*TILE-G.cam.x), sy=Math.round(g.ty*TILE-G.cam.y+54);
   const pw=d.w*TILE, ph=d.h*TILE;
-  // aperçu du vrai sprite, semi-transparent
+  const col=g.valid?'#2ecc71':'#e74c3c';
+  // Empreinte au sol D'ABORD, aperçu du bâtiment ensuite : peinte par-dessus
+  // comme avant, la nappe verte ou rouge repeignait le sprite entier et on ne
+  // distinguait plus quel bâtiment on était en train de poser.
+  ctx.globalAlpha=.30;
+  ctx.fillStyle=col; ctx.fillRect(sx,sy,pw,ph);
+  ctx.globalAlpha=1;
   const spr=SPR.bld[G.buildType];
   if(spr){
-    ctx.globalAlpha=.6;
+    ctx.globalAlpha=.72;
     const kg=TILE/(SPR.refT||TILE);
     ctx.drawImage(spr.c,sx,sy-spr.oy*kg,spr.dw*kg,spr.dh*kg);
     ctx.globalAlpha=1;
   }
-  // empreinte au sol colorée selon validité
-  ctx.globalAlpha=.35;
-  ctx.fillStyle=g.valid?'#2ecc71':'#e74c3c';
-  ctx.fillRect(sx,sy,pw,ph);
-  ctx.globalAlpha=1;
-  ctx.strokeStyle=g.valid?'#2ecc71':'#e74c3c';
-  ctx.lineWidth=2; ctx.strokeRect(sx,sy,pw,ph);
+  // Contour en pointillés qui défilent : signale « ceci n'est pas encore
+  // construit » sans rien ajouter de statique à l'écran.
+  ctx.strokeStyle=col; ctx.lineWidth=2;
+  ctx.setLineDash([7,4]); ctx.lineDashOffset=-(G.gameTime*14)%11;
+  ctx.strokeRect(sx,sy,pw,ph);
+  ctx.setLineDash([]); ctx.lineDashOffset=0;
 }
 
 // Valeur de brouillard à une case tuile (0=inexploré 1=exploré 2=visible) ;
@@ -5055,7 +5698,10 @@ function fogTileAt(tx,ty){
   return G.fog[ty][tx];
 }
 function drawMinimap(){
-  const mw=88,mh=88;
+  // Dimensions lues sur le canevas (176×176 pour 88 CSS) : la mini-carte est
+  // rendue au double de sa taille d'affichage, donc nette sur écran HiDPI et
+  // encore nette une fois agrandie sur grand écran (voir la règle @media).
+  const mw=mm.width,mh=mm.height, K=mw/88;
   const scx=mw/(COLS*BASE_TILE), scy=mh/(ROWS*BASE_TILE);
   // Le brouillard de guerre s'applique aussi à la mini-carte : hors de propos
   // de dévoiler à la souris ce que le joueur n'a jamais exploré à l'écran
@@ -5079,14 +5725,16 @@ function drawMinimap(){
     if(fogTileAt(n.tx,n.ty)===0) continue;
     const c={[RT.TREE]:'#2d6b22',[RT.STONE]:'#888',[RT.GOLD]:'#d4a017',[RT.BERRY]:'#c0392b'};
     mctx.fillStyle=c[n.type];
-    mctx.fillRect(n.tx*scx*BASE_TILE-1,n.ty*scy*BASE_TILE-1,3,3);
+    // Gisements : un point de 2 unités (et non 3, qui débordait sur deux
+    // cases voisines et transformait une forêt en confettis illisibles).
+    mctx.fillRect(n.tx*scx*BASE_TILE-K/2,n.ty*scy*BASE_TILE-K/2,2*K,2*K);
   }
   // Bâtiments : les nôtres toujours visibles, ceux ennemis seulement une
   // fois leur case explorée (mémorisés ensuite, comme sur la carte).
   for(const b of G.buildings){
     if(!estLocal(b)&&fogTileAt(b.tx,b.ty)===0) continue;
     mctx.fillStyle=couleurMinimap(b,false);
-    mctx.fillRect(b.tx*scx*BASE_TILE,b.ty*scy*BASE_TILE,b.w*scx*BASE_TILE+2,b.h*scy*BASE_TILE+2);
+    mctx.fillRect(b.tx*scx*BASE_TILE,b.ty*scy*BASE_TILE,b.w*scx*BASE_TILE+2*K,b.h*scy*BASE_TILE+2*K);
   }
   // Unités : les nôtres toujours visibles, celles ennemies seulement dans
   // le rayon de vision actuel (elles disparaissent hors de vue, contrairement
@@ -5095,13 +5743,17 @@ function drawMinimap(){
     if(u.state==='garrison') continue;
     if(!estLocal(u)&&fogTileAt((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0)!==2) continue;
     mctx.fillStyle=couleurMinimap(u,true);
-    mctx.fillRect(u.x*scx-1,u.y*scy-1,3,3);
+    mctx.fillRect(u.x*scx-1.5*K,u.y*scy-1.5*K,3*K,3*K);
   }
   // Viewport — G.cam et W/gameH() sont en pixels écran zoomés, scx/scy en
   // unités-monde : on divise par l'échelle pour repasser en unités-monde.
   const S=TILE/BASE_TILE;
   const vx=G.cam.x/S*scx, vy=G.cam.y/S*scy, vw=W/S*scx, vh=gameH()/S*scy;
-  mctx.strokeStyle='#f1c40f'; mctx.lineWidth=1;
+  // Cadre de vue : trait sombre dessous, doré dessus — sur une forêt claire
+  // comme sur du noir inexploré, il reste visible dans les deux cas.
+  mctx.strokeStyle='rgba(0,0,0,.6)'; mctx.lineWidth=3*K;
+  mctx.strokeRect(vx,vy,vw,vh);
+  mctx.strokeStyle='#f1c40f'; mctx.lineWidth=1.4*K;
   mctx.strokeRect(vx,vy,vw,vh);
 }
 
@@ -5259,7 +5911,7 @@ function updateUnits(dt){
     G.sel=G.sel.filter(id=>id!==u.id);
     for(const n of G.nodes) n.gatherers=n.gatherers.filter(id=>id!==u.id);
     spawnParts(u.x,u.y,couleurMinimap(u,true),8);
-    G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1}); // silhouette qui bascule au sol et s'estompe, plutôt qu'une disparition instantanée
+    G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge'}); // silhouette qui bascule au sol et s'estompe, plutôt qu'une disparition instantanée
     sfx('death');
     const fm=fac(u); if(fm) fm.pop--;
     if(estLocal(u)){ moi().stats.lost++; }
@@ -9957,7 +10609,10 @@ document.getElementById('deselbtn').addEventListener('click',()=>{
 // Minimap navigation
 document.getElementById('minimap').addEventListener('click',e=>{
   const r=document.getElementById('minimap').getBoundingClientRect();
-  const mx=(e.clientX-r.left)/88, my=(e.clientY-r.top)/88;
+  // r.width / r.height, et non 88 en dur : la mini-carte est plus grande sur
+  // écran large (voir @media), et un diviseur figé y aurait décalé la
+  // navigation d'autant.
+  const mx=(e.clientX-r.left)/r.width, my=(e.clientY-r.top)/r.height;
   camCenterOn(mx*COLS*BASE_TILE,my*ROWS*BASE_TILE);
 });
 
@@ -10427,7 +11082,7 @@ function appliquerDelta(m){
   // Retraits : c'est ici que le client apprend les morts et les destructions.
   for(const id of (m.rm||[])){
     const u=unitById(id); if(!u) continue;
-    G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1});
+    G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge'});
     spawnParts(u.x,u.y,couleurMinimap(u,true),8);
     G.units=G.units.filter(z=>z.id!==id);
     G.sel=G.sel.filter(z=>z!==id);

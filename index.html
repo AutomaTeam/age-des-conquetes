@@ -7225,11 +7225,19 @@ function applyBoxSelection(box){
     if(!estLocal(u)||u.state==='garrison') continue;
     if(u.x>=x0&&u.x<=x1&&u.y>=y0&&u.y<=y1) sel.push(u.id);
   }
-  // Priorité aux unités militaires si mélange
+  // Priorité aux unités militaires si mélange (façon AoE2 : un rectangle qui
+  // engloberait aussi des villageois ne doit pas risquer de les envoyer au
+  // combat par erreur). Documenté dans l'écran Contrôles, mais totalement
+  // silencieux jusqu'ici — un joueur qui ne connaît pas cette convention
+  // voit juste "certaines unités ne se sélectionnent pas", ce qui a été
+  // signalé comme un bug. On le rend explicite dans la notification.
   const mil=sel.filter(id=>{const u=G.units.find(v=>v.id===id);return u&&isMilitary(u.type);});
+  const ignores=mil.length>0 ? sel.length-mil.length : 0;
   G.sel = mil.length>0 ? mil : sel;
   refreshUI();
-  if(G.sel.length>0) notify(`${G.sel.length} unité(s) sélectionnée(s)`,'#f0c040');
+  if(G.sel.length>0){
+    notify(`${G.sel.length} unité(s) sélectionnée(s)`+(ignores>0?` (${ignores} villageois ignoré(s) — priorité au militaire)`:''),'#f0c040');
+  }
 }
 
 function handleTap(sx,sy){
@@ -9124,13 +9132,22 @@ async function openClassement(){
     return;
   }
   if(!_mpEtat.uid){
-    list.innerHTML='<p class="classub">Connectez-vous depuis le panneau <b>👥 1v1 en ligne</b> pour voir le classement et y figurer.</p>';
+    // Le bouton de connexion vit dans le panneau "1v1 en ligne" (même
+    // authentification Firebase, voir README) mais le classement N'EST PAS
+    // réservé au multijoueur : une victoire solo contre l'IA y figure tout
+    // autant qu'une victoire en ligne — d'où la précision ci-dessous.
+    list.innerHTML='<p class="classub">Connectez-vous depuis le panneau <b>👥 1v1 en ligne</b> pour voir le classement et y figurer (c\'est juste l\'écran où se fait la connexion : vos parties SOLO comptent tout autant que le 1v1 réel).</p>';
     return;
   }
   list.innerHTML='<p class="classub">Chargement…</p>';
-  const [survie,conquete]=await Promise.all([
+  // Une section par mode (hors Survie, à part) : les fusionner en un seul
+  // "Conquête" mélangeait des victoires qui ne se jouent pas à la même
+  // vitesse (solo vs 1 IA, 2 Rivaux à trois camps, 2v1 Coop) — voir
+  // CLASSEMENT_CAT. Solo et en ligne comptent pareil dans chaque section.
+  const catsConquete=['conquest','conquest2','coop2v1'];
+  const [survie,...conquetes]=await Promise.all([
     window.MP.classementLire('survie',10),
-    window.MP.classementLire('conquete',10),
+    ...catsConquete.map(m=>window.MP.classementLire(CLASSEMENT_CAT[m],10)),
   ]);
   const ligne=(r,i,fmt)=>`<div class="clarow${r.uid===_mpEtat.uid?' moi':''}">`
     +`<span class="clarang">${i+1}</span><span class="clanom">${r.nom||'Joueur'}</span>`
@@ -9139,7 +9156,7 @@ async function openClassement(){
     +(rows.length?rows.map((r,i)=>ligne(r,i,fmt)).join(''):'<p class="classub">Aucun score pour l\'instant — soyez le premier !</p>');
   list.innerHTML=
     section('🛡️ Survie — meilleure vague',survie,v=>`Vague ${v}`)+
-    section('🏴 Conquête — victoire la plus rapide',conquete,v=>fmtDuration(v));
+    catsConquete.map((m,i)=>section(`${MODES[m].ico} ${MODES[m].nom} — victoire la plus rapide`,conquetes[i],v=>fmtDuration(v))).join('');
 }
 function closeClassement(){ document.getElementById('classementpanel').style.display='none'; }
 window.openClassement=openClassement; window.closeClassement=closeClassement;
@@ -9285,12 +9302,20 @@ function finishGame(won){
 // à faire valoir). Nécessite d'être connecté au multijoueur (voir
 // window.MP.classementEnvoyer) ; échec ou non-connexion = silencieux, la fin
 // de partie ne dépend jamais de ce petit plus.
+// Une catégorie PAR MODE (et non un unique "conquete" fourre-tout) : une
+// victoire solo contre 1 IA, une victoire à trois camps hostiles en 2
+// Rivaux et une victoire en 2v1 Coop ne se jouent pas à la même vitesse —
+// les mélanger rendait la comparaison entre amis trompeuse. Solo ou en
+// ligne compte pareil : rien ici ne distingue une partie 1v1 réelle d'une
+// partie contre l'IA, le classement n'a jamais été réservé au multijoueur.
+const CLASSEMENT_CAT={conquest:'conquete', conquest2:'conquete2', coop2v1:'coop2v1'};
 function soumettreClassement(won){
   if(!mpDispo()||!window.MP.classementEnvoyer) return;
   if(G.gmode==='survival'){
     window.MP.classementEnvoyer('survie',G.wave||0).catch(()=>{});
   } else if(won){
-    window.MP.classementEnvoyer('conquete',Math.round(G.gameTime||0)).catch(()=>{});
+    const cat=CLASSEMENT_CAT[G.gmode]||'conquete';
+    window.MP.classementEnvoyer(cat,Math.round(G.gameTime||0)).catch(()=>{});
   }
 }
 
@@ -11889,11 +11914,14 @@ try {
   // ── CLASSEMENT EN LIGNE (léger) ────────────────────────────────
   // Une seule entrée par joueur et par catégorie (clé = son uid Firebase) :
   // pas d'historique, juste son MEILLEUR score. `categorie` vaut 'survie'
-  // (nombre de vagues survécues — plus haut est meilleur) ou 'conquete'
-  // (durée en secondes d'une victoire hors Survie — plus bas est meilleur).
+  // (nombre de vagues survécues — plus haut est meilleur) ou une catégorie
+  // de type "durée" — 'conquete', 'conquete2', 'coop2v1', une par mode (voir
+  // CLASSEMENT_CAT) — où c'est la durée en secondes d'une victoire qui
+  // compte, et plus bas est meilleur. Seule 'survie' inverse ce sens.
   // Nécessite les règles RTDB `classement/$categorie/$uid` du README ; sans
   // elles, échoue silencieusement (permission_denied) comme le reste du
   // multijoueur optionnel.
+  const CLASSEMENT_ASC=categorie=>categorie!=='survie'; // toute catégorie "durée" : plus bas = meilleur
   window.MP.classementEnvoyer = async(categorie,valeur)=>{
     if(!E.uid) return false;
     const chemin=`classement/${categorie}/${E.uid}`;
@@ -11907,7 +11935,7 @@ try {
       let ecrit=false;
       await runTransaction(ref(db,chemin), actuel=>{
         if(actuel){
-          const progres=categorie==='conquete'?valeur<actuel.valeur:valeur>actuel.valeur;
+          const progres=CLASSEMENT_ASC(categorie)?valeur<actuel.valeur:valeur>actuel.valeur;
           if(!progres) return; // undefined = abandonne la transaction, aucune écriture
         }
         ecrit=true;
@@ -11918,11 +11946,12 @@ try {
   };
   window.MP.classementLire = async(categorie,limite=10)=>{
     try{
-      const ordre=categorie==='conquete'?limitToFirst(limite):limitToLast(limite);
+      const asc=CLASSEMENT_ASC(categorie);
+      const ordre=asc?limitToFirst(limite):limitToLast(limite);
       const snap=await get(query(ref(db,`classement/${categorie}`),orderByChild('valeur'),ordre));
       const out=[];
       snap.forEach(enfant=>out.push({uid:enfant.key, ...enfant.val()}));
-      if(categorie!=='conquete') out.reverse(); // limitToLast rend l'ordre croissant : on veut le meilleur en tête
+      if(!asc) out.reverse(); // limitToLast rend l'ordre croissant : on veut le meilleur en tête
       return out;
     }catch(e){ console.warn('Classement : lecture échouée',e); return []; }
   };

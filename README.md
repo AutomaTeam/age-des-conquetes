@@ -169,6 +169,22 @@ ne peut lire ni écrire que dans les salons dont il fait partie.
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 36000"
         }
+      },
+      "conquete2": {
+        ".read": "auth != null",
+        ".indexOn": "valeur",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 36000"
+        }
+      },
+      "coop2v1": {
+        ".read": "auth != null",
+        ".indexOn": "valeur",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 36000"
+        }
       }
     }
   }
@@ -190,11 +206,17 @@ jamais quitté la mémoire) — limité au rôle client, l'hôte étant seul dé
 de l'état autoritatif.
 
 **Classement en ligne.** Léger et optionnel, réutilise la même connexion
-Firebase que le multijoueur (bouton 🥇 *Classement* sur l'écran-titre) : une
-seule entrée par joueur et par catégorie (sa MEILLEURE valeur, pas un
-historique) — meilleure vague atteinte en Survie, victoire la plus rapide
-dans les autres modes. Envoyé automatiquement en fin de partie si connecté ;
-échoue silencieusement sinon (comme le reste du multijoueur). Les règles
+Firebase que le multijoueur (bouton 🥇 *Classement* sur l'écran-titre — la
+connexion se fait depuis le panneau *1v1 en ligne*, mais le classement N'EST
+PAS réservé au multijoueur : une victoire solo contre l'IA y figure tout
+autant qu'une victoire 1v1 réelle). Une seule entrée par joueur et par
+catégorie (sa MEILLEURE valeur, pas un historique) — **quatre** catégories,
+une par mode : meilleure vague atteinte en Survie (`survie`), victoire la
+plus rapide en Conquête (`conquete`), en 2 Rivaux (`conquete2`) et en 2v1
+Coop (`coop2v1`) — jamais mélangées entre elles, une victoire solo contre 1
+IA et une victoire à trois camps hostiles en 2 Rivaux ne se jouant pas à la
+même vitesse. Envoyé automatiquement en fin de partie si connecté ; échoue
+silencieusement sinon (comme le reste du multijoueur). Les règles
 `classement/…` ci-dessus valident le type et bornent la valeur envoyée
 (0-9999 vagues, 0-36000 s) — une protection minimale, pas une preuve
 d'intégrité : un client signé peut toujours mentir dans cette fourchette,

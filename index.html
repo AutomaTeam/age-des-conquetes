@@ -3198,6 +3198,17 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
     fill(pw*0.06,H-T*0.32,T*0.26,Math.max(2,T*0.05),'#a88a5a');
     fill(pw*0.74,H-T*0.26,T*0.21,T*0.21,'#8a6a3a');
     fill(pw*0.74,H-T*0.26,T*0.21,Math.max(2,T*0.05),'#a88a5a');
+    // tonneau + panier de marchandises entre les deux caisses : l'étal était
+    // vide au centre, on ne lisait "commerce" qu'aux deux coins.
+    disc(pw*0.42,H-T*0.18,T*0.12,'#6a4a28');
+    fill(pw*0.42-T*0.12,H-T*0.24,T*0.24,Math.max(1,T*0.03),'#3a2818'); // cerclage
+    fill(pw*0.42-T*0.12,H-T*0.1,T*0.24,Math.max(1,T*0.03),'#3a2818');
+    const goodsCol=['#c0392b','#e8b030','#7ab840'];
+    const goodsPos=[[0,0],[0.09,-0.02],[0.18,0],[0.045,-0.06],[0.135,-0.055]];
+    for(let g=0;g<goodsPos.length;g++){
+      const [dfx,dfy]=goodsPos[g];
+      disc(pw*0.55+dfx*pw,H-T*0.08+dfy*T,T*0.045,goodsCol[g%goodsCol.length]);
+    }
     break; }
 
   // ── FORGE : cheminée fumante + foyer incandescent + enclume ──
@@ -3271,12 +3282,26 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
     cx.fillStyle=ec('#3a8aa8'); cx.beginPath(); cx.arc(pw/2,bodyTop,pw*0.3,Math.PI,0); cx.fill();
     cx.fillStyle=ec('#5aa8c8'); cx.beginPath(); cx.arc(pw*0.43,bodyTop-pw*0.05,pw*0.13,Math.PI,0); cx.fill();
     fill(pw/2-Math.max(2,T*0.035),bodyTop-pw*0.3-T*0.2,Math.max(3,T*0.07),T*0.22,'#caa83a');
+    // sphère armillaire au sommet, pas juste une pointe dorée : le dôme
+    // seul se lisait "mosquée/observatoire" plutôt que "savoir" — l'anneau
+    // incliné façon astrolabe ancre le thème universitaire au premier regard.
+    const armY=bodyTop-pw*0.3-T*0.22;
+    disc(pw/2,armY,T*0.045,'#e8c84a');
+    cx.strokeStyle='#caa83a'; cx.lineWidth=Math.max(1,T*0.02);
+    cx.beginPath(); cx.ellipse(pw/2,armY,T*0.1,T*0.04,0.5,0,Math.PI*2); cx.stroke();
+    cx.beginPath(); cx.ellipse(pw/2,armY,T*0.1,T*0.04,-0.5,0,Math.PI*2); cx.stroke();
     for(const fx of [pw*0.17,pw*0.83]){
       const aw2=pw*0.16;
       archD(fx,bodyTop+bodyH*0.22,aw2,bodyH*0.52,'#173a4a');
       fill(fx-aw2*0.13,bodyTop+bodyH*0.28,aw2*0.26,bodyH*0.34,enemy?'#ffcc44':'#7fc8e8');
     }
     door(0.18);
+    // livre ouvert posé au pied de l'entrée : détail domestique du savoir,
+    // même principe que la jardinière de la maison ou le tonneau du quai.
+    const bkw=T*0.16, bkx=pw*0.5-bkw*1.1, bky=H-T*0.07;
+    fill(bkx,bky,bkw,Math.max(2,T*0.045),'#e8ddc0');
+    fill(bkx,bky,bkw*0.48,Math.max(2,T*0.045),'#d8cca8');
+    fill(bkx+bkw*0.48,bky-1,Math.max(1,T*0.012),Math.max(3,T*0.05),'#8a6a3a'); // reliure centrale
     break; }
 
   // ── TOUR : meurtrières + créneaux (+ habillage selon le niveau) ──
@@ -3337,17 +3362,36 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
     break; }
 
   // ── ATELIER DE SIÈGE : auvent ouvert + bélier en construction ──
+  // Les deux roues posées côte à côte, sans rien qui les relie, se lisaient
+  // comme un box de rangement plutôt qu'un engin en cours de montage. On
+  // suspend maintenant le tronc du bélier ENTRE les deux roues par des
+  // chaînes (comme sur son affût fini) et on lui donne une vraie tête de
+  // fer conique en bout — la silhouette se lit "bélier" d'un coup d'œil. ──
   case BT.SIEGE: {
     const pw2=Math.max(3,T*0.09);
     fill(pw*0.05,bodyTop,pw2,bodyH,'#4a3018');
     fill(pw-pw*0.05-pw2,bodyTop,pw2,bodyH,'#4a3018');
     roofTri(ec('#7a6a4a'),ec('#5a4a30'),0.3);
-    // roues de bélier en cours d'assemblage, adossées à l'atelier
-    const wr=Math.max(3,T*0.13), wy=H-wr*1.1;
-    disc(pw*0.32,wy,wr,'#3a2818'); disc(pw*0.32,wy,wr*0.4,'#2a1c10');
-    disc(pw*0.62,wy,wr,'#3a2818'); disc(pw*0.62,wy,wr*0.4,'#2a1c10');
-    fill(pw*0.32-wr*0.75,wy-Math.max(1,T*0.02),wr*1.5,Math.max(2,T*0.04),'#6a4a28'); // poutre posée en travers
-    fill(pw*0.86,H-T*0.3,T*0.16,T*0.24,'#8a8a92'); // tête de fer stockée
+    // affût : deux roues cerclées de fer, posture d'essieu (même hauteur, écartées)
+    const wr=Math.max(4,T*0.15), wy=H-wr*1.05;
+    const wx1=pw*0.22, wx2=pw*0.66;
+    for(const wcx of [wx1,wx2]){
+      disc(wcx,wy,wr,'#3a2818'); disc(wcx,wy,wr*0.78,'#4a3220');
+      disc(wcx,wy,wr*0.22,'#8a8a92'); // moyeu métallique
+      for(let a=0;a<6;a++){ const ang=a*Math.PI/3; fill(wcx+Math.cos(ang)*wr*0.15,wy+Math.sin(ang)*wr*0.15,Math.max(1,wr*0.12),wr*0.85,'#2a1c10'); } // rayons
+    }
+    // chaînes de suspension : le tronc pend entre les deux roues, pas posé au sol
+    const beamY=wy-wr*1.5;
+    cx.strokeStyle='#5a5a5a'; cx.lineWidth=Math.max(1,T*0.02);
+    cx.beginPath(); cx.moveTo(wx1,wy-wr*0.6); cx.lineTo(wx1,beamY); cx.stroke();
+    cx.beginPath(); cx.moveTo(wx2,wy-wr*0.6); cx.lineTo(wx2,beamY); cx.stroke();
+    // tronc du bélier, effilé vers la tête de fer conique en bout
+    fill(wx1-wr*0.3,beamY-Math.max(2,T*0.05),(wx2-wx1)+wr*0.3,Math.max(3,T*0.09),'#6a4a28');
+    fill(wx1-wr*0.3,beamY-Math.max(2,T*0.05),(wx2-wx1)+wr*0.3,Math.max(1,T*0.025),'#8a6a44'); // reflet du bois
+    cx.fillStyle='#9a9aa2';
+    cx.beginPath();
+    cx.moveTo(wx2+wr*0.15,beamY-Math.max(2,T*0.06)); cx.lineTo(wx2+wr*0.65,beamY-Math.max(1,T*0.02));
+    cx.lineTo(wx2+wr*0.15,beamY+Math.max(2,T*0.06)); cx.closePath(); cx.fill(); // tête conique
     break; }
 
   // ── AVANT-POSTE : petite palissade + brasero de guet ──
@@ -3539,6 +3583,23 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
     // mât et pavillon
     fill(pw*0.88,oy-T*0.1,Math.max(1,T*0.02),ph*0.5,'#4a3420');
     fill(pw*0.88+Math.max(1,T*0.02),oy-T*0.1,T*0.22,T*0.14,enemy?'#c0392b':'#2980b9');
+    // bollard d'amarrage en bord de ponton : ancre le bâtiment à l'eau qui
+    // le borde plutôt que de le laisser lire comme un simple entrepôt.
+    disc(pw*0.44,dy2-Math.max(1,T*0.02),Math.max(2,T*0.045),'#2a1c10');
+    fill(pw*0.44-Math.max(1,T*0.02),dy2-T*0.14,Math.max(2,T*0.04),T*0.14,'#3a2818');
+    // filet de pêche suspendu au mur : treillis de corde en losanges,
+    // motif nautique qu'aucun autre bâtiment ne porte.
+    const nx=pw*0.36, ny=bodyTop+bodyH*0.14, nw=pw*0.26, nh=bodyH*0.32;
+    cx.save();
+    cx.beginPath(); cx.rect(nx,ny,nw,nh); cx.clip();
+    cx.strokeStyle='rgba(90,65,35,.65)'; cx.lineWidth=Math.max(1,T*0.013);
+    const step=Math.max(3,T*0.09);
+    for(let d=-nh;d<nw+nh;d+=step){
+      cx.beginPath(); cx.moveTo(nx+d,ny); cx.lineTo(nx+d-nh,ny+nh); cx.stroke();
+      cx.beginPath(); cx.moveTo(nx+d,ny); cx.lineTo(nx+d+nh,ny+nh); cx.stroke();
+    }
+    cx.restore();
+    fill(nx-Math.max(1,T*0.02),ny-Math.max(1,T*0.02),nw+Math.max(2,T*0.04),Math.max(1,T*0.025),'#5a4028'); // tringle de suspension
     break; }
 
   // ── MAISON et par défaut : toit de chaume + cheminée ──
@@ -4782,13 +4843,27 @@ function drawUnits(){
       ctx.fillText(RANK_THRESHOLDS[u.rank-1].ico,sx-S*0.32,drawY-2);
     }
     // icône d'état
-    let icon=null;
+    let icon=null, iconSize=9, relicGlow=false;
     if(u.state==='gather') icon='⛏'; else if(u.state==='return') icon='📦';
     else if(u.state==='build') icon='🔨'; else if(u.state==='heal') icon='✨';
     else if(u.state==='farm') icon='🌾';
     else if(u.state==='repair') icon='🛠';
-    else if(u.state==='relic') icon=u.relicHeld?'🏺':'➡️'; // relique en main vs. simple trajet vers elle
-    if(icon){ ctx.font='9px serif'; ctx.textAlign='center'; ctx.fillText(icon,sx,drawY-6); }
+    else if(u.state==='relic'){
+      // relique en main vs. simple trajet vers elle — le premier cas doit
+      // sauter aux yeux (c'est le seul état qui rapporte un revenu passif
+      // en continu une fois livré) : icône agrandie + halo doré, pas juste
+      // un pictogramme 9px identique aux autres états.
+      icon=u.relicHeld?'🏺':'➡️';
+      if(u.relicHeld){ iconSize=13; relicGlow=true; }
+    }
+    if(icon){
+      if(relicGlow){
+        const g=ctx.createRadialGradient(sx,drawY-6,0,sx,drawY-6,10);
+        g.addColorStop(0,'rgba(255,214,110,.85)'); g.addColorStop(1,'rgba(255,214,110,0)');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(sx,drawY-6,10,0,Math.PI*2); ctx.fill();
+      }
+      ctx.font=iconSize+'px serif'; ctx.textAlign='center'; ctx.fillText(icon,sx,drawY-6);
+    }
     // badge : ressources portées
     if(u.inv>0&&u.type===UT.VIL){
       const cols={[RT.TREE]:'#8fbc44',[RT.STONE]:'#d8d8e0',[RT.GOLD]:'#f0c040',[RT.BERRY]:'#e8907a',farm:'#e8d5a0'};

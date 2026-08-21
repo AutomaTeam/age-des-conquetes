@@ -883,9 +883,10 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   <button class="pmenu-btn" id="diplobtn" style="display:none;background:rgba(46,204,113,.1);color:#7fd8a0;border-color:#2ecc71;" onclick="openDiplo()">🤝 Diplomatie</button>
   <button class="pmenu-btn" style="background:rgba(127,184,232,.1);color:#7fb8e8;border-color:#2a6a9a;" onclick="openControls()">🎮 Contrôles</button>
   <button class="pmenu-btn pmenu-google" id="gauthbtn" onclick="googleAuthClick()" style="display:none;">☁️ Connexion Google</button>
-  <button class="pmenu-btn pmenu-save"   onclick="saveGame()">💾 Sauvegarder</button>
-  <button class="pmenu-btn pmenu-load"   onclick="loadGame()">📂 Charger</button>
+  <button class="pmenu-btn pmenu-save"   id="savebtn-pause" onclick="saveGame()">💾 Sauvegarder</button>
+  <button class="pmenu-btn pmenu-load"   id="loadbtn-pause" onclick="loadGame()">📂 Charger</button>
   <button class="pmenu-btn pmenu-load"   id="autoloadbtn" onclick="loadAutoSave()" style="display:none;">⏱️ Charger l'auto-sauvegarde</button>
+  <p id="mp-save-note" style="display:none;color:#8a8a8a;font-size:12px;text-align:center;margin:4px 0;">💾/📂 indisponibles en ligne — utilisez « Sauvegarder ma partie » si l'hôte se déconnecte.</p>
   <div class="pmenu-sep"></div>
   <button class="pmenu-btn pmenu-quit" id="mpbtn-abandon" style="display:none;" onclick="mpAbandonner()">🏳️ Abandonner la partie</button>
   <button class="pmenu-btn pmenu-quit"   onclick="quitGame()">🏠 Quitter la partie</button>
@@ -1205,15 +1206,20 @@ let _lastFarmNotify=0;
 function tryAutoReseed(b){
   if(b.foodLeft>0){ b._reseedWarned=false; return; }
   const t=G.gameTime||0;
-  if(canAfford(FARM_RESEED_COST)){
-    spend(FARM_RESEED_COST);
+  // Toujours facturer LE PROPRIÉTAIRE du champ (b.owner), pas G.me : en
+  // multijoueur en ligne, cette fonction tourne côté hôte pour les fermes
+  // des DEUX camps (voir updateBuildings) — sans owner explicite, canAfford/
+  // spend retombent sur la caisse de l'hôte et prélèveraient son bois pour
+  // resemer le champ du client.
+  if(canAfford(FARM_RESEED_COST,b.owner)){
+    spend(FARM_RESEED_COST,b.owner);
     b.foodLeft=FARM_FOOD; b._reseedWarned=false;
     spawnParts(b.x,b.y,'#8fbc44',6);
     addFText(b.x,b.y-18,'🌱','#8fbc44');
-    if(t-_lastFarmNotify>3){ _lastFarmNotify=t; notify(`🌱 Ferme re-semée (-${FARM_RESEED_COST.wood}🪵)`,'#8fbc44'); }
+    if(estLocal(b)&&t-_lastFarmNotify>3){ _lastFarmNotify=t; notify(`🌱 Ferme re-semée (-${FARM_RESEED_COST.wood}🪵)`,'#8fbc44'); }
   } else if(!b._reseedWarned){
     b._reseedWarned=true;
-    if(t-_lastFarmNotify>3){ _lastFarmNotify=t; notify('🪵 Bois insuffisant pour re-semer une ferme','#e67e22'); }
+    if(estLocal(b)&&t-_lastFarmNotify>3){ _lastFarmNotify=t; notify('🪵 Bois insuffisant pour re-semer une ferme','#e67e22'); }
   }
 }
 const FIRST_WAVE_DELAY = 1200; // temps de paix avant le premier assaut (à difficulté Normal)
@@ -2319,6 +2325,7 @@ function towerMaxHp(level,owner){
   if(rech.masonry) hp*=1.25;
   hp*=AGE_BONUS[ageOf(owner)].bldHp;
   if(rech.engineering) hp*=1.4;
+  const civBldMult=civOf(owner).bldHpMult; if(civBldMult) hp*=civBldMult; // bonus de civilisation (Byzantins) — voir mkBuilding
   return Math.round(hp);
 }
 // Mutation pure — valide et applique, sans toucher à l'interface.
@@ -2384,6 +2391,7 @@ function campMaxHp(type,level,owner){
   let hp=BDEF[type].hp*(tbl[level].hpMult||1);
   if(rech.masonry) hp*=1.25;
   hp*=AGE_BONUS[ageOf(owner)].bldHp;
+  const civBldMult=civOf(owner).bldHpMult; if(civBldMult) hp*=civBldMult; // bonus de civilisation (Byzantins) — voir mkBuilding
   return Math.round(hp);
 }
 // Meilleur niveau possédé par la faction pour ce type de camp — sert à
@@ -5526,11 +5534,18 @@ function doAttack(u,dt){
 function updateBuildings(dt){
   for(const b of G.buildings){
     if(!b.active||b.constructing) continue;
-    if(b.type===BT.FARM&&estLocal(b)) tryAutoReseed(b);
+    // Réensemencement des fermes et production continue : concernent
+    // TOUTE faction humaine (pas seulement G.me), sans quoi elles ne se
+    // déclenchent jamais pour le camp du client distant en multijoueur en
+    // ligne — update() ne tourne que côté hôte, où G.me vaut la faction de
+    // L'HÔTE, jamais celle du client (voir estLocal). L'IA gère sa propre
+    // économie ailleurs (updateAI) et ne doit pas passer par ce chemin.
+    const fb=fac(b.owner), humB=fb&&fb.genre==='humain';
+    if(b.type===BT.FARM&&humB) tryAutoReseed(b);
     // Production continue : réenfile un villageois dès que la file est vide
-    if(b.type===BT.TC&&estLocal(b)&&b.autoTrain&&b.trainQ.length===0
-       &&G.pop<G.maxPop&&canAfford(TCOST[UT.VIL])){
-      spend(TCOST[UT.VIL]); b.trainQ.push(UT.VIL); b.trainTimer=TTIME[UT.VIL];
+    if(b.type===BT.TC&&humB&&b.autoTrain&&b.trainQ.length===0
+       &&popDe(b.owner)<maxPopDe(b.owner)&&canAfford(TCOST[UT.VIL],b.owner)){
+      spend(TCOST[UT.VIL],b.owner); b.trainQ.push(UT.VIL); b.trainTimer=TTIME[UT.VIL];
     }
     // File de formation — commune aux deux camps : chacun est borné par SA
     // population et produit pour SON compte (voir trainTime/spawnUnit).
@@ -5575,7 +5590,15 @@ function updateBuildings(dt){
     spawnParts(b.x,b.y,'#e74c3c',14);
     // La garnison tombe avec le bâtiment — un abri détruit ne protège plus
     // personne (contrairement à une démolition volontaire, voir appliquerDemolition).
-    for(const u of G.units) if(u.state==='garrison'&&u.target===b.id) u.hp=0;
+    // On propage l'auteur du coup fatal du bâtiment aux unités qui tombent
+    // avec lui : sans ça, u.dernierAgresseur restait vide (ces unités ne
+    // sont jamais passées par dealDmg) et l'attaquant ne recevait ni kill
+    // compté dans ses stats, ni XP de vétérance pour ces morts pourtant
+    // provoquées par lui.
+    for(const u of G.units) if(u.state==='garrison'&&u.target===b.id){
+      u.hp=0; u.dernierAgresseur=b.dernierAgresseur;
+      if(b.dernierAgresseurUnit!=null) awardKillXP(b.dernierAgresseurUnit);
+    }
     const fv=fac(b.owner); if(fv) fv.stats.bldLost++;
     const fk=fac(b.dernierAgresseur); if(fk&&fk!==fv) fk.stats.bldDestroyed++;
     if(estLocal(b)) notify(`${BDEF[b.type].nom} détruite !`,'#e74c3c');
@@ -5764,7 +5787,16 @@ function updateEnemyAI(dt){
           const nx=u.x+dx/d*spd, ny=u.y+dy/d*spd;
           const w=blockingBuildingAt(nx,ny)||blockingBuildingAt(u.x+Math.sign(dx)*BASE_TILE*0.6,u.y)||blockingBuildingAt(u.x,u.y+Math.sign(dy)*BASE_TILE*0.6);
           if(w){ tgt=w; u.target=w.id; u.state='attack'; u.moving=false;
-            if(u.atkCd<=0){ u.atkCd=1/u.atkSpd; dealDmg(w,u.atk,u); } }
+            if(u.atkCd<=0){
+              u.atkCd=1/u.atkSpd;
+              // Même calcul que le chemin d'attaque normal ci-dessous (aura de
+              // Héros + bonus du Boss contre les bâtiments) : ce repli servait
+              // des dégâts nus, rendant une unité anormalement faible contre
+              // un mur simplement parce qu'elle l'a atteint par ce chemin-ci.
+              let dmg=Math.round(u.atk*heroAuraMult(u));
+              if(u.type===UT.ENEMI_BOSS) dmg=Math.round(dmg*1.6);
+              dealDmg(w,dmg,u); if(w.hp<=0) awardKillXP(u.id);
+            } }
         }
       }
     } else {
@@ -5869,7 +5901,13 @@ function shakeScreen(mag){ G.shake.mag=Math.max(G.shake.mag,mag); }
 // `source` : l'entité (ou le camp) qui frappe — mémorisée sur la cible pour
 // créditer le bon camp du kill ou de la destruction.
 function dealDmg(tgt,dmg,source){
-  if(source) tgt.dernierAgresseur=(typeof source==='string')?source:source.owner;
+  if(source){
+    tgt.dernierAgresseur=(typeof source==='string')?source:source.owner;
+    // Retient aussi L'UNITÉ auteure du coup (pas seulement sa faction) : sert
+    // à créditer la vétérance (awardKillXP) quand une garnison meurt avec le
+    // bâtiment qui l'abritait, voir updateBuildings/Destruction.
+    if(typeof source==='object'&&source.id!=null) tgt.dernierAgresseurUnit=source.id;
+  }
   tgt.hp=Math.max(0,tgt.hp-dmg);
   sfx('hit');
   spawnParts(tgt.x,tgt.y,'#e74c3c',3);
@@ -5895,7 +5933,11 @@ function updateProjs(dt){
           if(estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash){ dealDmg(u,p.atk,p); if(u.hp<=0) awardKillXP(p.shooterId); }
         }
         for(const b of G.buildings){
-          if(estHostile(p,b)&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash) dealDmg(b,p.atk,p);
+          // Même crédit d'XP que le tir ciblé ci-dessous (else) : sans le
+          // if(b.hp<=0) awardKillXP, un Trébuchet — qui tire quasi toujours
+          // en zone — ne montait jamais en grade en rasant des bâtiments,
+          // pourtant son usage principal.
+          if(estHostile(p,b)&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash){ dealDmg(b,p.atk,p); if(b.hp<=0) awardKillXP(p.shooterId); }
         }
       } else {
         const t=unitById(p.targetId)||bldById(p.targetId);
@@ -9468,10 +9510,21 @@ function openPause(){
   afficherVoilePause(false); // le menu complet remplace le voile leger, le cas echeant
   document.getElementById('pausemenu').style.display='flex';
   document.getElementById('mpbtn-abandon').style.display=reseauActif()?'block':'none';
+  // Sauvegarder/Charger manipulent directement G.units/buildings/factions
+  // sans jamais toucher RESEAU : charger une vieille sauvegarde en pleine
+  // partie en ligne désynchronise irrémédiablement les deux joueurs, sans
+  // qu'aucune erreur ne soit levée. On les masque plutôt que d'ajouter un
+  // garde silencieux — le joueur en ligne dispose déjà de "Sauvegarder ma
+  // partie" (mpSauverEtQuitter) pour le cas où l'hôte se déconnecte.
+  const enLigne=reseauActif();
+  document.getElementById('savebtn-pause').style.display=enLigne?'none':'block';
+  document.getElementById('loadbtn-pause').style.display=enLigne?'none':'block';
+  document.getElementById('mp-save-note').style.display=enLigne?'block':'none';
+  if(enLigne) document.getElementById('autoloadbtn').style.display='none';
   updateDiploBtn();
-  refreshSaveInfo();
+  if(!enLigne) refreshSaveInfo();
   document.getElementById('pausebtn-inner').innerHTML=iconImg('▶',16);
-  checkSaveExists().then(exists=>{
+  if(!enLigne) checkSaveExists().then(exists=>{
     const st=document.getElementById('save-status');
     st.textContent=exists?'💾 Une sauvegarde existe':'Aucune sauvegarde';
     st.style.color=exists?'#2ecc71':'#555';
@@ -10416,8 +10469,14 @@ function afficherEcranHoteParti(){
     '<button class="bigbtn" onclick="location.reload()">🏠 Retour au menu</button>';
 }
 async function mpSauverEtQuitter(){
-  try{ await storageSave(buildSaveData(),SAVE_KEY); notify('Partie sauvegard\u00e9e','#2ecc71'); }
-  catch(e){ notify('\u00c9chec de la sauvegarde','#e74c3c'); }
+  // storageSave() n'echoue JAMAIS par exception meme si les 3 paliers
+  // (Drive/Canvas/localStorage) echouent : elle retourne alors null. Tester
+  // seulement le try/catch annoncerait un succes bidon puis rechargerait la
+  // page, perdant la partie pour de bon (voir commentaire plus haut).
+  let medium=null;
+  try{ medium=await storageSave(buildSaveData(),SAVE_KEY); }catch(e){}
+  if(medium) notify('Partie sauvegard\u00e9e','#2ecc71');
+  else notify('\u00c9chec de la sauvegarde','#e74c3c');
   setTimeout(()=>location.reload(),900);
 }
 window.mpSauverEtQuitter=mpSauverEtQuitter;
@@ -10774,6 +10833,24 @@ async function driveSave(name,json){
   const tok=googleToken(); if(!tok) return false;
   const id=await driveFind(name);
   if(id){
+    // Écrasement conditionnel : si le même compte est connecté sur un autre
+    // appareil/onglet et a écrit une sauvegarde plus récente (ts) entre-temps,
+    // on refuse d'écraser plutôt que de perdre silencieusement la partie la
+    // plus avancée — ce n'est pas une garantie d'atomicité (course toujours
+    // possible à la même seconde près), mais ça couvre le cas courant d'un
+    // appareil resté en retard qui autosave par-dessus une partie déjà
+    // continuée ailleurs.
+    try{
+      const r0=await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`,{headers:{Authorization:'Bearer '+tok}});
+      if(r0.ok){
+        const distant=await r0.json();
+        const local=JSON.parse(json);
+        if(distant&&distant.ts&&local&&local.ts&&distant.ts>local.ts){
+          console.warn('Sauvegarde Drive plus récente que la locale — écrasement refusé');
+          return false;
+        }
+      }
+    }catch(e){ /* lecture de vérification échouée : on retente quand même l'écriture, mieux vaut une sauvegarde qu'aucune */ }
     const r=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`,
       {method:'PATCH',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:json});
     if(!r.ok) throw new Error('drive update '+r.status);
@@ -10812,7 +10889,11 @@ async function storageSave(data,key=SAVE_KEY){
   // ligne…) : on retombe sur les paliers suivants, jamais de sauvegarde
   // perdue pour une simple coupure réseau côté Drive.
   if(googleToken()){
-    try{ await driveSave(key+'.json', json); return 'google'; } catch(e){ console.warn('Sauvegarde Drive échouée',e); }
+    // driveSave() renvoie false (sans lever d'exception) quand elle a refusé
+    // d'écraser une sauvegarde distante plus récente — dans ce cas on NE
+    // rapporte PAS un succès Drive fictif, on retombe sur les paliers
+    // suivants comme pour tout autre échec.
+    try{ if(await driveSave(key+'.json', json)) return 'google'; } catch(e){ console.warn('Sauvegarde Drive échouée',e); }
   }
   // 1. Essayer window.storage (Claude Canvas)
   if(window.storage){
@@ -11048,6 +11129,13 @@ async function loadAutoSave(){ return loadGame(AUTO_KEY); }
 
 async function loadGame(key=SAVE_KEY){
   const st=document.getElementById('save-status');
+  // Le bouton est déjà masqué en ligne (voir openPause), mais on bloque ici
+  // aussi : charger une sauvegarde remplace G.units/buildings/factions sans
+  // toucher RESEAU, ce qui désynchronise durablement les deux joueurs.
+  if(reseauActif()){
+    notify('📂 Chargement indisponible en partie en ligne','#e74c3c');
+    return;
+  }
   if(st) { st.textContent='📂 Chargement…'; st.style.color='#3498db'; }
   try{
     let data=await storageLoad(key);
@@ -11426,8 +11514,15 @@ document.getElementById('idlebtn-inner').addEventListener('click',()=>{
 window.addEventListener('resize',()=>{ resizeCanvas(); });
 
 // ── PREVENT SCROLL ────────────────────────────────────────
+// Empêche le rebond/pinch-zoom du navigateur PENDANT UNE PARTIE (glisser sur
+// le <canvas> pour déplacer la caméra, pincer pour zoomer — canvas.addEven-
+// tListener('touchmove',...) plus haut gère déjà son propre geste). Sans le
+// `e.target===canvas` ici aussi (touchstart l'avait, touchmove ne l'avait
+// pas), CE handler global bloquait tout défilement tactile ailleurs dans le
+// document — écran-titre, menu pause, classement, tutoriel... tous pourtant
+// en `overflow-y:auto;touch-action:pan-y` pour être défilables au doigt.
 document.body.addEventListener('touchstart',e=>{if(e.target===canvas)e.preventDefault();},{passive:false});
-document.body.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
+document.body.addEventListener('touchmove',e=>{if(e.target===canvas)e.preventDefault();},{passive:false});
 document.body.addEventListener('contextmenu',e=>e.preventDefault());
 </script>
 
@@ -11505,7 +11600,7 @@ try {
   const auth = authMod.getAuth(app);
   const db   = dbMod.getDatabase(app);
   const {ref,set,get,child,update,remove,onValue,onChildAdded,push,onDisconnect,serverTimestamp,
-         query,orderByChild,limitToLast,limitToFirst}=dbMod;
+         query,orderByChild,limitToLast,limitToFirst,runTransaction}=dbMod;
 
   E.dispo=true; prevenirEtat();
 
@@ -11803,14 +11898,22 @@ try {
     if(!E.uid) return false;
     const chemin=`classement/${categorie}/${E.uid}`;
     try{
-      const snap=await get(ref(db,chemin));
-      if(snap.exists()){
-        const actuel=snap.val().valeur;
-        const progres=categorie==='conquete'?valeur<actuel:valeur>actuel;
-        if(!progres) return false;
-      }
-      await set(ref(db,chemin),{nom:E.nom||'Joueur',valeur,ts:Date.now()});
-      return true;
+      // Transaction plutôt qu'un get() puis un set() séparés : deux
+      // soumissions concurrentes (même compte sur deux onglets/appareils)
+      // liraient sinon la même valeur "actuelle" avant que l'une ou l'autre
+      // n'écrive, et le dernier set() gagnerait même s'il porte le pire
+      // score. La transaction relit et réapplique la comparaison en cas de
+      // conflit détecté côté serveur.
+      let ecrit=false;
+      await runTransaction(ref(db,chemin), actuel=>{
+        if(actuel){
+          const progres=categorie==='conquete'?valeur<actuel.valeur:valeur>actuel.valeur;
+          if(!progres) return; // undefined = abandonne la transaction, aucune écriture
+        }
+        ecrit=true;
+        return {nom:E.nom||'Joueur',valeur,ts:Date.now()};
+      });
+      return ecrit;
     }catch(e){ console.warn('Classement : envoi échoué',e); return false; }
   };
   window.MP.classementLire = async(categorie,limite=10)=>{

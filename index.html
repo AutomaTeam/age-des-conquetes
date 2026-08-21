@@ -295,6 +295,15 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   box-shadow:0 4px 20px rgba(212,160,23,.4),inset 0 1px 0 rgba(255,255,255,.35);
   width:100%;max-width:290px;
   transition:transform .12s,box-shadow .12s;
+  /* flex-shrink:0 impératif : #overlay est une colonne flex qui déborde
+     largement dès que le bilan de fin de partie s'allonge (grilles de
+     stats + succès du jour). Sans ça, `overflow:hidden` ci-dessus annule
+     la taille mini automatique que flexbox donne d'habitude à un enfant en
+     fonction de son contenu (elle ne vaut que si overflow:visible — sinon
+     elle retombe à 0) : les boutons se faisaient alors écraser à la seule
+     hauteur du padding, leur libellé entièrement rogné mais le bouton
+     restant cliquable — un bouton fantôme, invisible mais actif. */
+  flex-shrink:0;
 }
 .bigbtn:active { transform:scale(.97); }
 @media (hover:hover) and (pointer:fine){
@@ -2800,6 +2809,126 @@ function buildBerry(T){
   }
 }
 
+// ── BANC DE POISSONS : jusqu'ici un gisement RT.FISH sans case dédiée
+// dans drawNodes() retombait sur SPR.berry — un buisson à baies flottant
+// sur l'eau. Trois argentés, nageoire caudale et reflet dorsal. ──
+function buildFish(T){
+  SPR.fish=[];
+  for(let v=0;v<3;v++){
+    const S=Math.round(T*0.9);
+    const{c,cx}=offCanvas(S,S);
+    const cxp=S/2, cyp=S*0.56;
+    cx.fillStyle='rgba(255,255,255,.22)'; // onde de surface sous le banc
+    cx.beginPath(); cx.ellipse(cxp,cyp+S*0.22,S*0.28,S*0.06,0,0,Math.PI*2); cx.fill();
+    const scaleCol=['#5a90b0','#6aa0c0','#4a80a0'];
+    const spots=[[-0.16,-0.04,0],[0.12,-0.1,0.4],[0.02,0.08,-0.3],[-0.2,0.12,0.2],[0.18,0.1,-0.2]];
+    for(let i=0;i<spots.length;i++){
+      const [fx,fy,rot]=spots[i];
+      const bx=cxp+fx*S, by=cyp+fy*S, fs=S*0.16;
+      const col=scaleCol[i%scaleCol.length];
+      cx.save(); cx.translate(bx,by); cx.rotate(rot);
+      cx.fillStyle=shade(col,-22);
+      cx.beginPath(); cx.moveTo(-fs,0); cx.lineTo(-fs*1.5,-fs*0.4); cx.lineTo(-fs*1.5,fs*0.4); cx.closePath(); cx.fill(); // caudale
+      cx.fillStyle=col;
+      cx.beginPath(); cx.ellipse(0,0,fs,fs*0.42,0,0,Math.PI*2); cx.fill();
+      cx.fillStyle='rgba(255,255,255,.55)';
+      cx.beginPath(); cx.ellipse(fs*0.25,-fs*0.12,fs*0.3,fs*0.14,0,0,Math.PI*2); cx.fill(); // reflet dorsal
+      cx.restore();
+    }
+    SPR.fish.push({c,cx,S:S/SS});
+  }
+}
+
+// ── DÉPOUILLE (gibier abattu, RT.MEAT) : même bug que le poisson, une
+// carcasse de cerf/sanglier se lisait comme un buisson à baies. Chair
+// crue + os croisés, façon quartier de viande posé au sol. ──
+function buildMeat(T){
+  SPR.meat=[];
+  for(let v=0;v<2;v++){
+    const S=Math.round(T*0.95);
+    const{c,cx}=offCanvas(S,S);
+    const cxp=S/2, cyp=S*0.58;
+    cx.fillStyle='rgba(0,0,0,.2)';
+    cx.beginPath(); cx.ellipse(cxp,cyp+S*0.2,S*0.26,S*0.06,0,0,Math.PI*2); cx.fill();
+    const meatCol=['#8a3a2a','#a04a34'];
+    const spots=[[-0.1,-0.02,0.22],[0.1,0.02,0.2],[0,0.1,0.16]];
+    for(let i=0;i<spots.length;i++){
+      const [fx,fy,r]=spots[i];
+      const bx=cxp+fx*S, by=cyp+fy*S, rr=S*r;
+      cx.fillStyle=meatCol[i%meatCol.length];
+      cx.beginPath(); cx.ellipse(bx,by,rr,rr*0.75,0,0,Math.PI*2); cx.fill();
+      cx.fillStyle='rgba(255,255,255,.25)';
+      cx.beginPath(); cx.ellipse(bx-rr*0.3,by-rr*0.25,rr*0.3,rr*0.15,0,0,Math.PI*2); cx.fill();
+    }
+    cx.strokeStyle='#e8ddc0'; cx.lineWidth=Math.max(2,S*0.035); // os croisés : lit "carcasse" d'un coup d'œil
+    cx.beginPath(); cx.moveTo(cxp-S*0.16,cyp-S*0.12); cx.lineTo(cxp+S*0.06,cyp+S*0.1); cx.stroke();
+    cx.beginPath(); cx.moveTo(cxp+S*0.06,cyp-S*0.12); cx.lineTo(cxp-S*0.16,cyp+S*0.1); cx.stroke();
+    SPR.meat.push({c,cx,S:S/SS});
+  }
+}
+
+// ── RELIQUE AU SOL : jusqu'ici un fillText('🏺') brut. Amphore d'argile,
+// anses, liseré doré et légère lueur (objet précieux, se distingue au sol). ──
+function buildRelic(T){
+  const S=Math.round(T*0.85);
+  const{c,cx}=offCanvas(S,S);
+  const cxp=S/2;
+  cx.fillStyle='rgba(0,0,0,.22)';
+  cx.beginPath(); cx.ellipse(cxp,S*0.86,S*0.22,S*0.05,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle='rgba(255,224,140,.35)'; // lueur : objet précieux, pas un pot ordinaire
+  cx.beginPath(); cx.ellipse(cxp,S*0.4,S*0.34,S*0.4,0,0,Math.PI*2); cx.fill();
+  const clay='#b8703a', clayDk=shade(clay,-25), gold='#caa83a', goldLt=shade(gold,25);
+  cx.fillStyle=clay; // panse de l'amphore
+  cx.beginPath();
+  cx.moveTo(cxp-S*0.06,S*0.16);
+  cx.quadraticCurveTo(cxp-S*0.28,S*0.3,cxp-S*0.24,S*0.56);
+  cx.quadraticCurveTo(cxp-S*0.2,S*0.8,cxp,S*0.84);
+  cx.quadraticCurveTo(cxp+S*0.2,S*0.8,cxp+S*0.24,S*0.56);
+  cx.quadraticCurveTo(cxp+S*0.28,S*0.3,cxp+S*0.06,S*0.16);
+  cx.closePath(); cx.fill();
+  cx.fillStyle=clayDk;
+  cx.beginPath(); cx.ellipse(cxp+S*0.1,S*0.5,S*0.12,S*0.26,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle=clay; cx.fillRect(cxp-S*0.08,S*0.06,S*0.16,S*0.14); // col
+  cx.fillStyle=goldLt; cx.fillRect(cxp-S*0.1,S*0.04,S*0.2,S*0.04);  // liseré doré à l'embouchure
+  cx.strokeStyle=clayDk; cx.lineWidth=Math.max(2,S*0.045); // anses
+  cx.beginPath(); cx.moveTo(cxp-S*0.06,S*0.2); cx.quadraticCurveTo(cxp-S*0.34,S*0.28,cxp-S*0.22,S*0.44); cx.stroke();
+  cx.beginPath(); cx.moveTo(cxp+S*0.06,S*0.2); cx.quadraticCurveTo(cxp+S*0.34,S*0.28,cxp+S*0.22,S*0.44); cx.stroke();
+  cx.strokeStyle=gold; cx.lineWidth=Math.max(1,S*0.025); // motif
+  cx.beginPath(); cx.moveTo(cxp-S*0.2,S*0.44); cx.lineTo(cxp+S*0.2,S*0.44); cx.stroke();
+  SPR.relic={c,cx,S:S/SS};
+}
+
+// ── CARAVANE MARCHANDE : jusqu'ici un fillText('🐫') brut. Chameau chargé
+// de sacoches, silhouette de bosse, vu de profil. ──
+function buildCaravan(T){
+  const S=Math.round(T*0.85);
+  const{c,cx}=offCanvas(S,S);
+  const cxp=S/2, gy=S*0.62;
+  cx.fillStyle='rgba(0,0,0,.22)';
+  cx.beginPath(); cx.ellipse(cxp,S*0.86,S*0.26,S*0.05,0,0,Math.PI*2); cx.fill();
+  const col='#c9a869', dk=shade(col,-26), pack='#8a5a2c', packDk=shade(pack,-20);
+  for(const ox of [-0.2,-0.08,0.1,0.2]) px(cx,cxp+ox*S,gy,S*0.05,S*0.24,dk);
+  cx.fillStyle=col; // corps + bosse
+  cx.beginPath();
+  cx.moveTo(cxp-S*0.3,gy);
+  cx.quadraticCurveTo(cxp-S*0.26,gy-S*0.28,cxp-S*0.1,gy-S*0.3);
+  cx.quadraticCurveTo(cxp+S*0.02,gy-S*0.32,cxp+S*0.1,gy-S*0.22);
+  cx.quadraticCurveTo(cxp+S*0.3,gy-S*0.16,cxp+S*0.3,gy-S*0.02);
+  cx.quadraticCurveTo(cxp+S*0.1,gy+S*0.14,cxp-S*0.3,gy+S*0.12);
+  cx.closePath(); cx.fill();
+  px(cx,cxp-S*0.14,gy-S*0.14,S*0.14,S*0.16,pack);        // sacoche avant
+  px(cx,cxp-S*0.14,gy-S*0.14,S*0.14,Math.max(1,S*0.03),shade(pack,20));
+  px(cx,cxp+S*0.02,gy-S*0.16,S*0.14,S*0.16,packDk);       // sacoche arrière
+  cx.fillStyle=col; // encolure + tête
+  cx.beginPath();
+  cx.moveTo(cxp+S*0.24,gy-S*0.06); cx.quadraticCurveTo(cxp+S*0.4,gy-S*0.22,cxp+S*0.36,gy-S*0.4);
+  cx.quadraticCurveTo(cxp+S*0.3,gy-S*0.48,cxp+S*0.24,gy-S*0.4); cx.quadraticCurveTo(cxp+S*0.3,gy-S*0.2,cxp+S*0.2,gy-S*0.02);
+  cx.closePath(); cx.fill();
+  px(cx,cxp+S*0.32,gy-S*0.4,Math.max(1,S*0.03),Math.max(1,S*0.03),'#1a1410'); // œil
+  px(cx,cxp-S*0.32,gy-S*0.02,S*0.04,S*0.14,dk);           // queue
+  SPR.caravan={c,cx,S:S/SS};
+}
+
 // ── BÂTIMENTS (toits, murs, fenêtres en pixel art) ───────
 function buildBuildings(T){
   SPR.bld={};
@@ -3337,6 +3466,66 @@ function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
     fill(pw*0.5-Math.max(1,T*0.02),topY-tankH-T*0.06,Math.max(2,T*0.04),T*0.06,concreteDk); // pied du réservoir
     break; }
 
+  // ── MERVEILLE : perron à degrés, colonnade, tourelles et dôme doré ──
+  // (jusqu'ici sans case dédiée : elle retombait sur `default`, la maison
+  // générique — invisible sur la carte pour LE bâtiment cense être le plus
+  // impressionnant du jeu. cf. BDEF[BT.WONDER].)
+  case BT.WONDER: {
+    const domeCol=ec('#e8d49a'), domeLt=ec('#f5e8c0'), domeDk=ec('#b89850');
+    body(undefined,'stone');
+    // perron : degrés qui élargissent la base, ancrent la Merveille au sol
+    fill(-pw*0.03,H-Math.max(3,ph*0.05),pw*1.06,Math.max(3,ph*0.05),darken(wallCol,10));
+    fill(-pw*0.05,H-Math.max(2,ph*0.025),pw*1.1,Math.max(2,ph*0.025),darken(wallCol,18));
+    // colonnade en façade
+    const nCol=6, colW=Math.max(2,T*0.06);
+    for(let k=0;k<nCol;k++){
+      const cxp=pw*0.12+k*(pw*0.76/(nCol-1));
+      fill(cxp-colW/2,bodyTop+bodyH*0.1,colW,bodyH*0.7,domeLt);
+      fill(cxp-colW/2,bodyTop+bodyH*0.1,colW,Math.max(1,T*0.03),domeDk);   // chapiteau
+      fill(cxp-colW/2,H-bodyH*0.16,colW,Math.max(1,T*0.03),domeDk);       // base
+    }
+    // tourelles d'angle à petit dôme
+    const tw4=pw*0.16;
+    for(const txp of [0,pw-tw4]){
+      fill(txp,bodyTop-T*0.3,tw4,bodyH+T*0.3,wallLt);
+      cx.fillStyle=domeCol; cx.beginPath(); cx.arc(txp+tw4/2,bodyTop-T*0.3,tw4*0.55,Math.PI,0); cx.fill();
+      cx.fillStyle=domeLt; cx.beginPath(); cx.arc(txp+tw4*0.36,bodyTop-T*0.42,tw4*0.22,Math.PI,0); cx.fill();
+      fill(txp+tw4/2-Math.max(1,T*0.02),bodyTop-T*0.54,Math.max(2,T*0.03),T*0.16,'#caa83a');
+    }
+    // dôme central, large, avec hampe et pommeau doré
+    cx.fillStyle=domeCol; cx.beginPath(); cx.arc(pw/2,bodyTop-T*0.05,pw*0.26,Math.PI,0); cx.fill();
+    cx.fillStyle=domeLt; cx.beginPath(); cx.arc(pw*0.42,bodyTop-T*0.16,pw*0.12,Math.PI,0); cx.fill();
+    fill(pw/2-Math.max(2,T*0.035),bodyTop-pw*0.26-T*0.26,Math.max(3,T*0.06),T*0.24,'#caa83a');
+    disc(pw/2,bodyTop-pw*0.26-T*0.28,Math.max(2,T*0.04),'#f5e070');
+    // arche d'entrée monumentale, linteau doré
+    const gw3=pw*0.22, gh3=bodyH*0.6;
+    archD(pw/2,H-gh3,gw3,gh3,'#2a1c0c');
+    fill(pw/2-gw3*0.7,H-gh3-Math.max(2,T*0.04),gw3*1.4,Math.max(2,T*0.04),'#caa83a');
+    break; }
+
+  // ── QUAI : entrepôt de bois + ponton sur pilotis, tonneaux et cordages ──
+  // (autre bâtiment jusqu'ici sans case dédiée, invisible en tant que Quai.)
+  case BT.DOCK: {
+    body(); roofTri(ec('#7a5a38'),ec('#4a3220'),0.3); door(0.2);
+    const plankCol=ec('#8a6a44'), plankLt=ec('#a8845a'), plankDk=ec('#5a4028');
+    // ponton en avant-plan, planches horizontales : occupe le bas du
+    // bâtiment jusqu'à H (un fill qui déborderait sous H serait rogné par
+    // le canvas hors-écran, qui s'arrête pile à H — d'où dy2=H-dh2, pas H).
+    const dh2=bodyH*0.3, dy2=H-dh2;
+    fill(-pw*0.04,dy2,pw*1.08,dh2,plankCol);
+    fill(-pw*0.04,dy2,pw*1.08,Math.max(1,T*0.02),plankLt);              // reflet du bord
+    for(let x4=pw*0.02;x4<pw*0.98;x4+=Math.max(3,T*0.09)) fill(x4,dy2,Math.max(1,T*0.015),dh2,plankDk);
+    // tonneau posé sur le ponton
+    disc(pw*0.16,dy2+dh2*0.32,Math.max(3,T*0.09),'#6a4a28');
+    fill(pw*0.16-T*0.09,dy2+dh2*0.18,T*0.18,Math.max(1,T*0.02),'#3a2818');
+    // cordage enroulé
+    cx.strokeStyle='rgba(90,60,30,.85)'; cx.lineWidth=Math.max(1,T*0.02);
+    cx.beginPath(); cx.arc(pw*0.84,dy2+dh2*0.35,Math.max(3,T*0.07),0,Math.PI*1.6); cx.stroke();
+    // mât et pavillon
+    fill(pw*0.88,oy-T*0.1,Math.max(1,T*0.02),ph*0.5,'#4a3420');
+    fill(pw*0.88+Math.max(1,T*0.02),oy-T*0.1,T*0.22,T*0.14,enemy?'#c0392b':'#2980b9');
+    break; }
+
   // ── MAISON et par défaut : toit de chaume + cheminée ──
   default: {
     body();
@@ -3384,17 +3573,31 @@ function buildUnits(T){
 // AVANT le cavalier (arrière-plan) : sans elle, ces unités n'étaient qu'un
 // rectangle brun accolé au torse, illisible comme "monté".
 function drawHorse(cx,cxp,S,enemy){
-  const hCol=enemy?'#2a1e18':'#7a4f2c', hDk=shade(hCol,-20), hLt=shade(hCol,18);
+  // Contraste renforcé + crinière + tête agrandie : la version précédente
+  // (pattes fines rapprochées + tête minuscule de la même teinte que le
+  // corps) se lisait comme un tabouret à 4 pieds plutôt qu'un cheval,
+  // surtout une fois le cavalier assis dessus. cf. relecture graphique.
+  const hCol=enemy?'#2a1e18':'#7a4f2c', hDk=shade(hCol,-28), hLt=shade(hCol,22);
+  const maneCol=shade(hCol,-42), hoofCol='#2a1c10';
   const gy=S*0.66;                                             // ligne du dos
-  // 4 pattes bien visibles, jusqu'au sol
-  for(const ox of [-0.26,-0.15,0.13,0.24]) px(cx,cxp+ox*S,gy,S*0.05,S*0.24,hDk);
+  // 4 pattes : paire avant légèrement avancée, paire arrière plantée — une
+  // posture, pas un aplomb de mobilier — + sabots clairs qui les ancrent au sol.
+  px(cx,cxp-0.27*S,gy-S*0.015,S*0.06,S*0.27,hDk);
+  px(cx,cxp-0.15*S,gy+S*0.01, S*0.06,S*0.24,hDk);
+  px(cx,cxp+0.11*S,gy+S*0.01, S*0.06,S*0.24,hDk);
+  px(cx,cxp+0.25*S,gy-S*0.015,S*0.06,S*0.27,hDk);
+  px(cx,cxp-0.27*S,gy+S*0.23,S*0.06,S*0.03,hoofCol);
+  px(cx,cxp+0.25*S,gy+S*0.23,S*0.06,S*0.03,hoofCol);
   px(cx,cxp-S*0.3,gy-S*0.17,S*0.56,S*0.22,hCol);                // corps, large et net
-  px(cx,cxp-S*0.3,gy-S*0.17,S*0.56,Math.max(2,S*0.035),hLt);    // reflet dorsal
-  px(cx,cxp-S*0.3,gy+S*0.02,S*0.56,Math.max(2,S*0.03),hDk);     // ombre de ventre
-  px(cx,cxp+S*0.2,gy-S*0.32,S*0.1,S*0.22,hCol);                 // encolure tendue vers l'avant
-  px(cx,cxp+S*0.2,gy-S*0.38,S*0.15,S*0.12,hCol);                // tête
-  px(cx,cxp+S*0.32,gy-S*0.34,S*0.04,S*0.06,'#1a1410');          // œil/naseau : lit comme une tête
-  px(cx,cxp-S*0.32,gy-S*0.14,S*0.06,S*0.26,hDk);                // queue
+  px(cx,cxp-S*0.3,gy-S*0.17,S*0.56,Math.max(2,S*0.05),hLt);     // reflet dorsal, plus large : casse le bloc
+  px(cx,cxp-S*0.3,gy+S*0.03,S*0.56,Math.max(2,S*0.05),hDk);     // ombre de ventre, plus large
+  px(cx,cxp+0.16*S,gy-S*0.37,S*0.14,S*0.28,hCol);               // encolure tendue vers l'avant, plus haute
+  px(cx,cxp+0.14*S,gy-S*0.33,S*0.06,S*0.24,maneCol);            // crinière : identifie « cheval » d'un coup d'œil
+  px(cx,cxp+0.25*S,gy-S*0.46,S*0.18,S*0.15,hCol);                // tête, bien plus grande que la version précédente
+  px(cx,cxp+0.25*S,gy-S*0.46,S*0.06,S*0.15,maneCol);             // toupet sombre entre les oreilles
+  px(cx,cxp+0.39*S,gy-S*0.42,S*0.05,S*0.07,'#1a1410');           // œil
+  px(cx,cxp+0.37*S,gy-S*0.33,S*0.07,S*0.04,hDk);                 // museau ombré : détache la tête du corps
+  px(cx,cxp-S*0.35,gy-S*0.14,S*0.07,S*0.28,hDk);                 // queue
   px(cx,cxp-S*0.02,gy-S*0.19,S*0.18,S*0.07,enemy?'#4a2020':'#5a3a1a'); // selle
   px(cx,cxp-S*0.02,gy-S*0.19,S*0.18,Math.max(1,S*0.02),'rgba(255,255,255,.2)');
 }
@@ -3459,11 +3662,47 @@ function drawRamSprite(cx,cxp,S,enemy){
   cx.beginPath(); cx.moveTo(cxp+S*0.38,ry); cx.lineTo(cxp+S*0.5,ry-S*0.07); cx.lineTo(cxp+S*0.5,ry+S*0.07); cx.closePath(); cx.fill(); // tête de bélier
 }
 
+// ── BARQUE DE PÊCHE : jusqu'ici sans case dédiée, elle retombait sur le
+// corps humanoïde générique — une Barque ressemblait à un villageois en
+// tunique bleue debout sur l'herbe. Coque en amande vue de dessus, banc,
+// rames croisées, prise du jour ; sillage clair en guise d'ombre au sol. ──
+function drawBoatSprite(cx,cxp,S,enemy){
+  const hull=enemy?'#7a4a3a':'#8a6a44', hullDk=shade(hull,-24), hullLt=shade(hull,20);
+  const gy=S*0.56;
+  cx.strokeStyle='rgba(255,255,255,.28)'; cx.lineWidth=Math.max(1,S*0.018);
+  cx.beginPath(); cx.moveTo(cxp-S*0.4,gy+S*0.24); cx.lineTo(cxp-S*0.28,gy+S*0.18); cx.lineTo(cxp-S*0.4,gy+S*0.12); cx.stroke();
+  cx.beginPath(); cx.moveTo(cxp-S*0.48,gy+S*0.32); cx.lineTo(cxp-S*0.34,gy+S*0.24); cx.lineTo(cxp-S*0.48,gy+S*0.16); cx.stroke();
+  cx.fillStyle=hull; // coque en amande, pointue à l'arrière (gauche), large à l'avant (droite)
+  cx.beginPath();
+  cx.moveTo(cxp-S*0.42,gy);
+  cx.quadraticCurveTo(cxp-S*0.2,gy-S*0.15,cxp+S*0.3,gy-S*0.1);
+  cx.quadraticCurveTo(cxp+S*0.44,gy-S*0.02,cxp+S*0.44,gy+S*0.04);
+  cx.quadraticCurveTo(cxp+S*0.3,gy+S*0.14,cxp-S*0.2,gy+S*0.15);
+  cx.quadraticCurveTo(cxp-S*0.36,gy+S*0.12,cxp-S*0.42,gy);
+  cx.fill();
+  cx.strokeStyle=hullLt; cx.lineWidth=Math.max(1,S*0.03); // plat-bord éclairé
+  cx.beginPath(); cx.moveTo(cxp-S*0.4,gy-S*0.02); cx.quadraticCurveTo(cxp-S*0.2,gy-S*0.14,cxp+S*0.29,gy-S*0.09); cx.stroke();
+  cx.fillStyle=hullDk; // creux intérieur
+  cx.beginPath(); cx.ellipse(cxp+S*0.02,gy+S*0.02,S*0.28,S*0.075,0,0,Math.PI*2); cx.fill();
+  px(cx,cxp-S*0.06,gy-S*0.02,S*0.16,Math.max(1,S*0.03),hullLt); // banc de nage
+  cx.strokeStyle=hullDk; cx.lineWidth=Math.max(1,S*0.025); // rames croisées
+  cx.beginPath(); cx.moveTo(cxp-S*0.1,gy-S*0.05); cx.lineTo(cxp-S*0.32,gy-S*0.28); cx.stroke();
+  cx.beginPath(); cx.moveTo(cxp+S*0.1,gy+S*0.06); cx.lineTo(cxp+S*0.34,gy+S*0.26); cx.stroke();
+  for(const [fx,fy] of [[-0.06,0.02],[0.08,0.05]]){ // prise du jour : poissons argentés au fond de la coque
+    const bx=cxp+fx*S, by=gy+fy*S, fs=S*0.07;
+    cx.fillStyle='#b8c8d8';
+    cx.beginPath(); cx.ellipse(bx,by,fs,fs*0.45,0.3,0,Math.PI*2); cx.fill();
+    cx.fillStyle=hullDk;
+    cx.beginPath(); cx.moveTo(bx-fs,by-fs*0.1); cx.lineTo(bx-fs*1.5,by-fs*0.35); cx.lineTo(bx-fs*1.5,by+fs*0.15); cx.closePath(); cx.fill();
+  }
+}
+
 function buildUnitSprite(type,T,legPhase){
   legPhase=legPhase||0; // -1 / 0 / 1 : phase de foulée (cycle de marche)
   const enemy=[UT.ENEMI,UT.ENEMIA,UT.ENEMI_G,UT.ENEMI_C,UT.ENEMI_BOSS].includes(type);
   const isTreb=type===UT.TREB;
   const isRam=type===UT.RAM;
+  const isBoat=type===UT.BOAT;
   const isCav=[UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.ENEMI_C].includes(type);
   // Géant et Seigneur de Guerre : silhouette agrandie — la menace doit se
   // lire avant même le premier coup d'épée (convention AoE2 : plus gros
@@ -3482,11 +3721,12 @@ function buildUnitSprite(type,T,legPhase){
   cx.fillStyle='rgba(0,0,0,.25)';
   cx.beginPath();
   if(isTreb||isRam) cx.ellipse(cxp,S*0.82,S*0.34,S*0.06,0,0,Math.PI*2);
-  else cx.ellipse(cxp,S*0.84,S*0.22,S*0.045,0,0,Math.PI*2);
+  else if(!isBoat) cx.ellipse(cxp,S*0.84,S*0.22,S*0.045,0,0,Math.PI*2); // la Barque dessine son propre sillage
   cx.fill();
 
   if(isTreb){ drawTrebuchetSprite(cx,cxp,S,enemy); return {c,cx,S:S/SS}; }
   if(isRam){ drawRamSprite(cx,cxp,S,enemy); return {c,cx,S:S/SS}; }
+  if(isBoat){ drawBoatSprite(cx,cxp,S,enemy); return {c,cx,S:S/SS}; }
 
   if(isCav) drawHorse(cx,cxp,S,enemy);
 
@@ -3613,6 +3853,51 @@ function buildUnitSprite(type,T,legPhase){
     px(cx,cxp-S*0.225,torsoY+S*0.075,Math.max(1,S*0.09),S*0.03,enemy?'#5a1414':'#173a5a');
   }
   return {c,cx,S:S/SS};
+}
+
+// Gibier sauvage (Cerf/Sanglier) : jusqu'ici rendu par un simple ctx.fillText
+// de l'emoji WILDLIFE_DEF[type].ico, à la taille d'une unité entière — le
+// seul endroit du monde de jeu où la faune tranchait avec le reste du pixel
+// art fait main. Même squelette quadrupède que drawHorse(), redimensionné.
+function buildWildlifeSprite(type,T){
+  const S=Math.round(T*0.62);
+  const{c,cx}=offCanvas(S,S);
+  const cxp=S/2, gy=S*0.6;
+  cx.fillStyle='rgba(0,0,0,.22)';
+  cx.beginPath(); cx.ellipse(cxp,S*0.82,S*0.22,S*0.05,0,0,Math.PI*2); cx.fill();
+  if(type==='boar'){
+    const col='#5a4a3a', dk=shade(col,-24);
+    for(const ox of [-0.16,-0.06,0.07,0.16]) px(cx,cxp+ox*S,gy-S*0.02,S*0.05,S*0.2,dk);
+    px(cx,cxp-0.22*S,gy-S*0.16,S*0.44,S*0.2,col);                    // corps trapu
+    px(cx,cxp-0.22*S,gy-S*0.2,S*0.44,Math.max(2,S*0.035),dk);        // crête de soies hérissées
+    px(cx,cxp+0.15*S,gy-S*0.24,S*0.1,S*0.12,col);                    // tête basse
+    px(cx,cxp+0.16*S,gy-S*0.16,S*0.03,S*0.05,'#e8e0d0');             // défense claire
+    px(cx,cxp+0.09*S,gy-S*0.3,S*0.045,S*0.06,dk);                    // oreille
+    px(cx,cxp+0.24*S,gy-S*0.19,Math.max(1,S*0.03),Math.max(1,S*0.03),'#1a1410'); // œil
+    px(cx,cxp-0.26*S,gy-S*0.06,S*0.045,S*0.1,dk);                    // petite queue
+  } else { // deer (par défaut)
+    const col='#a9784a', dk=shade(col,-24), lt=shade(col,20);
+    for(const ox of [-0.16,-0.07,0.06,0.15]) px(cx,cxp+ox*S,gy,S*0.045,S*0.22,dk);
+    px(cx,cxp-0.2*S,gy-S*0.14,S*0.4,S*0.18,col);                     // corps élancé
+    px(cx,cxp-0.2*S,gy-S*0.14,S*0.4,Math.max(2,S*0.035),lt);         // reflet dorsal
+    px(cx,cxp-0.14*S,gy,S*0.28,S*0.05,'#e8d8b8');                    // ventre clair
+    px(cx,cxp+0.14*S,gy-S*0.3,S*0.09,S*0.2,col);                     // encolure
+    px(cx,cxp+0.19*S,gy-S*0.4,S*0.12,S*0.11,col);                    // tête
+    cx.strokeStyle=dk; cx.lineWidth=Math.max(1,S*0.02);              // bois (silhouette à 2 branches)
+    cx.beginPath();
+    cx.moveTo(cxp+0.22*S,gy-S*0.4); cx.lineTo(cxp+0.2*S,gy-S*0.52); cx.lineTo(cxp+0.24*S,gy-S*0.58);
+    cx.moveTo(cxp+0.2*S,gy-S*0.52); cx.lineTo(cxp+0.16*S,gy-S*0.56);
+    cx.moveTo(cxp+0.28*S,gy-S*0.4); cx.lineTo(cxp+0.3*S,gy-S*0.52); cx.lineTo(cxp+0.34*S,gy-S*0.58);
+    cx.moveTo(cxp+0.3*S,gy-S*0.52); cx.lineTo(cxp+0.34*S,gy-S*0.55);
+    cx.stroke();
+    px(cx,cxp+0.34*S,gy-S*0.36,Math.max(1,S*0.035),Math.max(1,S*0.05),'#1a1410'); // œil
+    px(cx,cxp-0.24*S,gy-S*0.1,S*0.05,S*0.14,dk);                     // queue
+  }
+  return {c,cx,S:S/SS};
+}
+function buildWildlife(T){
+  SPR.wildlife={};
+  for(const type of Object.keys(WILDLIFE_DEF)) SPR.wildlife[type]=buildWildlifeSprite(type,T);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3858,6 +4143,45 @@ function buildIcons(){
     cx.fillStyle='rgba(0,0,0,.55)'; cx.beginPath(); cx.arc(S*0.72,S*0.3,S*0.07,0,Math.PI*2); cx.fill();
   });
 
+  // Trois icônes de recherche (Forge de Siège 🐏, Lance de Cavalerie 🗡️,
+  // Logistique 🥾) manquaient à ICO_KEY : sans entrée pixel art, iconImg()
+  // dégradait silencieusement vers l'emoji brut — visible seulement en
+  // ouvrant le panneau Forge/Université, mêlé aux icônes dessinées voisines.
+  mk('ram',(cx,S)=>{ // tête de bélier
+    cx.fillStyle='#8a8a92';
+    cx.beginPath(); cx.ellipse(S*0.5,S*0.56,S*0.22,S*0.26,0,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#6a6a72';
+    cx.beginPath(); cx.ellipse(S*0.5,S*0.78,S*0.12,S*0.1,0,0,Math.PI*2); cx.fill();
+    cx.strokeStyle='#e8d5a0'; cx.lineWidth=Math.max(2,S*0.06); cx.lineCap='round';
+    cx.beginPath(); cx.moveTo(S*0.34,S*0.42); cx.quadraticCurveTo(S*0.12,S*0.46,S*0.16,S*0.68); cx.stroke();
+    cx.beginPath(); cx.moveTo(S*0.66,S*0.42); cx.quadraticCurveTo(S*0.88,S*0.46,S*0.84,S*0.68); cx.stroke();
+    cx.fillStyle='#1a1410';
+    cx.beginPath(); cx.arc(S*0.4,S*0.5,S*0.035,0,Math.PI*2); cx.fill();
+    cx.beginPath(); cx.arc(S*0.6,S*0.5,S*0.035,0,Math.PI*2); cx.fill();
+  });
+
+  mk('lance',(cx,S)=>{ // lance de cavalerie, fanion
+    cx.strokeStyle='#6a4a24'; cx.lineWidth=Math.max(2,S*0.05);
+    cx.beginPath(); cx.moveTo(S*0.2,S*0.86); cx.lineTo(S*0.74,S*0.16); cx.stroke();
+    cx.fillStyle='#cfcfd6';
+    cx.beginPath(); cx.moveTo(S*0.74,S*0.16); cx.lineTo(S*0.88,S*0.28); cx.lineTo(S*0.64,S*0.32); cx.closePath(); cx.fill();
+    cx.fillStyle='#c0392b';
+    cx.beginPath(); cx.moveTo(S*0.5,S*0.42); cx.lineTo(S*0.32,S*0.36); cx.lineTo(S*0.44,S*0.52); cx.closePath(); cx.fill();
+  });
+
+  mk('boots',(cx,S)=>{ // botte de marche
+    cx.fillStyle='#6a4a28';
+    cx.beginPath();
+    cx.moveTo(S*0.38,S*0.14); cx.lineTo(S*0.58,S*0.14); cx.lineTo(S*0.58,S*0.56);
+    cx.quadraticCurveTo(S*0.78,S*0.6,S*0.84,S*0.74);
+    cx.lineTo(S*0.84,S*0.82); cx.lineTo(S*0.2,S*0.82); cx.lineTo(S*0.2,S*0.68);
+    cx.lineTo(S*0.38,S*0.6);
+    cx.closePath(); cx.fill();
+    cx.fillStyle='#4a3018'; cx.fillRect(S*0.2,S*0.74,S*0.64,S*0.08);
+    cx.strokeStyle='rgba(0,0,0,.25)'; cx.lineWidth=1;
+    cx.beginPath(); cx.moveTo(S*0.38,S*0.3); cx.lineTo(S*0.58,S*0.3); cx.stroke();
+  });
+
   mk('pause',(cx,S)=>{
     cx.fillStyle='#f0c040';
     cx.fillRect(S*0.28,S*0.2,S*0.16,S*0.6); cx.fillRect(S*0.56,S*0.2,S*0.16,S*0.6);
@@ -3926,6 +4250,7 @@ const ICO_KEY = {
   '⚔️':'sword','🐴':'horse','⛪':'cross','✝️':'cross','🎓':'univ',
   '🗼':'tower','🏹':'bow','🔱':'pike','🎯':'target','🌟':'star',
   '🛡️':'shield','🧱':'brick','📜':'scroll','🔧':'wrench',
+  '🐏':'ram','🗡️':'lance','🥾':'boots',
   '⏸':'pause','▶':'play','🔊':'sound-on','🔇':'sound-off',
   '🌑':'moon','🌅':'dawn','👑':'crown','⏳':'hourglass',
 };
@@ -3995,8 +4320,13 @@ function buildSprites(){
   buildStoneNode(T);
   buildGoldNode(T);
   buildBerry(T);
+  buildFish(T);
+  buildMeat(T);
+  buildRelic(T);
+  buildCaravan(T);
   buildBuildings(T);
   buildUnits(T);
+  buildWildlife(T);
   buildIcons();        // icônes UI (taille fixe, générées une seule fois)
   applyStaticIcons();  // injecte les icônes dans le DOM persistant
 }
@@ -4164,6 +4494,8 @@ function drawNodes(){
     if(n.type===RT.TREE)      spr=SPR.tree[n.id%SPR.tree.length];
     else if(n.type===RT.STONE)spr=SPR.stone[n.id%SPR.stone.length];
     else if(n.type===RT.GOLD) spr=SPR.gold[n.id%SPR.gold.length];
+    else if(n.type===RT.FISH) spr=SPR.fish[n.id%SPR.fish.length];
+    else if(n.type===RT.MEAT) spr=SPR.meat[n.id%SPR.meat.length];
     else                      spr=SPR.berry[n.id%SPR.berry.length];
     if(spr){
       // léger amincissement quand la ressource s'épuise
@@ -4283,9 +4615,14 @@ function drawCaravans(){
     const p=caravanPos(b); if(!p) continue;
     const{x:sx,y:sy}=ws(p.x,p.y);
     if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
-    ctx.font=Math.round(TILE*0.6)+'px sans-serif';
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('🐫',sx,sy);
+    if(SPR.caravan){
+      const S=SPR.caravan.S*(TILE/(SPR.refT||TILE));
+      ctx.drawImage(SPR.caravan.c,sx-S/2,sy-S/2,S,S);
+    } else {
+      ctx.font=Math.round(TILE*0.6)+'px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('🐫',sx,sy);
+    }
   }
 }
 
@@ -4303,9 +4640,14 @@ function drawRelics(){
       const fx=(r.tx|0), fy=(r.ty|0);
       if(G.fog[fy]&&G.fog[fy][fx]!==2) continue; // reliques non-mémorisées : invisibles hors vision actuelle
     }
-    ctx.font=Math.round(TILE*0.65)+'px sans-serif';
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('🏺',sx,sy);
+    if(SPR.relic){
+      const S=SPR.relic.S*(TILE/(SPR.refT||TILE));
+      ctx.drawImage(SPR.relic.c,sx-S/2,sy-S/2,S,S);
+    } else {
+      ctx.font=Math.round(TILE*0.65)+'px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('🏺',sx,sy);
+    }
   }
 }
 
@@ -4321,9 +4663,15 @@ function drawWildlife(){
       const fx=(w.tx|0), fy=(w.ty|0);
       if(G.fog[fy]&&G.fog[fy][fx]!==2) continue;
     }
-    ctx.font=Math.round(TILE*0.65)+'px sans-serif';
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(WILDLIFE_DEF[w.type].ico,sx,sy);
+    const spr=SPR.wildlife&&SPR.wildlife[w.type];
+    if(spr){
+      const S=spr.S*(TILE/(SPR.refT||TILE));
+      ctx.drawImage(spr.c,sx-S/2,sy-S/2,S,S);
+    } else { // repli tant que buildSprites() n'a pas encore tourné
+      ctx.font=Math.round(TILE*0.65)+'px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(WILDLIFE_DEF[w.type].ico,sx,sy);
+    }
     if(w.hp<w.maxHp){ // barre de PV uniquement si déjà entamé
       const bw=TILE*0.6, by=sy-TILE*0.42;
       ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(sx-bw/2,by,bw,3);

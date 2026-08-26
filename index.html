@@ -311,11 +311,11 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .title-card {
   position:relative;width:100%;max-width:400px;
   display:flex;flex-direction:column;align-items:center;gap:14px;
-  padding:30px 26px 26px;
-  background:linear-gradient(180deg,rgba(58,32,4,.55),rgba(20,12,0,.7));
-  border:1px solid var(--gold-d);border-radius:20px;
-  box-shadow:0 0 0 1px rgba(0,0,0,.5),0 20px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06);
-  backdrop-filter:blur(2px);
+  padding:32px 26px 28px;
+  background:linear-gradient(180deg,rgba(58,32,4,.6),rgba(18,11,0,.78));
+  border:1px solid var(--gold-d);border-radius:18px;
+  box-shadow:0 0 0 1px rgba(0,0,0,.5),0 24px 70px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.07);
+  backdrop-filter:blur(3px);
 }
 /* Coins ornés : quatre traits en L dorés, comme les ferrures d'un coffre */
 .title-card::before, .title-card::after,
@@ -333,7 +333,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   animation:idlepulse 2.6s ease-in-out infinite alternate;
 }
 #overlay h1 {
-  font-family:'Cinzel',serif;font-size:32px;font-weight:700;text-align:center;line-height:1.2;
+  font-family:'Cinzel',serif;font-size:31px;font-weight:700;text-align:center;line-height:1.22;
+  letter-spacing:.02em;
   color:var(--gold-l);
   background:linear-gradient(180deg,#fff3cf 0%,var(--gold-l) 45%,var(--gold-d) 100%);
   -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
@@ -374,6 +375,12 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 @media (hover:hover) and (pointer:fine){
   .bigbtn:hover { box-shadow:0 6px 26px rgba(212,160,23,.55),inset 0 1px 0 rgba(255,255,255,.35); }
 }
+/* Anneau de focus clavier — cohérent sur tous les contrôles de l'écran-titre,
+   invisible au tactile/souris (:focus-visible ne s'arme qu'au clavier). */
+.bigbtn:focus-visible, .cfgsummary:focus-visible, .modebtn:focus-visible,
+.diffbtn:focus-visible, .utilbtn:focus-visible {
+  outline:2px solid var(--gold-l);outline-offset:2px;
+}
 /* Reflet qui balaie le bouton principal — discret rappel du "clignotement
    de disponibilité" déjà utilisé ailleurs dans l'UI (agebtn.ready, idle). */
 .bigbtn.sheen::after {
@@ -387,7 +394,20 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   background:linear-gradient(180deg,#1e5a34,#0d2a18);color:#2ecc71;
   border:1.5px solid #2ecc71;box-shadow:0 4px 20px rgba(46,204,113,.25),inset 0 1px 0 rgba(255,255,255,.12);
 }
-.lore { font-size:13px!important;color:#8a7654!important;font-style:italic; }
+.bigbtn.rejoinbtn {
+  background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;
+  border:1.5px solid #2ecc71;box-shadow:0 4px 20px rgba(46,204,113,.2),inset 0 1px 0 rgba(255,255,255,.1);
+}
+.lore {
+  font-size:12.5px!important;color:#9a8a6a!important;font-style:normal;
+  display:flex;align-items:center;gap:7px;text-align:left!important;
+  max-width:290px!important;line-height:1.5!important;
+}
+.lorebadge {
+  flex-shrink:0;font-family:'Cinzel',serif;font-size:9px;font-weight:700;letter-spacing:.04em;
+  color:#1a1204;background:linear-gradient(180deg,var(--gold-l),var(--gold));
+  border-radius:5px;padding:2.5px 6px;box-shadow:0 1px 3px rgba(0,0,0,.4);
+}
 
 /* ── SÉLECTEUR DE DIFFICULTÉ (écran-titre) ──
    Chaque difficulté porte sa propre teinte d'accent (vert→rouge), visible
@@ -477,6 +497,16 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 @media (hover:hover) and (pointer:fine){
   .utilbtn:hover { border-color:var(--gold-l);color:var(--gold-l); }
 }
+/* « Jouer avec un ami » : volontairement juste sous le sélecteur de mode/
+   difficulté/civ (cfgdetails) et le CTA "Commencer la partie" — la séquence
+   se lit "je choisis mon mode, PUIS je retrouve un ami dessus", plutôt que
+   d'être un utilitaire secondaire noyé avec Succès/Classement/Contrôles.
+   Bleu distinctif (même teinte que l'ancien bouton) pour rester bien
+   distinct du gros CTA doré juste au-dessus. */
+.bigbtn.friendbtn {
+  background:linear-gradient(180deg,#1c4a6a,#0d2a3a);color:#9fd0f5;
+  border:1.5px solid #2a6a9a;box-shadow:0 4px 20px rgba(52,152,219,.22),inset 0 1px 0 rgba(255,255,255,.1);
+}
 .seedrow { display:flex;gap:6px;align-items:center;justify-content:center;width:100%;margin-top:2px; }
 .seedrow label { font-size:11px;color:#9a8a6a;letter-spacing:.04em; }
 .seedrow input {
@@ -507,7 +537,20 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   border:1.5px solid #4a3a20;border-radius:10px;padding:12px 13px;
   display:flex;flex-direction:column;gap:9px;
 }
-.mpcard h3 { font-family:'Cinzel',serif;font-size:14px;color:var(--gold-l);margin:0; }
+.mpcard h3 {
+  font-family:'Cinzel',serif;font-size:14px;color:var(--gold-l);margin:0;
+  display:flex;align-items:center;gap:8px;
+}
+/* Numéro d'étape — la seule différence entre "encore à faire" (grisé) et
+   "carte affichée maintenant" (dorée) se voit déjà via la présence/absence
+   de la carte elle-même (voir mpEtapes en JS) ; le badge ne fait ici que
+   rappeler l'ordre des trois étapes du lobby. */
+.mpstep {
+  flex-shrink:0;width:19px;height:19px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:var(--bg);
+  background:linear-gradient(180deg,var(--gold-l),var(--gold-d));
+}
 .mpbtn {
   padding:9px 12px;font:inherit;font-size:13px;cursor:pointer;border-radius:8px;
   background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);
@@ -515,20 +558,44 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 }
 .mpbtn:active { transform:scale(.97); }
 .mpbtn[disabled] { opacity:.42;cursor:not-allowed; }
+/* CTA principal de chaque étape (connexion, créer, partager, lancer) : le
+   même traitement doré que .bigbtn sur l'écran-titre, pour que le geste
+   "à faire ensuite" saute aux yeux au milieu des boutons secondaires. */
+.mpbtn-primary {
+  background:linear-gradient(180deg,var(--gold),var(--gold-d));color:var(--bg);
+  font-weight:700;border-color:transparent;
+  box-shadow:0 3px 12px rgba(212,160,23,.3),inset 0 1px 0 rgba(255,255,255,.3);
+}
+.mpbtn-launch { background:linear-gradient(180deg,#2ecc71,#1a8a4a);box-shadow:0 3px 12px rgba(46,204,113,.35),inset 0 1px 0 rgba(255,255,255,.25); }
+.mpbtn-ghost {
+  background:transparent;color:#8a7454;border-color:#4a3a20;font-size:12px;padding:7px 12px;
+}
 .mpin {
   padding:8px 10px;font:inherit;font-size:13px;text-align:center;
   background:rgba(20,12,0,.75);color:var(--gold-l);
   border:1.5px solid #5a4a2a;border-radius:8px;outline:none;width:100%;
 }
 .mpin:focus { border-color:var(--gold-d); }
+/* Séparateur "ou" entre le CTA « Créer » et le champ « Rejoindre » — sans ça
+   les deux actions se lisaient comme une liste plate au lieu d'un vrai choix. */
+.mpsep { display:flex;align-items:center;gap:8px;color:#7a6a52;font-size:11px;width:100%; }
+.mpsep::before, .mpsep::after { content:'';flex:1;height:1px;background:#4a3a20; }
+.mpjoinrow { display:flex;gap:6px;width:100%; }
+.mpjoinrow .mpbtn { flex-shrink:0; }
 #mpcode {
-  font-family:'Cinzel',serif;font-size:30px;letter-spacing:.22em;
+  font-family:'Cinzel',serif;font-size:34px;letter-spacing:.24em;
   color:var(--gold-l);text-align:center;padding:6px 0 2px;
+  text-shadow:0 0 18px rgba(240,192,64,.35);
 }
 #mpetat { font-family:'Crimson Text',serif;font-size:12px;color:#9a8a6a;text-align:center; }
 #mpetat .ok  { color:#2ecc71; }
 #mpetat .warn{ color:#e67e22; }
 #mpetat .bad { color:#e74c3c; }
+/* "En attente d'un ami…" respire doucement — un statut qui dure (parfois de
+   longues secondes) se doit d'avoir l'air vivant, pas figé comme une erreur. */
+.mpwait { display:inline-block;animation:mpwaitpulse 1.6s ease-in-out infinite; }
+@keyframes mpwaitpulse { 0%,100%{opacity:.65} 50%{opacity:1} }
+@media (prefers-reduced-motion:reduce){ .mpwait { animation:none; } }
 #mpchat {
   width:100%;max-width:360px;height:150px;overflow-y:auto;touch-action:pan-y;
   background:rgba(12,8,0,.75);border:1.5px solid #4a3a20;border-radius:9px;
@@ -1027,8 +1094,23 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <h1>Âge des<br>Conquêtes</h1>
     <div class="ornament">⚔</div>
     <p id="modeintro">Récoltez bois, pierre et or. Bâtissez votre cité. Forgez vos armes.<br>Vous avez <strong id="peacetxt">20 minutes</strong> avant la première attaque !</p>
-    <p class="lore">Nouveau : mode Conquête contre une IA vivante, statistiques de fin de partie et succès à débloquer</p>
+    <p class="lore"><span class="lorebadge">Nouveau</span>Mode Conquête contre une IA vivante, statistiques de fin de partie et succès à débloquer</p>
     <div class="ornament">✦</div>
+
+    <!-- Groupe "Continuer" — au-dessus de tout le reste et hors du bloc
+         config : reprendre ne dépend pas du mode/difficulté/civ choisis plus
+         bas (une sauvegarde ou une partie en ligne a déjà les siens). Les deux
+         restent cachés par défaut (style inline géré en JS, inchangé) : un
+         joueur qui n'a ni sauvegarde ni partie en ligne interrompue ne voit
+         donc rien de plus qu'avant à cet endroit. Ordre : la partie en ligne
+         d'abord (un ami peut attendre), la sauvegarde locale ensuite. -->
+    <button class="bigbtn rejoinbtn" id="mprejoinbtn" onclick="mpReprendrePartieEnLigne()" style="display:none;">🔌 Reprendre la partie en ligne</button>
+    <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la sauvegarde</button>
+
+    <!-- Groupe "Nouvelle partie" — configurer, puis lancer, seul ou avec un
+         ami. Le mode/difficulté/civ choisis ici sont exactement ceux transmis
+         à mpCreer() : pas de sélecteur séparé dans le lobby, on continue
+         simplement avec ce qu'on vient de choisir. -->
     <button type="button" class="cfgsummary" id="cfgsummary" onclick="toggleCfg()">
       <span id="cfgsummary-txt">🛡️ Survie · ⚔️ Normal</span>
       <span class="cfgchevron">›</span>
@@ -1063,9 +1145,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
       <p class="tip">Deux parties de même graine ont exactement la même carte.</p>
     </div>
     <button class="bigbtn sheen" onclick="startGame()">⚔️ Commencer la partie</button>
-    <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la sauvegarde</button>
-    <button class="bigbtn" id="mprejoinbtn" onclick="mpReprendrePartieEnLigne()" style="display:none;background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:1.5px solid #2ecc71;">🔌 Reprendre la partie en ligne</button>
-    <button class="bigbtn" id="mpbtn-titre" onclick="mpOuvrir()" style="background:linear-gradient(180deg,#0d2a3a,#08161f);color:#7fb8e8;border:1.5px solid #2a6a9a;box-shadow:none;">👥 1v1 en ligne</button>
+    <button class="bigbtn friendbtn" id="mpbtn-titre" onclick="mpOuvrir()">👥 Jouer avec un ami</button>
+
     <div class="utilrow">
       <button class="utilbtn" onclick="openAch()" title="Succès"><span class="uico">🏆</span><span class="ulabel">Succès <span id="achcount"></span></span></button>
       <button class="utilbtn" onclick="openClassement()" title="Classement"><span class="uico">🥇</span><span class="ulabel">Classement</span></button>
@@ -1077,28 +1158,45 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 <!-- ── PANNEAU MULTIJOUEUR ── -->
 <div id="mppanel">
-  <h2>👥 1v1 en ligne</h2>
+  <h2>👥 Jouer avec un ami</h2>
   <p class="mpsub" id="mpintro">Affrontez un ami sur la même carte, avec l'IA rivale en troisième camp.</p>
 
+  <!-- Étape 1 — Compte : un seul bouton Google, partagé avec le reste de
+       l'app (menu-titre, menu pause) — se connecter ici connecte partout. -->
   <div class="mpcard" id="mpcard-compte">
-    <h3>Compte</h3>
+    <h3><span class="mpstep">1</span>Compte</h3>
     <div id="mpcompte" class="mpsub">…</div>
-    <button class="mpbtn" id="mpbtn-connexion" onclick="mpConnexion()">Se connecter avec Google</button>
+    <button class="mpbtn mpbtn-primary" id="mpbtn-connexion" onclick="mpConnexion()">Se connecter avec Google</button>
     <input class="mpin" id="mppseudo" type="text" maxlength="18" placeholder="Votre pseudo" oninput="mpPseudo(this.value)">
   </div>
 
-  <div class="mpcard" id="mpcard-salon">
-    <h3>Partie</h3>
-    <button class="mpbtn" id="mpbtn-creer" onclick="mpCreer()">Créer une partie</button>
-    <div style="display:flex;gap:6px;">
+  <!-- Étape 2 — Trouver un ami : masquée tant qu'on n'est pas connecté, et
+       une fois qu'un salon existe (voir Étape 3) — un seul choix visible à
+       la fois, jamais les deux en même temps. -->
+  <div class="mpcard" id="mpcard-salon" style="display:none;">
+    <h3><span class="mpstep">2</span>Retrouver un ami</h3>
+    <button class="mpbtn mpbtn-primary" id="mpbtn-creer" onclick="mpCreer()">➕ Créer une partie</button>
+    <div class="mpsep"><span>ou entrez son code</span></div>
+    <div class="mpjoinrow">
       <input class="mpin" id="mpjoin" type="text" maxlength="5" placeholder="CODE" style="text-transform:uppercase;letter-spacing:.18em;">
-      <button class="mpbtn" id="mpbtn-rejoindre" onclick="mpRejoindre()" style="flex-shrink:0;">Rejoindre</button>
+      <button class="mpbtn" id="mpbtn-rejoindre" onclick="mpRejoindre()">Rejoindre</button>
     </div>
-    <div id="mpcode" style="display:none;"></div>
-    <button class="mpbtn" id="mpbtn-lancer" onclick="mpLancer()" style="display:none;background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border-color:#2ecc71;">⚔️ Lancer la partie</button>
-    <button class="mpbtn" id="mpbtn-copier" onclick="mpCopierLien()" style="display:none;">🔗 Copier le lien</button>
   </div>
 
+  <!-- Étape 3 — Salon actif : le code géant remplace toute ambiguïté sur
+       "quoi transmettre à mon ami", et l'état (en attente / ami connecté /
+       prêt) est toujours résumé sur une seule ligne juste en dessous. -->
+  <div class="mpcard mpcard-lobby" id="mpcard-lobbyactif" style="display:none;">
+    <h3><span class="mpstep">3</span>Salon</h3>
+    <div id="mpcode"></div>
+    <button class="mpbtn mpbtn-primary" id="mpbtn-copier" style="display:none;" onclick="mpCopierLien()">🔗 Partager l'invitation</button>
+    <button class="mpbtn mpbtn-primary mpbtn-launch" id="mpbtn-lancer" onclick="mpLancer()" style="display:none;">⚔️ Lancer la partie</button>
+    <button class="mpbtn mpbtn-ghost" id="mpbtn-quitter" onclick="mpQuitter()">Quitter le salon</button>
+  </div>
+
+  <!-- Toujours visible, quelle que soit l'étape : seul endroit qui doit
+       rester atteignable même quand le multijoueur est indisponible/mal
+       configuré, ou en cours de signalisation avant que le salon existe. -->
   <div id="mpetat">Multijoueur non configuré</div>
 
   <div class="mp-emoterow" id="mp-emoterow" style="display:none;">
@@ -1504,8 +1602,8 @@ const MODES = {
               desc:'Un seigneur rival bâtit sa propre cité. Détruisez son Centre Ville — avant qu\'il ne détruise le vôtre.',
               intro:'Un rival récolte, construit, monte les âges et lève ses armées en même temps que vous.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong> — pas de vagues, un seul adversaire.' },
   coop2v1:  { nom:'2v1 Coop',  ico:'🤝', targetWaves:0, rivaux:1, coop:true,
-              desc:'Deux joueurs alliés (via le 1v1 en ligne) contre un seul seigneur IA, à la difficulté choisie ci-dessous.',
-              intro:'Rejoignez-vous à un allié (menu « 1v1 en ligne ») pour affronter ensemble un seul seigneur rival.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong>. Lancé seul, ce mode se joue comme la Conquête.' },
+              desc:'Deux joueurs alliés (bouton « Jouer avec un ami ») contre un seul seigneur IA, à la difficulté choisie ci-dessous.',
+              intro:'Rejoignez-vous à un allié (bouton « Jouer avec un ami » ci-dessous) pour affronter ensemble un seul seigneur rival.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong>. Lancé seul, ce mode se joue comme la Conquête.' },
 };
 let selectedMode='survival';
 function pickMode(key){
@@ -3115,6 +3213,72 @@ function buildBuildings(T){
   }
 }
 
+// ── SURCOUCHE : bâtiments illustrés, en amélioration progressive ──────
+// par-dessus les sprites procéduraux ci-dessus (même principe que les
+// icônes de ressources, voir upgradeResourceIcons). Chargement asynchrone
+// depuis assets/batiments/ ; échec silencieux (fichier absent, jeu en
+// file:// sans serveur, canvas « taint ») → le sprite procédural déjà
+// généré reste utilisé tel quel. Ne couvre volontairement que la forme
+// « âge 0 / niveau 1 » de chaque bâtiment : les variantes d'âge (Centre
+// Ville, Caserne, Mur passé Âge Sombre) et de niveau (Tour) restent
+// procédurales tant qu'elles n'ont pas leur propre illustration.
+const BLD_SPRITE_FILES={ [BT.HOUSE]:'maison', [BT.FARM]:'ferme', [BT.BARRACKS]:'caserne', [BT.TC]:'centre_ville', [BT.WALL]:'mur', [BT.TOWER]:'tour', [BT.CASTLE]:'chateau' };
+
+// Détoure le fond (même flood fill que les icônes, voir stripBgTrimmed),
+// puis insère le résultat sans déformation (« contain »), ancré en bas et
+// centré horizontalement dans un canvas de dimensions (W,H) identiques au
+// sprite procédural remplacé — la géométrie de placement à l'affichage ne
+// change donc pas.
+function fitBuildingImage(img,W,H){
+  const{c:wc,minX,minY,bw,bh}=stripBgTrimmed(img,Math.min(600,img.width));
+  const{c,cx}=offCanvas(W,H);
+  const scale=Math.min(W*0.94/bw,H*0.94/bh);
+  const dw=bw*scale, dh=bh*scale;
+  cx.drawImage(wc,minX,minY,bw,bh,(W-dw)/2,H-dh,dw,dh);
+  return{c,cx};
+}
+
+// Variante « camp ennemi » : lavis rouge semi-transparent en surimpression,
+// contraint à la silhouette déjà détourée (source-atop) — pas besoin d'une
+// seconde image générée par bâtiment.
+function tintEnemyBuilding(base,W,H){
+  const{c,cx}=offCanvas(W,H);
+  cx.drawImage(base.c,0,0);
+  cx.globalCompositeOperation='source-atop';
+  cx.fillStyle='rgba(200,40,40,.4)';
+  cx.fillRect(0,0,W,H);
+  cx.globalCompositeOperation='source-over';
+  return{c,cx};
+}
+
+// Cache les <img> décodées (une seule requête réseau par bâtiment, même
+// partie) car buildBuildings(T) — et donc SPR.bld — est régénéré à chaque
+// changement de zoom : sans ce cache, l'image illustrée ne survivrait pas
+// au premier zoom, la reconstruction procédurale écrasant SPR.bld[type]
+// entre-temps.
+const BLD_IMG_CACHE={};
+function upgradeBuildingSprites(){
+  for(const type in BLD_SPRITE_FILES){
+    const apply=(img)=>{
+      try{
+        const meta=SPR.bld[type]; if(!meta) return;
+        const W=meta.c.width, H=meta.c.height;
+        const fitted=fitBuildingImage(img,W,H);
+        SPR.bld[type]=Object.assign({},meta,fitted);
+        const metaE=SPR.bld[type+'_E'];
+        if(metaE) SPR.bld[type+'_E']=Object.assign({},metaE,tintEnemyBuilding(fitted,W,H));
+      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
+    };
+    const cached=BLD_IMG_CACHE[type];
+    if(cached==='error') continue;              // déjà tenté, fichier absent : n'insiste pas
+    if(cached){ apply(cached); continue; }       // déjà chargée : réapplique tout de suite (sync)
+    const img=new Image();
+    img.onload=()=>{ BLD_IMG_CACHE[type]=img; apply(img); };
+    img.onerror=()=>{ BLD_IMG_CACHE[type]='error'; }; // fichier absent : fallback déjà en place
+    img.src='assets/batiments/'+BLD_SPRITE_FILES[type]+'.png';
+  }
+}
+
 function drawBuildingSprite(cx,type,d,pw,ph,T,enemy,level,age,gateOpen){
   level=level||1; age=age||0;
   const oy=T*0.5;                 // marge haute du sprite
@@ -3852,6 +4016,52 @@ function buildUnits(T){
   }
 }
 
+// ── SURCOUCHE : unités illustrées, en amélioration progressive ────────
+// même principe que les bâtiments (voir upgradeBuildingSprites) : chargement
+// asynchrone depuis assets/unites/, échec silencieux, sprite procédural
+// conservé tant que le fichier n'existe pas. Pas de variante « camp
+// ennemi » nécessaire ici : contrairement aux bâtiments, le rendu des
+// unités ne teinte déjà pas le camp adverse en rouge (voir le liseré au
+// sol dans drawUnits) — l'illustration remplace donc la pose de base ET
+// les deux frames de foulée (_W1/_W2) par la même image : seul le
+// bobbing vertical anime encore la marche, mais aucune bascule visuelle
+// disparate entre une pose dessinée et une pose illustrée à chaque pas.
+const UNIT_SPRITE_FILES={ [UT.VIL]:'villageois', [UT.MIL]:'milicien' };
+
+// Détoure (même flood fill que les bâtiments) et centre horizontalement,
+// ancré un peu au-dessus du bas du canvas carré S×S — c'est là que
+// buildUnitSprite plaçait déjà l'ombre et les pieds (voir cx.ellipse à
+// S*0.84 plus haut), donc la nouvelle silhouette pose au même endroit.
+function fitUnitImage(img,S){
+  const{c:wc,minX,minY,bw,bh}=stripBgTrimmed(img,Math.min(500,img.width));
+  const{c,cx}=offCanvas(S,S);
+  const scale=Math.min(S*0.8/bw,S*0.78/bh);
+  const dw=bw*scale,dh=bh*scale;
+  cx.drawImage(wc,minX,minY,bw,bh,(S-dw)/2,S*0.88-dh,dw,dh);
+  return{c,cx};
+}
+
+const UNIT_IMG_CACHE={};
+function upgradeUnitSprites(){
+  for(const type in UNIT_SPRITE_FILES){
+    const apply=(img)=>{
+      try{
+        for(const suf of ['','_W1','_W2']){
+          const meta=SPR.unit[type+suf]; if(!meta) continue;
+          SPR.unit[type+suf]=Object.assign({},meta,fitUnitImage(img,meta.c.width));
+        }
+      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
+    };
+    const cached=UNIT_IMG_CACHE[type];
+    if(cached==='error') continue;
+    if(cached){ apply(cached); continue; }
+    const img=new Image();
+    img.onload=()=>{ UNIT_IMG_CACHE[type]=img; apply(img); };
+    img.onerror=()=>{ UNIT_IMG_CACHE[type]='error'; };
+    img.src='assets/unites/'+UNIT_SPRITE_FILES[type]+'.png';
+  }
+}
+
 // Monture pour la cavalerie (Chevalier / Paladin / Cavalier Noir) — dessinée
 // AVANT le cavalier (arrière-plan) : sans elle, ces unités n'étaient qu'un
 // rectangle brun accolé au torse, illisible comme "monté".
@@ -4363,7 +4573,7 @@ function buildWildlife(T){
 //  contrairement aux sprites du monde qui se reconstruisent au
 //  changement d'échelle.
 // ═══════════════════════════════════════════════════════════
-const ICS=40; // résolution interne des icônes
+const ICS=64; // résolution interne des icônes (crédit statique : nette une fois mise à l'échelle en HTML)
 function buildIcons(){
   if(SPR.iconsBuilt) return;
   SPR.ico={};
@@ -4692,6 +4902,79 @@ function buildIcons(){
   SPR.iconsBuilt=true;
 }
 
+// ── SURCOUCHE : icônes de ressources illustrées, en amélioration ──────
+// progressive par-dessus les icônes procédurales ci-dessus. Chargement
+// asynchrone depuis assets/ressources/ : si le fichier est absent (jeu
+// ouvert en file:// sans serveur, dossier pas encore fourni, ou canvas
+// « taint » par la politique CORS locale) l'échec est silencieux et
+// l'icône procédurale déjà dessinée plus haut reste utilisée telle
+// quelle — aucune régression possible.
+const RES_SPRITE_FILES={food:'nourriture',wood:'bois',stone:'pierre',gold:'or'};
+
+// Détoure un fond quasi-blanc par flood fill depuis les bords (au lieu
+// d'un simple seuil global, pour ne pas manger les zones claires à
+// l'intérieur du sujet), et renvoie à la fois le canvas détouré (à la
+// résolution de travail W×H) et la boîte englobante du contenu restant —
+// réutilisé aussi bien pour les icônes (recadrage carré) que pour les
+// bâtiments (recadrage « contain » ancré en bas). Partagé pour que les deux
+// usages détourent exactement de la même façon.
+function stripBgTrimmed(img,W){
+  const H=Math.max(1,Math.round(W*img.height/img.width));
+  const{c:wc,cx:wcx}=offCanvas(W,H);
+  wcx.drawImage(img,0,0,W,H);
+  const id=wcx.getImageData(0,0,W,H);
+  const d=id.data;
+  const isBg=(i)=>{ const r=d[i],g=d[i+1],b=d[i+2]; return r>230&&g>230&&b>230&&Math.abs(r-g)<12&&Math.abs(g-b)<12; };
+  const seen=new Uint8Array(W*H);
+  const stack=[];
+  for(let x=0;x<W;x++){ stack.push(x,0); stack.push(x,H-1); }
+  for(let y=0;y<H;y++){ stack.push(0,y); stack.push(W-1,y); }
+  while(stack.length){
+    const y=stack.pop(), x=stack.pop();
+    if(x<0||y<0||x>=W||y>=H) continue;
+    const idx=y*W+x;
+    if(seen[idx]) continue;
+    seen[idx]=1;
+    const i=idx*4;
+    if(!isBg(i)) continue;
+    d[i+3]=0;
+    stack.push(x+1,y, x-1,y, x,y+1, x,y-1);
+  }
+  wcx.putImageData(id,0,0);
+  let minX=W,minY=H,maxX=0,maxY=0,found=false;
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    if(d[(y*W+x)*4+3]>10){ found=true; if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+  }
+  if(!found){ minX=0; minY=0; maxX=W-1; maxY=H-1; }
+  return{c:wc,minX,minY,bw:maxX-minX+1,bh:maxY-minY+1};
+}
+
+// Recadre sur le contenu détouré et le centre dans un canvas carré S×S.
+function stripBgAndFit(img,S){
+  const{c:wc,minX,minY,bw,bh}=stripBgTrimmed(img,300);
+  const{c,cx}=offCanvas(S,S);
+  const scale=Math.min(S*0.92/bw,S*0.92/bh);
+  const dw=bw*scale, dh=bh*scale;
+  cx.drawImage(wc,minX,minY,bw,bh,(S-dw)/2,(S-dh)/2,dw,dh);
+  return{c,cx};
+}
+
+function upgradeResourceIcons(){
+  if(SPR.resIconsUpgrading) return;
+  SPR.resIconsUpgrading=true;
+  for(const key in RES_SPRITE_FILES){
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        SPR.ico[key]=stripBgAndFit(img,ICS);
+        applyStaticIcons();
+      }catch(e){ /* canvas « taint » ou autre échec : icône procédurale conservée */ }
+    };
+    img.onerror=()=>{}; // fichier absent : rien à faire, fallback déjà en place
+    img.src='assets/ressources/'+RES_SPRITE_FILES[key]+'.png';
+  }
+}
+
 // Table de correspondance emoji → clé d'icône dessinée. Portée volontai-
 // rement limitée à l'UI PERSISTANTE (topbar, boutons d'action, panneau de
 // recherche, barre d'âge) : les emojis dans les notifications, bannières
@@ -4781,13 +5064,16 @@ function buildSprites(){
   buildRelic(T);
   buildCaravan(T);
   buildBuildings(T);
+  upgradeBuildingSprites(); // remplacement asynchrone par les bâtiments illustrés, si dispo
   buildUnits(T);
+  upgradeUnitSprites(); // remplacement asynchrone par les unités illustrées, si dispo
   buildWildlife(T);
   buildShadow();
   buildGlow();
   buildMacro();
   buildIcons();        // icônes UI (taille fixe, générées une seule fois)
   applyStaticIcons();  // injecte les icônes dans le DOM persistant
+  upgradeResourceIcons(); // remplacement asynchrone par les icônes illustrées, si dispo
 }
 
 // ── OMBRE PORTÉE (sprite unique, étiré à la demande) ──────────────────
@@ -10223,11 +10509,11 @@ async function openClassement(){
     return;
   }
   if(!_mpEtat.uid){
-    // Le bouton de connexion vit dans le panneau "1v1 en ligne" (même
+    // Le bouton de connexion vit dans le panneau "Jouer avec un ami" (même
     // authentification Firebase, voir README) mais le classement N'EST PAS
     // réservé au multijoueur : une victoire solo contre l'IA y figure tout
     // autant qu'une victoire en ligne — d'où la précision ci-dessous.
-    list.innerHTML='<p class="classub">Connectez-vous depuis le panneau <b>👥 1v1 en ligne</b> pour voir le classement et y figurer (c\'est juste l\'écran où se fait la connexion : vos parties SOLO comptent tout autant que le 1v1 réel).</p>';
+    list.innerHTML='<p class="classub">Connectez-vous depuis le bouton <b>👥 Jouer avec un ami</b> pour voir le classement et y figurer (c\'est juste l\'écran où se fait la connexion : vos parties SOLO comptent tout autant que le 1v1 réel).</p>';
     return;
   }
   list.innerHTML='<p class="classub">Chargement…</p>';
@@ -11684,7 +11970,17 @@ function mpLigne(txt,cls){
   c.appendChild(d); c.scrollTop=c.scrollHeight;
 }
 
-// Reflete l'état du transport dans le panneau.
+// Reflete l'état du transport dans le panneau — y compris quelle(s) carte(s)
+// « étape » afficher : jamais plus d'un choix à la fois (compte → trouver un
+// ami → salon actif), pour que le lobby reste lisible d'un coup d'œil au
+// lieu d'empiler tous les contrôles en permanence.
+function mpEtapes(dispo,uid,code){
+  const salon=document.getElementById('mpcard-salon');
+  const actif=document.getElementById('mpcard-lobbyactif');
+  if(salon) salon.style.display=(dispo&&uid&&!code)?'flex':'none';
+  if(actif) actif.style.display=(dispo&&uid&&code)?'flex':'none';
+}
+
 function mpRafraichir(){
   const e=_mpEtat;
   const emoterow=document.getElementById('mp-emoterow');
@@ -11701,6 +11997,7 @@ function mpRafraichir(){
       (e.raison==='sdk'?'SDK Firebase injoignable (hors-ligne ?)':'non configur\u00e9 (voir README)');
     if(compte) compte.textContent='\u2014';
     [bCo,bCr,bRj].forEach(b=>{ if(b) b.disabled=true; });
+    mpEtapes(false,false,false);
     return;
   }
   [bCo,bCr,bRj].forEach(b=>{ if(b) b.disabled=false; });
@@ -11711,10 +12008,12 @@ function mpRafraichir(){
     if(bCr) bCr.disabled=true;
     if(bRj) bRj.disabled=true;
     etat.innerHTML='<span class="warn">Connexion requise pour jouer en ligne</span>';
+    mpEtapes(true,false,false);
     return;
   }
   if(compte) compte.textContent=e.nom||'Connect\u00e9';
   if(bCo){ bCo.textContent='Se d\u00e9connecter'; }
+  mpEtapes(true,true,!!e.code);
 
   const code=document.getElementById('mpcode');
   const copier=document.getElementById('mpbtn-copier');
@@ -11731,8 +12030,8 @@ function mpRafraichir(){
   const parts=[];
   const labelAutre=mpEstCoop()?'Allié':'Adversaire';
   if(e.code) parts.push(`Salon <b>${e.code}</b> — ${e.role==='hote'?'vous h\u00e9bergez':'vous avez rejoint'}`);
-  if(e.adversaire) parts.push(`${labelAutre} : <b>${e.adversaire.nom||'…'}</b>`);
-  else if(e.code&&e.role==='hote') parts.push(`<span class="warn">En attente ${mpEstCoop()?"d'un allié":"d'un adversaire"}…</span>`);
+  if(e.adversaire) parts.push(`<span class="ok">${labelAutre} connecté : <b>${e.adversaire.nom||'…'}</b></span>`);
+  else if(e.code&&e.role==='hote') parts.push(`<span class="warn mpwait">En attente ${mpEstCoop()?"d'un allié":"d'un adversaire"}…</span>`);
   if(e.connecte){
     parts.push(e.canal==='p2p'
       ? `<span class="ok">P2P \u00e9tabli</span>${e.rtt!=null?` (RTT ${e.rtt} ms)`:''}`
@@ -11780,9 +12079,18 @@ async function mpRejoindre(){
 }
 window.mpRejoindre=mpRejoindre;
 
+// navigator.share en priorit\u00e9 (mobile : ouvre directement Messages/WhatsApp/
+// etc. sur le lien) \u2014 bien plus direct pour "envoyer le salon \u00e0 un ami" que
+// de copier puis devoir soi-m\u00eame choisir o\u00f9 coller. Repli presse-papiers sur
+// desktop / navigateurs sans Web Share, comme avant.
 function mpCopierLien(){
   if(!_mpEtat.code) return;
   const lien=location.origin+location.pathname+'?p='+_mpEtat.code;
+  const texte=`Rejoins ma partie sur \u00c2ge des Conqu\u00eates \u2014 code ${_mpEtat.code}`;
+  if(navigator.share){
+    navigator.share({title:'\u00c2ge des Conqu\u00eates',text:texte,url:lien}).catch(()=>{}); // annulation utilisateur = silencieux
+    return;
+  }
   if(navigator.clipboard) navigator.clipboard.writeText(lien).then(
     ()=>mpLigne('Lien copi\u00e9 : '+lien,'sys'),
     ()=>mpLigne('Lien : '+lien,'sys'));
@@ -11792,12 +12100,34 @@ window.mpCopierLien=mpCopierLien;
 
 // L'hote lance la partie : il demarre la simulation et decrit au client ce
 // qu'il doit generer (graine, mode, camps).
+// Garde explicite sur les TROIS conditions (rôle hôte, canal ouvert, ami
+// effectivement présent) plutôt que de compter uniquement sur le bouton
+// #mpbtn-lancer resté caché (voir mpRafraichir) : ce garde-fou vaut aussi si
+// la fonction est un jour appelée autrement (ex. raccourci clavier, appel
+// direct en console) — jamais de partie en ligne lancée sans adversaire
+// réellement connecté en face.
 function mpLancer(){
-  if(!_mpEtat.connecte||_mpEtat.role!=='hote') return;
+  if(_mpEtat.role!=='hote'){ return; }
+  if(!_mpEtat.connecte||!_mpEtat.adversaire){
+    notify(`⏳ En attente ${mpEstCoop()?"de l'allié":"de l'adversaire"}…`,'#e67e22');
+    return;
+  }
   mpFermer();
   demarrerPartieHote(_mpEtat.adversaire);
 }
 window.mpLancer=mpLancer;
+
+// Quitter le salon actif (cr\u00e9\u00e9 ou rejoint) sans quitter le compte Google \u2014
+// remet l'\u00c9tape 2 (cr\u00e9er/rejoindre) au premier plan. Absent jusqu'ici : le
+// seul moyen de renoncer \u00e0 un salon \u00e9tait de fermer le panneau, en le
+// laissant vivre c\u00f4t\u00e9 serveur.
+async function mpQuitter(){
+  if(!window.MP||!window.MP.quitter) return;
+  try{ await window.MP.quitter(); mpLigne('Salon quitt\u00e9.','sys'); }
+  catch(err){ mpLigne('Erreur en quittant le salon : '+err.message,'sys'); }
+  const j=document.getElementById('mpjoin'); if(j) j.value='';
+}
+window.mpQuitter=mpQuitter;
 
 function mpEnvoyerChat(){
   const el=document.getElementById('mpmsg');
@@ -11815,7 +12145,7 @@ window.mpEnvoyerChat=mpEnvoyerChat;
 // asynchrone : on r\u00e9essaie quelques fois avant d'abandonner).
 (function brancherMP(essai){
   if(window.MP&&window.MP.surEtat){
-    let _connecteAvant=false;
+    let _connecteAvant=false, _uidAvant=null, _dispoAvant=false;
     window.MP.surEtat(e=>{
       // PING/PONG (le vrai pouls du transport) sont interceptes AVANT
       // d'atteindre recevoirReseau — la reconnexion ne peut donc pas
@@ -11826,6 +12156,16 @@ window.mpEnvoyerChat=mpEnvoyerChat;
       if(e.connecte&&!_connecteAvant&&_enAttenteResync){ _enAttenteResync=false; window.MP.envoyer({t:'RESYNC'}); }
       _connecteAvant=e.connecte;
       _mpEtat=e; mpRafraichir();
+      // Compte unique (voir CONNEXION GOOGLE plus bas) : gAuth n'est qu'un
+      // miroir de cet état — on le resynchronise à chaque publication, et on
+      // ne touche l'UI que quand quelque chose a réellement changé (identité
+      // ou disponibilité), pour ne pas re-render à chaque tick réseau.
+      gAuth.signedIn=!!e.uid; gAuth.email=e.email||null; gAuth.nom=e.nom||null;
+      if(e.uid!==_uidAvant||e.dispo!==_dispoAvant){
+        _uidAvant=e.uid; _dispoAvant=e.dispo;
+        if(typeof refreshGoogleUI==='function') refreshGoogleUI();
+        if(typeof refreshSaveInfo==='function') refreshSaveInfo();
+      }
     });
     window.MP.surMessage(m=>{
       if(m&&m.t==='CHAT'){ mpLigne((_mpEtat.adversaire&&_mpEtat.adversaire.nom||'Adversaire')+' : '+m.texte,'lui'); return; }
@@ -11845,95 +12185,56 @@ window.mpEnvoyerChat=mpEnvoyerChat;
   else mpRafraichir();
 })(0);
 
-// ── CONNEXION GOOGLE (sauvegarde cloud) ────────────────────
-// Identifiant client OAuth 2.0 (public — ce n'est PAS un secret, il ne
-// donne accès à rien par lui-même) à créer sur
-// https://console.cloud.google.com/apis/credentials — type « ID client
-// OAuth », application Web, avec pour origine JavaScript autorisée l'URL
-// exacte d'hébergement du jeu (voir README pour la procédure complète).
-// Tant que ce champ garde sa valeur par défaut, tout le module reste
-// inerte : aucun script Google n'est chargé, aucun bouton n'apparaît, le
-// jeu se comporte exactement comme avant (sauvegarde locale/Canvas
-// uniquement) — un dev qui clone le dépôt sans configurer d'identifiant
-// n'est donc jamais affecté par cette fonctionnalité.
-const GOOGLE_CLIENT_ID = '561523913-llsat3nhiocqmpjv7f8qu4qhj84a7ucq.apps.googleusercontent.com';
-const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email';
-const GOOGLE_CONFIGURED = !GOOGLE_CLIENT_ID.startsWith('REMPLACE_MOI');
+// ── CONNEXION GOOGLE (compte unique — sauvegarde cloud + multijoueur) ──
+// Un seul bouton, un seul consentement Google, pour toute l'app : l'identité
+// (uid/nom, servant au multijoueur et au classement) et le jeton Drive
+// (sauvegarde cloud) sont tous les deux obtenus par window.MP.connecter,
+// défini dans le module Firebase tout en bas du fichier (voir « CONFIGURATION
+// » là-bas pour créer le projet — voir aussi le README). Tant que Firebase
+// n'est pas configuré, window.MP reste un talon inerte : aucun bouton
+// n'apparaît, le jeu se comporte comme avant (sauvegarde locale/Canvas
+// uniquement) — un dev qui clone le dépôt sans configurer de projet n'est
+// donc jamais affecté par cette fonctionnalité.
+//
+// gAuth n'est plus qu'un miroir local de l'état publié par window.MP.surEtat
+// (voir brancherMP plus haut) : le reste du jeu (bouton du menu-titre, menu
+// pause, résumé de sauvegarde) continue de lire "gAuth.signedIn/email" sans
+// savoir que Firebase est derrière.
+let gAuth = { signedIn:false, email:null, nom:null };
 
-let gAuth = { tokenClient:null, token:null, tokenExp:0, email:null, signedIn:false };
-
-// Chargé à la demande (pas de balise <script> statique) : un joueur qui ne
-// se connecte jamais à Google ne déclenche aucune requête réseau vers
-// accounts.google.com.
-if(GOOGLE_CONFIGURED){
-  const _gs=document.createElement('script');
-  _gs.src='https://accounts.google.com/gsi/client'; _gs.async=true;
-  _gs.onload=()=>initGoogleAuth();
-  _gs.onerror=()=>console.warn('Google Identity Services indisponible (hors-ligne ?)');
-  document.head.appendChild(_gs);
-}
-
-function initGoogleAuth(){
-  if(!GOOGLE_CONFIGURED||!window.google||!google.accounts) return;
-  gAuth.tokenClient=google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: GOOGLE_SCOPES,
-    callback: async(resp)=>{
-      if(!resp||resp.error){ notify('❌ Connexion Google refusée','#e74c3c'); return; }
-      gAuth.token=resp.access_token;
-      gAuth.tokenExp=Date.now()+(resp.expires_in||3600)*1000;
-      gAuth.signedIn=true;
-      try{
-        const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+gAuth.token}});
-        const j=await r.json();
-        gAuth.email=j.email||null;
-      }catch(e){}
-      notify(gAuth.email?`✅ Connecté : ${gAuth.email}`:'✅ Connecté à Google','#2ecc71');
-      refreshGoogleUI();
-      if(typeof refreshSaveInfo==='function') refreshSaveInfo();
+async function googleAuthClick(){
+  if(!mpDispo()){ notify('☁️ Connexion Google indisponible pour l\'instant','#e74c3c'); return; }
+  try{
+    if(gAuth.signedIn){
+      await window.MP.deconnecter();
+      notify('☁️ Déconnecté de Google — sauvegardes locales uniquement','#95a5a6');
+    } else {
+      const u=await window.MP.connecter();
+      notify(u.email?`✅ Connecté : ${u.email}`:'✅ Connecté à Google','#2ecc71');
       if(typeof syncProfilAvecDrive==='function') syncProfilAvecDrive();
-    },
-  });
-  refreshGoogleUI();
-}
-window.initGoogleAuth=initGoogleAuth;
-
-function googleAuthClick(){
-  if(gAuth.signedIn){ googleSignOut(); return; }
-  if(!gAuth.tokenClient){ notify('☁️ Connexion Google indisponible pour l\'instant','#e74c3c'); return; }
-  // 'consent' au tout premier lien de session (rien à ré-afficher ensuite) :
-  // sans ça, Google republie l'écran de consentement à chaque clic.
-  gAuth.tokenClient.requestAccessToken({prompt: gAuth.token?'':'consent'});
+    }
+  }catch(err){ notify('❌ Connexion Google refusée','#e74c3c'); }
+  if(typeof refreshSaveInfo==='function') refreshSaveInfo();
 }
 window.googleAuthClick=googleAuthClick;
 
-function googleSignOut(){
-  if(gAuth.token&&window.google&&google.accounts) google.accounts.oauth2.revoke(gAuth.token,()=>{});
-  gAuth.token=null; gAuth.signedIn=false; gAuth.email=null;
-  notify('☁️ Déconnecté de Google — sauvegardes locales uniquement','#95a5a6');
-  refreshGoogleUI();
-  if(typeof refreshSaveInfo==='function') refreshSaveInfo();
-}
-
 function refreshGoogleUI(){
-  const show=GOOGLE_CONFIGURED&&!!gAuth.tokenClient;
+  const show=mpDispo();
   for(const id of ['gauthbtn','gauthbtn-title']){
     const b=document.getElementById(id);
     if(!b) continue;
     b.style.display=show?'flex':'none';
-    b.textContent=gAuth.signedIn?`☁️ ${gAuth.email||'Connecté'} · Déconnexion`:'☁️ Connexion Google';
+    b.textContent=gAuth.signedIn?`☁️ ${gAuth.email||gAuth.nom||'Connecté'} · Déconnexion`:'☁️ Connexion Google';
   }
 }
 
-// Jeton d'accès valide, ou null si non connecté / expiré. Pas de
+// Jeton Drive valide, ou null si non connecté / expiré. Pas de
 // rafraîchissement silencieux implémenté (hors scope pour un jeu casual) :
 // passé l'expiration (~1h), le joueur reclique simplement pour se
 // reconnecter — storageSave/Load retombent entre-temps sur le stockage
 // local sans jamais bloquer la sauvegarde.
 function googleToken(){
-  if(!gAuth.signedIn||!gAuth.token) return null;
-  if(Date.now()>gAuth.tokenExp-30000){ gAuth.signedIn=false; gAuth.token=null; refreshGoogleUI(); return null; }
-  return gAuth.token;
+  return window.MP&&window.MP.driveToken ? window.MP.driveToken() : null;
 }
 
 // ── GOOGLE DRIVE : dossier « appData », cache et propre à ce jeu ─────────
@@ -12645,12 +12946,14 @@ document.body.addEventListener('touchmove',e=>{if(e.target===canvas)e.preventDef
 document.body.addEventListener('contextmenu',e=>e.preventDefault());
 </script>
 
-<!-- ══ TRANSPORT MULTIJOUEUR (Firebase + WebRTC) ══════════════
+<!-- ══ TRANSPORT MULTIJOUEUR + CONNEXION GOOGLE (Firebase + WebRTC) ══════════════
      Bloc SEPARE et en type="module" : le SDK Firebase n'existe qu'en ESM,
      que le grand script classique ci-dessus ne peut pas importer. Il publie
-     window.MP et rien d'autre ; tout le jeu appelle `window.MP?.…` derriere
-     des gardes, exactement comme pour GOOGLE_CONFIGURED. Si la config est
-     absente ou le CDN injoignable, le solo se comporte comme avant. -->
+     window.MP et rien d'autre — transport réseau ET connexion Google (compte
+     unique : identité multijoueur/classement + jeton Drive) — ; tout le jeu
+     appelle `window.MP?.…` derriere des gardes. Si MP_ACTIF est faux (config
+     absente) ou le CDN injoignable, le solo se comporte comme avant et aucun
+     bouton Google n'apparaît. -->
 <script type="module">
 // ── CONFIGURATION ────────────────────────────────────────────
 // Valeurs PUBLIQUES (ce ne sont pas des secrets : la securite repose sur les
@@ -12678,7 +12981,8 @@ const RELAIS_PERIODE= 200;   // ms entre deux envois groupes en mode relais (5 H
 // Etat expose au jeu.
 const E = {
   dispo:false, pret:false, raison:null,
-  uid:null, nom:null,
+  uid:null, nom:null, email:null,
+  driveToken:null, driveTokenExp:0,  // jeton OAuth Drive (scope drive.appdata), obtenu au même consentement que l'identité multijoueur — voir window.MP.connecter
   code:null, role:null,        // 'hote' | 'invite'
   canal:null,                  // 'p2p' | 'relais' | null
   rtt:null,
@@ -12697,6 +13001,7 @@ window.MP = {
   surEtat:    f=>{ abonnesEtat.push(f); prevenirEtat(); },
   connecter:  async()=>{ throw new Error('Multijoueur non configure'); },
   deconnecter:async()=>{},
+  driveToken: ()=>null,
   creerSalon: async()=>{ throw new Error('Multijoueur non configure'); },
   rejoindreSalon: async()=>{ throw new Error('Multijoueur non configure'); },
   envoyer:    ()=>false,
@@ -12724,24 +13029,47 @@ try {
   E.dispo=true; prevenirEtat();
 
   // ── AUTHENTIFICATION ──────────────────────────────────────
-  // Cohabitation volontaire avec le gAuth GIS existant (qui sert la
-  // sauvegarde Drive) : on ne touche pas a ce qui marche. Le cout est un
-  // second consentement Google possible ; l'unification viendra plus tard.
+  // Compte UNIQUE pour toute l'app : ce même identifiant Firebase sert à la
+  // fois l'identité multijoueur/classement (E.uid) ET la sauvegarde Google
+  // Drive (E.driveToken, scope drive.appdata demandé en plus au moment du
+  // consentement — un seul écran Google, pas deux). Avant, un second module
+  // (GIS) gérait sa propre connexion Drive en parallèle ; googleAuthClick()
+  // et googleToken(), dans le script classique plus bas, ne sont plus que
+  // de fines façades vers window.MP.connecter/driveToken.
   authMod.onAuthStateChanged(auth, u=>{
     E.uid = u?u.uid:null;
     E.nom = u?(localStorage.getItem('adc_pseudo')||u.displayName||'Joueur'):null;
+    E.email = u?(u.email||null):null;
+    // Une reprise de session au rechargement (Firebase la persiste seul)
+    // restaure l'identité mais pas ce jeton Drive précis : il n'est rendu
+    // qu'au moment du popup. Un reconnexion volontaire suffit à le renouveler.
+    if(!u){ E.driveToken=null; E.driveTokenExp=0; }
     prevenirEtat();
   });
 
   window.MP.connecter = async()=>{
     const p = new authMod.GoogleAuthProvider();
+    p.addScope('https://www.googleapis.com/auth/drive.appdata');
     const res = await authMod.signInWithPopup(auth,p);
+    const cred = authMod.GoogleAuthProvider.credentialFromResult(res);
     E.uid=res.user.uid;
     E.nom=localStorage.getItem('adc_pseudo')||res.user.displayName||'Joueur';
+    E.email=res.user.email||null;
+    E.driveToken=(cred&&cred.accessToken)||null;
+    E.driveTokenExp=Date.now()+55*60*1000; // jetons Google ~1h ; marge de sécurité
     prevenirEtat();
-    return {uid:E.uid, nom:E.nom};
+    return {uid:E.uid, nom:E.nom, email:E.email};
   };
-  window.MP.deconnecter = async()=>{ await authMod.signOut(auth); prevenirEtat(); };
+  window.MP.deconnecter = async()=>{
+    E.driveToken=null; E.driveTokenExp=0;
+    await authMod.signOut(auth);
+    prevenirEtat();
+  };
+  window.MP.driveToken = ()=>{
+    if(!E.driveToken) return null;
+    if(Date.now()>E.driveTokenExp-30000){ E.driveToken=null; return null; }
+    return E.driveToken;
+  };
   window.MP.definirPseudo = nom=>{
     const t=String(nom||'').trim().slice(0,18);
     if(t){ localStorage.setItem('adc_pseudo',t); E.nom=t; prevenirEtat(); }

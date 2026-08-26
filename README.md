@@ -24,7 +24,7 @@ Le mode se choisit sur l'écran-titre, en plus de la difficulté.
   villageois ralentit vraiment ses chantiers.
 - **2 rivaux** — deux seigneurs IA, hostiles à vous ET entre eux. Le dernier
   Centre Ville debout l'emporte.
-- **2v1 Coop** — vous et un allié (via le *1v1 en ligne*, voir plus bas)
+- **2v1 Coop** — vous et un allié (bouton *Jouer avec un ami*, voir plus bas)
   affrontez ensemble un seul seigneur IA, à la difficulté choisie sur
   l'écran-titre. Lancé seul, ce mode se joue comme la Conquête.
 
@@ -44,52 +44,71 @@ Le mode se choisit sur l'écran-titre, en plus de la difficulté.
   rappelle, un second appui rapide sur le même chiffre recentre la caméra
   dessus (fiable au clavier AZERTY comme QWERTY).
 
-Tout le rendu (bâtiments, unités, icônes) est généré en pixel art par code,
-directement en `<canvas>`.
+Le rendu (bâtiments, unités, icônes) est généré en pixel art par code
+directement en `<canvas>` — et progressivement enrichi par des illustrations
+IA en surcouche (voir *Assets illustrés* ci-dessous).
 
-## Sauvegarde cloud (connexion Google)
+## Assets illustrés (surcouche optionnelle sur le rendu procédural)
+
+Un deuxième niveau de rendu, purement additif : au démarrage, le jeu tente de
+charger des sprites illustrés depuis le dossier `assets/` (`assets/ressources/`,
+`assets/batiments/`, à terme `assets/unites/` et `assets/effets/`) et les
+substitue au dessin procédural correspondant une fois chargés et détourés
+(flood fill du fond quasi-blanc, recadré sur le contenu). **Aucune régression
+possible** : tant qu'un fichier est absent, le sprite procédural déjà en place
+reste utilisé tel quel — le jeu fonctionne à l'identique sans le dossier
+`assets/`.
+
+Couverts à ce jour : les 4 icônes de ressources (bois, pierre, or,
+nourriture), les bâtiments Centre Ville / Maison / Ferme / Caserne / Mur
+Palissade / Tour Défensive / Château Fort (forme de base uniquement — les
+variantes d'âge du Mur et de niveau de la Tour restent procédurales), et les
+unités Villageois / Milicien. Voir `assets/README.md` pour la convention de
+nommage et le format attendu.
+
+## Connexion Google (compte unique — sauvegarde cloud + multijoueur)
 
 Optionnelle et désactivée par défaut : sans configuration, le jeu utilise
 uniquement le stockage local (`localStorage`, ou `window.storage` dans
-Claude Canvas) comme avant. Une fois activée, la sauvegarde manuelle et
-l'auto-sauvegarde suivent le compte Google du joueur plutôt que l'appareil
-(fichier caché dans son propre Drive, dossier `appData` — invisible dans son
-Drive normal, illisible par toute autre application).
+Claude Canvas) et le solo reste inchangé. Une fois configurée, **un seul**
+bouton ☁️ *Connexion Google* (écran-titre, menu pause, panneau *Jouer avec un
+ami*) sert à la fois :
+
+- la **sauvegarde cloud** — manuelle et auto — suit le compte Google du
+  joueur plutôt que l'appareil (fichier caché dans son propre Drive, dossier
+  `appData` — invisible dans son Drive normal, illisible par toute autre
+  application) ;
+- l'**identité multijoueur/classement** (1v1 en ligne, coop 2v1) — le même
+  `uid` sert à retrouver un ami et à publier un score.
+
+Techniquement, tout repose sur **Firebase Authentication** (`GoogleAuthProvider`,
+avec le scope Drive `drive.appdata` demandé en plus au moment du consentement)
+— voir `window.MP.connecter` dans `index.html`, bloc « TRANSPORT MULTIJOUEUR
++ CONNEXION GOOGLE ». Un seul écran de consentement Google couvre les deux
+usages ; se connecter depuis n'importe lequel des trois boutons connecte
+partout ailleurs dans l'app.
 
 **Déjà configuré** pour `https://automateam.fr` (projet Google Cloud
 `age-des-conquetes`, API Drive activée, écran de consentement en statut
-*Test*, `GOOGLE_CLIENT_ID` déjà renseigné dans `index.html`). Tant que
-l'appli reste en *Test*, seuls les comptes Google ajoutés comme
-« utilisateurs test » peuvent se connecter (jusqu'à 100, sans passer par la
-vérification Google) — ajouter quelqu'un : Google Cloud Console → projet
-*age-des-conquetes* → **Google Auth Platform → Audience → Add users**.
+*Test*, `FIREBASE_CONFIG` déjà renseigné dans `index.html`). Tant que l'appli
+reste en *Test*, seuls les comptes Google ajoutés comme « utilisateurs test »
+peuvent se connecter (jusqu'à 100, sans passer par la vérification Google) —
+ajouter quelqu'un : Google Cloud Console → projet *age-des-conquetes* →
+**Google Auth Platform → Audience → Add users**.
 
-Pour re-configurer ailleurs (autre domaine, autre projet) :
-
-1. [console.cloud.google.com](https://console.cloud.google.com/) → créer/
-   choisir un projet.
-2. **APIs et services → Bibliothèque** → activer *Google Drive API*.
-3. **Google Auth Platform → Audience** → type *Externe* + utilisateurs test.
-4. **Google Auth Platform → Clients → Créer un client** → type *Application
-   Web* → dans *Origines JavaScript autorisées*, l'URL exacte d'hébergement
-   — et `http://localhost:PORT` pour tester en local (un `file://` direct ne
-   fonctionne **pas** avec la connexion Google, un serveur statique est
-   nécessaire).
-5. Copier l'*ID client* (`xxxx.apps.googleusercontent.com` — ce n'est pas un
-   secret) dans `index.html`, constante `GOOGLE_CLIENT_ID` (section
-   « CONNEXION GOOGLE » du script).
-
-Le bouton ☁️ *Connexion Google* (écran-titre et menu pause) reste caché tant
-que `GOOGLE_CLIENT_ID` garde sa valeur par défaut. La connexion n'est pas
-persistée entre deux rechargements de page (pas de backend) : le joueur
-reclique une fois par session de navigateur.
+L'identité (uid, pseudo) est persistée entre deux rechargements de page —
+c'est Firebase qui s'en charge seul, aucun backend requis. Le jeton Drive,
+lui, n'est rendu qu'au moment du popup de consentement et n'est pas
+mémorisable ; il suffit de recliquer une fois par session de navigateur.
 
 ## Multijoueur 1v1 en ligne (Firebase)
 
 Optionnel et **désactivé par défaut** : sans configuration, le bouton
-👥 *1v1 en ligne* explique qu'il n'est pas configuré et tout le reste du jeu
-fonctionne exactement comme avant (le module réseau n'appelle même pas le CDN
-Firebase tant qu'il n'est pas configuré).
+👥 *Jouer avec un ami* explique qu'il n'est pas configuré et tout le reste du
+jeu fonctionne exactement comme avant (le module réseau n'appelle même pas le
+CDN Firebase tant qu'il n'est pas configuré ; le bouton ☁️ *Connexion Google*
+reste alors caché partout, y compris pour la sauvegarde cloud — voir section
+précédente).
 
 L'architecture est *hôte autoritaire* : celui qui crée la partie fait tourner
 la simulation, l'autre lui envoie des ordres et reçoit l'état. Firebase sert
@@ -97,20 +116,39 @@ uniquement à l'authentification, au salon et à la mise en relation ; la partie
 elle-même passe en **WebRTC pair-à-pair**, avec repli sur un relais Firebase
 si le pair-à-pair échoue.
 
+Le bouton 👥 *Jouer avec un ami* vit délibérément juste sous le sélecteur de
+mode/difficulté/civilisation de l'écran-titre plutôt que dans les
+utilitaires (Succès/Classement/Contrôles) : la séquence est "je choisis mon
+mode, puis je retrouve un ami dessus" — le panneau qu'il ouvre reprend tel
+quel le mode déjà choisi, aucun second sélecteur à l'intérieur. Il se
+présente comme un lobby en trois étapes — Compte → Retrouver un ami → Salon
+— une seule carte visible à la fois selon où on en est ; le code du salon
+s'affiche en grand et se partage via `navigator.share` quand le navigateur le
+permet (sinon copie presse-papiers), et un bouton *Quitter le salon* permet
+de renoncer à une
+partie créée/rejointe sans avoir à fermer tout le panneau.
+
 ### Configuration
 
 1. [console.firebase.google.com](https://console.firebase.google.com/) →
    ajouter Firebase au projet Google Cloud existant (`age-des-conquetes`).
-2. **Realtime Database → Créer une base** (choisir une région proche, ex.
+2. **APIs et services → Bibliothèque** → activer *Google Drive API* (sert à
+   la sauvegarde cloud, voir section précédente — même projet, même
+   consentement).
+3. **Realtime Database → Créer une base** (choisir une région proche, ex.
    `europe-west1`), démarrer en mode verrouillé.
-3. **Authentication → Sign-in method** → activer le fournisseur **Google**.
-4. **Authentication → Settings → Domaines autorisés** → ajouter le domaine
+4. **Authentication → Sign-in method** → activer le fournisseur **Google**.
+5. **Authentication → Settings → Domaines autorisés** → ajouter le domaine
    d'hébergement (`automateam.fr`) ; `localhost` y est déjà par défaut.
-5. **Paramètres du projet → Vos applications → Web** → copier l'objet de
+6. **Paramètres du projet → Vos applications → Web** → copier l'objet de
    configuration dans `index.html`, constante `FIREBASE_CONFIG` (tout en bas,
    bloc « TRANSPORT MULTIJOUEUR »). Ces valeurs sont **publiques** : la
    sécurité repose entièrement sur les règles ci-dessous, appliquées côté
    serveur.
+
+Un `file://` direct ne fonctionne **pas** avec la connexion Google (ni
+Drive, ni multijoueur) : un serveur statique est nécessaire, même en local
+(`http://localhost:PORT`).
 
 ### Règles de sécurité Realtime Database
 
@@ -207,7 +245,7 @@ de l'état autoritatif.
 
 **Classement en ligne.** Léger et optionnel, réutilise la même connexion
 Firebase que le multijoueur (bouton 🥇 *Classement* sur l'écran-titre — la
-connexion se fait depuis le panneau *1v1 en ligne*, mais le classement N'EST
+connexion se fait depuis le panneau *Jouer avec un ami*, mais le classement N'EST
 PAS réservé au multijoueur : une victoire solo contre l'IA y figure tout
 autant qu'une victoire 1v1 réelle). Une seule entrée par joueur et par
 catégorie (sa MEILLEURE valeur, pas un historique) — **quatre** catégories,
@@ -233,11 +271,9 @@ groupés. Un bandeau prévient le joueur. Pour un vrai confort en 4G, ajouter un
 service TURN (Twilio, Metered, ou un `coturn` auto-hébergé) dans
 `ICE_SERVERS`.
 
-### Comptes Google : deux connexions distinctes
+### Compte Google : une seule connexion
 
-La sauvegarde Drive utilise Google Identity Services, le multijoueur utilise
-Firebase Auth. Ce sont deux mécanismes séparés, et le joueur peut donc voir
-deux demandes de consentement s'il utilise les deux fonctions. C'est
-volontaire : ne pas toucher à la sauvegarde qui fonctionne. Les unifier
-(un seul `signInWithPopup` demandant aussi le scope `drive.appdata`) est
-possible plus tard.
+La sauvegarde Drive et le multijoueur partagent désormais la même connexion
+Firebase (`signInWithPopup` avec le scope `drive.appdata` demandé en plus) —
+voir « Connexion Google » plus haut. Un seul écran de consentement, un seul
+bouton, où qu'on clique dessus dans l'app.

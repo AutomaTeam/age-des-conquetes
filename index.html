@@ -1450,6 +1450,9 @@ window.pickCiv=pickCiv;
 // encore (lecture avant première image, comme rechercheDe/EMPTY_RESEARCH).
 const EMPTY_CIV={};
 function civOf(owner){ const f=fac(owner); return (f&&CIVS[f.civ])||EMPTY_CIV; }
+// Clé brute de la civilisation ('francs','byzantins',...), pas l'objet de
+// bonus — sert à choisir le bon jeu d'illustrations (voir BLD_CIV_SPRITE_FILES).
+function civKeyOf(owner){ const f=fac(owner); return (f&&f.civ)||'francs'; }
 
 // ── HÉROS DE CIVILISATION ─────────────────────────────────
 // Une unité unique et nommée par civilisation, entraînable UNE SEULE FOIS
@@ -2637,7 +2640,7 @@ function gameH(){ return H-54-(document.getElementById('botpanel').offsetHeight|
 // un atlas BROUILLON à côté puis le substitue d'un seul coup — un échange de
 // référence est la seule bascule qu'une image de rendu ne peut pas surprendre
 // à moitié faite. Rien d'autre dans le fichier ne réaffecte SPR.
-let SPR={ terrain:{}, tree:[], stone:[], gold:[], berry:[], bld:{}, unit:{} };
+let SPR={ terrain:{}, tree:[], stone:[], gold:[], berry:[], bld:{}, bldCiv:{}, unit:{} };
 const PIXEL=4; // résolution interne du pixel art (px logiques par "gros pixel")
 const SS=3;    // supersampling : sprites générés en 3×, dessinés réduits (lissés) => rendu fin
 
@@ -3215,7 +3218,7 @@ function illustrationPrete(url){ return AI_SRC_STATE[url]==='ready'; }
 function buildBuildings(T,i0,i1){
   const types=Object.keys(BDEF);
   if(i0==null){ i0=0; i1=types.length; }
-  if(i0===0) SPR.bld={};
+  if(i0===0){ SPR.bld={}; SPR.bldCiv={}; }
   for(const type of types.slice(i0,i1)){
     const d=BDEF[type];
     const pw=d.w*T, ph=d.h*T;
@@ -3294,6 +3297,22 @@ const BLD_SPRITE_FILES={ [BT.HOUSE]:'maison', [BT.FARM]:'ferme', [BT.BARRACKS]:'
 // tous les âges (voir upgradeBuildingSprites).
 const BLD_AGE_SPRITE_FILES={
   [BT.TC]: { 1:'centre_ville_age1', 2:'centre_ville_age2', 3:'centre_ville_age3' },
+};
+
+// Illustrations DÉDIÉES par CIVILISATION (en plus de l'âge ci-dessus) : pour
+// un bâtiment listé ici, chaque civilisation autre que 'francs' a son propre
+// jeu de 4 images (âges 0 à 3). 'francs' n'a pas besoin d'entrée : son style
+// (chateau de pierre occidental) EST déjà le sprite de base et ses âges
+// dédiés (BLD_AGE_SPRITE_FILES ci-dessus) — inutile de dupliquer ces
+// fichiers sous un autre nom. Rangées à part dans SPR.bldCiv (et non
+// mélangées à SPR.bld) : la très large majorité des bâtiments n'a qu'un seul
+// style, pas la peine de leur faire porter des clés « _francs » inutiles.
+const BLD_CIV_SPRITE_FILES={
+  [BT.TC]: {
+    byzantins: { 0:'centre_ville_byzantins', 1:'centre_ville_byzantins_age1', 2:'centre_ville_byzantins_age2', 3:'centre_ville_byzantins_age3' },
+    chinois:   { 0:'centre_ville_chinois',   1:'centre_ville_chinois_age1',   2:'centre_ville_chinois_age2',   3:'centre_ville_chinois_age3' },
+    mongols:   { 0:'centre_ville_mongols',   1:'centre_ville_mongols_age1',   2:'centre_ville_mongols_age2',   3:'centre_ville_mongols_age3' },
+  },
 };
 
 // Détoure le fond (même flood fill que les icônes, voir stripBgTrimmed),
@@ -3395,6 +3414,32 @@ function upgradeBuildingSprites(){
         const metaE=SPR.bld[cleE];
         if(metaE) SPR.bld[cleE]=Object.assign({},metaE,tintEnemyBuilding(fitted,W,H));
       });
+    }
+  }
+}
+
+// Charge les illustrations par CIVILISATION (voir BLD_CIV_SPRITE_FILES),
+// rangées dans SPR.bldCiv sous des clés « TC_byzantins » / « TC_byzantins_A2 »
+// (+ leur variante « _E » teinte rouge) — même schéma de clé que lvlSuffix+suf
+// dans drawBuildings, pour que sprTeinte() les retrouve sans code spécial.
+// Indépendant de SPR.bld : tant qu'un fichier n'est pas prêt, drawBuildings
+// retombe sur le sprite générique (illustré Francs ou procédural) — aucune
+// régression possible, exactement le même principe que le reste de la
+// surcouche illustrée.
+function upgradeCivBuildingSprites(){
+  for(const type in BLD_CIV_SPRITE_FILES){
+    const ref=SPR.bld[type]; if(!ref) continue; // dimensions de référence
+    const W=ref.c.width, H=ref.c.height;
+    for(const civ in BLD_CIV_SPRITE_FILES[type]){
+      const files=BLD_CIV_SPRITE_FILES[type][civ];
+      for(const age in files){
+        withIllustration('assets/batiments/'+files[age]+'.png',TRIM_W_BLD,(url)=>{
+          const fitted=fitBuildingImage(url,W,H); if(!fitted) return;
+          const cle=type+'_'+civ+(age==='0'?'':'_A'+age);
+          SPR.bldCiv[cle]=Object.assign({},ref,fitted);
+          SPR.bldCiv[cle+'_E']=Object.assign({},ref,tintEnemyBuilding(fitted,W,H));
+        });
+      }
     }
   }
 }
@@ -5358,7 +5403,7 @@ function etapesAtlas(T){
     ()=>{ buildTerrain(T,1); },                  // herbe + sable
     ()=>{ buildTerrain(T,2); },                  // eau (4 images d'animation)
     ()=>{ buildBuildings(T,0,moitie); },
-    ()=>{ buildBuildings(T,moitie,nbBld); upgradeBuildingSprites(); },
+    ()=>{ buildBuildings(T,moitie,nbBld); upgradeBuildingSprites(); upgradeCivBuildingSprites(); },
     ()=>{ buildUnits(T); upgradeUnitSprites(); },
     ()=>{ buildTrees(T); buildStoneNode(T); buildGoldNode(T); buildBerry(T);
           buildFish(T); buildMeat(T);
@@ -5881,7 +5926,13 @@ function drawBuildings(){
     // Les habillages d'âge suivent l'âge du PROPRIÉTAIRE, pas celui du joueur
     // local : en 1v1 les deux camps ne progressent pas au même rythme.
     const suf=(teinte==='bleu')?'':'_E';
-    const spr=sprTeinte('bld',b.type+lvlSuffix+suf,teinte)||sprTeinte('bld',b.type+suf,teinte);
+    // Illustration propre à la civilisation du PROPRIÉTAIRE, si ce type de
+    // bâtiment et cette civilisation en ont une (voir BLD_CIV_SPRITE_FILES) ;
+    // sinon repli sur le sprite générique, exactement comme avant.
+    const civ=civKeyOf(b.owner);
+    const civDispo=civ!=='francs'&&BLD_CIV_SPRITE_FILES[b.type]&&BLD_CIV_SPRITE_FILES[b.type][civ];
+    const spr=(civDispo&&sprTeinte('bldCiv',b.type+'_'+civ+lvlSuffix+suf,teinte))
+             ||sprTeinte('bld',b.type+lvlSuffix+suf,teinte)||sprTeinte('bld',b.type+suf,teinte);
     const k=TILE/(SPR.refT||TILE); // facteur si zoom en cours (sprites pas encore régénérés)
     // Ombre portée au pied du bâtiment — dessinée AVANT le sprite pour ne
     // jamais mordre dessus, et débordant un peu sur la droite (source de

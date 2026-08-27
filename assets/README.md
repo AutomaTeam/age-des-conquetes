@@ -55,6 +55,16 @@ de base. Convention de nommage : `<nom>_age1.png` (Féodal), `_age2.png`
 sans suffixe. Actuellement seul `centre_ville` en bénéficie
 (`centre_ville_age1/2/3.png`).
 
+Un bâtiment listé dans `BLD_CIV_SPRITE_FILES` (index.html) prend en plus une
+illustration **dédiée par civilisation**, croisée avec les âges ci-dessus.
+Convention : `<nom>_<civ>.png` (Âge Sombre), `<nom>_<civ>_age1/2/3.png`. La
+civilisation 'francs' n'a pas besoin d'entrée : elle utilise le style de
+base. État actuel pour `centre_ville` : `centre_ville_byzantins.png` et
+`centre_ville_byzantins_age1.png` faits ; `_age2`/`_age3`, ainsi que
+`centre_ville_chinois*` et `centre_ville_mongols*` (4 fichiers chacun),
+restent à générer — tant qu'ils manquent, le jeu affiche le style Francs
+pour ces civilisations à ces âges (repli automatique, sans erreur).
+
 Le fond quasi-blanc est détouré automatiquement par flood fill depuis les
 bords, puis l'image est recadrée sur son contenu. Ce traitement n'est fait
 **qu'une fois par partie** et mis en cache — inutile de fournir des PNG déjà

@@ -1017,7 +1017,6 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <div class="spd-ctrl">
       <div class="spd-btn on" data-spd="1" onclick="setSpeed(1)">▶</div>
       <div class="spd-btn" data-spd="2" onclick="setSpeed(2)">▶▶</div>
-      <div class="spd-btn" data-spd="3" onclick="setSpeed(3)">▶▶▶</div>
     </div>
   </div>
   <button class="pmenu-btn" style="background:rgba(212,160,23,.12);color:var(--gold-l);border-color:var(--gold-d);" onclick="openAch()">🏆 Succès <span id="achcount2"></span></button>
@@ -1661,10 +1660,10 @@ const AGES = [
 // prétendait sa description. Cette table centralise tout, avec un gain
 // économique ET défensif à chaque palier, pas seulement au dernier.
 const AGE_BONUS = [
-  { bldHp:1.00, gather:1.00, unitHp:1.00, milAtk:1.00, housePop:5, popCap:60 },
-  { bldHp:1.15, gather:1.10, unitHp:1.08, milAtk:1.08, housePop:6, popCap:60 },
-  { bldHp:1.30, gather:1.20, unitHp:1.15, milAtk:1.16, housePop:7, popCap:70 },
-  { bldHp:1.45, gather:1.30, unitHp:1.22, milAtk:1.25, housePop:8, popCap:80 },
+  { bldHp:1.00, gather:1.00, unitHp:1.00, milAtk:1.00, housePop:5, popCap:300 },
+  { bldHp:1.15, gather:1.10, unitHp:1.08, milAtk:1.08, housePop:6, popCap:300 },
+  { bldHp:1.30, gather:1.20, unitHp:1.15, milAtk:1.16, housePop:7, popCap:300 },
+  { bldHp:1.45, gather:1.30, unitHp:1.22, milAtk:1.25, housePop:8, popCap:300 },
 ];
 
 // Icônes bâtiments
@@ -1891,6 +1890,8 @@ let grainePartie=null;
 // les sprites, ne décale jamais la suite aléatoire du terrain.
 let RND=Math.random;
 function genMap() {
+  invalidateTerrainChunks(); // les pavés en cache décrivent l'ancienne carte
+  _mmFondVer=-1;             // idem pour le fond de mini-carte
   RND=srnd(G.seed);
   const t=[], b=[];
   for(let y=0;y<ROWS;y++){t[y]=[];b[y]=[];for(let x=0;x<COLS;x++){t[y][x]=T_GRASS;b[y][x]=0;}}
@@ -2319,6 +2320,7 @@ function nightFactor(){ return Math.max(0,Math.sin(G.dayPhase*Math.PI*2-Math.PI/
 // près avant d'être repéré.
 const VISION_NIGHT_MULT = 0.75;
 function revealFog(){
+  G.fogVer=(G.fogVer||0)+1; // invalide le fond de mini-carte (voir dessinerFondMinimap)
   const visMult=1-(1-VISION_NIGHT_MULT)*nightFactor();
   for(const f of factionsHumaines()){
     const fog=f.fog;
@@ -2631,9 +2633,22 @@ function gameH(){ return H-54-(document.getElementById('botpanel').offsetHeight|
 //  Tout est dessiné UNE fois sur des canvas hors-écran,
 //  puis copié via drawImage à chaque frame (quasi gratuit).
 // ═══════════════════════════════════════════════════════════
-const SPR={ terrain:{}, tree:[], stone:[], gold:[], berry:[], bld:{}, unit:{} };
+// `let` et non `const` : la régénération étalée (voir avancerAtlas) construit
+// un atlas BROUILLON à côté puis le substitue d'un seul coup — un échange de
+// référence est la seule bascule qu'une image de rendu ne peut pas surprendre
+// à moitié faite. Rien d'autre dans le fichier ne réaffecte SPR.
+let SPR={ terrain:{}, tree:[], stone:[], gold:[], berry:[], bld:{}, unit:{} };
 const PIXEL=4; // résolution interne du pixel art (px logiques par "gros pixel")
 const SS=3;    // supersampling : sprites générés en 3×, dessinés réduits (lissés) => rendu fin
+
+// ── RÉSOLUTIONS DE TRAVAIL DU DÉTOURAGE ────────────────────────
+// Les planches illustrées font 832×1248. Le détourage (voir stripBgTrimmed)
+// n'a aucune raison de travailler à cette taille : le plus gros sprite jamais
+// AFFICHÉ est un bâtiment au zoom maximum (~490 px de large), une unité
+// plafonne à ~170 px et un gisement à ~295 px. Travailler à la résolution
+// réellement utile divise d'autant le coût du flood fill ET la mémoire du
+// cache, sans aucune perte visible à l'écran.
+const TRIM_W_BLD=512, TRIM_W_UNIT=320, TRIM_W_NODE=320, TRIM_W_ICON=256;
 const GRASS_VARIANTS=8; // nb de textures d'herbe distinctes (buildTerrain ↔ drawMap doivent s'accorder)
 const WATER_VARIANTS=6; // idem pour l'eau (buildTerrain ↔ drawMap)
 
@@ -2658,7 +2673,13 @@ function srnd(seed){ let s=seed%2147483647; if(s<=0)s+=2147483646; return ()=>(s
 // biseau des bâtiments (clair haut-gauche → sombre bas-droite), grain fin
 // et une décoration signature par variante — 8 textures d'herbe distinctes
 // au lieu de 6, pour casser la répétition sur une grande carte.
-function buildTerrain(T){
+// `partie` découpe la génération pour la reconstruction étalée (voir
+// etapesAtlas) : 1 = herbe et sable, 2 = eau, absent = tout d'un bloc, pour
+// le démarrage de partie où l'on a besoin de l'atlas complet immédiatement.
+// C'est de loin la plus grosse étape (57 canevas, ~33 ms au zoom maximum) :
+// la scinder en deux suffit à la faire tenir dans une image.
+function buildTerrain(T,partie){
+  if(partie===2) return buildTerrainEau(T);
   // Base QUASI UNIE d'une variante à l'autre (±2 sur chaque composante) :
   // l'ancienne palette s'étalait de #4a7a33 à #609140, soit ~20 % d'écart de
   // luminosité — assez pour que chaque tuile se lise comme un carré distinct
@@ -2796,7 +2817,11 @@ function buildTerrain(T){
     if(rnd()<0.6){ const gx=(rnd()*(T-8)|0)+4, gy=(rnd()*(T-8)|0)+4; px(cx,gx,gy,3,2,'#8a7550'); px(cx,gx,gy,2,1,'#a89068'); }
     SPR.terrain.sand={c,cx};
   }
+  if(partie===1) return;   // l'eau viendra à l'image suivante
+  buildTerrainEau(T);
+}
 
+function buildTerrainEau(T){
   // ── EAU ───────────────────────────────────────────────────────────
   // La version d'origine posait, sur CHAQUE tuile, quatre barres claires
   // horizontales pleine largeur et trois barres verticales pleine hauteur,
@@ -2866,6 +2891,11 @@ function buildTerrain(T){
 // du décor), 5 palettes au lieu de 3 pour varier les forêts.
 function buildTrees(T){
   SPR.tree=[];
+  // Toutes les variantes de feuillage sont remplacees par la meme
+  // illustration d'arbre (voir upgradeResourceNodes) : quand elle est prete,
+  // les peindre en dessous est du travail integralement jete — et c'est le
+  // plus cher des gisements.
+  const illus=illustrationPrete('assets/ressources/arbre.png');
   const palettes=[
     ['#1f4a18','#2f6322','#3f7d2e','#4f9038'],   // chêne classique
     ['#244e1a','#356128','#458038','#56a046'],   // frêne clair
@@ -2876,6 +2906,7 @@ function buildTrees(T){
   for(let v=0;v<palettes.length;v++){
     const S=Math.round(T*1.5);
     const{c,cx}=offCanvas(S,S);
+    if(illus){ SPR.tree.push({c,cx,S:S/SS}); continue; }
     const pal=palettes[v];
     const rnd=srnd(v*211+41);
     const midX=S/2, groundY=S*0.95;
@@ -2950,9 +2981,12 @@ function rockChunk(cx,cxp,cyp,r,rnd,baseCol,liteCol,darkCol){
 
 function buildStoneNode(T){
   SPR.stone=[];
+  const illus=illustrationPrete('assets/ressources/gisement_pierre.png');
   for(let v=0;v<3;v++){
     const S=Math.round(T*1.05);
     const{c,cx}=offCanvas(S,S);
+    // Remplace en entier par l'illustration : ne pas peindre dessous.
+    if(illus){ SPR.stone.push({c,cx,S:S/SS}); continue; }
     const rnd=srnd(v*331+91);
     const cxp=S/2, cyp=S*0.58;
     cx.fillStyle='rgba(0,0,0,.22)';
@@ -2972,9 +3006,12 @@ function buildStoneNode(T){
 
 function buildGoldNode(T){
   SPR.gold=[];
+  const illus=illustrationPrete('assets/ressources/gisement_or.png');
   for(let v=0;v<3;v++){
     const S=Math.round(T*1.05);
     const{c,cx}=offCanvas(S,S);
+    // Remplace en entier par l'illustration : ne pas peindre dessous.
+    if(illus){ SPR.gold.push({c,cx,S:S/SS}); continue; }
     const rnd=srnd(v*457+131);
     const cxp=S/2, cyp=S*0.58;
     cx.fillStyle='rgba(0,0,0,.22)';
@@ -3006,9 +3043,12 @@ function buildGoldNode(T){
 // davantage de fruits avec reflet, et 2 variantes pour casser la répétition.
 function buildBerry(T){
   SPR.berry=[];
+  const illus=illustrationPrete('assets/ressources/buisson_baies.png');
   for(let v=0;v<3;v++){
     const S=Math.round(T*1.05);
     const{c,cx}=offCanvas(S,S);
+    // Remplace en entier par l'illustration : ne pas peindre dessous.
+    if(illus){ SPR.berry.push({c,cx,S:S/SS}); continue; }
     const rnd=srnd(v*613+211);
     const cxp=S/2, cyp=S*0.56;
     cx.fillStyle='rgba(0,0,0,.18)';
@@ -3040,9 +3080,12 @@ function buildBerry(T){
 // sur l'eau. Trois argentés, nageoire caudale et reflet dorsal. ──
 function buildFish(T){
   SPR.fish=[];
+  const illus=illustrationPrete('assets/ressources/banc_poissons.png');
   for(let v=0;v<3;v++){
     const S=Math.round(T*0.9);
     const{c,cx}=offCanvas(S,S);
+    // Remplace en entier par l'illustration : ne pas peindre dessous.
+    if(illus){ SPR.fish.push({c,cx,S:S/SS}); continue; }
     const cxp=S/2, cyp=S*0.56;
     cx.fillStyle='rgba(255,255,255,.22)'; // onde de surface sous le banc
     cx.beginPath(); cx.ellipse(cxp,cyp+S*0.22,S*0.28,S*0.06,0,0,Math.PI*2); cx.fill();
@@ -3070,9 +3113,12 @@ function buildFish(T){
 // crue + os croisés, façon quartier de viande posé au sol. ──
 function buildMeat(T){
   SPR.meat=[];
+  const illus=illustrationPrete('assets/ressources/viande.png');
   for(let v=0;v<2;v++){
     const S=Math.round(T*0.95);
     const{c,cx}=offCanvas(S,S);
+    // Remplace en entier par l'illustration : ne pas peindre dessous.
+    if(illus){ SPR.meat.push({c,cx,S:S/SS}); continue; }
     const cxp=S/2, cyp=S*0.58;
     cx.fillStyle='rgba(0,0,0,.2)';
     cx.beginPath(); cx.ellipse(cxp,cyp+S*0.2,S*0.26,S*0.06,0,0,Math.PI*2); cx.fill();
@@ -3156,18 +3202,34 @@ function buildCaravan(T){
 }
 
 // ── BÂTIMENTS (toits, murs, fenêtres en pixel art) ───────
-function buildBuildings(T){
-  SPR.bld={};
-  for(const type of Object.keys(BDEF)){
+// L'illustration ecrase de toute facon le sprite procedural. Des la deuxieme
+// generation — c'est-a-dire a TOUS les changements de zoom — son detourage
+// est deja en cache, donc peindre le sprite procedural en dessous est du
+// travail integralement jete : ce test le saute.
+function illustrationPrete(url){ return AI_SRC_STATE[url]==='ready'; }
+
+// `i0`/`i1` découpent la liste des types pour la reconstruction étalée : les
+// bâtiments sont la deuxième plus grosse étape (~27 ms au zoom maximum), à
+// cause des variantes d'âge et de niveau qui n'ont pas d'illustration et
+// restent donc peintes à la main.
+function buildBuildings(T,i0,i1){
+  const types=Object.keys(BDEF);
+  if(i0==null){ i0=0; i1=types.length; }
+  if(i0===0) SPR.bld={};
+  for(const type of types.slice(i0,i1)){
     const d=BDEF[type];
     const pw=d.w*T, ph=d.h*T;
     const dw=pw/SS, dh=(ph+T*0.5)/SS, oy=(T*0.5)/SS; // dimensions logiques d'affichage
+    // Seules les formes « age 0 / niveau 1 » ont une illustration : les
+    // variantes d'age et de niveau construites plus bas restent procedurales.
+    const illus=BLD_SPRITE_FILES[type]
+      ? illustrationPrete('assets/batiments/'+BLD_SPRITE_FILES[type]+'.png') : false;
     const{c,cx}=offCanvas(pw,ph+T*0.5); // marge pour toit en relief
-    drawBuildingSprite(cx,type,d,pw,ph,T,false);
+    if(!illus) drawBuildingSprite(cx,type,d,pw,ph,T,false);
     SPR.bld[type]={c,cx,oy,dw,dh};
     // version ennemie (teinte rouge)
     const{c:ce,cx:cxe}=offCanvas(pw,ph+T*0.5);
-    drawBuildingSprite(cxe,type,d,pw,ph,T,true);
+    if(!illus) drawBuildingSprite(cxe,type,d,pw,ph,T,true);
     SPR.bld[type+'_E']={c:ce,cx:cxe,oy,dw,dh};
     // Tour Défensive : variantes visuelles pour les niveaux 2 et 3
     // (bannière de garde, puis créneaux renforcés) — même géométrie de
@@ -3175,10 +3237,10 @@ function buildBuildings(T){
     if(type===BT.TOWER){
       for(const lvl of [2,3]){
         const{c:cl,cx:cxl}=offCanvas(pw,ph+T*0.5);
-        drawBuildingSprite(cxl,type,d,pw,ph,T,false,lvl);
+        if(!illus) drawBuildingSprite(cxl,type,d,pw,ph,T,false,lvl);
         SPR.bld[type+'_L'+lvl]={c:cl,cx:cxl,oy,dw,dh};
         const{c:cle,cx:cxle}=offCanvas(pw,ph+T*0.5);
-        drawBuildingSprite(cxle,type,d,pw,ph,T,true,lvl);
+        if(!illus) drawBuildingSprite(cxle,type,d,pw,ph,T,true,lvl);
         SPR.bld[type+'_L'+lvl+'_E']={c:cle,cx:cxle,oy,dw,dh};
       }
     }
@@ -3186,10 +3248,10 @@ function buildBuildings(T){
     // du sprite de base qui sert d'état fermé — même géométrie que le Mur.
     if(type===BT.GATE){
       const{c:co,cx:cxo}=offCanvas(pw,ph+T*0.5);
-      drawBuildingSprite(cxo,type,d,pw,ph,T,false,1,0,true);
+      if(!illus) drawBuildingSprite(cxo,type,d,pw,ph,T,false,1,0,true);
       SPR.bld[type+'_OPEN']={c:co,cx:cxo,oy,dw,dh};
       const{c:coe,cx:cxoe}=offCanvas(pw,ph+T*0.5);
-      drawBuildingSprite(cxoe,type,d,pw,ph,T,true,1,0,true);
+      if(!illus) drawBuildingSprite(cxoe,type,d,pw,ph,T,true,1,0,true);
       SPR.bld[type+'_OPEN_E']={c:coe,cx:cxoe,oy,dw,dh};
     }
     // Centre Ville, Caserne et Mur : habillage qui s'enrichit avec les âges
@@ -3203,10 +3265,10 @@ function buildBuildings(T){
     if(type===BT.TC||type===BT.BARRACKS||type===BT.WALL){
       for(const age of [1,2,3]){
         const{c:ca,cx:cxa}=offCanvas(pw,ph+T*0.5);
-        drawBuildingSprite(cxa,type,d,pw,ph,T,false,1,age);
+        if(!illus) drawBuildingSprite(cxa,type,d,pw,ph,T,false,1,age);
         SPR.bld[type+'_A'+age]={c:ca,cx:cxa,oy,dw,dh};
         const{c:cae,cx:cxae}=offCanvas(pw,ph+T*0.5);
-        drawBuildingSprite(cxae,type,d,pw,ph,T,true,1,age);
+        if(!illus) drawBuildingSprite(cxae,type,d,pw,ph,T,true,1,age);
         SPR.bld[type+'_A'+age+'_E']={c:cae,cx:cxae,oy,dw,dh};
       }
     }
@@ -3229,12 +3291,23 @@ const BLD_SPRITE_FILES={ [BT.HOUSE]:'maison', [BT.FARM]:'ferme', [BT.BARRACKS]:'
 // centré horizontalement dans un canvas de dimensions (W,H) identiques au
 // sprite procédural remplacé — la géométrie de placement à l'affichage ne
 // change donc pas.
-function fitBuildingImage(img,W,H){
-  const{c:wc,minX,minY,bw,bh}=stripBgTrimmed(img,Math.min(600,img.width));
+function fitBuildingImage(src,W,H){
+  const t=stripBgTrimmed(src,TRIM_W_BLD); if(!t) return null;
+  const{c:wc,minX,minY,bw,bh}=t;
   const{c,cx}=offCanvas(W,H);
   const scale=Math.min(W*0.94/bw,H*0.94/bh);
   const dw=bw*scale, dh=bh*scale;
   cx.drawImage(wc,minX,minY,bw,bh,(W-dw)/2,H-dh,dw,dh);
+  return{c,cx};
+}
+
+// Copie atténuée d'un sprite — sert au Portail ouvert (voir
+// upgradeBuildingSprites), où la translucidité dit « le passage est libre ».
+function fondu(base,W,H,alpha){
+  const{c,cx}=offCanvas(W,H);
+  cx.globalAlpha=alpha;
+  cx.drawImage(base.c,0,0);
+  cx.globalAlpha=1;
   return{c,cx};
 }
 
@@ -3251,31 +3324,42 @@ function tintEnemyBuilding(base,W,H){
   return{c,cx};
 }
 
-// Cache les <img> décodées (une seule requête réseau par bâtiment, même
-// partie) car buildBuildings(T) — et donc SPR.bld — est régénéré à chaque
-// changement de zoom : sans ce cache, l'image illustrée ne survivrait pas
-// au premier zoom, la reconstruction procédurale écrasant SPR.bld[type]
-// entre-temps.
-const BLD_IMG_CACHE={};
+// buildBuildings(T) — et donc SPR.bld — est régénéré à chaque changement de
+// zoom : la surcouche illustrée doit être réappliquée après chaque
+// reconstruction, sans quoi le sprite procédural reprendrait le dessus. Le
+// détourage, lui, est mutualisé par withIllustration/TRIM_CACHE : il ne reste
+// ici qu'une mise à l'échelle, soit un drawImage par bâtiment.
 function upgradeBuildingSprites(){
   for(const type in BLD_SPRITE_FILES){
-    const apply=(img)=>{
-      try{
-        const meta=SPR.bld[type]; if(!meta) return;
-        const W=meta.c.width, H=meta.c.height;
-        const fitted=fitBuildingImage(img,W,H);
-        SPR.bld[type]=Object.assign({},meta,fitted);
-        const metaE=SPR.bld[type+'_E'];
-        if(metaE) SPR.bld[type+'_E']=Object.assign({},metaE,tintEnemyBuilding(fitted,W,H));
-      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
-    };
-    const cached=BLD_IMG_CACHE[type];
-    if(cached==='error') continue;              // déjà tenté, fichier absent : n'insiste pas
-    if(cached){ apply(cached); continue; }       // déjà chargée : réapplique tout de suite (sync)
-    const img=new Image();
-    img.onload=()=>{ BLD_IMG_CACHE[type]=img; apply(img); };
-    img.onerror=()=>{ BLD_IMG_CACHE[type]='error'; }; // fichier absent : fallback déjà en place
-    img.src='assets/batiments/'+BLD_SPRITE_FILES[type]+'.png';
+    withIllustration('assets/batiments/'+BLD_SPRITE_FILES[type]+'.png',TRIM_W_BLD,(url)=>{
+      const meta=SPR.bld[type]; if(!meta) return;
+      const W=meta.c.width, H=meta.c.height;
+      const fitted=fitBuildingImage(url,W,H); if(!fitted) return;
+      const fittedE=tintEnemyBuilding(fitted,W,H);
+      // Le Portail OUVERT doit rester lisible d'un coup d'œil : c'est un état
+      // de JEU (on passe / on ne passe pas), pas une simple coquetterie. Avec
+      // la même illustration pour les deux états, plus rien ne le distinguait
+      // du portail fermé. Il est donc peint en translucide — la convention
+      // « on traverse » — plutôt que de retomber sur l'ancien sprite dessiné.
+      const ouvert=fondu(fitted,W,H,0.45), ouvertE=fondu(fittedE,W,H,0.45);
+      // TOUTES les variantes du type reçoivent l'illustration, pas seulement
+      // la forme de base : âges (_A1.._A3 du Centre Ville, de la Caserne et
+      // du Mur), niveaux (_L2/_L3 de la Tour) et portail ouvert (_OPEN).
+      // Sans ça, avancer d'un âge faisait basculer le bâtiment sur son vieux
+      // sprite procédural en pleine partie — l'illustration ne survivait
+      // qu'à l'Âge Sombre. Le canvas est partagé entre variantes : elles
+      // portent la même image, inutile d'en garder plusieurs copies.
+      const prefixe=type+'_';
+      for(const cle in SPR.bld){
+        if(cle!==type&&!cle.startsWith(prefixe)) continue;
+        const m=SPR.bld[cle];
+        if(!m||m.c.width!==W||m.c.height!==H) continue;
+        const estE=cle.endsWith('_E');
+        const estOuvert=cle.startsWith(type+'_OPEN');
+        SPR.bld[cle]=Object.assign({},m,
+          estOuvert?(estE?ouvertE:ouvert):(estE?fittedE:fitted));
+      }
+    });
   }
 }
 
@@ -4035,8 +4119,9 @@ const UNIT_SPRITE_FILES={ [UT.VIL]:'villageois', [UT.MIL]:'milicien', [UT.ARC]:'
 // ancré un peu au-dessus du bas du canvas carré S×S — c'est là que
 // buildUnitSprite plaçait déjà l'ombre et les pieds (voir cx.ellipse à
 // S*0.84 plus haut), donc la nouvelle silhouette pose au même endroit.
-function fitUnitImage(img,S){
-  const{c:wc,minX,minY,bw,bh}=stripBgTrimmed(img,Math.min(500,img.width));
+function fitUnitImage(src,S){
+  const t=stripBgTrimmed(src,TRIM_W_UNIT); if(!t) return null;
+  const{c:wc,minX,minY,bw,bh}=t;
   const{c,cx}=offCanvas(S,S);
   const scale=Math.min(S*0.8/bw,S*0.78/bh);
   const dw=bw*scale,dh=bh*scale;
@@ -4044,24 +4129,19 @@ function fitUnitImage(img,S){
   return{c,cx};
 }
 
-const UNIT_IMG_CACHE={};
 function upgradeUnitSprites(){
   for(const type in UNIT_SPRITE_FILES){
-    const apply=(img)=>{
-      try{
-        for(const suf of ['','_W1','_W2']){
-          const meta=SPR.unit[type+suf]; if(!meta) continue;
-          SPR.unit[type+suf]=Object.assign({},meta,fitUnitImage(img,meta.c.width));
-        }
-      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
-    };
-    const cached=UNIT_IMG_CACHE[type];
-    if(cached==='error') continue;
-    if(cached){ apply(cached); continue; }
-    const img=new Image();
-    img.onload=()=>{ UNIT_IMG_CACHE[type]=img; apply(img); };
-    img.onerror=()=>{ UNIT_IMG_CACHE[type]='error'; };
-    img.src='assets/unites/'+UNIT_SPRITE_FILES[type]+'.png';
+    withIllustration('assets/unites/'+UNIT_SPRITE_FILES[type]+'.png',TRIM_W_UNIT,(url)=>{
+      // Les trois poses partagent la même taille de canvas : un seul cadrage
+      // suffit, réutilisé tel quel pour les deux frames de marche.
+      let fitted=null, fittedS=-1;
+      for(const suf of ['','_W1','_W2']){
+        const meta=SPR.unit[type+suf]; if(!meta) continue;
+        if(meta.c.width!==fittedS){ fitted=fitUnitImage(url,meta.c.width); fittedS=meta.c.width; }
+        if(!fitted) return;
+        SPR.unit[type+suf]=Object.assign({},meta,fitted);
+      }
+    });
   }
 }
 
@@ -4083,8 +4163,9 @@ const NODE_SPRITE_FILES={ tree:'arbre', stone:'gisement_pierre', gold:'gisement_
 // comme les autres le ferait flotter au-dessus du sol.
 const NODE_GROUND_FRAC={ tree:0.95, stone:0.8, gold:0.8, berry:0.78, fish:0.78, meat:0.78 };
 
-function fitNodeImage(img,S,groundFrac){
-  const{c:wc,minX,minY,bw,bh}=stripBgTrimmed(img,Math.min(500,img.width));
+function fitNodeImage(src,S,groundFrac){
+  const t=stripBgTrimmed(src,TRIM_W_NODE); if(!t) return null;
+  const{c:wc,minX,minY,bw,bh}=t;
   const{c,cx}=offCanvas(S,S);
   const scale=Math.min(S*0.9/bw,S*0.9/bh);
   const dw=bw*scale,dh=bh*scale;
@@ -4092,30 +4173,25 @@ function fitNodeImage(img,S,groundFrac){
   return{c,cx};
 }
 
-// Cache les <img> décodées : buildSprites() (donc buildTrees/buildStoneNode/
-// etc.) est régénéré à chaque changement de zoom, sans ce cache l'image
-// illustrée ne survivrait pas au premier zoom (même bug déjà rencontré et
-// corrigé pour les bâtiments, voir BLD_IMG_CACHE).
-const NODE_IMG_CACHE={};
+// Comme pour les bâtiments : buildSprites() (donc buildTrees/buildStoneNode/
+// etc.) est régénéré à chaque changement de zoom, la surcouche illustrée doit
+// donc être réappliquée ensuite — mais sans jamais refaire le détourage, qui
+// est mutualisé par withIllustration/TRIM_CACHE.
 function upgradeResourceNodes(){
   for(const type in NODE_SPRITE_FILES){
     const gf=NODE_GROUND_FRAC[type];
-    const apply=(img)=>{
-      try{
-        const arr=SPR[type]; if(!arr||!arr.length) return;
-        for(let i=0;i<arr.length;i++){
-          const meta=arr[i]; if(!meta) continue;
-          arr[i]=Object.assign({},meta,fitNodeImage(img,meta.c.width,gf));
-        }
-      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
-    };
-    const cached=NODE_IMG_CACHE[type];
-    if(cached==='error') continue;
-    if(cached){ apply(cached); continue; }
-    const img=new Image();
-    img.onload=()=>{ NODE_IMG_CACHE[type]=img; apply(img); };
-    img.onerror=()=>{ NODE_IMG_CACHE[type]='error'; };
-    img.src='assets/ressources/'+NODE_SPRITE_FILES[type]+'.png';
+    withIllustration('assets/ressources/'+NODE_SPRITE_FILES[type]+'.png',TRIM_W_NODE,(url)=>{
+      const arr=SPR[type]; if(!arr||!arr.length) return;
+      // Toutes les variantes procédurales d'un type ont la même taille : on ne
+      // recadre qu'une fois et on partage le canvas obtenu.
+      let fitted=null, fittedS=-1;
+      for(let i=0;i<arr.length;i++){
+        const meta=arr[i]; if(!meta) continue;
+        if(meta.c.width!==fittedS){ fitted=fitNodeImage(url,meta.c.width,gf); fittedS=meta.c.width; }
+        if(!fitted) return;
+        arr[i]=Object.assign({},meta,fitted);
+      }
+    });
   }
 }
 
@@ -4126,22 +4202,13 @@ function upgradeResourceNodes(){
 // visibles, même ancrage ~0.82 que les gisements courts).
 const WILDLIFE_SPRITE_FILES={ deer:'cerf', boar:'sanglier' };
 const WILDLIFE_GROUND_FRAC=0.82;
-const WILDLIFE_IMG_CACHE={};
 function upgradeWildlifeSprites(){
   for(const type in WILDLIFE_SPRITE_FILES){
-    const apply=(img)=>{
-      try{
-        const meta=SPR.wildlife[type]; if(!meta) return;
-        SPR.wildlife[type]=Object.assign({},meta,fitNodeImage(img,meta.c.width,WILDLIFE_GROUND_FRAC));
-      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
-    };
-    const cached=WILDLIFE_IMG_CACHE[type];
-    if(cached==='error') continue;
-    if(cached){ apply(cached); continue; }
-    const img=new Image();
-    img.onload=()=>{ WILDLIFE_IMG_CACHE[type]=img; apply(img); };
-    img.onerror=()=>{ WILDLIFE_IMG_CACHE[type]='error'; };
-    img.src='assets/unites/'+WILDLIFE_SPRITE_FILES[type]+'.png';
+    withIllustration('assets/unites/'+WILDLIFE_SPRITE_FILES[type]+'.png',TRIM_W_NODE,(url)=>{
+      const meta=SPR.wildlife[type]; if(!meta) return;
+      const fitted=fitNodeImage(url,meta.c.width,WILDLIFE_GROUND_FRAC); if(!fitted) return;
+      SPR.wildlife[type]=Object.assign({},meta,fitted);
+    });
   }
 }
 
@@ -4154,23 +4221,14 @@ const SINGLETON_SPRITE_FILES={
   relic:  { file:'ressources/relique', frac:0.86 },
   caravan:{ file:'unites/caravane',    frac:0.86 },
 };
-const SINGLETON_IMG_CACHE={};
 function upgradeSingletonSprites(){
   for(const key in SINGLETON_SPRITE_FILES){
     const{file,frac}=SINGLETON_SPRITE_FILES[key];
-    const apply=(img)=>{
-      try{
-        const meta=SPR[key]; if(!meta) return;
-        SPR[key]=Object.assign({},meta,fitNodeImage(img,meta.c.width,frac));
-      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
-    };
-    const cached=SINGLETON_IMG_CACHE[key];
-    if(cached==='error') continue;
-    if(cached){ apply(cached); continue; }
-    const img=new Image();
-    img.onload=()=>{ SINGLETON_IMG_CACHE[key]=img; apply(img); };
-    img.onerror=()=>{ SINGLETON_IMG_CACHE[key]='error'; };
-    img.src='assets/'+file+'.png';
+    withIllustration('assets/'+file+'.png',TRIM_W_NODE,(url)=>{
+      const meta=SPR[key]; if(!meta) return;
+      const fitted=fitNodeImage(url,meta.c.width,frac); if(!fitted) return;
+      SPR[key]=Object.assign({},meta,fitted);
+    });
   }
 }
 
@@ -4443,8 +4501,16 @@ function buildUnitSprite(type,T,legPhase){
   // = plus dangereux). Comme tous les traits sont des fractions de S, ce
   // seul facteur redimensionne l'ensemble du dessin proportionnellement.
   const sizeMult = type===UT.ENEMI_BOSS?1.5 : type===UT.ENEMI_G?1.26 : 1;
-  const S=Math.round(T*0.85*sizeMult);
+  // 0,95 et non 0,85 : les unités illustrées se lisaient un peu petites face
+  // aux bâtiments. Ce seul facteur commande toute leur taille à l'écran —
+  // drawUnits, les anneaux de sélection et l'ellipse de survol lisent tous
+  // spr.S, qui en découle.
+  const S=Math.round(T*0.95*sizeMult);
   const{c,cx}=offCanvas(S,S);
+  // Meme raccourci que pour les batiments : l'illustration remplace la pose
+  // de base ET les deux frames de foulee, inutile de peindre dessous.
+  if(UNIT_SPRITE_FILES[type]&&illustrationPrete('assets/unites/'+UNIT_SPRITE_FILES[type]+'.png'))
+    return {c,cx,S:S/SS};
   const cxp=S/2;
   const body=UCOL[type]||'#888';
   const skin='#e0b088';
@@ -5030,40 +5096,126 @@ const RES_SPRITE_FILES={food:'nourriture',wood:'bois',stone:'pierre',gold:'or'};
 // réutilisé aussi bien pour les icônes (recadrage carré) que pour les
 // bâtiments (recadrage « contain » ancré en bas). Partagé pour que les deux
 // usages détourent exactement de la même façon.
-function stripBgTrimmed(img,W){
+// Le résultat ne dépend QUE de (image source, résolution de travail) — jamais
+// du zoom. Or buildSprites() est rejoué à chaque changement d'échelle et
+// refaisait donc l'intégralité des flood fills : ~1,25 s de JS bloquant à
+// chaque cran de molette, soit exactement les « gros lags au zoom ». Le
+// cache ci-dessous ramène ce coût à zéro dès la deuxième génération.
+//
+// On y range la version DÉJÀ RECADRÉE sur le contenu : c'est la seule qui
+// serve à quoi que ce soit, et elle pèse bien moins lourd que la planche
+// entière. minX/minY restent dans le résultat (à zéro) pour que les appelants
+// gardent leur drawImage à neuf arguments inchangé.
+const TRIM_CACHE=new Map();
+
+// `src` accepte aussi bien une <img> décodée qu'une simple URL : une fois le
+// détourage en cache, l'URL suffit à le retrouver et l'image source peut être
+// relâchée (voir withIllustration). Renvoie null si l'URL n'a pas encore été
+// détourée — l'appelant conserve alors son sprite procédural.
+//
+// `cle` est l'URL TELLE QUE L'APPELANT L'ÉCRIT (relative). S'en remettre à
+// img.src rangerait l'entrée sous l'URL absolue résolue par le navigateur
+// (http://hôte/assets/…), que les relectures ultrérieures — qui ne
+// disposent plus que du chemin relatif — ne retrouveraient jamais.
+function stripBgTrimmed(src,W,cle){
+  W=Math.max(16,Math.round(W));
+  const url=cle||((typeof src==='string')?src:src.src);
+  const key=url+'@'+W;
+  const hit=TRIM_CACHE.get(key);
+  if(hit) return hit;
+  if(typeof src==='string'||!src.width) return null;
+  const res=computeStripBgTrimmed(src,W);
+  TRIM_CACHE.set(key,res);
+  return res;
+}
+
+function computeStripBgTrimmed(img,W){
   const H=Math.max(1,Math.round(W*img.height/img.width));
   const{c:wc,cx:wcx}=offCanvas(W,H);
   wcx.drawImage(img,0,0,W,H);
   const id=wcx.getImageData(0,0,W,H);
   const d=id.data;
-  const isBg=(i)=>{ const r=d[i],g=d[i+1],b=d[i+2]; return r>230&&g>230&&b>230&&Math.abs(r-g)<12&&Math.abs(g-b)<12; };
-  const seen=new Uint8Array(W*H);
-  const stack=[];
-  for(let x=0;x<W;x++){ stack.push(x,0); stack.push(x,H-1); }
-  for(let y=0;y<H;y++){ stack.push(0,y); stack.push(W-1,y); }
-  while(stack.length){
-    const y=stack.pop(), x=stack.pop();
-    if(x<0||y<0||x>=W||y>=H) continue;
-    const idx=y*W+x;
-    if(seen[idx]) continue;
-    seen[idx]=1;
-    const i=idx*4;
-    if(!isBg(i)) continue;
-    d[i+3]=0;
-    stack.push(x+1,y, x-1,y, x,y+1, x,y-1);
+  const N=W*H;
+  // État par pixel : 0 = sujet, 1 = fond candidat, 2 = fond atteint depuis un
+  // bord. Le test de couleur est fait UNE fois pour toute l'image plutôt
+  // qu'à chaque visite du flood fill.
+  const st=new Uint8Array(N);
+  for(let i=0,q=0;i<N;i++,q+=4){
+    const r=d[q],g=d[q+1],b=d[q+2];
+    if(r>230&&g>230&&b>230&&Math.abs(r-g)<12&&Math.abs(g-b)<12) st[i]=1;
+  }
+  // Pile d'entiers de taille bornée (chaque pixel y entre au plus une fois)
+  // au lieu du tableau JS d'origine, qui recevait huit valeurs par pixel
+  // visité : sur une planche de 600×900 cela montait à plusieurs millions
+  // d'entrées, avec le pic mémoire — et le risque de plantage — qui va avec.
+  const stack=new Int32Array(N);
+  let sp=0;
+  for(let x=0;x<W;x++){
+    if(st[x]===1){ st[x]=2; stack[sp++]=x; }
+    const j=(H-1)*W+x;
+    if(st[j]===1){ st[j]=2; stack[sp++]=j; }
+  }
+  for(let y=0;y<H;y++){
+    const a=y*W, b=a+W-1;
+    if(st[a]===1){ st[a]=2; stack[sp++]=a; }
+    if(st[b]===1){ st[b]=2; stack[sp++]=b; }
+  }
+  while(sp>0){
+    const i=stack[--sp];
+    d[i*4+3]=0;
+    const x=i%W;
+    if(x>0     && st[i-1]===1){ st[i-1]=2; stack[sp++]=i-1; }
+    if(x<W-1   && st[i+1]===1){ st[i+1]=2; stack[sp++]=i+1; }
+    if(i>=W    && st[i-W]===1){ st[i-W]=2; stack[sp++]=i-W; }
+    if(i+W<N   && st[i+W]===1){ st[i+W]=2; stack[sp++]=i+W; }
   }
   wcx.putImageData(id,0,0);
-  let minX=W,minY=H,maxX=0,maxY=0,found=false;
-  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
-    if(d[(y*W+x)*4+3]>10){ found=true; if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+  let minX=W,minY=H,maxX=-1,maxY=-1;
+  for(let y=0;y<H;y++){
+    const base=y*W;
+    let rMin=-1,rMax=-1;
+    for(let x=0;x<W;x++){ if(d[(base+x)*4+3]>10){ if(rMin<0)rMin=x; rMax=x; } }
+    if(rMin>=0){ if(y<minY)minY=y; maxY=y; if(rMin<minX)minX=rMin; if(rMax>maxX)maxX=rMax; }
   }
-  if(!found){ minX=0; minY=0; maxX=W-1; maxY=H-1; }
-  return{c:wc,minX,minY,bw:maxX-minX+1,bh:maxY-minY+1};
+  if(maxX<0){ minX=0; minY=0; maxX=W-1; maxY=H-1; }
+  const bw=maxX-minX+1, bh=maxY-minY+1;
+  // Recadrage immédiat : on ne garde en mémoire que le sujet, pas la marge
+  // de fond transparent qui l'entourait.
+  const{c,cx}=offCanvas(bw,bh);
+  cx.drawImage(wc,minX,minY,bw,bh,0,0,bw,bh);
+  return{c,minX:0,minY:0,bw,bh};
+}
+
+// ── CHARGEMENT DES ILLUSTRATIONS ─────────────────────────────
+// Point de passage unique des six surcouches illustrées (bâtiments, unités,
+// gisements, faune, objets uniques, icônes). Une fois le détourage en cache,
+// la <img> décodée est RELACHÉE : chaque planche pèse ~4 Mo de bitmap une
+// fois décodée, et les conserver toutes (une cinquantaine, soit ~220 Mo)
+// suffisait à faire tomber l'onglet sur mobile. Le canvas détouré et recadré
+// qui les remplace tient dans une fraction de cette place.
+const AI_SRC_STATE={};   // url -> 'pending' | 'ready' | 'error'
+function withIllustration(url,W,apply){
+  const st=AI_SRC_STATE[url];
+  if(st==='error'||st==='pending') return;
+  if(st==='ready'){ apply(url); return; }   // détourage déjà en cache : synchrone
+  AI_SRC_STATE[url]='pending';
+  const img=new Image();
+  img.onload=()=>{
+    img.onload=img.onerror=null;            // plus personne ne référence l'image
+    try{
+      stripBgTrimmed(img,W,url);            // remplit TRIM_CACHE une seule fois
+      AI_SRC_STATE[url]='ready';
+      apply(url);
+    }catch(e){ AI_SRC_STATE[url]='error'; } // canvas « taint » : repli procédural
+  };
+  img.onerror=()=>{ img.onload=img.onerror=null; AI_SRC_STATE[url]='error'; }; // fichier absent : repli procédural
+  img.src=url;
 }
 
 // Recadre sur le contenu détouré et le centre dans un canvas carré S×S.
-function stripBgAndFit(img,S){
-  const{c:wc,minX,minY,bw,bh}=stripBgTrimmed(img,300);
+function stripBgAndFit(src,S){
+  const t=stripBgTrimmed(src,TRIM_W_ICON); if(!t) return null;
+  const{c:wc,minX,minY,bw,bh}=t;
   const{c,cx}=offCanvas(S,S);
   const scale=Math.min(S*0.92/bw,S*0.92/bh);
   const dw=bw*scale, dh=bh*scale;
@@ -5075,15 +5227,11 @@ function upgradeResourceIcons(){
   if(SPR.resIconsUpgrading) return;
   SPR.resIconsUpgrading=true;
   for(const key in RES_SPRITE_FILES){
-    const img=new Image();
-    img.onload=()=>{
-      try{
-        SPR.ico[key]=stripBgAndFit(img,ICS);
-        applyStaticIcons();
-      }catch(e){ /* canvas « taint » ou autre échec : icône procédurale conservée */ }
-    };
-    img.onerror=()=>{}; // fichier absent : rien à faire, fallback déjà en place
-    img.src='assets/ressources/'+RES_SPRITE_FILES[key]+'.png';
+    withIllustration('assets/ressources/'+RES_SPRITE_FILES[key]+'.png',TRIM_W_ICON,(url)=>{
+      const fitted=stripBgAndFit(url,ICS); if(!fitted) return;
+      SPR.ico[key]=fitted;
+      applyStaticIcons();
+    });
   }
 }
 
@@ -5135,6 +5283,9 @@ function applyStaticIcons(){
   }
   const pb=document.getElementById('pausebtn-inner');
   if(pb) pb.innerHTML=iconImg((typeof G!=='undefined'&&G.paused)?'▶':'⏸',16);
+  // Les icônes viennent de changer : le HUD écrit par différence (voir setTxt)
+  // doit oublier ce qu'il croit déjà affiché.
+  viderCacheHUD();
 }
 
 // Reconstruit tous les sprites (appelé au démarrage et au changement de zoom)
@@ -5162,34 +5313,80 @@ function sprTeinte(kind,key,teinte){
   return sub[key];
 }
 
-function buildSprites(){
-  SPR.refT=TILE;   // échelle de référence des sprites générés
-  SPR.teintes=null; // les variantes teintées dérivent des sprites : à refaire
-  const T=TILE*SS; // génération haute résolution
-  buildTerrain(T);
-  buildTrees(T);
-  buildStoneNode(T);
-  buildGoldNode(T);
-  buildBerry(T);
-  buildFish(T);
-  buildMeat(T);
-  upgradeResourceNodes(); // remplacement asynchrone par les gisements illustrés, si dispo
-  buildRelic(T);
-  buildCaravan(T);
-  upgradeSingletonSprites(); // remplacement asynchrone par la relique/caravane illustrées, si dispo
-  buildBuildings(T);
-  upgradeBuildingSprites(); // remplacement asynchrone par les bâtiments illustrés, si dispo
-  buildUnits(T);
-  upgradeUnitSprites(); // remplacement asynchrone par les unités illustrées, si dispo
-  buildWildlife(T);
-  upgradeWildlifeSprites(); // remplacement asynchrone par la faune illustrée, si dispo
-  buildShadow();
-  buildGlow();
-  buildMacro();
-  buildIcons();        // icônes UI (taille fixe, générées une seule fois)
-  applyStaticIcons();  // injecte les icônes dans le DOM persistant
-  upgradeResourceIcons(); // remplacement asynchrone par les icônes illustrées, si dispo
+// Étapes de génération de l'atlas, dans l'ordre. Partagées par la version
+// synchrone (buildSprites, au démarrage) et la version étalée (avancerAtlas,
+// au zoom) : une seule définition de « ce que contient un atlas ».
+function etapesAtlas(T){
+  const nbBld=Object.keys(BDEF).length, moitie=nbBld>>1;
+  return [
+    ()=>{ buildTerrain(T,1); },                  // herbe + sable
+    ()=>{ buildTerrain(T,2); },                  // eau (4 images d'animation)
+    ()=>{ buildBuildings(T,0,moitie); },
+    ()=>{ buildBuildings(T,moitie,nbBld); upgradeBuildingSprites(); },
+    ()=>{ buildUnits(T); upgradeUnitSprites(); },
+    ()=>{ buildTrees(T); buildStoneNode(T); buildGoldNode(T); buildBerry(T);
+          buildFish(T); buildMeat(T);
+          upgradeResourceNodes(); },   // surcouche illustrée des gisements, si dispo
+    ()=>{ buildRelic(T); buildCaravan(T); upgradeSingletonSprites();
+          buildWildlife(T); upgradeWildlifeSprites(); },
+    ()=>{ buildShadow(); buildGlow(); buildMacro();
+          buildIcons();        // icônes UI (taille fixe, générées une seule fois)
+          applyStaticIcons();  // injecte les icônes dans le DOM persistant
+          upgradeResourceIcons(); },
+  ];
 }
+
+// ── RÉGÉNÉRATION ÉTALÉE DE L'ATLAS ──────────────────────────
+// Une régénération complète coûte ~20 ms au zoom minimum mais jusqu'à ~170 ms
+// au zoom maximum (les sprites y sont trois fois plus larges, donc neuf fois
+// plus de pixels à peindre). Tenir tout ça dans une seule image se voyait
+// comme un à-coup juste après le geste de zoom — le dernier qui restait.
+//
+// Le travail est donc découpé en étapes jouées une par image, dans un atlas
+// BROUILLON. Pendant ce temps le rendu continue de lire l'atlas courant, à
+// l'ancienne échelle (le facteur k=TILE/SPR.refT s'en charge déjà). Le
+// brouillon ne prend la place de l'atlas courant qu'une fois COMPLET, par un
+// échange de référence : aucune image ne peut tomber sur un atlas à moitié
+// reconstruit, moitié ancienne échelle et moitié nouvelle.
+let _atlasBrouillon=null, _atlasEtapes=null, _atlasRefT=0, _atlasDerniereImage=-1;
+
+function demarrerAtlas(refT){
+  if(_atlasRefT===refT) return;      // déjà en cours pour cette échelle
+  _atlasRefT=refT;
+  // Les icônes d'interface ont une taille fixe et ne sont générées qu'une
+  // fois : on les reprend telles quelles pour que buildIcons sorte tout de
+  // suite et que le HUD ne clignote pas pendant la reconstruction.
+  _atlasBrouillon={ terrain:{}, tree:[], stone:[], gold:[], berry:[], bld:{}, unit:{},
+                    ico:SPR.ico, iconsBuilt:SPR.iconsBuilt,
+                    resIconsUpgrading:SPR.resIconsUpgrading };
+  _atlasEtapes=etapesAtlas(refT*SS);
+}
+
+function avancerAtlas(){
+  if(!_atlasEtapes) return;
+  const courant=SPR;
+  SPR=_atlasBrouillon;               // les générateurs écrivent dans le brouillon
+  try{ _atlasEtapes.shift()(); }
+  catch(e){ _atlasEtapes=null; _atlasBrouillon=null; _atlasRefT=0; }
+  finally{ SPR=courant; }            // le rendu retrouve immédiatement l'atlas en service
+  if(_atlasEtapes&&!_atlasEtapes.length){
+    _atlasBrouillon.refT=_atlasRefT;
+    _atlasBrouillon.teintes=null;    // les variantes teintées dérivent des sprites
+    SPR=_atlasBrouillon;             // bascule atomique
+    _atlasBrouillon=null; _atlasEtapes=null; _atlasRefT=0;
+  }
+}
+
+// Version synchrone, pour les moments où l'on a besoin d'un atlas complet
+// AVANT la première image : début de partie, chargement d'une sauvegarde.
+function buildSprites(refT){
+  refT=refT||sprRungFor(TILE);
+  _atlasEtapes=null; _atlasBrouillon=null; _atlasRefT=0; // annule une reconstruction étalée en cours
+  SPR.refT=refT;   // échelle de référence des sprites (barreau, pas TILE exact)
+  SPR.teintes=null; // les variantes teintées dérivent des sprites : à refaire
+  for(const etape of etapesAtlas(refT*SS)) etape();
+}
+
 
 // ── OMBRE PORTÉE (sprite unique, étiré à la demande) ──────────────────
 // Tout ce qui se dresse sur le sol — arbre, rocher, bâtiment, unité — se
@@ -5265,6 +5462,13 @@ function groundShadow(sx,sy,rx,ry,a){
 
 // ── RENDU ─────────────────────────────────────────────────
 function render(){
+  // Fenêtre dégénérée (onglet en arrière-plan, panneau du bas plus haut que
+  // la fenêtre, clavier virtuel qui remonte tout) : gameH() devient négatif,
+  // et le premier createRadialGradient de drawVignette lève une exception qui
+  // tue la boucle de rendu pour de bon. Une image sautée ne coûte rien ; une
+  // boucle morte oblige à recharger la page en pleine partie.
+  if(W<=0||gameH()<=0) return;
+  _frameId++;
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.imageSmoothingEnabled=true; // sprites 3× réduits => rendu fin et lisse
   ctx.clearRect(0,0,W,H);
@@ -5411,38 +5615,121 @@ function ws(wx,wy){ const S=TILE/BASE_TILE; return {x:wx*S-G.cam.x, y:wy*S-G.cam
 // Écran -> monde, réciproque exacte de ws().
 function sw(sx,sy){ const S=TILE/BASE_TILE; return {x:(sx+G.cam.x)/S, y:(sy-54+G.cam.y)/S}; }
 
+// ── CACHE DE TERRAIN PAR PAVÉS ────────────────────────────
+// Le sol est STATIQUE : ni la variante d'herbe, ni son miroir, ni le
+// liséré de rive ne changent d'une image à l'autre. Le redessiner case par
+// case coûtait pourtant ~6 ms par image au zoom minimum (plus de 6 000
+// drawImage, plus jusqu'à douze tests de voisinage par case pour la rive).
+// On le pré-rend donc par pavés de 8×8 cases, réutilisés tant que l'échelle
+// ne change pas ; seule l'eau, animée, reste peinte à chaque image
+// par-dessus.
+const TCHUNK=8;
+// Plafond mémoire du cache, mesuré en pixels (×4 octets → ~32 Mo). L'ensemble
+// réellement visible ne dépasse jamais ~45 pavés au zoom minimum ni ~12 au zoom
+// maximum : ce plafond laisse donc une marge confortable pour les allers-retours
+// de caméra, tout en bornant ce qu'un long panoramique (ou des clics répétés sur
+// la mini-carte, qui téléportent la vue) peut accumuler sur un téléphone.
+const TCHUNK_PIXELS=8e6;
+// Pavés générés au plus par image. Un panoramique normal n'en réclame que 0,2
+// par image ; ce budget ne sert qu'aux rafales — changement de zoom (qui les
+// invalide tous d'un coup) ou saut de caméra depuis la mini-carte. À dix, la
+// rafale coûtait 20 à 30 ms sur l'image suivant le zoom ; à cinq elle tient
+// dans une dizaine de millisecondes, le reste de l'écran étant peint pour
+// cette image par le rendu direct (voir `manquants`), exactement comme avant
+// l'existence du cache.
+const TCHUNK_BUDGET=5;
+let _tchunks=new Map(), _tchunkT=-1, _tchunkBudget=0, _frameId=0;
+function invalidateTerrainChunks(){ _tchunks.clear(); _tchunkT=TILE; }
+
+// Variante ET orientation stables par tuile (8 textures × 4 miroirs = 32
+// aspects distincts). Le miroir est tiré d'un second brassage du même hash,
+// pour qu'il ne soit pas corrélé à la variante : sinon la variante 3 serait
+// toujours retournée de la même façon et on retomberait sur 8 aspects.
+function grassSprite(x,y){
+  let h=(x*374761393+y*668265263)|0; h=(h^(h>>13))*1274126177|0;
+  h=(h^(h>>16))|0;
+  const v=((h%GRASS_VARIANTS)+GRASS_VARIANTS)%GRASS_VARIANTS;
+  const m=(((h>>5)%4)+4)%4;
+  return SPR.terrain[m?('grass'+v+'m'+m):('grass'+v)];
+}
+
+function terrainChunk(ccx,ccy){
+  const key=ccy*4096+ccx;
+  const hit=_tchunks.get(key);
+  if(hit){ hit.used=_frameId; return hit; }
+  if(_tchunkBudget<=0) return null;   // budget épuisé : rendu direct cette image
+  _tchunkBudget--;
+  const x0=ccx*TCHUNK, y0=ccy*TCHUNK;
+  const ox=Math.round(x0*TILE), oy=Math.round(y0*TILE);
+  // +2 px de marge : la dernière case est peinte sur TILE pixels flottants
+  // depuis une position arrondie, elle peut déborder d'une fraction de pixel.
+  const w=Math.ceil((x0+TCHUNK)*TILE)-ox+2, h=Math.ceil((y0+TCHUNK)*TILE)-oy+2;
+  const{c,cx:g}=offCanvas(w,h);
+  g.imageSmoothingEnabled=true;
+  const ex=Math.min(COLS-1,x0+TCHUNK-1), ey=Math.min(ROWS-1,y0+TCHUNK-1);
+  for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
+    if(G.tiles[y][x]===T_WATER) continue;   // l'eau est animée : hors cache
+    const px2=Math.round(x*TILE)-ox, py2=Math.round(y*TILE)-oy;
+    const sp=grassSprite(x,y);
+    if(sp) g.drawImage(sp.c,px2,py2,TILE,TILE);
+    drawShore(g,x,y,px2,py2);
+  }
+  const ch={c,ox,oy,used:_frameId};
+  _tchunks.set(key,ch);
+  return ch;
+}
+
 function drawMap(){
   const cx=G.cam.x, cy=G.cam.y;
   const sx=Math.max(0,cx/TILE|0), sy=Math.max(0,(cy/TILE)|0);
   const ex=Math.min(COLS-1,(cx+W)/TILE|0), ey=Math.min(ROWS-1,(cy+gameH())/TILE|0);
   const waterFrame=(G.gameTime*3|0)%4; // animation eau ~3fps
-  for(let y=sy;y<=ey;y++) for(let x=sx;x<=ex;x++){
-    const tile=G.tiles[y][x];
-    const px2=Math.round(x*TILE-cx), py2=Math.round(y*TILE-cy+54);
-    if(tile===T_WATER){
-      // variante stable par tuile (même principe que l'herbe) : sans elle,
-      // toutes les cases d'un lac porteraient les crêtes aux mêmes hauteurs
-      // et se rejoindraient en longues bandes rectilignes.
-      let hw=(x*2246822519+y*3266489917)|0; hw=(hw^(hw>>15))*668265263|0; hw=(hw^(hw>>13))|0;
-      const vw=((hw%WATER_VARIANTS)+WATER_VARIANTS)%WATER_VARIANTS;
-      const s=SPR.terrain['water'+vw+'_'+waterFrame];
-      if(s) ctx.drawImage(s.c,px2,py2,TILE,TILE);
-    } else {
-      // herbe : variante ET orientation stables par tuile (8 textures × 4
-      // miroirs = 32 aspects distincts). Le miroir est tiré d'un second
-      // brassage du même hash, pour qu'il ne soit pas corrélé à la variante :
-      // sinon la variante 3 serait toujours retournée de la même façon et on
-      // retomberait sur 8 aspects.
-      let h=(x*374761393+y*668265263)|0; h=(h^(h>>13))*1274126177|0;
-      h=(h^(h>>16))|0;
-      const v=((h%GRASS_VARIANTS)+GRASS_VARIANTS)%GRASS_VARIANTS;
-      const m=(((h>>5)%4)+4)%4;
-      const s=SPR.terrain[m?('grass'+v+'m'+m):('grass'+v)];
-      if(s) ctx.drawImage(s.c,px2,py2,TILE,TILE);
-      // rive : si une tuile voisine est de l'eau, dessiner un liseré sableux
-      drawShore(x,y,px2,py2);
+  if(_tchunkT!==TILE) invalidateTerrainChunks();
+  _tchunkBudget=TCHUNK_BUDGET;
+
+  // 1) sol statique, par pavés pré-rendus
+  const c0=(sx/TCHUNK)|0, c1=(ex/TCHUNK)|0, r0=(sy/TCHUNK)|0, r1=(ey/TCHUNK)|0;
+  let manquants=null;
+  for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++){
+    const ch=terrainChunk(c,r);
+    if(ch) ctx.drawImage(ch.c,Math.round(ch.ox-cx),Math.round(ch.oy-cy)+54);
+    else (manquants||(manquants=[])).push(c,r);
+  }
+  // Pavés pas encore générés (budget épuisé) : rendu direct pour cette image
+  // seulement — ils rejoindront le cache aux images suivantes.
+  if(manquants) for(let i=0;i<manquants.length;i+=2){
+    const bx=manquants[i]*TCHUNK, by=manquants[i+1]*TCHUNK;
+    const mex=Math.min(ex,bx+TCHUNK-1), mey=Math.min(ey,by+TCHUNK-1);
+    for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
+      if(G.tiles[y][x]===T_WATER) continue;
+      const px2=Math.round(x*TILE-cx), py2=Math.round(y*TILE-cy+54);
+      const sp=grassSprite(x,y);
+      if(sp) ctx.drawImage(sp.c,px2,py2,TILE,TILE);
+      drawShore(ctx,x,y,px2,py2);
     }
   }
+
+  // 2) eau animée, peinte à chaque image par-dessus les pavés
+  for(let y=sy;y<=ey;y++) for(let x=sx;x<=ex;x++){
+    if(G.tiles[y][x]!==T_WATER) continue;
+    const px2=Math.round(x*TILE-cx), py2=Math.round(y*TILE-cy+54);
+    // variante stable par tuile (même principe que l'herbe) : sans elle,
+    // toutes les cases d'un lac porteraient les crêtes aux mêmes hauteurs
+    // et se rejoindraient en longues bandes rectilignes.
+    let hw=(x*2246822519+y*3266489917)|0; hw=(hw^(hw>>15))*668265263|0; hw=(hw^(hw>>13))|0;
+    const vw=((hw%WATER_VARIANTS)+WATER_VARIANTS)%WATER_VARIANTS;
+    const sp=SPR.terrain['water'+vw+'_'+waterFrame];
+    if(sp) ctx.drawImage(sp.c,px2,py2,TILE,TILE);
+  }
+
+  // 3) purge des pavés hors écran quand le cache dépasse son plafond, mesuré
+  // en pixels et non en nombre de pavés : un pavé au zoom maximum pèse une
+  // quinzaine de fois celui du zoom minimum.
+  const pxx=Math.ceil(TCHUNK*TILE)+2;
+  if(_tchunks.size*pxx*pxx>TCHUNK_PIXELS){
+    for(const [k,ch] of _tchunks) if(ch.used!==_frameId) _tchunks.delete(k);
+  }
+
   // Calque de variation lente, en coordonnées monde (voir buildMacro).
   if(SPR.macroPat){
     const P=SPR.macro.P, gh=gameH();
@@ -5454,7 +5741,7 @@ function drawMap(){
   }
 }
 
-// Liseré de rive (transition herbe→eau façon AoE2)
+// Liséré de rive (transition herbe→eau façon AoE2)
 //
 // Deux corrections par rapport à la version d'origine, toutes deux visibles
 // sur une berge droite :
@@ -5466,24 +5753,33 @@ function drawMap(){
 //    encoche (les deux voisins orthogonaux étant de la terre).
 //  • l'épaisseur de l'écume varie légèrement d'une tuile à l'autre (hachage
 //    de position, donc stable) : la rive n'est plus un trait à la règle.
-function drawShore(x,y,px2,py2){
+//
+// Le contexte est passé en paramètre : la rive est peinte une fois pour
+// toutes dans le pavé de terrain (voir terrainChunk), pas dans le canvas
+// principal.
+function drawShore(g,x,y,px2,py2){
   const isW=(xx,yy)=> xx>=0&&yy>=0&&xx<COLS&&yy<ROWS&&G.tiles[yy][xx]===T_WATER;
+  const n=isW(x,y-1), sO=isW(x,y+1), o=isW(x-1,y), e=isW(x+1,y);
+  const no=isW(x-1,y-1), ne=isW(x+1,y-1), so=isW(x-1,y+1), se=isW(x+1,y+1);
+  // Sortie immédiate sur les cases d'intérieur des terres, soit l'écrasante
+  // majorité : rien à peindre là où il n'y a aucune rive.
+  if(!n&&!sO&&!o&&!e&&!no&&!ne&&!so&&!se) return;
   const t=TILE, b=Math.max(3,t*0.18);
   let hs=(x*1597334677+y*2654435761)|0; hs=(hs^(hs>>14))|0;
   const jitter=(((hs>>3)&3)-1.5)*0.14;                  // −0.21 … +0.21
   const foam=Math.max(1,b*(0.34+jitter));
   const SAND='#c9ab72', FOAM='#f0e4b8';
   // 1) coins : uniquement les encoches réelles (diagonale mouillée, côtés secs)
-  ctx.fillStyle=SAND;
-  if(isW(x-1,y-1)&&!isW(x-1,y)&&!isW(x,y-1)) ctx.fillRect(px2,py2,b,b);
-  if(isW(x+1,y-1)&&!isW(x+1,y)&&!isW(x,y-1)) ctx.fillRect(px2+t-b,py2,b,b);
-  if(isW(x-1,y+1)&&!isW(x-1,y)&&!isW(x,y+1)) ctx.fillRect(px2,py2+t-b,b,b);
-  if(isW(x+1,y+1)&&!isW(x+1,y)&&!isW(x,y+1)) ctx.fillRect(px2+t-b,py2+t-b,b,b);
+  g.fillStyle=SAND;
+  if(no&&!o&&!n) g.fillRect(px2,py2,b,b);
+  if(ne&&!e&&!n) g.fillRect(px2+t-b,py2,b,b);
+  if(so&&!o&&!sO) g.fillRect(px2,py2+t-b,b,b);
+  if(se&&!e&&!sO) g.fillRect(px2+t-b,py2+t-b,b,b);
   // 2) bandes de sable humide, puis écume au contact direct de l'eau
-  if(isW(x,y-1)){ ctx.fillStyle=SAND; ctx.fillRect(px2,py2,t,b); ctx.fillStyle=FOAM; ctx.fillRect(px2,py2,t,foam); }
-  if(isW(x,y+1)){ ctx.fillStyle=SAND; ctx.fillRect(px2,py2+t-b,t,b); ctx.fillStyle=FOAM; ctx.fillRect(px2,py2+t-foam,t,foam); }
-  if(isW(x-1,y)){ ctx.fillStyle=SAND; ctx.fillRect(px2,py2,b,t); ctx.fillStyle=FOAM; ctx.fillRect(px2,py2,foam,t); }
-  if(isW(x+1,y)){ ctx.fillStyle=SAND; ctx.fillRect(px2+t-b,py2,b,t); ctx.fillStyle=FOAM; ctx.fillRect(px2+t-foam,py2,foam,t); }
+  if(n){ g.fillStyle=SAND; g.fillRect(px2,py2,t,b); g.fillStyle=FOAM; g.fillRect(px2,py2,t,foam); }
+  if(sO){ g.fillStyle=SAND; g.fillRect(px2,py2+t-b,t,b); g.fillStyle=FOAM; g.fillRect(px2,py2+t-foam,t,foam); }
+  if(o){ g.fillStyle=SAND; g.fillRect(px2,py2,b,t); g.fillStyle=FOAM; g.fillRect(px2,py2,foam,t); }
+  if(e){ g.fillStyle=SAND; g.fillRect(px2+t-b,py2,b,t); g.fillStyle=FOAM; g.fillRect(px2+t-foam,py2,foam,t); }
 }
 
 function drawNodes(){
@@ -5525,9 +5821,12 @@ function drawNodes(){
 // Sert uniquement au raccord vertical des murs (voir plus bas) ; un Set
 // reconstruit coûte moins qu'un balayage de G.buildings par mur.
 let _murSet=new Set();
+// Clé entière : la concaténation de chaînes allouait une chaîne par mur et
+// par image (même raison que gridKey plus haut).
+function murKey(tx,ty){ return ty*4096+tx; }
 function indexerMurs(){
   _murSet.clear();
-  for(const b of G.buildings) if(b.type===BT.WALL||b.type===BT.GATE) _murSet.add(b.tx+','+b.ty);
+  for(const b of G.buildings) if(b.type===BT.WALL||b.type===BT.GATE) _murSet.add(murKey(b.tx,b.ty));
 }
 
 function drawBuildings(){
@@ -5564,7 +5863,7 @@ function drawBuildings(){
       // le tronçon devient un mur continu, et seule la case de tête garde ses
       // pointes. Un tronçon est-ouest, lui, n'a jamais de mur au-dessus et reste
       // rendu tel quel.
-      const murSuite=(b.type===BT.WALL||b.type===BT.GATE)&&!b.constructing&&_murSet.has(b.tx+','+(b.ty-1));
+      const murSuite=(b.type===BT.WALL||b.type===BT.GATE)&&!b.constructing&&_murSet.has(murKey(b.tx,b.ty-1));
       if(murSuite){
         const src=spr.c, cut=src.height*0.53;   // au-dessus : pointes et créneaux
         ctx.drawImage(src, 0, cut, src.width, src.height-cut, Math.round(bx), Math.round(by), pw, ph);
@@ -5679,9 +5978,13 @@ function drawCaravans(){
 // une fois mises à l'abri (bankedBy, lui synchronisé — voir construireDelta).
 function drawRelics(){
   if(!G.relics||!G.relics.length) return;
+  // Un seul balayage de G.units pour toutes les reliques, au lieu d'un
+  // G.units.some() par relique et par image.
+  let portees=null;
+  for(const u of G.units) if(u.state==='relic') (portees||(portees=new Set())).add(u.target);
   for(const r of G.relics){
     if(r.bankedBy) continue;
-    if(G.units.some(u=>u.state==='relic'&&u.target===r.id)) continue;
+    if(portees&&portees.has(r.id)) continue;
     const{x:sx,y:sy}=ws(r.x,r.y);
     if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
     if(G.fog.length){
@@ -5771,10 +6074,12 @@ function drawHeroAuras(){
 }
 
 function drawUnits(){
+  // Écrémage AVANT le tri : en fin de partie l'immense majorité des unités
+  // est hors écran ou sous le brouillard, et les trier toutes pour n'en
+  // dessiner qu'une poignée revenait à payer un tri dix fois trop gros.
   _drawOrder.length=0;
-  for(let i=0;i<G.units.length;i++) _drawOrder.push(G.units[i]);
-  _drawOrder.sort((a,b)=>a.y-b.y);
-  for(const u of _drawOrder){
+  for(let i=0;i<G.units.length;i++){
+    const u=G.units[i];
     if(u.state==='garrison') continue; // à l'abri dans le bâtiment : invisible
     const{x:sx,y:sy}=ws(u.x,u.y);
     if(sx<-TILE||sx>W+TILE||sy<48-TILE||sy>H+TILE) continue;
@@ -5783,6 +6088,11 @@ function drawUnits(){
       const fx=(u.x/BASE_TILE)|0, fy=(u.y/BASE_TILE)|0;
       if(fx>=0&&fy>=0&&fx<COLS&&fy<ROWS&&G.fog[fy][fx]!==2) continue;
     }
+    _drawOrder.push(u);
+  }
+  _drawOrder.sort((a,b)=>a.y-b.y);
+  for(const u of _drawOrder){
+    const{x:sx,y:sy}=ws(u.x,u.y);
     const teinteU=(fac(u)||{}).teinte||'rouge';
     const spr0=sprTeinte('unit',u.type,teinteU);
     const S=(spr0?spr0.S:TILE*0.85)*(TILE/(SPR.refT||TILE));
@@ -6098,38 +6408,61 @@ function fogTileAt(tx,ty){
   if(tx<0||ty<0||tx>=COLS||ty>=ROWS) return 0;
   return G.fog[ty][tx];
 }
+// ── MINI-CARTE ───────────────────────────────────────
+// Le fond (terrain + brouillard + gisements) balayait les 240×240 = 57 600
+// cases de la carte À CHAQUE IMAGE, soit ~0,8 ms constants quel que soit le
+// zoom — pour un résultat qui ne change qu'au rythme de revealFog, cinq fois
+// par seconde. Il est désormais peint dans un canvas à part, réutilisé tant
+// que le brouillard n'a pas bougé ; seuls les bâtiments, les unités et le
+// cadre de vue — qui, eux, bougent vraiment à chaque image — restent peints
+// par-dessus.
+let _mmFond=null, _mmFondVer=-1, _mmFondTaille='';
+const MM_NODE_COL={ [RT.TREE]:'#2d6b22',[RT.STONE]:'#888',[RT.GOLD]:'#d4a017',[RT.BERRY]:'#c0392b' };
+
+function dessinerFondMinimap(mw,mh,K,scx,scy){
+  if(!_mmFond||_mmFond.c.width!==mw||_mmFond.c.height!==mh){
+    _mmFond=offCanvas(mw,mh);
+    _mmFondVer=-1;
+  }
+  const taille=mw+'x'+mh;
+  if(_mmFondVer===G.fogVer&&_mmFondTaille===taille) return _mmFond.c;
+  _mmFondVer=G.fogVer; _mmFondTaille=taille;
+  const g=_mmFond.cx;
+  // Fond noir par défaut = inexploré, comme dans AoE2 : hors de propos de
+  // dévoiler à la souris ce que le joueur n'a jamais exploré à l'écran.
+  g.globalAlpha=1;
+  g.fillStyle='#000'; g.fillRect(0,0,mw,mh);
+  // Terrain (herbe/eau) : uniquement sur les cases déjà explorées
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const f=fogTileAt(x,y);
+    if(f===0) continue;
+    // Ton moyen de la palette d'herbe (8 variantes autour de #58 8a 39) — la
+    // mini-carte utilisait un vert bien plus sombre, décalé par rapport à la
+    // carte principale une fois celle-ci enrichie.
+    g.fillStyle=G.tiles[y][x]===T_WATER?'#2472a4':'#53823a';
+    if(f===1) g.globalAlpha=0.55; // exploré mais hors vue actuelle : assombri
+    g.fillRect(x*scx*BASE_TILE,y*scy*BASE_TILE,scx*BASE_TILE+1,scy*BASE_TILE+1);
+    g.globalAlpha=1;
+  }
+  // Ressources : mémorisées une fois explorées (comme le terrain)
+  for(const n of G.nodes){
+    if(n.amt<=0) continue;
+    if(fogTileAt(n.tx,n.ty)===0) continue;
+    g.fillStyle=MM_NODE_COL[n.type];
+    // Gisements : un point de 2 unités (et non 3, qui débordait sur deux
+    // cases voisines et transformait une forêt en confettis illisibles).
+    g.fillRect(n.tx*scx*BASE_TILE-K/2,n.ty*scy*BASE_TILE-K/2,2*K,2*K);
+  }
+  return _mmFond.c;
+}
+
 function drawMinimap(){
   // Dimensions lues sur le canevas (176×176 pour 88 CSS) : la mini-carte est
   // rendue au double de sa taille d'affichage, donc nette sur écran HiDPI et
   // encore nette une fois agrandie sur grand écran (voir la règle @media).
   const mw=mm.width,mh=mm.height, K=mw/88;
   const scx=mw/(COLS*BASE_TILE), scy=mh/(ROWS*BASE_TILE);
-  // Le brouillard de guerre s'applique aussi à la mini-carte : hors de propos
-  // de dévoiler à la souris ce que le joueur n'a jamais exploré à l'écran
-  // principal. Fond noir par défaut = inexploré, comme dans AoE2.
-  mctx.fillStyle='#000'; mctx.fillRect(0,0,mw,mh);
-  // Terrain (herbe/eau) : uniquement sur les cases déjà explorées
-  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
-    const f=fogTileAt(x,y);
-    if(f===0) continue;
-    // Ton moyen de la nouvelle palette d'herbe (8 variantes autour de #58 8a
-    // 39) — la mini-carte utilisait un vert bien plus sombre, décalé par
-    // rapport à la carte principale une fois celle-ci enrichie.
-    mctx.fillStyle=G.tiles[y][x]===T_WATER?'#2472a4':'#53823a';
-    if(f===1) mctx.globalAlpha=0.55; // exploré mais hors vue actuelle : assombri
-    mctx.fillRect(x*scx*BASE_TILE,y*scy*BASE_TILE,scx*BASE_TILE+1,scy*BASE_TILE+1);
-    mctx.globalAlpha=1;
-  }
-  // Ressources : mémorisées une fois explorées (comme le terrain)
-  for(const n of G.nodes){
-    if(n.amt<=0) continue;
-    if(fogTileAt(n.tx,n.ty)===0) continue;
-    const c={[RT.TREE]:'#2d6b22',[RT.STONE]:'#888',[RT.GOLD]:'#d4a017',[RT.BERRY]:'#c0392b'};
-    mctx.fillStyle=c[n.type];
-    // Gisements : un point de 2 unités (et non 3, qui débordait sur deux
-    // cases voisines et transformait une forêt en confettis illisibles).
-    mctx.fillRect(n.tx*scx*BASE_TILE-K/2,n.ty*scy*BASE_TILE-K/2,2*K,2*K);
-  }
+  mctx.drawImage(dessinerFondMinimap(mw,mh,K,scx,scy),0,0);
   // Bâtiments : les nôtres toujours visibles, ceux ennemis seulement une
   // fois leur case explorée (mémorisés ensuite, comme sur la carte).
   for(const b of G.buildings){
@@ -6310,7 +6643,17 @@ function updateUnits(dt){
   const dead=G.units.filter(u=>u.hp<=0);
   for(const u of dead){
     G.sel=G.sel.filter(id=>id!==u.id);
-    for(const n of G.nodes) n.gatherers=n.gatherers.filter(id=>id!==u.id);
+    // u.homeNode pointe déjà vers l'UNIQUE nœud dont ce villageois peut être
+    // le récolteur (voir doGather) : un balayage de TOUS les gisements de la
+    // carte (des centaines, jamais retirés du tableau) pour chaque mort
+    // était pur gâchis — le vrai responsable des gros pics observés en
+    // pleine bataille, bien plus que la garnison des tours corrigée
+    // au-dessus. Un combattant qui n'a jamais récolté a homeNode=null et ne
+    // coûte plus rien du tout ici.
+    if(u.homeNode!=null){
+      const n=nodeById(u.homeNode);
+      if(n&&n.gatherers.length) n.gatherers=n.gatherers.filter(id=>id!==u.id);
+    }
     spawnParts(u.x,u.y,couleurMinimap(u,true),8);
     G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge'}); // silhouette qui bascule au sol et s'estompe, plutôt qu'une disparition instantanée
     sfx('death');
@@ -7023,7 +7366,23 @@ function doAttack(u,dt){
   }
 }
 
+// Décompte des archers/arbalétriers en garnison, par bâtiment — un seul
+// passage sur G.units pour toute l'image, au lieu d'un G.units.filter()
+// PAR Tour/Château à CHAQUE pas de simulation (voir updateBuildings). Sur
+// une grosse base (des dizaines de tours) et une armée nombreuse, ce
+// filtre répété devenait le vrai goulot : O(tours × unités) et une
+// allocation de tableau jetée par tour, quand une seule Map suffit.
+function garnisonsArcheres(){
+  const m=new Map();
+  for(const u of G.units){
+    if(u.state!=='garrison'||(u.type!==UT.ARC&&u.type!==UT.XBOW)) continue;
+    m.set(u.target,(m.get(u.target)||0)+1);
+  }
+  return m;
+}
+
 function updateBuildings(dt){
+  const garnisons=garnisonsArcheres();
   for(const b of G.buildings){
     if(!b.active||b.constructing) continue;
     // Réensemencement des fermes et production continue : concernent
@@ -7066,7 +7425,7 @@ function updateBuildings(dt){
       // Garnison d'archers/arbalétriers : chacun ajoute un peu de dégâts à
       // l'attaque automatique du bâtiment (façon AoE2), plafonné pour ne pas
       // transformer une Tour en artillerie à elle seule.
-      const garnAtk=G.units.filter(u=>u.state==='garrison'&&u.target===b.id&&(u.type===UT.ARC||u.type===UT.XBOW)).length;
+      const garnAtk=garnisons.get(b.id)||0;
       if(garnAtk) atk+=Math.min(garnAtk,garnBonusCap(b))*4;
       if(b.atkCd<=0){
         const e=prochainHostileToute(b.x,b.y,range,b);
@@ -7444,19 +7803,26 @@ function updateProjs(dt){
   G.projs=G.projs.filter(p=>p.life>0);
 }
 
+// Plafonds des effets purement décoratifs. Une grande bataille (ou la
+// vitesse ×3, ou une partie laissée tourner) peut en accumuler des milliers
+// sans qu'aucun n'apporte plus rien à l'écran : au-delà, on abandonne les
+// PLUS ANCIENS, ceux qui sont déjà presque éteints.
+const MAX_PARTS=400, MAX_FTEXTS=80, MAX_DEATHFX=60;
+function plafonner(arr,max){ return arr.length>max?arr.slice(arr.length-max):arr; }
+
 function updateParts(dt){
   for(const p of G.parts){p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt*1.6;}
-  G.parts=G.parts.filter(p=>p.life>0);
+  G.parts=plafonner(G.parts.filter(p=>p.life>0),MAX_PARTS);
 }
 
 function updateFTexts(dt){
   for(const ft of G.ftexts){ft.y-=22*dt;ft.life-=dt*.8;}
-  G.ftexts=G.ftexts.filter(ft=>ft.life>0);
+  G.ftexts=plafonner(G.ftexts.filter(ft=>ft.life>0),MAX_FTEXTS);
 }
 
 function updateDeathFx(dt){
   for(const d of G.deathfx) d.life-=dt*1.7;
-  G.deathfx=G.deathfx.filter(d=>d.life>0);
+  G.deathfx=plafonner(G.deathfx.filter(d=>d.life>0),MAX_DEATHFX);
 }
 
 function spawnParts(x,y,col,n){
@@ -7762,6 +8128,8 @@ function aiAbortSite(b,a){
 // Prochain bâtiment à ériger, par ordre de besoin. La liste suit la même
 // logique qu'une ouverture humaine : loger, nourrir, s'installer sur les
 // ressources, puis militariser et fortifier.
+// Marge de population que l'IA garde d'avance sur ses effectifs réels.
+const AI_POP_MARGE = 15;
 function aiNextBuild(vilCount,a){
   const c=aiCount(true,a);
   const n=t=>c[t]||0;
@@ -7795,8 +8163,13 @@ function aiNextBuild(vilCount,a){
   // jamais comme un quota théorique qui repousserait indéfiniment la suite.
   if(n(BT.FARM)<farmTarget&&a.res.food<300) return {type:BT.FARM};
   if(n(BT.TOWER)<1+a.age) return {type:BT.TOWER};
+  // Capacité de production militaire indexée sur la main-d'œuvre : avec deux
+  // casernes en tout et pour tout, une IA dont l'économie grossit ne pouvait
+  // pas transformer ses ressources en armée, et sa croissance s'arrêtait là.
+  const milTarget=Math.max(2,Math.min(6,Math.floor((vilCount||0)/12)+1));
   if(a.age>=1&&!n(BT.STABLE)) return {type:BT.STABLE};
-  if(a.age>=1&&n(BT.BARRACKS)<2) return {type:BT.BARRACKS};
+  if(a.age>=1&&n(BT.BARRACKS)<milTarget) return {type:BT.BARRACKS};
+  if(a.age>=2&&n(BT.STABLE)<milTarget-1) return {type:BT.STABLE};
   // Économie avancée : Marché ×2 (route commerciale, voir aiTradeRoute),
   // Monastère (reliques, voir aiRelicHunt) et Université (recherches
   // avancées) — une fois la défense et la production de base en place.
@@ -7805,7 +8178,12 @@ function aiNextBuild(vilCount,a){
   if(a.age>=1&&!n(BT.UNIV)) return {type:BT.UNIV};
   if(a.age>=2&&!n(BT.CASTLE)) return {type:BT.CASTLE};
   if(n(BT.FARM)<farmTarget) return {type:BT.FARM}; // en dernier recours, jamais bloquant
-  if(a.maxPop<AGE_BONUS[a.age].popCap) return {type:BT.HOUSE};
+  // Maisons de confort : seulement une MARGE au-dessus de la population
+  // occupée, jamais jusqu'au plafond absolu. Depuis que ce plafond est haut
+  // (300), bâtir « tant qu'on n'y est pas » transformait l'IA en lotisseur :
+  // elle engloutissait tout son bois en maisons vides, n'avait plus de quoi
+  // monter d'âge ni produire une seule unité, et son armée restait figée.
+  if(a.maxPop<Math.min(AGE_BONUS[a.age].popCap,a.pop+AI_POP_MARGE)) return {type:BT.HOUSE};
   return null;
 }
 
@@ -7986,9 +8364,27 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
 const AI_THINK = 0.5;
 // Fait jouer TOUS les adversaires IA de la partie (le mode « 2 rivaux » en
 // aligne deux, le multijoueur 1v1+IA un seul).
+// Plus de garde par mode : le mode Survie ne CRÉE pas d'adversaire IA (voir
+// MODES.rivaux), donc la boucle y tourne à vide de toute façon — mais une
+// faction humaine déconnectée peut être convertie en IA en cours de partie
+// (voir convertirEnIA), et elle doit alors jouer quel que soit le mode.
 function updateAI(dt){
-  if(G.gmode==='survival') return;
   for(const a of factionsIA()) updateUneIA(dt,a);
+}
+
+// ── CROISSANCE CONTINUE DE L'IA ────────────────────────────
+// L'objectif d'économie de l'IA était un palier FIXE (8 à 20 villageois selon
+// la difficulté) qu'elle atteignait en quelques minutes et ne dépassait plus
+// jamais. Passé ce cap, son revenu était exactement le même à la trentième
+// minute qu'à la cinquième, et son armée plafonnait avec : une partie longue
+// se terminait toujours par un adversaire figé. L'objectif monte donc avec le
+// temps de jeu, borné par sa propre population maximale.
+const AI_VIL_PALIER = 40;   // secondes de jeu par villageois supplémentaire
+const AI_VIL_MAX    = 80;   // plafond d'économie, largement au-delà de l'ancien
+function aiVilTarget(a){
+  const base=a.vilTarget||12;
+  const cible=base+Math.floor(G.gameTime/AI_VIL_PALIER);
+  return Math.max(base,Math.min(cible,AI_VIL_MAX,Math.max(base,a.maxPop||base)));
 }
 
 function updateUneIA(dt,a){
@@ -8086,8 +8482,15 @@ function updateUneIA(dt,a){
     if(b.type===BT.TC){
       // Villageois jusqu'à l'objectif d'économie, puis on garde la place
       // pour l'armée.
-      if(vils.length+b.trainQ.length>=a.vilTarget) continue;
-      if(!aiAfford(AI_TCOST[UT.VIL],null,a)) continue;
+      if(vils.length+b.trainQ.length>=aiVilTarget(a)) continue;
+      // La réserve de montée d'âge s'applique AUSSI aux villageois. Sans ça,
+      // un objectif d'économie qui monte en continu (voir aiVilTarget) fait
+      // repartir en villageois — 40 nourritures pièce — tout ce que l'IA
+      // encaisse : elle n'atteint jamais les 500 nourritures du palier
+      // suivant, reste à l'Âge Sombre pour toujours, et son armée se fige
+      // avec elle. Constaté en simulation : âge 0 et 6 unités au bout de
+      // onze minutes, avec 1 500 bois dormants faute d'âge pour les dépenser.
+      if(!aiAfford(AI_TCOST[UT.VIL],saving,a)) continue;
       aiSpend(AI_TCOST[UT.VIL],a);
       b.trainQ.push(UT.VIL);
       if(b.trainQ.length===1) b.trainTimer=trainTime(UT.VIL);
@@ -8119,7 +8522,10 @@ function updateUneIA(dt,a){
   // qu'un autre site, ailleurs, ait sa chance.
   for(const s of sites) if(G.gameTime-(s.aiStartT||0)>90&&s.progress<0.15) aiAbortSite(s,a);
   sites=G.buildings.filter(b=>b.owner===a.id&&b.constructing);
-  const maxSites=vils.length>=10?2:1;
+  // Nombre de chantiers menés de front, proportionnel à la main-d'œuvre :
+  // figé à 2, une IA à cinquante villageois passait son temps à accumuler des
+  // ressources qu'elle n'avait plus aucun moyen de dépenser.
+  const maxSites=Math.max(1,Math.min(4,Math.floor(vils.length/10)+1));
   if(sites.length<maxSites){
     const next=aiNextBuild(vils.length,a);
     if(next) aiBuild(next.type,next.x,next.y,a);
@@ -8409,7 +8815,13 @@ function endPinch(){
   pinching=false;
   velX=velY=0; glideX=glideY=0;
   noGlideUntil=Date.now()+260; // le relâchement d'un pincement ne doit rien projeter
-  if(SPR.refT!==TILE) buildSprites();
+  // Même barreau d'échelle qu'à la molette (voir sprRungFor) : comparer à TILE
+  // exact ferait regenerer l'atlas à la fin de CHAQUE pincement, alors que
+  // l'échelle atteinte tombe presque toujours dans la tolérance du barreau
+  // déjà en place — c'est le geste de zoom du mobile, celui qui doit le
+  // moins accrocher.
+  const rung=sprRungFor(TILE);
+  if(SPR.refT!==rung) demarrerAtlas(rung);
 }
 
 // ── DÉBUT DE GESTE ──
@@ -9515,22 +9927,54 @@ function refreshUI(){
   updateDeselBtn();
 }
 
+// ── ÉCRITURES DOM PAR DIFFÉRENCE ──────────────────────────
+// Le HUD était réécrit intégralement à chaque image : une dizaine de
+// textContent, un innerHTML COMPLET pour la barre d'âge (donc ses <img>
+// d'icônes reconstruites et reparseées soixante fois par seconde) et un
+// G.units.filter() sur toute l'armée pour compter les villageois inactifs.
+// Trois millisecondes par image pour un affichage qui, l'immense majorité
+// du temps, ne change pas d'un pixel — à lui seul plus cher que tout le
+// rendu de la carte. On ne touche désormais au DOM que lorsque la valeur
+// affichée a réellement changé.
+const _hudCache=new Map();
+// applyStaticIcons() réécrit ces mêmes éléments de son côté (arrivée des
+// icônes illustrées) : le cache doit être vidé après son passage, sinon il
+// croirait à jour un contenu qu'elle vient d'écraser.
+function viderCacheHUD(){ _hudCache.clear(); }
+function setTxt(id,v){
+  if(_hudCache.get(id)===v) return;
+  _hudCache.set(id,v);
+  const el=document.getElementById(id); if(el) el.textContent=v;
+}
+function setHtml(id,v){
+  const k='h:'+id;
+  if(_hudCache.get(k)===v) return;
+  _hudCache.set(k,v);
+  const el=document.getElementById(id); if(el) el.innerHTML=v;
+}
+function setCls(id,v){
+  const k='c:'+id;
+  if(_hudCache.get(k)===v) return;
+  _hudCache.set(k,v);
+  const el=document.getElementById(id); if(el) el.className=v;
+}
+
 function updateHUD(){
-  document.getElementById('vfood').textContent=G.res.food|0;
-  document.getElementById('vwood').textContent=G.res.wood|0;
-  document.getElementById('vstone').textContent=G.res.stone|0;
-  document.getElementById('vgold').textContent=G.res.gold|0;
-  document.getElementById('vpop').textContent=G.pop;
-  document.getElementById('vmaxpop').textContent=G.maxPop;
+  setTxt('vfood',G.res.food|0);
+  setTxt('vwood',G.res.wood|0);
+  setTxt('vstone',G.res.stone|0);
+  setTxt('vgold',G.res.gold|0);
+  setTxt('vpop',G.pop);
+  setTxt('vmaxpop',G.maxPop);
   // Taux par seconde
-  const setRate=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v>0?`+${v}`:''; };
+  const setRate=(id,v)=>setTxt(id,v>0?`+${v}`:'');
   setRate('rfood',G.rateShow.food); setRate('rwood',G.rateShow.wood);
   setRate('rstone',G.rateShow.stone); setRate('rgold',G.rateShow.gold);
-  // Badge villageois inactifs
-  const idleCount=G.units.filter(u=>estLocal(u)&&u.type===UT.VIL&&u.state==='idle').length;
-  document.getElementById('vidle').textContent=idleCount;
-  const btn=document.getElementById('idlebtn-inner');
-  btn.className=idleCount>0?'active':'zero';
+  // Badge villageois inactifs — compté sans allouer de tableau intermédiaire
+  let idleCount=0;
+  for(const u of G.units) if(u.type===UT.VIL&&u.state==='idle'&&estLocal(u)) idleCount++;
+  setTxt('vidle',idleCount);
+  setCls('idlebtn-inner',idleCount>0?'active':'zero');
   // Barre d'âge
   updateAgeBar();
   updateBandeauAdverse();
@@ -10877,6 +11321,7 @@ function showGameOver(){
 // ── VITESSE DE JEU ────────────────────────────────────────
 function setSpeed(s){
   if(reseauActif()) s=1; // vitesse verrouillee en ligne : les deux camps doivent voir le meme temps
+  s=Math.max(1,Math.min(2,s)); // x3 retiré (charge trop lourde à forte population) : x2 reste le plafond
   G.speed=s;
   document.querySelectorAll('.spd-btn').forEach(b=>{
     b.classList.toggle('on', +b.dataset.spd===s);
@@ -10906,24 +11351,22 @@ function tryAgeUp(){
 window.tryAgeUp=tryAgeUp;
 
 function updateAgeBar(){
-  const btn=document.getElementById('agebtn');
-  const wt=document.getElementById('wtarget');
-  if(wt) wt.textContent=G.targetWaves>=9999?'∞':G.targetWaves;
+  setTxt('wtarget',G.targetWaves>=9999?'∞':G.targetWaves);
   if(G.ageUpQ){
     const pct=Math.round((1-G.ageUpQ.timer/G.ageUpQ.total)*100);
-    btn.innerHTML=`${iconImg('⏳',14)} ${iconImg(AGES[G.age+1].ico,14)} ${pct}%`;
-    btn.className='';
+    setHtml('agebtn',`${iconImg('⏳',14)} ${iconImg(AGES[G.age+1].ico,14)} ${pct}%`);
+    setCls('agebtn','');
     return;
   }
   if(G.age>=AGES.length-1){
-    btn.innerHTML=`${iconImg(AGES[G.age].ico,14)} ${AGES[G.age].nom}`;
-    btn.className='maxage';
+    setHtml('agebtn',`${iconImg(AGES[G.age].ico,14)} ${AGES[G.age].nom}`);
+    setCls('agebtn','maxage');
     return;
   }
   const next=AGES[G.age+1];
   const ready=canAfford(next.cost);
-  btn.innerHTML=`${iconImg(AGES[G.age].ico,14)} ${AGES[G.age].nom} → ${iconImg(next.ico,14)}`;
-  btn.className=ready?'ready':'';
+  setHtml('agebtn',`${iconImg(AGES[G.age].ico,14)} ${AGES[G.age].nom} → ${iconImg(next.ico,14)}`);
+  setCls('agebtn',ready?'ready':'');
 }
 
 // ── ZOOM ──────────────────────────────────────────────────
@@ -10958,9 +11401,18 @@ let _uiRefreshCd=0;
 let _sprDirty=0;
 function markSpritesDirty(){ _sprDirty=0.18; }
 function updateSpriteRebuild(dt){
+  // Une seule étape par IMAGE affichée, et non par pas de simulation : à la
+  // vitesse ×3 la boucle appelle update() trois fois avant de rendre, ce qui
+  // reconstituerait un gros bloc de travail dans la même image.
+  if(_atlasEtapes){
+    if(_atlasDerniereImage!==_frameId){ _atlasDerniereImage=_frameId; avancerAtlas(); }
+    return;
+  }
   if(_sprDirty<=0) return;
   _sprDirty-=dt;
-  if(_sprDirty<=0 && SPR.refT!==TILE) buildSprites();
+  if(_sprDirty>0) return;
+  const rung=sprRungFor(TILE);
+  if(SPR.refT!==rung) demarrerAtlas(rung);
 }
 
 // ── ZOOM ──────────────────────────────────────────────────
@@ -10968,6 +11420,28 @@ function updateSpriteRebuild(dt){
 const TILE_MIN=Math.round(BASE_TILE*0.45);
 const TILE_MAX=Math.round(BASE_TILE*1.7);
 function zoomScaleNow(){ return TILE/BASE_TILE; }
+
+// ── BARREAUX D'ECHELLE DES SPRITES ──────────────────────────
+// L'atlas n'est plus regenere pour le TILE exact mais pour le barreau le plus
+// proche d'une echelle geometrique de raison 1,25 ancree sur BASE_TILE. Un
+// cran de molette vaut ~12 % : sans quantification, chaque cran declenchait
+// une regeneration complete. Entre deux barreaux, tout le rendu passe deja
+// par le facteur k=TILE/SPR.refT (voir drawBuildings/drawNodes/drawUnits) et
+// l'ecart residuel — au pire ~11 % sur des sprites generes en 3× puis lisses
+// — ne se voit pas.
+const SPR_RUNGS=(()=>{
+  const a=[BASE_TILE];
+  for(let t=BASE_TILE/1.25;t>TILE_MIN;t/=1.25) a.push(Math.round(t));
+  for(let t=BASE_TILE*1.25;t<TILE_MAX;t*=1.25) a.push(Math.round(t));
+  a.push(TILE_MIN,TILE_MAX);
+  return [...new Set(a)].sort((x,y)=>x-y);
+})();
+function sprRungFor(t){
+  t=Math.max(TILE_MIN,Math.min(TILE_MAX,t));
+  let best=SPR_RUNGS[0], bd=Infinity;
+  for(const r of SPR_RUNGS){ const d=Math.abs(Math.log(r/t)); if(d<bd){ bd=d; best=r; } }
+  return best;
+}
 
 // Change la taille de tuile en gardant un point d'écran ancré sous le doigt.
 function applyZoomToTile(targetT,anchorSX,anchorSY){
@@ -11827,12 +12301,21 @@ function mpVerrouillerVitesse(){
 // \u2500\u2500 BANDEAU ADVERSE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 // Nom, teinte, age, population \u2014 jamais les ressources : c'est la seule
 // information que le brouillard de guerre ne cache pas deja.
+// Même principe que updateHUD : en solo (le cas le plus courant) ce bandeau
+// est masqué en permanence, et il ne servait à rien d'aller réécrire son
+// style et cinq champs de texte soixante fois par seconde.
+let _bandeauEtat='';
 function updateBandeauAdverse(){
   const el=document.getElementById('mp-adv-bar');
   if(!el) return;
-  if(!reseauActif()||!RESEAU.adversaire){ el.style.display='none'; return; }
-  const f=G.factions[RESEAU.adversaire.id];
-  if(!f){ el.style.display='none'; return; }
+  const f=(reseauActif()&&RESEAU.adversaire)?G.factions[RESEAU.adversaire.id]:null;
+  if(!f){
+    if(_bandeauEtat!=='off'){ _bandeauEtat='off'; el.style.display='none'; }
+    return;
+  }
+  const etat=[f.nom||RESEAU.adversaire.nom||'Adversaire',f.teinte,f.age,f.pop,f.maxPop,f.vaincu?1:0].join('|');
+  if(_bandeauEtat===etat) return;
+  _bandeauEtat=etat;
   el.style.display='flex';
   el.querySelector('.mpa-nom').textContent=f.nom||RESEAU.adversaire.nom||'Adversaire';
   el.querySelector('.mpa-teinte').style.background=(COUL_FACTION[f.teinte]||COUL_FACTION.rouge)[0];
@@ -12726,6 +13209,8 @@ async function loadGame(key=SAVE_KEY){
                 // sans le zoom exact peut placer la caméra hors de la carte
     G.gameTime=data.gameTime||0; G.targetWaves=data.targetWaves||20; G.victory=data.victory||false;
     G.tiles=data.tiles; G.bmap=data.bmap;
+    invalidateTerrainChunks(); // les pavés en cache décrivent la carte précédente
+    _mmFondVer=-1;             // idem pour le fond de mini-carte
     // Compat : brouillard absent (très vieille sauvegarde) = tout révélé
     for(const f of factionsHumaines()){
       if(f.fog&&f.fog.length) continue;

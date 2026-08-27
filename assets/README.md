@@ -36,3 +36,19 @@ séparés par `_`. Exemples :
 
 Tant qu'un fichier n'existe pas ici, le jeu continue d'utiliser le rendu
 procédural existant (aucune régression).
+
+## État : couverture complète
+
+Toutes les catégories prévues sont fournies — 4 icônes de ressources, 21
+bâtiments, 18 unités, 6 gisements de carte, 2 animaux, 2 objets uniques.
+`effets/` reste volontairement vide : particules et projectiles sont trop
+brefs à l'écran pour qu'une illustration s'y voie.
+
+Une seule image par type suffit : elle sert aussi à toutes les variantes du
+bâtiment (habillages d'âge, niveaux de tour, portail ouvert). Inutile donc de
+produire `centre_ville_age2.png` ou `tour_niveau3.png`.
+
+Le fond quasi-blanc est détouré automatiquement par flood fill depuis les
+bords, puis l'image est recadrée sur son contenu. Ce traitement n'est fait
+**qu'une fois par partie** et mis en cache — inutile de fournir des PNG déjà
+détourés, mais un fond bien uniforme donne un meilleur résultat.

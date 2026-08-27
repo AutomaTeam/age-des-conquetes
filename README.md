@@ -43,10 +43,35 @@ Le mode se choisit sur l'écran-titre, en plus de la difficulté.
 - Groupes de contrôle : `Ctrl+1..9` assigne la sélection courante, `1..9` la
   rappelle, un second appui rapide sur le même chiffre recentre la caméra
   dessus (fiable au clavier AZERTY comme QWERTY).
+- Plafond de population : **300 par camp**, à tous les âges — de quoi mener
+  de vraies batailles rangées. La vitesse de jeu se règle sur ×1 ou ×2
+  (le ×3 a été retiré : trop lourd à forte population).
+- Adversaires IA qui **continuent de croître toute la partie** : leur objectif
+  d'économie monte avec le temps au lieu de plafonner après cinq minutes, ils
+  enchaînent les montées d'âge et leurs assauts grossissent à chaque vague.
 
 Le rendu (bâtiments, unités, icônes) est généré en pixel art par code
 directement en `<canvas>` — et progressivement enrichi par des illustrations
 IA en surcouche (voir *Assets illustrés* ci-dessous).
+
+## Performances
+
+Le jeu vise 60 images/seconde sur une carte de 240×240 cases avec plusieurs
+centaines d'unités. Quatre caches portent l'essentiel du travail :
+
+- **Détourage des illustrations** — fait une fois par planche et par
+  résolution de travail, jamais rejoué au zoom.
+- **Atlas de sprites** — régénéré seulement sur des barreaux d'échelle
+  discrets (et non pour chaque cran de molette), par étapes réparties sur
+  plusieurs images, avec bascule atomique : aucune image ne montre un atlas
+  à moitié reconstruit.
+- **Sol par pavés** — l'herbe et les lisérés de rive sont statiques, donc
+  pré-rendus par pavés de 8×8 cases ; seule l'eau, animée, est repeinte à
+  chaque image.
+- **Fond de mini-carte** — recalculé au rythme du brouillard de guerre (cinq
+  fois par seconde) au lieu de balayer les 57 600 cases à chaque image.
+
+Le HUD n'écrit dans le DOM que lorsqu'une valeur affichée change réellement.
 
 ## Assets illustrés (surcouche optionnelle sur le rendu procédural)
 
@@ -59,12 +84,25 @@ possible** : tant qu'un fichier est absent, le sprite procédural déjà en plac
 reste utilisé tel quel — le jeu fonctionne à l'identique sans le dossier
 `assets/`.
 
-Couverts à ce jour : les 4 icônes de ressources (bois, pierre, or,
-nourriture), les bâtiments Centre Ville / Maison / Ferme / Caserne / Mur
-Palissade / Tour Défensive / Château Fort (forme de base uniquement — les
-variantes d'âge du Mur et de niveau de la Tour restent procédurales), et les
-unités Villageois / Milicien. Voir `assets/README.md` pour la convention de
-nommage et le format attendu.
+**Couverture complète** à ce jour : les 4 icônes de ressources, les 21
+bâtiments, les 18 unités, les 6 gisements de la carte (arbre, pierre, or,
+baies, poisson, viande), la faune (cerf, sanglier) et les objets uniques
+(relique, caravane). Seuls les effets ponctuels (particules, projectiles)
+restent volontairement procéduraux : trop brefs pour justifier une
+illustration. Voir `assets/README.md` pour la convention de nommage et le
+format attendu.
+
+L'illustration d'un bâtiment couvre **toutes ses variantes** — habillages
+d'âge du Centre Ville / de la Caserne / du Mur, niveaux de la Tour, portail
+ouvert. Conséquence assumée : ces bâtiments ne changent plus d'aspect en
+montant d'âge (il n'existe qu'une illustration par type). Le Portail ouvert
+fait exception et reste distinct, peint en translucide : c'est un état de jeu
+— on passe ou on ne passe pas — pas une simple coquetterie.
+
+Le détourage de chaque planche n'est fait **qu'une seule fois par partie** et
+mis en cache : c'est de loin l'opération la plus coûteuse du pipeline de
+sprites, et la rejouer à chaque changement de zoom gelait le jeu plus d'une
+seconde par cran de molette.
 
 ## Connexion Google (compte unique — sauvegarde cloud + multijoueur)
 

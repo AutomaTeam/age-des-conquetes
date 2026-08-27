@@ -4119,6 +4119,61 @@ function upgradeResourceNodes(){
   }
 }
 
+// ── SURCOUCHE : faune sauvage illustrée (Cerf, Sanglier) ──────────────
+// même principe que les gisements (voir upgradeResourceNodes) : un seul
+// fichier par type (pas de variantes à casser ici, une seule pose chacun),
+// détouré et ancré au sol via fitNodeImage (silhouette basse à pattes
+// visibles, même ancrage ~0.82 que les gisements courts).
+const WILDLIFE_SPRITE_FILES={ deer:'cerf', boar:'sanglier' };
+const WILDLIFE_GROUND_FRAC=0.82;
+const WILDLIFE_IMG_CACHE={};
+function upgradeWildlifeSprites(){
+  for(const type in WILDLIFE_SPRITE_FILES){
+    const apply=(img)=>{
+      try{
+        const meta=SPR.wildlife[type]; if(!meta) return;
+        SPR.wildlife[type]=Object.assign({},meta,fitNodeImage(img,meta.c.width,WILDLIFE_GROUND_FRAC));
+      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
+    };
+    const cached=WILDLIFE_IMG_CACHE[type];
+    if(cached==='error') continue;
+    if(cached){ apply(cached); continue; }
+    const img=new Image();
+    img.onload=()=>{ WILDLIFE_IMG_CACHE[type]=img; apply(img); };
+    img.onerror=()=>{ WILDLIFE_IMG_CACHE[type]='error'; };
+    img.src='assets/unites/'+WILDLIFE_SPRITE_FILES[type]+'.png';
+  }
+}
+
+// ── SURCOUCHE : objets uniques illustrés (Relique, Caravane) ──────────
+// Ni bâtiment/unité/gisement à proprement parler : SPR.relic et SPR.caravan
+// sont chacun un objet {c,cx,S} unique (pas de variantes, pas de tableau
+// par type) construit une seule fois par buildSprites(). Même détourage/
+// ancrage via fitNodeImage que les gisements.
+const SINGLETON_SPRITE_FILES={
+  relic:  { file:'ressources/relique', frac:0.86 },
+  caravan:{ file:'unites/caravane',    frac:0.86 },
+};
+const SINGLETON_IMG_CACHE={};
+function upgradeSingletonSprites(){
+  for(const key in SINGLETON_SPRITE_FILES){
+    const{file,frac}=SINGLETON_SPRITE_FILES[key];
+    const apply=(img)=>{
+      try{
+        const meta=SPR[key]; if(!meta) return;
+        SPR[key]=Object.assign({},meta,fitNodeImage(img,meta.c.width,frac));
+      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
+    };
+    const cached=SINGLETON_IMG_CACHE[key];
+    if(cached==='error') continue;
+    if(cached){ apply(cached); continue; }
+    const img=new Image();
+    img.onload=()=>{ SINGLETON_IMG_CACHE[key]=img; apply(img); };
+    img.onerror=()=>{ SINGLETON_IMG_CACHE[key]='error'; };
+    img.src='assets/'+file+'.png';
+  }
+}
+
 // Monture pour la cavalerie (Chevalier / Paladin / Cavalier Noir) — dessinée
 // AVANT le cavalier (arrière-plan) : sans elle, ces unités n'étaient qu'un
 // rectangle brun accolé au torse, illisible comme "monté".
@@ -5121,11 +5176,13 @@ function buildSprites(){
   upgradeResourceNodes(); // remplacement asynchrone par les gisements illustrés, si dispo
   buildRelic(T);
   buildCaravan(T);
+  upgradeSingletonSprites(); // remplacement asynchrone par la relique/caravane illustrées, si dispo
   buildBuildings(T);
   upgradeBuildingSprites(); // remplacement asynchrone par les bâtiments illustrés, si dispo
   buildUnits(T);
   upgradeUnitSprites(); // remplacement asynchrone par les unités illustrées, si dispo
   buildWildlife(T);
+  upgradeWildlifeSprites(); // remplacement asynchrone par la faune illustrée, si dispo
   buildShadow();
   buildGlow();
   buildMacro();

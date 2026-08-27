@@ -44,9 +44,16 @@ bâtiments, 18 unités, 6 gisements de carte, 2 animaux, 2 objets uniques.
 `effets/` reste volontairement vide : particules et projectiles sont trop
 brefs à l'écran pour qu'une illustration s'y voie.
 
-Une seule image par type suffit : elle sert aussi à toutes les variantes du
-bâtiment (habillages d'âge, niveaux de tour, portail ouvert). Inutile donc de
-produire `centre_ville_age2.png` ou `tour_niveau3.png`.
+Une seule image par type suffit par défaut : elle sert aussi à toutes les
+variantes du bâtiment (habillages d'âge, niveaux de tour, portail ouvert).
+Inutile donc de produire `caserne_age2.png` ou `tour_niveau3.png`.
+
+Exception : un bâtiment listé dans `BLD_AGE_SPRITE_FILES` (index.html) prend
+une illustration **dédiée par palier d'âge** plutôt que de réutiliser la forme
+de base. Convention de nommage : `<nom>_age1.png` (Féodal), `_age2.png`
+(Châteaux), `_age3.png` (Impérial) — l'Âge Sombre reste le fichier de base
+sans suffixe. Actuellement seul `centre_ville` en bénéficie
+(`centre_ville_age1/2/3.png`).
 
 Le fond quasi-blanc est détouré automatiquement par flood fill depuis les
 bords, puis l'image est recadrée sur son contenu. Ce traitement n'est fait

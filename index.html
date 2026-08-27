@@ -3286,6 +3286,16 @@ function buildBuildings(T,i0,i1){
 // procédurales tant qu'elles n'ont pas leur propre illustration.
 const BLD_SPRITE_FILES={ [BT.HOUSE]:'maison', [BT.FARM]:'ferme', [BT.BARRACKS]:'caserne', [BT.TC]:'centre_ville', [BT.WALL]:'mur', [BT.TOWER]:'tour', [BT.CASTLE]:'chateau', [BT.GATE]:'portail', [BT.MARKET]:'marche', [BT.SIEGE]:'atelier_siege', [BT.OUTPOST]:'avant_poste', [BT.UNIV]:'universite', [BT.DOCK]:'quai', [BT.MILL]:'moulin', [BT.LUMBER]:'camp_bois', [BT.MINE]:'camp_minier', [BT.STABLE]:'ecurie', [BT.MONASTERY]:'monastere', [BT.FORGE]:'forge', [BT.HLM]:'hlm', [BT.WONDER]:'merveille' };
 
+// Illustrations DÉDIÉES par palier d'âge (1 = Féodal, 2 = Châteaux, 3 =
+// Impérial), en plus de la forme de base (âge 0, ci-dessus) — pour les
+// bâtiments où la progression visuelle d'âge est assez lue pour mériter sa
+// propre image plutôt que de réutiliser celle de l'âge précédent. Un type
+// absent d'ici garde le comportement par défaut : la même illustration à
+// tous les âges (voir upgradeBuildingSprites).
+const BLD_AGE_SPRITE_FILES={
+  [BT.TC]: { 1:'centre_ville_age1', 2:'centre_ville_age2', 3:'centre_ville_age3' },
+};
+
 // Détoure le fond (même flood fill que les icônes, voir stripBgTrimmed),
 // puis insère le résultat sans déformation (« contain »), ancré en bas et
 // centré horizontalement dans un canvas de dimensions (W,H) identiques au
@@ -3350,16 +3360,42 @@ function upgradeBuildingSprites(){
       // qu'à l'Âge Sombre. Le canvas est partagé entre variantes : elles
       // portent la même image, inutile d'en garder plusieurs copies.
       const prefixe=type+'_';
+      // Âges qui ont leur PROPRE illustration (voir BLD_AGE_SPRITE_FILES) :
+      // ce recouvrement générique doit leur laisser la place. Sans cette
+      // exclusion, un cas de course réel se produisait : si le fichier de
+      // base finit de charger APRÈS celui d'un âge (ordre d'arrivée réseau
+      // non garanti, chaque withIllustration() ne fixe l'ordre que du
+      // DÉCLENCHEMENT, pas de la RÉSOLUTION), ce recouvrement écrasait
+      // après coup l'illustration dédiée déjà appliquée.
+      const agesDedies=BLD_AGE_SPRITE_FILES[type]||{};
       for(const cle in SPR.bld){
         if(cle!==type&&!cle.startsWith(prefixe)) continue;
         const m=SPR.bld[cle];
         if(!m||m.c.width!==W||m.c.height!==H) continue;
+        const mAge=cle.match(/^.+_A(\d)(_E)?$/);
+        if(mAge&&agesDedies[mAge[1]]) continue;
         const estE=cle.endsWith('_E');
         const estOuvert=cle.startsWith(type+'_OPEN');
         SPR.bld[cle]=Object.assign({},m,
           estOuvert?(estE?ouvertE:ouvert):(estE?fittedE:fitted));
       }
     });
+    // Illustrations dédiées par âge, si ce type en a (voir
+    // BLD_AGE_SPRITE_FILES) : chargées à part, elles écrasent le repli
+    // ci-dessus (même image à tous les âges) une fois prêtes — l'ordre entre
+    // les deux n'a pas d'importance, chacune ne touche que ses propres clés.
+    const ageFiles=BLD_AGE_SPRITE_FILES[type];
+    if(ageFiles) for(const age in ageFiles){
+      withIllustration('assets/batiments/'+ageFiles[age]+'.png',TRIM_W_BLD,(url)=>{
+        const cle=type+'_A'+age, cleE=cle+'_E';
+        const meta=SPR.bld[cle]; if(!meta) return;
+        const W=meta.c.width, H=meta.c.height;
+        const fitted=fitBuildingImage(url,W,H); if(!fitted) return;
+        SPR.bld[cle]=Object.assign({},meta,fitted);
+        const metaE=SPR.bld[cleE];
+        if(metaE) SPR.bld[cleE]=Object.assign({},metaE,tintEnemyBuilding(fitted,W,H));
+      });
+    }
   }
 }
 

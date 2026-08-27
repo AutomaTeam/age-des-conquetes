@@ -92,12 +92,18 @@ restent volontairement procéduraux : trop brefs pour justifier une
 illustration. Voir `assets/README.md` pour la convention de nommage et le
 format attendu.
 
-L'illustration d'un bâtiment couvre **toutes ses variantes** — habillages
-d'âge du Centre Ville / de la Caserne / du Mur, niveaux de la Tour, portail
-ouvert. Conséquence assumée : ces bâtiments ne changent plus d'aspect en
-montant d'âge (il n'existe qu'une illustration par type). Le Portail ouvert
-fait exception et reste distinct, peint en translucide : c'est un état de jeu
-— on passe ou on ne passe pas — pas une simple coquetterie.
+L'illustration d'un bâtiment couvre **toutes ses variantes** par défaut —
+habillages d'âge de la Caserne et du Mur, niveaux de la Tour, portail ouvert.
+Conséquence assumée : ces bâtiments ne changent pas d'aspect en montant d'âge
+(une seule illustration par type). Le Portail ouvert fait exception et reste
+distinct, peint en translucide : c'est un état de jeu — on passe ou on ne
+passe pas — pas une simple coquetterie.
+
+Le **Centre Ville** a, lui, une illustration **dédiée par palier d'âge** (Âge
+Sombre / Féodal / Châteaux / Impérial), pour que le bâtiment le plus visible
+de la carte montre vraiment la progression de la partie. Voir
+`BLD_AGE_SPRITE_FILES` dans `index.html` pour ajouter cette même couverture
+à un autre bâtiment.
 
 Le détourage de chaque planche n'est fait **qu'une seule fois par partie** et
 mis en cache : c'est de loin l'opération la plus coûteuse du pipeline de

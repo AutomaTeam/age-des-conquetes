@@ -3222,7 +3222,7 @@ function buildBuildings(T){
 // « âge 0 / niveau 1 » de chaque bâtiment : les variantes d'âge (Centre
 // Ville, Caserne, Mur passé Âge Sombre) et de niveau (Tour) restent
 // procédurales tant qu'elles n'ont pas leur propre illustration.
-const BLD_SPRITE_FILES={ [BT.HOUSE]:'maison', [BT.FARM]:'ferme', [BT.BARRACKS]:'caserne', [BT.TC]:'centre_ville', [BT.WALL]:'mur', [BT.TOWER]:'tour', [BT.CASTLE]:'chateau' };
+const BLD_SPRITE_FILES={ [BT.HOUSE]:'maison', [BT.FARM]:'ferme', [BT.BARRACKS]:'caserne', [BT.TC]:'centre_ville', [BT.WALL]:'mur', [BT.TOWER]:'tour', [BT.CASTLE]:'chateau', [BT.GATE]:'portail', [BT.MARKET]:'marche', [BT.SIEGE]:'atelier_siege', [BT.OUTPOST]:'avant_poste', [BT.UNIV]:'universite', [BT.DOCK]:'quai', [BT.MILL]:'moulin', [BT.LUMBER]:'camp_bois', [BT.MINE]:'camp_minier', [BT.STABLE]:'ecurie', [BT.MONASTERY]:'monastere', [BT.FORGE]:'forge', [BT.HLM]:'hlm', [BT.WONDER]:'merveille' };
 
 // Détoure le fond (même flood fill que les icônes, voir stripBgTrimmed),
 // puis insère le résultat sans déformation (« contain »), ancré en bas et
@@ -4026,7 +4026,10 @@ function buildUnits(T){
 // les deux frames de foulée (_W1/_W2) par la même image : seul le
 // bobbing vertical anime encore la marche, mais aucune bascule visuelle
 // disparate entre une pose dessinée et une pose illustrée à chaque pas.
-const UNIT_SPRITE_FILES={ [UT.VIL]:'villageois', [UT.MIL]:'milicien' };
+const UNIT_SPRITE_FILES={ [UT.VIL]:'villageois', [UT.MIL]:'milicien', [UT.ARC]:'archer', [UT.KNIGHT]:'chevalier',
+  [UT.MONK]:'moine', [UT.PALADIN]:'paladin', [UT.PIKE]:'piquier', [UT.XBOW]:'arbaletrier',
+  [UT.SCOUT]:'eclaireur', [UT.HERO]:'heros', [UT.BOAT]:'barque', [UT.TREB]:'trebuchet', [UT.RAM]:'belier',
+  [UT.ENEMI]:'pillard', [UT.ENEMIA]:'archer_pillard', [UT.ENEMI_G]:'geant', [UT.ENEMI_C]:'cavalier_noir', [UT.ENEMI_BOSS]:'seigneur_guerre' };
 
 // Détoure (même flood fill que les bâtiments) et centre horizontalement,
 // ancré un peu au-dessus du bas du canvas carré S×S — c'est là que

@@ -4065,6 +4065,60 @@ function upgradeUnitSprites(){
   }
 }
 
+// ── SURCOUCHE : gisements/ressources de la carte illustrés ────────────
+// même principe que bâtiments/unités (voir upgradeBuildingSprites) :
+// chargement asynchrone depuis assets/ressources/, échec silencieux,
+// sprite procédural conservé tant que le fichier n'existe pas. Chaque type
+// de nœud (arbre, pierre, or, baies, poisson, viande) a plusieurs variantes
+// procédurales dans SPR[type] (cassent la répétition visuelle sur la
+// carte) ; l'illustration remplace TOUTES les variantes d'un type par la
+// même image, comme pour les frames de marche des unités — un seul fichier
+// par type suffit, pas la peine de générer 3-5 variantes par ressource.
+const NODE_SPRITE_FILES={ tree:'arbre', stone:'gisement_pierre', gold:'gisement_or', berry:'buisson_baies', fish:'banc_poissons', meat:'viande' };
+
+// Ancrage au sol différent de fitUnitImage : l'Arbre est bien plus haut que
+// large (tronc + canopée, socle vers 95% du canvas) tandis que les gisements
+// de pierre/or/baies/poisson/viande sont posés bas avec une ombre large vers
+// 78-80% (voir buildStoneNode/buildGoldNode/etc.) — ancrer l'Arbre à 0.8
+// comme les autres le ferait flotter au-dessus du sol.
+const NODE_GROUND_FRAC={ tree:0.95, stone:0.8, gold:0.8, berry:0.78, fish:0.78, meat:0.78 };
+
+function fitNodeImage(img,S,groundFrac){
+  const{c:wc,minX,minY,bw,bh}=stripBgTrimmed(img,Math.min(500,img.width));
+  const{c,cx}=offCanvas(S,S);
+  const scale=Math.min(S*0.9/bw,S*0.9/bh);
+  const dw=bw*scale,dh=bh*scale;
+  cx.drawImage(wc,minX,minY,bw,bh,(S-dw)/2,S*groundFrac-dh,dw,dh);
+  return{c,cx};
+}
+
+// Cache les <img> décodées : buildSprites() (donc buildTrees/buildStoneNode/
+// etc.) est régénéré à chaque changement de zoom, sans ce cache l'image
+// illustrée ne survivrait pas au premier zoom (même bug déjà rencontré et
+// corrigé pour les bâtiments, voir BLD_IMG_CACHE).
+const NODE_IMG_CACHE={};
+function upgradeResourceNodes(){
+  for(const type in NODE_SPRITE_FILES){
+    const gf=NODE_GROUND_FRAC[type];
+    const apply=(img)=>{
+      try{
+        const arr=SPR[type]; if(!arr||!arr.length) return;
+        for(let i=0;i<arr.length;i++){
+          const meta=arr[i]; if(!meta) continue;
+          arr[i]=Object.assign({},meta,fitNodeImage(img,meta.c.width,gf));
+        }
+      }catch(e){ /* canvas « taint » ou autre échec : sprite procédural conservé */ }
+    };
+    const cached=NODE_IMG_CACHE[type];
+    if(cached==='error') continue;
+    if(cached){ apply(cached); continue; }
+    const img=new Image();
+    img.onload=()=>{ NODE_IMG_CACHE[type]=img; apply(img); };
+    img.onerror=()=>{ NODE_IMG_CACHE[type]='error'; };
+    img.src='assets/ressources/'+NODE_SPRITE_FILES[type]+'.png';
+  }
+}
+
 // Monture pour la cavalerie (Chevalier / Paladin / Cavalier Noir) — dessinée
 // AVANT le cavalier (arrière-plan) : sans elle, ces unités n'étaient qu'un
 // rectangle brun accolé au torse, illisible comme "monté".
@@ -5064,6 +5118,7 @@ function buildSprites(){
   buildBerry(T);
   buildFish(T);
   buildMeat(T);
+  upgradeResourceNodes(); // remplacement asynchrone par les gisements illustrés, si dispo
   buildRelic(T);
   buildCaravan(T);
   buildBuildings(T);

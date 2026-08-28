@@ -59,11 +59,8 @@ Un bâtiment listé dans `BLD_CIV_SPRITE_FILES` (index.html) prend en plus une
 illustration **dédiée par civilisation**, croisée avec les âges ci-dessus.
 Convention : `<nom>_<civ>.png` (Âge Sombre), `<nom>_<civ>_age1/2/3.png`. La
 civilisation 'francs' n'a pas besoin d'entrée : elle utilise le style de
-base. État actuel pour `centre_ville` : `centre_ville_byzantins.png` et
-`centre_ville_byzantins_age1.png` faits ; `_age2`/`_age3`, ainsi que
-`centre_ville_chinois*` et `centre_ville_mongols*` (4 fichiers chacun),
-restent à générer — tant qu'ils manquent, le jeu affiche le style Francs
-pour ces civilisations à ces âges (repli automatique, sans erreur).
+base. `centre_ville` est **complet pour les 4 civilisations** (16 fichiers :
+base + byzantins/chinois/mongols × 4 âges chacun).
 
 Le fond quasi-blanc est détouré automatiquement par flood fill depuis les
 bords, puis l'image est recadrée sur son contenu. Ce traitement n'est fait

@@ -105,15 +105,19 @@ de la carte montre vraiment la progression de la partie. Voir
 `BLD_AGE_SPRITE_FILES` dans `index.html` pour ajouter cette même couverture
 à un autre bâtiment.
 
-Le Centre Ville a en plus une illustration **dédiée par civilisation** (les
-quatre camps jouables — Francs, Byzantins, Chinois, Mongols — ont chacun
-leur propre style architectural, croisé avec les quatre âges). Francs
-réutilise le style de base (château de pierre occidental) sans fichier à part.
-**En cours** : Byzantins (dôme et briques) a l'Âge Sombre et Féodal ;
-Châteaux/Impérial ainsi que Chinois et Mongols manquent encore — en leur
-absence, le jeu retombe proprement sur le style Francs (aucune régression,
-même principe que partout ailleurs dans cette surcouche). Voir
-`BLD_CIV_SPRITE_FILES` dans `index.html`.
+Le Centre Ville a en plus une illustration **dédiée par civilisation**, croisée
+avec les quatre âges — **complète pour les quatre camps jouables** :
+- **Francs** : château de pierre occidental (le style de base, sans fichier
+  à part — c'est déjà son identité).
+- **Byzantins** : dômes dorés, appareillage de brique, mosaïques, croix et
+  bannires pourpres.
+- **Chinois** : pagode à toits relevés (1 à 4 étages selon l'âge), bois
+  laqué rouge, dragons dorés, lanternes.
+- **Mongols** : yourte de feutre sur base fortifiée en bois, étendards en
+  queue de cheval, camp qui s'étend (plusieurs yourtes) aux âges avancés.
+
+Voir `BLD_CIV_SPRITE_FILES` dans `index.html` pour étendre cette couverture
+à un autre bâtiment.
 
 Le détourage de chaque planche n'est fait **qu'une seule fois par partie** et
 mis en cache : c'est de loin l'opération la plus coûteuse du pipeline de

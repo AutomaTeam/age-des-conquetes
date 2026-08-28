@@ -946,6 +946,273 @@ groupe('ia', () => {
   });
 });
 
+// ════════════════════════════════════════════════════════════
+// LE delta est la partie la plus fragile du jeu : il est différentiel, filtré
+// par le brouillard, et une divergence n'apparaît qu'en partie en ligne, chez
+// l'invité, plusieurs minutes après la cause. Le groupe `reseau` ne couvrait
+// que le SNAPSHOT — l'envoi initial — c'est-à-dire le cas facile.
+groupe('delta', () => {
+  // Monte une paire hôte/client réellement reliée : même graine, SNAP initial,
+  // puis flux de deltas. Le client ne simule JAMAIS (architecture hôte
+  // autoritaire) : tout ce qu'il sait vient du réseau.
+  function paireEnLigne({ graine = 4242, vueTotale = true } = {}) {
+    const hote = charger();
+    hote.RESEAU.actif = true; hote.RESEAU.role = 'hote';
+    hote.RESEAU.adversaire = { id: hote.FAC.P2, nom: 'Invité' };
+    hote.RESEAU.tick = 0;
+    partie(hote, { graine });            // initState voit RESEAU.actif → crée P2
+    ok(!!hote.G.factions[hote.FAC.P2], 'la faction invitée n\'a pas été créée');
+
+    // Vision complète pour l'invité : on teste alors la CONVERGENCE du delta,
+    // pas le filtrage par brouillard (qui a son propre test). À RÉAPPLIQUER
+    // avant chaque delta : `revealFog()` tourne dans update() et recalcule le
+    // brouillard de chaque faction à partir de ses seules unités — une vision
+    // posée une fois est effacée au pas suivant.
+    hote.voirTout = () => {
+      const p2 = hote.G.factions[hote.FAC.P2];
+      for (let y = 0; y < hote.ROWS; y++) for (let x = 0; x < hote.COLS; x++) p2.fog[y][x] = 2;
+    };
+    if (vueTotale) hote.voirTout();
+
+    const client = charger();
+    partie(client, { graine });
+    client.G.me = client.FAC.P2; client.G.hote = false;
+    if (vueTotale) hote.voirTout();
+    client.appliquerSnap(JSON.parse(JSON.stringify(hote.construireSnap())));
+    // Un « tour de réseau » : l'hôte construit, le client applique. Le passage
+    // par JSON n'est pas décoratif — c'est ce que fait le transport, et il
+    // attrape tout ce qui ne serait pas sérialisable.
+    const pousser = () => {
+      if (vueTotale) hote.voirTout();
+      client.appliquerDelta(JSON.parse(JSON.stringify(hote.construireDelta())));
+    };
+    // Le client tourne comme un VRAI client : `updateVisuel` a chaque pas
+    // (c'est ce que fait `loop()` quand estHote() est faux). Sans lui, les
+    // positions recues (`_netX`/`_netY`) ne sont jamais consommees et l'etat
+    // du client reste fige au SNAP — mon premier jet comparait donc un etat
+    // que personne n'avait rattrape.
+    const tourner = (n) => { for (let i = 0; i < n; i++) client.updateVisuel(client.SIM_DT); };
+    return { hote, client, pousser, tourner };
+  }
+
+  // Le client ne connaît que ce que l'hôte lui a envoyé : on ne compare donc
+  // que les entités présentes des DEUX côtés, en signalant les manquantes.
+  const etatUnites = (j) => new Map(j.G.units.filter((u) => u.hp > 0)
+    .map((u) => [u.id, [u.type, u.owner, Math.round(u.x), Math.round(u.y), u.hp, u.maxHp, u.state]]));
+  const etatBatiments = (j) => new Map(j.G.buildings
+    .map((b) => [b.id, [b.type, b.owner, b.hp, b.maxHp, +b.progress.toFixed(3), !!b.constructing, b.foodLeft, b.level, !!b.open]]));
+
+  test('convergence : après 60 s de jeu et un flux de deltas, le client voit l\'état de l\'hôte', () => {
+    const { hote, client, pousser, tourner } = paireEnLigne();
+    // 60 s de jeu, un delta tous les 10 pas (~3 Hz) — le jeu en emet 10 Hz.
+    for (let k = 0; k < 1800; k++) {
+      hote.update(hote.SIM_DT);
+      tourner(1);
+      if (k % 10 === 9) pousser();
+    }
+    // Laisse l'interpolation se poser : elle rattrape a 14 %/s, on ne compare
+    // donc pas la position au pixel pres (voir plus bas, TOLERANCE_POS).
+    tourner(90);
+    const H = etatUnites(hote), C = etatUnites(client);
+    const manquantes = [...H.keys()].filter((id) => !C.has(id));
+    egal(manquantes.length, 0, `${manquantes.length} unité(s) de l'hôte absentes chez le client`);
+    const enTrop = [...C.keys()].filter((id) => !H.has(id));
+    egal(enTrop.length, 0, `${enTrop.length} unité(s) fantômes chez le client (retrait non propagé)`);
+    // Position : tolerance assumee. Le client LISSE ce qu'il recoit
+    // (`updateVisuel` rattrape 14 %/s vers `_netX`/`_netY`) et l'hote ne
+    // renvoie pas un deplacement inferieur a SEUIL_POS. Exiger l'egalite au
+    // pixel testerait le lissage, pas la synchronisation.
+    const TOLERANCE_POS = 12;   // unites-monde, soit moins d'un tiers de tuile
+    const divergentes = [];
+    for (const id of H.keys()) {
+      const h = H.get(id), c = C.get(id);
+      const memeReste = JSON.stringify([h[0], h[1], h[4], h[5], h[6]]) === JSON.stringify([c[0], c[1], c[4], c[5], c[6]]);
+      const ecart = Math.hypot(h[2] - c[2], h[3] - c[3]);
+      if (!memeReste || ecart > TOLERANCE_POS) divergentes.push([id, h, c, Math.round(ecart)]);
+    }
+    if (divergentes.length) {
+      const [id, h, c, e] = divergentes[0];
+      throw new Error(`${divergentes.length} unite(s) divergentes — ex. #${id} hote ${JSON.stringify(h)} vs client ${JSON.stringify(c)} (ecart ${e})`);
+    }
+    const HB = etatBatiments(hote), CB = etatBatiments(client);
+    const bDiv = [...HB.keys()].filter((id) => JSON.stringify(HB.get(id)) !== JSON.stringify(CB.get(id)));
+    if (bDiv.length) {
+      const id = bDiv[0];
+      throw new Error(`${bDiv.length} bâtiment(s) divergents — ex. #${id} hôte ${JSON.stringify(HB.get(id))} vs client ${JSON.stringify(CB.get(id))}`);
+    }
+  });
+
+  test('convergence SOUS LE FEU : 80 unités qui se battent et qui meurent', () => {
+    // La partie calme ne prouve pas grand-chose : c'est en bataille que les
+    // désyncs apparaissent — retraits en rafale, PV qui changent à chaque
+    // pas, cibles qui tournent, projectiles. On force donc un vrai combat.
+    const { hote, client, pousser, tourner } = paireEnLigne();
+    const p1 = hote.FAC.P1, ia = hote.G.factions.ia;
+    const cx = hote.COLS * hote.BASE_TILE / 2, cy = hote.ROWS * hote.BASE_TILE / 2;
+    for (let i = 0; i < 40; i++) {
+      hote.G.units.push(hote.mkUnit(i % 3 ? hote.UT.MIL : hote.UT.ARC, cx - 120 + (i % 8) * 16, cy - 80 + ((i / 8) | 0) * 16, p1));
+      hote.G.units.push(hote.mkUnit(i % 3 ? hote.UT.ENEMI : hote.UT.ENEMIA, cx + 120 + (i % 8) * 16, cy - 80 + ((i / 8) | 0) * 16, ia.id));
+    }
+    hote.rebuildIndex();
+    const depart = hote.G.units.length;
+    for (let k = 0; k < 2400; k++) {
+      hote.update(hote.SIM_DT);
+      tourner(1);
+      if (k % 10 === 9) pousser();
+    }
+    tourner(90);
+    ok(hote.G.units.length < depart - 20, `trop peu de pertes (${depart} → ${hote.G.units.length}) : le combat n'a pas eu lieu`);
+    const H = etatUnites(hote), C = etatUnites(client);
+    egal([...H.keys()].filter((id) => !C.has(id)).length, 0, 'des unités de l\'hôte manquent chez le client');
+    egal([...C.keys()].filter((id) => !H.has(id)).length, 0, 'des unités mortes subsistent chez le client');
+    const pires = [];
+    for (const id of H.keys()) {
+      const h = H.get(id), c = C.get(id);
+      if (h[4] !== c[4] || h[5] !== c[5]) pires.push(`#${id} PV ${h[4]}/${h[5]} vs ${c[4]}/${c[5]}`);
+    }
+    egal(pires.length, 0, `PV divergents après bataille : ${pires.slice(0, 3).join(', ')}`);
+  });
+
+  test('convergence : les gisements entamés, les reliques et le gibier suivent', () => {
+    const { hote, client, pousser, tourner } = paireEnLigne();
+    for (let k = 0; k < 2400; k++) {
+      hote.update(hote.SIM_DT);
+      tourner(1);
+      if (k % 10 === 9) pousser();
+    }
+    const entames = hote.G.nodes.filter((n) => n.amt !== n.max);
+    ok(entames.length > 0, 'aucun gisement entamé en 80 s : le test ne prouverait rien');
+    for (const n of entames) {
+      const c = client.G.nodes.find((x) => x.id === n.id);
+      egal(c && c.amt, n.amt, `gisement #${n.id} désynchronisé`);
+    }
+    egal((client.G.wildlife || []).length, (hote.G.wildlife || []).length, 'gibier abattu non retiré chez le client');
+  });
+
+  test('M_MAXHP : un maxHp relevé RÉTROACTIVEMENT arrive bien chez le client', () => {
+    // Invariant n°6 du protocole : les recherches et les montées d'âge
+    // changent le maxHp d'unités DÉJÀ en jeu. Sans son bit dans le masque, le
+    // client garde celui du jour de leur création.
+    const { hote, client, pousser } = paireEnLigne();
+    const f = hote.G.factions[hote.FAC.P1];
+    const tc = hote.G.buildings.find((b) => b.type === hote.BT.TC && b.owner === hote.FAC.P1);
+    const u = hote.mkUnit(hote.UT.MIL, tc.x, tc.y, hote.FAC.P1);
+    hote.G.units.push(u); hote.rebuildIndex();
+    // Premier delta : le client découvre l'unité.
+    pousser();
+    const avant = client.G.units.find((x) => x.id === u.id);
+    ok(!!avant, 'l\'unité neuve n\'est pas parvenue au client');
+    egal(avant.maxHp, u.maxHp, 'maxHp initial déjà divergent');
+    // Montée d'âge : maxHp relevé rétroactivement côté hôte.
+    riche(hote, hote.FAC.P1);
+    ok(ordreDe(hote, hote.FAC.P1, 'AGE', {}).ok, 'montée d\'âge refusée');
+    for (let k = 0; k < 30 * 90; k++) { hote.update(hote.SIM_DT); if (f.age >= 1) break; }
+    egal(f.age, 1, 'âge non atteint');
+    ok(u.maxHp > avant.maxHp, 'le maxHp de l\'hôte n\'a pas bougé : le test ne prouverait rien');
+    pousser();
+    egal(client.G.units.find((x) => x.id === u.id).maxHp, u.maxHp, 'maxHp non propagé (bit M_MAXHP manquant ?)');
+  });
+
+  test('constructing et progress voyagent : un chantier achevé ne reste pas en travaux', () => {
+    // Le commentaire de construireDelta documente ce piège : déduire
+    // `constructing` de `progress>=1` côté client laissait le bâtiment en
+    // travaux à jamais, le dernier pas de chantier n'atteignant pas le seuil.
+    const { hote, client, pousser } = paireEnLigne();
+    riche(hote, hote.FAC.P1);
+    const p = caseLibre(hote, 60, 60, 2, 2);
+    const r = ordreDe(hote, hote.FAC.P1, 'BATIR', { type: hote.BT.BARRACKS, tx: p.tx, ty: p.ty });
+    ok(r.ok, 'construction refusée');
+    const b = r.b;
+    pousser();
+    egal(client.G.buildings.find((x) => x.id === b.id).constructing, true, 'le chantier n\'arrive pas en travaux');
+    b.progress = 1; b.constructing = false;      // fin de chantier côté hôte
+    pousser();
+    egal(client.G.buildings.find((x) => x.id === b.id).constructing, false, 'le bâtiment reste en travaux chez le client');
+  });
+
+  test('une unité morte est retirée chez le client', () => {
+    const { hote, client, pousser } = paireEnLigne();
+    const u = hote.G.units.find((x) => x.owner === hote.FAC.P1);
+    pousser();
+    ok(client.G.units.some((x) => x.id === u.id), 'unité absente avant la mort');
+    u.hp = 0;
+    for (let k = 0; k < 3; k++) hote.update(hote.SIM_DT);   // updateUnits purge les morts
+    pousser();
+    egal(client.G.units.some((x) => x.id === u.id), false, 'unité morte encore présente chez le client');
+  });
+
+  test('brouillard : le client ne reçoit PAS ce qu\'il ne voit pas', () => {
+    // Fuite d'information = triche : un invité qui lit G dans sa console
+    // verrait toute la carte. Le delta doit filtrer à la source.
+    const { hote, client } = paireEnLigne({ vueTotale: false });
+    const p2 = hote.G.factions[hote.FAC.P2];
+    for (let y = 0; y < hote.ROWS; y++) for (let x = 0; x < hote.COLS; x++) p2.fog[y][x] = 0;  // aveugle
+    // Une unité adverse, loin de tout ce que l'invité possède.
+    const ia = hote.G.factions.ia;
+    const espionne = hote.mkUnit(hote.UT.MIL, ia.baseX, ia.baseY, ia.id);
+    hote.G.units.push(espionne); hote.rebuildIndex();
+    const d = hote.construireDelta();
+    const dansNew = (d.newU || []).some((s) => s[0] === espionne.id || s.id === espionne.id || JSON.stringify(s).includes(String(espionne.id)));
+    egal(dansNew, false, 'une unité hors de la vue de l\'invité lui est envoyée');
+    client.appliquerDelta(JSON.parse(JSON.stringify(d)));
+    egal(client.G.units.some((x) => x.id === espionne.id), false, 'l\'invité connaît une unité qu\'il ne voit pas');
+  });
+
+  test('d.fac : les champs PRIVÉS ne partent pas à un camp d\'une autre équipe', () => {
+    // Invariant n°2 : `res`, `research`, files de production ne doivent
+    // partir qu'aux factions de l'équipe du destinataire. Les envoyer à
+    // l'adversaire, c'est lui montrer la caisse et l'arbre technologique.
+    const { hote, pousser } = paireEnLigne();
+    const p1 = hote.G.factions[hote.FAC.P1], p2 = hote.G.factions[hote.FAC.P2];
+    ok(p1.equipe !== p2.equipe, 'les deux camps sont dans la même équipe : le test ne prouverait rien');
+    pousser();
+    // Changer une valeur PRIVÉE de l'hôte ne doit même pas déclencher un
+    // envoi : le destinataire n'y a pas droit, donc sa vue de cette faction
+    // est inchangée. (Mon assertion initiale était fausse ici : j'attendais
+    // la faction dans le delta après avoir modifié son or.)
+    p1.res.gold = 12345;
+    egal(hote.construireDelta().fac, undefined, 'un changement privé déclenche un envoi de faction inutile');
+    // Quand un champ PUBLIC bouge, la faction repart — amputée du privé.
+    p1.pop += 1;
+    const facs = hote.construireDelta().fac || [];
+    const vueDeP1 = facs.find((f) => f.i === hote.FAC.P1);
+    ok(!!vueDeP1, 'la faction de l\'hôte ne repart pas malgré un changement public');
+    egal(vueDeP1.r, undefined, 'la caisse de l\'hôte est envoyée à son adversaire');
+    egal(vueDeP1.rc, undefined, 'l\'arbre de recherche de l\'hôte est envoyé à son adversaire');
+    egal(vueDeP1.rq, undefined, 'la file de recherche de l\'hôte est envoyée à son adversaire');
+    egal(vueDeP1.q, undefined, 'la montée d\'âge en cours de l\'hôte est envoyée à son adversaire');
+    // ...et le destinataire, lui, reçoit bien SA propre caisse.
+    p2.pop += 1;
+    const f2 = (hote.construireDelta().fac || []).find((f) => f.i === hote.FAC.P2);
+    ok(!!f2 && f2.r !== undefined, 'l\'invité ne reçoit pas sa propre caisse');
+  });
+
+  test('d.fac est DIFFÉRENTIEL : un delta au repos ne réexpédie pas les factions', () => {
+    // Invariant n°2 (bande passante) : cet objet pesait 2,1 Ko sur les 2,2 Ko
+    // d'un delta au repos, dix fois par seconde.
+    const { hote, client, pousser } = paireEnLigne();
+    pousser();
+    const d1 = hote.construireDelta();          // rien n'a changé entre les deux
+    egal(d1.fac, undefined, 'les factions repartent alors que rien n\'a bougé');
+    hote.G.factions[hote.FAC.P1].pop += 1;      // un champ PUBLIC change
+    const d2 = hote.construireDelta();
+    ok(Array.isArray(d2.fac) && d2.fac.length > 0, 'un changement de faction ne repart pas');
+  });
+
+  test('le delta reste sérialisable et modeste au repos', () => {
+    const { hote, client, pousser, tourner } = paireEnLigne();
+    for (let k = 0; k < 600; k++) {
+      hote.update(hote.SIM_DT);
+      tourner(1);
+      if (k % 10 === 9) pousser();
+    }
+    const d = hote.construireDelta();
+    egalJSON(d, JSON.parse(JSON.stringify(d)), 'delta non sérialisable');
+    const taille = JSON.stringify(d).length;
+    ok(taille < 20000, `delta de ${taille} octets : la compression différentielle a-t-elle sauté ?`);
+  });
+});
+
 // ── rapport ────────────────────────────────────────────────
 const cible = process.argv[2];
 const vus = cible ? resultats.filter((r) => r.groupe === cible) : resultats;

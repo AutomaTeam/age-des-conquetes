@@ -6,9 +6,9 @@ node tests/run.js
 
 Un groupe seul : `node tests/run.js reseau`.
 
-**57 tests, 12 groupes, ~25 s.** Le groupe `ia` compte pour le tiers du
-temps : il simule une vraie partie jusqu'au premier assaut, c'est le prix
-pour observer un comportement qui n'existe qu'apres plusieurs minutes.
+**67 tests, 13 groupes, ~32 s.** Les groupes `ia` et `delta` comptent pour
+l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
+observer des comportements qui n'existent qu'apres plusieurs minutes.
 
 Aucune dépendance, aucun `npm install`, aucun build — comme le jeu lui-même.
 Node 18+ suffit.
@@ -26,6 +26,13 @@ qui **ne se voit pas** :
   technologique, plafond de population, taux de troc forgé, ordre sur les
   unités d'un autre camp, démolition du Centre Ville…), pas les cas
   nominaux.
+- **`delta`** — le flux différentiel hôte → client, la partie la plus
+  fragile du jeu. Une paire hôte/client réellement reliée (même graine,
+  SNAP puis deltas) doit CONVERGER, y compris sous le feu : 80 unités qui se
+  battent et qui meurent. Couvre aussi le bit `M_MAXHP` (invariant n°6 :
+  un `maxHp` relevé rétroactivement doit voyager), le filtrage par
+  brouillard (une fuite d'information = triche) et le différentiel `d.fac`
+  (invariant n°2).
 - **`reseau`** — la sérialisation hôte → client. Une divergence n'apparaît
   qu'en partie en ligne, chez l'invité, et souvent plusieurs minutes après
   la cause. C'est le groupe le plus rentable : il a trouvé dès sa première
@@ -86,7 +93,7 @@ visible des tests ; une entrée absente d'`index.html` fait échouer le
 chargement avec un message explicite, plutôt que de laisser un test vérifier
 `undefined`.
 
-Cinq pièges rencontrés en écrivant ces tests, et qui reviendront :
+Sept pièges rencontrés en écrivant ces tests, et qui reviendront :
 
 1. **Les duels doivent opposer deux factions JUMELLES** (même genre, même
    civ, mêmes recherches). Opposer une escouade en marche d'attaque à une
@@ -104,7 +111,16 @@ Cinq pièges rencontrés en écrivant ces tests, et qui reviendront :
 4. **`placeBuilding` pousse lui-même dans `G.buildings`.** Ne jamais faire de
    `push` en plus : chaque bâtiment serait inséré deux fois avec le même id.
    Utiliser l'utilitaire `batir()`.
-5. **Un test qui ne peut pas échouer ne garde rien.** Le plafond des Moines
+5. **Le client N'EST PAS l'hôte : il faut le faire tourner.** `appliquerDelta`
+   ne pose pas les positions, il pose des CIBLES d'interpolation
+   (`_netX`/`_netY`) que `updateVisuel` consomme. Un test qui applique des
+   deltas sans appeler `updateVisuel` compare un état que personne n'a
+   rattrapé — et la position ne se compare donc jamais au pixel près
+   (résiduel mesuré : 0,71 unité-monde ; tolérance du test : 12).
+6. **`revealFog()` recalcule le brouillard à chaque pas.** Donner une vision
+   totale à un camp une seule fois ne tient pas : il faut la réappliquer
+   avant chaque delta (voir `voirTout` dans le groupe `delta`).
+7. **Un test qui ne peut pas échouer ne garde rien.** Le plafond des Moines
    de l'IA était vérifié après 15 minutes simulées par `monks <= 5` — or
    l'IA n'en produit aucun sur cette durée, donc le test passait à vide.
    Tester la RÈGLE (l'IA en met-elle un de plus quand elle en a déjà 5 ?)

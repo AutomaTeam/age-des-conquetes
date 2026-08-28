@@ -41,7 +41,7 @@ const EXPORTS = [
   'TCOST', 'TROCS', 'AGE_BONUS', 'RELIC_COUNT', 'FARM_RESEED_COST', 'FARM_FOOD',
   'MERVEILLE_WIN_TIME', 'canAfford', 'spend', 'resPool', 'updatePopCap',
   'aiNextBuild', 'AI_TRAINERS', 'trainTime', 'possedeBatiment', 'appliquerDemolition',
-  'tryAutoReseed', 'hasAdjacentWater', 'updateUneIA', 'aiVilTarget',
+  'tryAutoReseed', 'hasAdjacentWater', 'updateUneIA', 'aiVilTarget', 'updateVisuel',
 ];
 
 function extraireScript(html) {

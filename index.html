@@ -1302,6 +1302,8 @@ const BDEF = {
 // Types unités
 const UT = { VIL:'V', MIL:'M', ARC:'A', KNIGHT:'K', MONK:'MON', PALADIN:'P',
              PIKE:'PK', XBOW:'XB', TREB:'TR', RAM:'RM', SCOUT:'SC', HERO:'HE', BOAT:'BO',
+             // Unites uniques de civilisation, formees au Chateau (voir CIVS.unique)
+             CATA:'CT', CAVARC:'CA', ARBRAP:'AR',
              ENEMI:'E', ENEMIA:'EA', ENEMI_G:'EG', ENEMI_C:'EC', ENEMI_BOSS:'EB' };
 
 // ── CLASSES D'ARMURE ET TYPES D'ATTAQUE ────────────────────
@@ -1337,6 +1339,13 @@ const UDEF = {
   [UT.SCOUT]:   { nom:'Éclaireur',     hp:40,  spd:3.3, atk:5,  rng:1.2, atkSpd:0.9, cls:CLS.CAV,   atkType:'m', armor:{m:0,p:2} },
   [UT.HERO]:    { nom:'Héros',         hp:220, spd:2.6, atk:20, rng:1.4, atkSpd:1.2, cls:CLS.CAV,   atkType:'m', armor:{m:3,p:3} }, // nom/stats de combat identiques pour les 4 civs ; seuls le nom et l'icône affichés varient (voir HEROES)
   [UT.BOAT]:    { nom:'Barque de Pêche', hp:50, spd:2.2, atk:0,  rng:1,   atkSpd:1.0, naval:true, cls:CLS.NAV, atkType:'p', armor:{m:0,p:0} }, // sans combat en v1 — voir advanceNaval
+  // ── Unites uniques de civilisation ──
+  // Chacune occupe une NICHE que le roster commun ne couvre pas, plutot que
+  // d'etre une unite existante en mieux : sinon la civilisation ne change pas
+  // la facon de jouer, elle rend juste plus fort.
+  [UT.CATA]:    { nom:'Cataphractaire', hp:130, spd:2.4, atk:16, rng:1.3, atkSpd:1.1, cls:CLS.CAV, atkType:'m', armor:{m:4,p:3}, resistBonus:0.5 }, // byzantins : la seule cavalerie qui ne fond pas sous les Piquiers
+  [UT.CAVARC]:  { nom:'Cavalier-Archer', hp:60, spd:3.0, atk:8,  rng:4.0, atkSpd:1.1, cls:CLS.CAV, atkType:'p', armor:{m:0,p:1} }, // mongols : le seul tireur qui peut fuir ce qui le contre
+  [UT.ARBRAP]:  { nom:'Arbalétrier à Répétition', hp:42, spd:1.9, atk:7, rng:4.8, atkSpd:2.4, cls:CLS.ARC, atkType:'p', armor:{m:0,p:0} }, // chinois : peu de degats par trait, mais deux fois plus de traits -- redoutable sur l'infanterie nue, inoffensif sur ce qui est blinde (l'armure se soustrait A CHAQUE trait)
   [UT.ENEMI]:   { nom:'Pillard',       hp:38,  spd:1.6, atk:7,  rng:1.2, atkSpd:1.0, cls:CLS.INF,   atkType:'m', armor:{m:1,p:1} },
   [UT.ENEMIA]:  { nom:'Archer Pillard',hp:28,  spd:1.7, atk:5,  rng:4.0, atkSpd:0.8, cls:CLS.ARC,   atkType:'p', armor:{m:0,p:0} },
   [UT.ENEMI_G]: { nom:'Géant',         hp:160, spd:1.2, atk:20, rng:1.2, atkSpd:0.7, cls:CLS.INF,   atkType:'m', armor:{m:2,p:2} },
@@ -1370,6 +1379,10 @@ const BONUS = {
   [UT.XBOW]:      { inf:9 },
   [UT.RAM]:       { bat:18 },            // 35 + 18 = 53 ≈ l'ancien 35×1,5
   [UT.TREB]:      { bat:28 },            // 55 + 28 = 83 ≈ l'ancien 55×1,5
+  // Le Cataphractaire ne prend PAS de bonus contre les tireurs : son role est
+  // d'encaisser les Piquiers (armure 4 en melee), pas de tout surclasser.
+  [UT.CAVARC]:    { arc:4 },
+  [UT.ARBRAP]:    { inf:5 },
   [UT.ENEMI_C]:   { arc:6 },
   [UT.ENEMI_G]:   { bat:8 },
   [UT.ENEMI_BOSS]:{ bat:24 },            // 40 + 24 = 64 ≈ l'ancien 40×1,6
@@ -1405,6 +1418,9 @@ const TCOST = {
   [UT.SCOUT]:   { food:50 },
   [UT.HERO]:    { food:250, gold:200 },
   [UT.BOAT]:    { wood:60 },
+  [UT.CATA]:    { food:70, gold:75 },
+  [UT.CAVARC]:  { wood:40, gold:65 },
+  [UT.ARBRAP]:  { wood:40, gold:35 },
 };
 
 // Libellé de coût généré depuis TCOST : plus de valeurs écrites en dur dans les boutons
@@ -1419,7 +1435,8 @@ function missingLabel(cost){
     .join(' ');
 }
 const TTIME = { [UT.VIL]:20, [UT.MIL]:15, [UT.ARC]:18, [UT.KNIGHT]:25, [UT.MONK]:22, [UT.PALADIN]:35,
-                [UT.PIKE]:16, [UT.XBOW]:20, [UT.TREB]:50, [UT.RAM]:40, [UT.SCOUT]:14, [UT.HERO]:60, [UT.BOAT]:18 };
+                [UT.PIKE]:16, [UT.XBOW]:20, [UT.TREB]:50, [UT.RAM]:40, [UT.SCOUT]:14, [UT.HERO]:60, [UT.BOAT]:18,
+                [UT.CATA]:24, [UT.CAVARC]:22, [UT.ARBRAP]:19 };
 
 // Taux de récolte (par seconde)
 const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, [RT.MEAT]:1.3, [RT.FISH]:1.1, farm:1.0, mill:0.38 };
@@ -1452,8 +1469,12 @@ function tryAutoReseed(b){
   // des DEUX camps (voir updateBuildings) — sans owner explicite, canAfford/
   // spend retombent sur la caisse de l'hôte et prélèveraient son bois pour
   // resemer le champ du client.
-  if(canAfford(FARM_RESEED_COST,b.owner)){
-    spend(FARM_RESEED_COST,b.owner);
+  // Francs : le champ se re-seme sans rien coûter. Bonus STRUCTUREL et non
+  // un multiplicateur : il change la façon de jouer (les fermes deviennent
+  // une économie sans entretien) plutôt que d'ajouter des pourcents.
+  const gratuit=!!civOf(b.owner).fermeGratuite;
+  if(gratuit||canAfford(FARM_RESEED_COST,b.owner)){
+    if(!gratuit) spend(FARM_RESEED_COST,b.owner);
     b.foodLeft=FARM_FOOD; b._reseedWarned=false;
     spawnParts(b.x,b.y,'#8fbc44',6);
     addFText(b.x,b.y-18,'🌱','#8fbc44');
@@ -1499,11 +1520,31 @@ const DIFFS = {
 // Un seul bonus passif marquant par civilisation, appliqué à des points de
 // passage déjà centralisés (mkUnit, mkBuilding, gatherMult) : pas de nouveau
 // système, juste une lecture en plus à chacun de ces trois endroits.
+// Une civilisation, c'était UN multiplicateur. Quatre camps qui jouaient
+// exactement la même partie — alors que le Centre Ville a, lui, quatre
+// illustrations dédiées par civilisation et par âge. L'écart entre le travail
+// visuel et le travail mécanique était le vrai déséquilibre.
+//
+// Chaque camp a désormais TROIS choses, et c'est le minimum pour qu'une
+// civilisation se joue différemment plutôt que d'être « la même en plus
+// fort » :
+//   `unique`  — une unité à lui seul, formée au Château (voir PRODUCTION) ;
+//   `techCiv` — une recherche exclusive à l'Âge Impérial (voir RDEF) ;
+//   un bonus ÉCONOMIQUE ou STRUCTUREL, lu là où il agit, jamais un
+//   multiplicateur global de plus.
 const CIVS = {
-  francs:    { nom:'Francs',    ico:'🐴', desc:'+20% PV à la Cavalerie (Chevaliers, Paladins, Éclaireurs)', cavHpMult:1.20 },
-  byzantins: { nom:'Byzantins', ico:'🛡️', desc:'+15% PV à tous les bâtiments',                             bldHpMult:1.15 },
-  chinois:   { nom:'Chinois',   ico:'🌾', desc:'+15% vitesse de récolte',                                   gatherMult:1.15 },
-  mongols:   { nom:'Mongols',   ico:'🏹', desc:'+20% ATK aux unités à distance (Archers, Trébuchets)',      rangedAtkMult:1.20 },
+  francs:    { nom:'Francs',    ico:'🐴',
+               desc:'+20% PV Cavalerie · Fermes re-semées gratuitement · Paladin · Chevalerie Franque',
+               cavHpMult:1.20, fermeGratuite:true, unique:null, techCiv:'chevalerie' },
+  byzantins: { nom:'Byzantins', ico:'🛡️',
+               desc:'+15% PV bâtiments · chantiers 30% plus rapides · Cataphractaire · Feu Grégeois',
+               bldHpMult:1.15, chantierMult:1.30, unique:UT.CATA, techCiv:'feu_gregeois' },
+  chinois:   { nom:'Chinois',   ico:'🌾',
+               desc:'+15% récolte · 2 villageois et +2 de population au départ · Arbalétrier à Répétition · Arc Composite',
+               gatherMult:1.15, vilBonusDepart:2, popBonusDepart:2, unique:UT.ARBRAP, techCiv:'arc_composite' },
+  mongols:   { nom:'Mongols',   ico:'🏹',
+               desc:'+20% ATK à distance · chasse deux fois plus rapide · Cavalier-Archer · Étriers de Fer',
+               rangedAtkMult:1.20, chasseMult:2.0, unique:UT.CAVARC, techCiv:'etriers' },
 };
 let selectedCiv='francs';
 function pickCiv(key){
@@ -1613,7 +1654,15 @@ function armureDe(e){
 }
 function degatsContre(profil,cible){
   const d=profil.type!=null?UDEF[profil.type]:null;
-  const bonus=(BONUS[profil.type]||{})[classeDe(cible)]||0;
+  // `resistBonus` attenue la PART DE BONUS, pas l'attaque de base : c'est ce
+  // qui donne sa niche au Cataphractaire. L'armure seule n'y suffisait pas --
+  // le Piquier frappe a +25 contre la cavalerie, donc 2 points d'armure de
+  // plus que le Chevalier ne lui faisaient encaisser que 6 % de mieux
+  // (mesure : 34 degats contre 36). Avec 0,5, il tombe a 21 : la promesse
+  // « la cavalerie qui ne fond pas sous les Piquiers » devient vraie.
+  const dc=UDEF[cible.type];
+  const resist=(dc&&dc.resistBonus!=null)?dc.resistBonus:1;
+  const bonus=Math.round(((BONUS[profil.type]||{})[classeDe(cible)]||0)*resist);
   // Un tir de bâtiment (Tour/Château) n'a pas de type d'unité : il compte
   // comme un trait, sans aucun bonus de contre.
   const arm=armureDe(cible)[(d&&d.atkType)||'p']||0;
@@ -1790,6 +1839,18 @@ const RDEF = {
   // mécaniquement dans l'armée. Ces trois-là rétablissent le dilemme.
   brouette:   { nom:'Brouette',       ico:'🛒', cost:{wood:100,food:75},   time:40,  desc:'+8 de capacité de portage des villageois (22 → 30)', cat:'eco' },
   charrue:    { nom:'Charrue Lourde', ico:'🐂', cost:{food:150,wood:75},   time:50,  desc:'+15% vitesse de récolte sur toutes les ressources',   cat:'eco' },
+  // ── Recherches EXCLUSIVES par civilisation (Âge Impérial, Université) ──
+  // Filtrées par `civ` : voir openRP et la validation d'ORD.RECHERCHE. Une
+  // civilisation qui n'a pas la sienne ne la voit pas et ne peut pas la
+  // lancer, même par un ordre réseau forgé.
+  chevalerie:   { nom:'Chevalerie Franque', ico:'🏇', cost:{gold:250,food:180}, time:80, age:3, civ:'francs',
+                  desc:'+15% ATK à toute votre cavalerie', cat:'univ' },
+  feu_gregeois: { nom:'Feu Grégeois',       ico:'🔥', cost:{gold:220,stone:200}, time:80, age:3, civ:'byzantins',
+                  desc:'+30% ATK des Tours et du Château', cat:'univ' },
+  arc_composite:{ nom:'Arc Composite',      ico:'🏹', cost:{gold:230,wood:200}, time:80, age:3, civ:'chinois',
+                  desc:'+1 case de portée à tous vos tireurs', cat:'univ' },
+  etriers:      { nom:'Étriers de Fer',     ico:'👟', cost:{gold:200,food:200}, time:80, age:3, civ:'mongols',
+                  desc:'+15% vitesse de toute votre cavalerie', cat:'univ' },
   sentiers:   { nom:'Sentiers Pavés', ico:'🛤️', cost:{wood:120,gold:50},   time:45,  desc:'+15% vitesse de déplacement des villageois',          cat:'eco' },
 };
 
@@ -1835,6 +1896,7 @@ const UNIT_ICO = {
   [UT.VIL]:'👷', [UT.MIL]:'⚔️', [UT.ARC]:'🏹', [UT.PIKE]:'🔱', [UT.SCOUT]:'💨',
   [UT.KNIGHT]:'🐴', [UT.MONK]:'⛪', [UT.PALADIN]:'🌟', [UT.XBOW]:'🎯',
   [UT.TREB]:'🪨', [UT.RAM]:'🐏', [UT.HERO]:'⭐', [UT.BOAT]:'⛵',
+  [UT.CATA]:'🛡️', [UT.CAVARC]:'🏎️', [UT.ARBRAP]:'🎋',
 };
 
 // ── ÉTAT GLOBAL ───────────────────────────────────────────
@@ -1871,7 +1933,8 @@ function initResearch(){
   return { iron_sword:false, bow_craft:false, iron_armor:false, masonry:false,
            cavalry:false, longbow:false, tactics:false, faith:false, engineering:false,
            siege_smithing:false, cavalry_lance:false, fortification:false, logistics:false,
-           brouette:false, charrue:false, sentiers:false };
+           brouette:false, charrue:false, sentiers:false,
+           chevalerie:false, feu_gregeois:false, arc_composite:false, etriers:false };
 }
 // Lecture seule : recherches d'un camp qui n'en a pas (pillards).
 const EMPTY_RESEARCH = initResearch();
@@ -2236,7 +2299,7 @@ function doHunt(u,dt){
   u.moving=false;
   u.huntCd=(u.huntCd||0)-dt;
   if(u.huntCd<=0){
-    u.huntCd=1/(u.atkSpd||1);
+    u.huntCd=1/((u.atkSpd||1)*(civOf(u.owner).chasseMult||1));   // Mongols : chasse deux fois plus rapide
     const dmg=u.type===UT.VIL?WILD_VIL_DMG:u.atk;
     w.hp=Math.max(0,w.hp-dmg);
     spawnParts(w.x,w.y,'#8b3a1a',3);
@@ -2533,7 +2596,12 @@ function refreshNodePos(){
 // après mkUnit avec sa propre formule d'échelle, et FAC.PILL n'a ni âge ni
 // recherche qui pourraient déclencher ces bonus entre-temps.
 const MIL_TYPES=[UT.MIL,UT.ARC,UT.KNIGHT,UT.PALADIN,UT.PIKE,UT.XBOW,UT.TREB,UT.RAM,UT.SCOUT,UT.HERO,
+                 UT.CATA,UT.CAVARC,UT.ARBRAP,
                  UT.ENEMI,UT.ENEMIA,UT.ENEMI_G,UT.ENEMI_C,UT.ENEMI_BOSS];
+// Silhouette montee. La liste etait ecrite DEUX FOIS a l'identique (cycle de
+// marche et dessin de l'unite) : ajouter une unite montee sans mettre les
+// deux a jour lui donnait un cycle de jambes de fantassin sous son cheval.
+const CAV_TYPES=[UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.ENEMI_C,UT.CATA,UT.CAVARC];
 // Set, pas Array.includes : isMilitary est appelé DANS des balayages de
 // toute l'armée (selMilitary, heroAuraMult, les statistiques par seconde,
 // les effets rétroactifs de recherche…), et chaque appel reparcourait les
@@ -2556,19 +2624,25 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
   mhp=Math.round(mhp*AGE_BONUS[age].unitHp); // robustesse croissante avec l'âge
   let rng=d.rng*BASE_TILE; // portée en unités-monde (BASE_TILE), fixe : ne dépend pas du zoom
   if(rech.longbow&&(type===UT.ARC||type===UT.XBOW)) rng*=1.5;
-  const MELEE=[UT.MIL,UT.PIKE], RANGED=[UT.ARC,UT.XBOW], CAV=[UT.KNIGHT,UT.PALADIN,UT.SCOUT], SIEGE=[UT.RAM,UT.TREB];
+  if(rech.arc_composite&&UDEF[type].atkType==='p'&&!UDEF[type].siege) rng+=BASE_TILE;   // Arc Composite (chinois)
+  // CAV_TYPES moins les archetypes ennemis : les bonus de recherche et de
+  // civilisation ne concernent que le roster du joueur.
+  const MELEE=[UT.MIL,UT.PIKE], RANGED=[UT.ARC,UT.XBOW,UT.ARBRAP,UT.CAVARC],
+        CAV=[UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.CATA,UT.CAVARC], SIEGE=[UT.RAM,UT.TREB];
   if(rech.cavalry&&CAV.includes(type)) mhp=Math.round(mhp*1.2);
   if(civ.cavHpMult&&CAV.includes(type)) mhp=Math.round(mhp*civ.cavHpMult); // bonus de civilisation (Francs)
   let atk=d.atk;
   if(rech.iron_sword&&MELEE.includes(type)) atk=Math.round(atk*1.25);
   if(rech.bow_craft&&RANGED.includes(type)) atk=Math.round(atk*1.25);
   if(rech.cavalry_lance&&CAV.includes(type)) atk=Math.round(atk*1.2);
+  if(rech.chevalerie&&CAV.includes(type)) atk=Math.round(atk*1.15);   // Chevalerie Franque (francs)
   if(rech.siege_smithing&&SIEGE.includes(type)) atk=Math.round(atk*1.25);
   if(rech.tactics&&mil) atk=Math.round(atk*1.2);
   if(civ.rangedAtkMult&&(RANGED.includes(type)||type===UT.TREB)) atk=Math.round(atk*civ.rangedAtkMult); // bonus de civilisation (Mongols)
   if(mil) atk=Math.round(atk*AGE_BONUS[age].milAtk); // ATK militaire croissant avec l'âge
   let spd=d.spd;
   if(rech.logistics&&mil) spd*=1.15;
+  if(rech.etriers&&CAV.includes(type)) spd*=1.15;   // Étriers de Fer (mongols)
   if(rech.sentiers&&type===UT.VIL) spd*=1.15;   // Sentiers Paves (recherche economique)
   // Héros : nom/icône affichés selon la civilisation du propriétaire — les
   // statistiques de combat, elles, restent celles d'UDEF[UT.HERO] pour tous.
@@ -2658,6 +2732,13 @@ function updatePopCap(){
     if(b.type===BT.HOUSE) cap[b.owner]+=AGE_BONUS[ageOf(b.owner)].housePop; // capacité croissante avec l'âge
     else { const d=BDEF[b.type]; if(d.popBonus) cap[b.owner]+=d.popBonus; }
   }
+  // Bonus de population de civilisation. Les Chinois démarrent avec deux
+  // villageois de plus (voir startGame) : sans la place qui va avec, ils
+  // commencaient la partie DÉJÀ PLAFONNÉS (5 villageois pour un plafond de
+  // 5, fourni par le seul Centre Ville) et ne pouvaient rien produire avant
+  // d'avoir bâti une Maison — leur bonus s'annulait en partie lui-même.
+  // Trouvé par tests/run.js, groupe `civilisations`.
+  for(const f of factionsJouantes()) if(civOf(f.id).popBonusDepart) cap[f.id]+=civOf(f.id).popBonusDepart;
   // Chaque camp est plafonné par le popCap de SON âge.
   for(const f of factionsJouantes()) f.maxPop=Math.min(cap[f.id],AGE_BONUS[f.age].popCap);
 }
@@ -4358,7 +4439,7 @@ function buildUnits(T){
     // les unités bipèdes au sol. Cavalerie et trébuchet gardent une pose
     // unique (leur mouvement se lit déjà via la monture / les roues + le
     // bobbing) — leur dessiner un vrai cycle de jambes n'aurait pas de sens.
-    const isCav=[UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.ENEMI_C].includes(type);
+    const isCav=CAV_TYPES.includes(type);
     if(!UDEF[type].siege&&!isCav){
       SPR.unit[type+'_W1']=buildUnitSprite(type,T,1);
       SPR.unit[type+'_W2']=buildUnitSprite(type,T,-1);
@@ -4761,7 +4842,7 @@ function buildUnitSprite(type,T,legPhase){
   const isTreb=type===UT.TREB;
   const isRam=type===UT.RAM;
   const isBoat=type===UT.BOAT;
-  const isCav=[UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.ENEMI_C].includes(type);
+  const isCav=CAV_TYPES.includes(type);
   // Géant et Seigneur de Guerre : silhouette agrandie — la menace doit se
   // lire avant même le premier coup d'épée (convention AoE2 : plus gros
   // = plus dangereux). Comme tous les traits sont des fractions de S, ce
@@ -6216,6 +6297,7 @@ const UCOL={
   [UT.KNIGHT]:'#8e44ad',[UT.MONK]:'#d4ac0d',[UT.PALADIN]:'#9b59b6',
   [UT.PIKE]:'#2980b9',[UT.XBOW]:'#1abc9c',[UT.TREB]:'#7f6a4a',
   [UT.RAM]:'#6a4a28',[UT.SCOUT]:'#27ae60',[UT.HERO]:'#d4af37',[UT.BOAT]:'#4a90d9',
+  [UT.CATA]:'#6c3483',[UT.CAVARC]:'#117a65',[UT.ARBRAP]:'#148f77',
   [UT.ENEMI]:'#e74c3c',[UT.ENEMIA]:'#c0392b',[UT.ENEMI_G]:'#7b241c',
   [UT.ENEMI_C]:'#a93226',[UT.ENEMI_BOSS]:'#641e16',
 };
@@ -7721,7 +7803,8 @@ function doBuild(u,dt){
   const bc=bldContact(b,0.35);
   if(d>bc){ const ap=bldApproach(u,b,0.35); u.destX=ap.x; u.destY=ap.y; moveTo(u,dt,true); return; }
   // Plus il y a de villageois, plus c'est rapide
-  b.progress=Math.min(1,b.progress+dt*0.12);
+  // Byzantins : +30% de vitesse de chantier (voir CIVS.chantierMult).
+  b.progress=Math.min(1,b.progress+dt*0.12*(civOf(b.owner).chantierMult||1));
   // Fumée de construction occasionnelle
   if(Math.random()<dt*4){
     G.parts.push({x:b.x+(Math.random()-.5)*b.w*BASE_TILE*.6, y:b.y, vx:(Math.random()-.5)*8, vy:-20-Math.random()*15, col:'rgba(200,200,200,.8)', r:2+Math.random()*2, life:1});
@@ -7843,6 +7926,9 @@ function updateBuildings(dt){
       // transformer une Tour en artillerie à elle seule.
       const garnAtk=garnisons.get(b.id)||0;
       if(garnAtk) atk+=Math.min(garnAtk,garnBonusCap(b))*4;
+      // Feu Grégeois (byzantins) : applique APRÈS la garnison, donc il
+      // multiplie aussi l'apport des archers postés.
+      if(rechercheDe(b.owner).feu_gregeois) atk=Math.round(atk*1.3);
       if(b.atkCd<=0){
         const e=prochainHostileToute(b.x,b.y,range,b);
         if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:b.owner},e); }
@@ -9348,6 +9434,26 @@ function updateResearchFaction(dt,f){
       for(const u of G.units) if(u.owner===owner&&isMilitary(u.type)) u.spd*=1.15;
       if(local) notify('🥾 Vos troupes se déplacent plus vite !','#3498db');
     }
+    // Recherches de civilisation — même logique rétroactive que leurs
+    // équivalents génériques (Lance de Cavalerie, Logistique, Arc Long) : ce
+    // que mkUnit pose à la création, il faut le rattraper sur les unités
+    // déjà en jeu, sinon deux unités du même type n'ont pas les mêmes
+    // statistiques selon qu'elles sont nées avant ou après.
+    if(r.type==='chevalerie'){
+      for(const u of G.units) if(u.owner===owner&&CAV_TYPES.includes(u.type)&&isMilitary(u.type)) u.atk=Math.round(u.atk*1.15);
+      if(local) notify('🏇 Votre cavalerie frappe plus fort !','#9b59b6');
+    }
+    if(r.type==='etriers'){
+      for(const u of G.units) if(u.owner===owner&&CAV_TYPES.includes(u.type)&&isMilitary(u.type)) u.spd*=1.15;
+      if(local) notify('👟 Votre cavalerie se déplace plus vite !','#3498db');
+    }
+    if(r.type==='arc_composite'){
+      for(const u of G.units)
+        if(u.owner===owner&&UDEF[u.type]&&UDEF[u.type].atkType==='p'&&!UDEF[u.type].siege) u.rng+=BASE_TILE;
+      if(local) notify('🏹 Vos tireurs gagnent une case de portée !','#16a085');
+    }
+    // Le Feu Grégeois n'a rien à rattraper : updateBuildings lit la recherche
+    // à chaque tir (comme gatherMult pour la Charrue).
     // Sentiers Pavés : même effet rétroactif que Logistique, côté civil.
     if(r.type==='sentiers'){
       for(const u of G.units) if(u.owner===owner&&u.type===UT.VIL) u.spd*=1.15;
@@ -10210,7 +10316,13 @@ const PRODUCTION = {
   [BT.BARRACKS]:  [{u:UT.MIL},{u:UT.ARC},{u:UT.PIKE,age:1}],
   [BT.STABLE]:    [{u:UT.SCOUT},{u:UT.KNIGHT}],
   [BT.MONASTERY]: [{u:UT.MONK}],
-  [BT.CASTLE]:    [{u:UT.PALADIN,rech:'faith'},{u:UT.XBOW,age:2},{u:UT.TREB,age:3},{u:UT.HERO}],
+  // `civ` : reserve l'entree a une civilisation. C'est la SOURCE DE VERITE de
+  // l'hote -- sans elle, un client pouvait former le Cataphractaire byzantin
+  // en jouant Mongols, l'interface ne verrouillant que l'affichage.
+  [BT.CASTLE]:    [{u:UT.PALADIN,rech:'faith'},{u:UT.XBOW,age:2},{u:UT.TREB,age:3},{u:UT.HERO},
+                   {u:UT.CATA,   age:2, civ:'byzantins'},
+                   {u:UT.CAVARC, age:2, civ:'mongols'},
+                   {u:UT.ARBRAP, age:2, civ:'chinois'}],
   [BT.SIEGE]:     [{u:UT.RAM}],
   [BT.DOCK]:      [{u:UT.BOAT}],
 };
@@ -10359,6 +10471,7 @@ function applyCommand(cmd){
     if(!offre) return KO('invalide');
     if(offre.age!=null&&f.age<offre.age) return KO('age');
     if(offre.rech&&!f.research[offre.rech]) return KO('invalide');
+    if(offre.civ&&f.civ!==offre.civ) return KO('civilisation');   // unite unique d'une AUTRE civilisation
     // Héros : un seul par partie, même mort — pas de remplaçant (voir HEROES).
     if(cmd.unitType===UT.HERO){
       if(f.heroTrained||b.trainQ.includes(UT.HERO)) return KO('deja');
@@ -10402,7 +10515,10 @@ function applyCommand(cmd){
     const r=RDEF[cmd.cle]; if(!r) return KO('invalide');
     // Le panneau de recherche s'ouvre depuis la Forge (cat 'forge') ou
     // l'Universite (cat 'univ') : c'est ce batiment-la qui en donne le droit.
-    if(!possedeBatiment(cmd.f, r.cat==='univ'?BT.UNIV:BT.FORGE)) return KO('cible');
+    if(r.cat==='eco'){ if(!possedeBatiment(cmd.f,BT.MILL)) return KO('cible'); }
+    else if(!possedeBatiment(cmd.f, r.cat==='univ'?BT.UNIV:BT.FORGE)) return KO('cible');
+    if(r.civ&&f.civ!==r.civ) return KO('civilisation');   // recherche exclusive d'une AUTRE civilisation
+    if(r.age!=null&&f.age<r.age) return KO('age');
     if(f.research[cmd.cle]) return KO('deja');
     if(f.researchQ.some(x=>x.type===cmd.cle)) return KO('deja');
     if(!canAfford(r.cost,cmd.f)) return KO('ressources');
@@ -11078,6 +11194,17 @@ function drawBuildAct(bar,b){
       t.textContent='🎓 Foi Divine requise (Université)';
       bar.appendChild(t);
     }
+    // Unité unique de civilisation, à l'Âge des Châteaux. Le bouton lit
+    // PRODUCTION plutôt que de recopier la règle : une entrée ajoutée là
+    // apparaît ici sans rien toucher, et l'interface ne peut pas diverger de
+    // ce que l'hôte autorise réellement.
+    const maCiv=civKeyOf(G.me);
+    for(const o of (PRODUCTION[BT.CASTLE]||[])){
+      if(o.civ!==maCiv) continue;
+      const verrou=(o.age!=null&&G.age<o.age);
+      const libelle=UDEF[o.u].nom+'\n'+(verrou?'🔒 '+AGES[o.age].nom:costLabel(TCOST[o.u]));
+      mkBtn(bar,UNIT_ICO[o.u]||'⭐',libelle,()=>trainUnit(b,o.u),verrou,verrou?null:TCOST[o.u]);
+    }
     // Héros : une seule fois par partie, même s'il meurt — voir HEROES/ORD.FORMER.
     const heroDone=G.factions[G.me].heroTrained;
     const heroDef=HEROES[G.factions[G.me].civ]||HEROES.francs;
@@ -11358,16 +11485,22 @@ function openRP(cat='forge'){
                 eco:'💨 Moulin — Recherches Économiques'};
   document.querySelector('#rpanel h2').textContent=titles[cat]||'🔬 Recherches';
   list.innerHTML='';
+  const maCiv=civKeyOf(G.me);
   for(const[key,r] of Object.entries(RDEF)){
     if(r.cat!==cat) continue;
+    // Recherche exclusive : une civilisation ne voit QUE la sienne. Ce n'est
+    // pas seulement de l'affichage — ORD.RECHERCHE refuse la même chose côté
+    // hôte, un ordre réseau forgé ne passe pas.
+    if(r.civ&&r.civ!==maCiv) continue;
     const done=G.research[key];
     const inQ=G.researchQ.some(q=>q.type===key);
+    const ageManquant=(r.age!=null&&G.age<r.age);
     const costStr=Object.entries(r.cost).map(([k,v])=>`${v}${k==='wood'?'🪵':k==='stone'?'🪨':k==='gold'?'💰':'🍖'}`).join(' ');
     const el=document.createElement('div'); el.className='ritem';
     el.innerHTML=`<h3>${iconImg(r.ico,16)} ${r.nom}</h3>
       <div class="rcost">${r.desc} — Coût: ${costStr} — ${r.time}s</div>
-      ${done?'<div class="rdone">✅ Terminé</div>':inQ?'<div class="rdone">⏳ En cours…</div>':''}`;
-    if(!done&&!inQ){
+      ${done?'<div class="rdone">✅ Terminé</div>':inQ?'<div class="rdone">⏳ En cours…</div>':ageManquant?`<div class="rdone">🔒 ${AGES[r.age].nom} requis</div>`:''}`;
+    if(!done&&!inQ&&!ageManquant){
       const btn=document.createElement('button');
       // Volontairement JAMAIS `disabled` : un bouton grisé-mais-cliquable
       // qui répond par un flash de ressources en dit plus qu'un bouton
@@ -14422,9 +14555,10 @@ function startGame(){
     if(x>=0&&y>=0&&x<COLS&&y<ROWS&&G.bmap[y][x]===9) G.bmap[y][x]=0;
   }
 
-  // 3 Villageois
-  for(let i=0;i<3;i++){
-    const u=mkUnit(UT.VIL,(sTX+1.5)*BASE_TILE+(i-1)*BASE_TILE*.9,(sTY+3)*BASE_TILE,FAC.P1);
+  // 3 Villageois (+ le bonus de civilisation : les Chinois en ont 5)
+  const nVil=3+(civOf(FAC.P1).vilBonusDepart||0);
+  for(let i=0;i<nVil;i++){
+    const u=mkUnit(UT.VIL,(sTX+1.5)*BASE_TILE+(i-(nVil-1)/2)*BASE_TILE*.9,(sTY+3)*BASE_TILE,FAC.P1);
     G.units.push(u); G.pop++;
   }
 
@@ -14443,8 +14577,12 @@ function startGame(){
     for(let y=pTY-1;y<=pTY+tc2.h;y++) for(let x=pTX-1;x<=pTX+tc2.w;x++){
       if(x>=0&&y>=0&&x<COLS&&y<ROWS&&G.bmap[y][x]===9) G.bmap[y][x]=0;
     }
-    for(let i=0;i<3;i++){
-      const u=mkUnit(UT.VIL,(pTX+1.5)*BASE_TILE+(i-1)*BASE_TILE*.9,(pTY+3)*BASE_TILE,FAC.P2);
+    // Meme dotation que le joueur local, bonus de civilisation compris :
+    // sans ce miroir, un invite jouant Chinois demarrerait avec 3 villageois
+    // au lieu de 5 et sa civilisation ne vaudrait rien en ligne.
+    const nVil2=3+(civOf(FAC.P2).vilBonusDepart||0);
+    for(let i=0;i<nVil2;i++){
+      const u=mkUnit(UT.VIL,(pTX+1.5)*BASE_TILE+(i-(nVil2-1)/2)*BASE_TILE*.9,(pTY+3)*BASE_TILE,FAC.P2);
       G.units.push(u); G.factions[FAC.P2].pop++;
     }
     prisSurCarte.push([pTX,pTY]); // les IA s'ecartent aussi de cette base

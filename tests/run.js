@@ -291,6 +291,108 @@ groupe('combat', () => {
   });
 });
 
+// ════════════════════════════════════════════════════════════
+groupe('civilisations', () => {
+  const civs = ['francs', 'byzantins', 'chinois', 'mongols'];
+
+  test('chaque civilisation a une identité mécanique, pas seulement un multiplicateur', () => {
+    const j = charger();
+    for (const c of civs) {
+      const d = j.CIVS[c];
+      ok(!!d, `civilisation ${c} absente`);
+      ok(!!d.techCiv, `${c} n'a pas de recherche exclusive`);
+      ok(!!j.RDEF[d.techCiv], `${c} : recherche ${d.techCiv} absente de RDEF`);
+      egal(j.RDEF[d.techCiv].civ, c, `${c} : la recherche n'est pas filtrée sur la bonne civ`);
+    }
+    // Trois unités uniques ; les Francs gardent le Paladin, qui est commun —
+    // c'est assumé et documenté dans CIVS.
+    const uniques = civs.map((c) => j.CIVS[c].unique).filter(Boolean);
+    egal(uniques.length, 3, 'nombre d\'unités uniques');
+    egal(new Set(uniques).size, 3, 'deux civilisations partagent la même unité unique');
+  });
+
+  test('l\'unité unique est refusée à une autre civilisation, même par ordre réseau', () => {
+    // C'est le point qui compte : l'interface ne montre que la sienne, mais
+    // seule la validation de l'hôte empêche un ordre forgé de passer.
+    for (const c of civs) {
+      const j = charger();
+      j.__sandbox.selectedCiv = c;
+      j.__sandbox.pickCiv(c);
+      partie(j, { graine: 4242 });
+      const f = j.moi();
+      egal(f.civ, c, 'civ de la faction');
+      f.age = 3;
+      Object.assign(f.res, { food: 9999, wood: 9999, gold: 9999, stone: 9999 });
+      const castle = j.mkBuilding(j.BT.CASTLE, 30, 30, j.G.me);
+      castle.constructing = false; castle.progress = 1;
+      j.G.buildings.push(castle); j.placeBuilding(castle); j.rebuildIndex();
+      // APRÈS placeBuilding : celui-ci recalcule maxPop depuis les bâtiments
+      // et écraserait la valeur posée avant lui.
+      f.maxPop = 200;
+      for (const autre of civs) {
+        const u = j.CIVS[autre].unique;
+        if (!u) continue;
+        const r = j.__sandbox.applyCommand({ t: 'FORMER', f: j.G.me, bId: castle.id, unitType: u });
+        if (autre === c) ok(r.ok, `${c} ne peut pas former sa propre unité unique (${r.raison})`);
+        else egal(r.ok, false, `${c} a pu former l'unité unique des ${autre}`);
+      }
+    }
+  });
+
+  test('la recherche exclusive est refusée à une autre civilisation', () => {
+    const j = charger();
+    j.__sandbox.selectedCiv = 'mongols'; j.__sandbox.pickCiv('mongols');
+    partie(j, { graine: 4242 });
+    const f = j.moi();
+    f.age = 3;
+    Object.assign(f.res, { food: 9999, wood: 9999, gold: 9999, stone: 9999 });
+    const univ = j.mkBuilding(j.BT.UNIV, 34, 34, j.G.me);
+    univ.constructing = false; univ.progress = 1;
+    j.G.buildings.push(univ); j.placeBuilding(univ); j.rebuildIndex();
+    const sienne = j.__sandbox.applyCommand({ t: 'RECHERCHE', f: j.G.me, cle: 'etriers' });
+    ok(sienne.ok, `les Mongols ne peuvent pas lancer Étriers de Fer (${sienne.raison})`);
+    const autre = j.__sandbox.applyCommand({ t: 'RECHERCHE', f: j.G.me, cle: 'feu_gregeois' });
+    egal(autre.ok, false, 'les Mongols ont pu lancer le Feu Grégeois byzantin');
+  });
+
+  test('la recherche exclusive est refusée avant l\'Âge Impérial', () => {
+    const j = charger();
+    j.__sandbox.selectedCiv = 'francs'; j.__sandbox.pickCiv('francs');
+    partie(j, { graine: 4242 });
+    const f = j.moi();
+    f.age = 2;   // Âge des Châteaux : pas encore
+    Object.assign(f.res, { food: 9999, wood: 9999, gold: 9999, stone: 9999 });
+    const univ = j.mkBuilding(j.BT.UNIV, 34, 34, j.G.me);
+    univ.constructing = false; univ.progress = 1;
+    j.G.buildings.push(univ); j.placeBuilding(univ); j.rebuildIndex();
+    egal(j.__sandbox.applyCommand({ t: 'RECHERCHE', f: j.G.me, cle: 'chevalerie' }).ok, false, 'lancée trop tôt');
+    f.age = 3;
+    ok(j.__sandbox.applyCommand({ t: 'RECHERCHE', f: j.G.me, cle: 'chevalerie' }).ok, 'refusée à l\'Âge Impérial');
+  });
+
+  test('les bonus économiques agissent réellement', () => {
+    // Chinois : deux villageois de départ en plus.
+    const ch = charger(); ch.__sandbox.selectedCiv = 'chinois'; ch.__sandbox.pickCiv('chinois');
+    partie(ch, { graine: 4242 });
+    const fr = charger(); fr.__sandbox.selectedCiv = 'francs'; fr.__sandbox.pickCiv('francs');
+    partie(fr, { graine: 4242 });
+    const vils = (j) => j.G.units.filter((u) => u.type === j.UT.VIL && j.estLocal(u)).length;
+    egal(vils(ch) - vils(fr), 2, 'les Chinois ne démarrent pas avec 2 villageois de plus');
+  });
+
+  test('l\'unité unique tient sa niche : le Cataphractaire encaisse le Piquier', () => {
+    const j = charger();
+    partie(j, { graine: 4242 });
+    const pike = j.mkUnit(j.UT.PIKE, 0, 0, j.G.me);
+    const cata = j.mkUnit(j.UT.CATA, 0, 0, j.G.me);
+    const knight = j.mkUnit(j.UT.KNIGHT, 0, 0, j.G.me);
+    const vsCata = j.degatsDe(pike, cata), vsKnight = j.degatsDe(pike, knight);
+    ok(vsCata < vsKnight, `le Cataphractaire doit encaisser mieux que le Chevalier : ${vsCata} vs ${vsKnight}`);
+    // ...mais il ne doit pas devenir invulnérable au contre.
+    ok(vsCata > j.degatsDe(j.mkUnit(j.UT.MIL, 0, 0, j.G.me), cata), 'le Piquier ne contre plus du tout le Cataphractaire');
+  });
+});
+
 // ── rapport ────────────────────────────────────────────────
 const cible = process.argv[2];
 const vus = cible ? resultats.filter((r) => r.groupe === cible) : resultats;

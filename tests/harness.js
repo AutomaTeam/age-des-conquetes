@@ -36,6 +36,7 @@ const EXPORTS = [
   'degatsContre', 'degatsDe', 'armureDe', 'classeDe', 'BONUS', 'BLD_ARMOR',
   'gatherCap', 'gatherMult', 'separerUnites', 'heroAuraMult', 'majHeros',
   'estSel', 'selMilitary', 'ASSET_EXT',
+  'applyCommand', 'pickCiv', 'civKeyOf', 'civOf', 'PRODUCTION', 'ORD', 'mkFaction',
 ];
 
 function extraireScript(html) {

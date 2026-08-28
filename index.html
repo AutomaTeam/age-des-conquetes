@@ -1431,6 +1431,12 @@ const RELIC_GOLD_RATE = 0.15; // or/s/relique (≈9/min — comparable à un min
 // Merveille : temps qu'elle doit tenir debout, achevée, avant la victoire.
 const MERVEILLE_WIN_TIME = 300; // 5 minutes — le temps pour l'adversaire de réagir
 const GCAP  = 22;            // capacité inventaire villageois (moins d'allers-retours)
+// Capacité réelle, par camp : la Brouette (recherche économique) l'augmente.
+// GCAP restait une constante GLOBALE, donc impossible à faire dépendre d'une
+// faction — en multijoueur, la recherche de l'hôte se serait appliquée aussi
+// aux villageois du client.
+const GCAP_BROUETTE = 8;
+function gatherCap(owner){ return GCAP+(rechercheDe(owner).brouette?GCAP_BROUETTE:0); }
 const NODE_RICHNESS = 1.5;   // gisements 50% plus riches
 const FARM_FOOD = 350;
 const FARM_RESEED_COST = {wood:30};  // façon AoE2 : re-semer coûte du bois
@@ -1748,6 +1754,14 @@ const RDEF = {
   engineering:{ nom:'Génie Civil',    ico:'🔧', cost:{stone:200,gold:80},  time:60,  desc:'+40% PV des Tours et Château',       cat:'univ'  },
   fortification:{ nom:'Fortifications', ico:'🏯', cost:{stone:220,gold:90}, time:65,  desc:'+25% PV Murs, Portails et Avant-postes', cat:'univ' },
   logistics:  { nom:'Logistique',     ico:'🥾', cost:{gold:180,food:120},  time:70,  desc:'+15% vitesse de déplacement des unités militaires', cat:'univ' },
+  // ── Économie (Moulin) ──
+  // Les treize recherches ci-dessus sont TOUTES militaires ou défensives :
+  // le vrai arbitrage du genre — « j'investis dans l'économie ou dans
+  // l'armée maintenant ? » — ne se posait donc jamais, tout l'or partait
+  // mécaniquement dans l'armée. Ces trois-là rétablissent le dilemme.
+  brouette:   { nom:'Brouette',       ico:'🛒', cost:{wood:100,food:75},   time:40,  desc:'+8 de capacité de portage des villageois (22 → 30)', cat:'eco' },
+  charrue:    { nom:'Charrue Lourde', ico:'🐂', cost:{food:150,wood:75},   time:50,  desc:'+15% vitesse de récolte sur toutes les ressources',   cat:'eco' },
+  sentiers:   { nom:'Sentiers Pavés', ico:'🛤️', cost:{wood:120,gold:50},   time:45,  desc:'+15% vitesse de déplacement des villageois',          cat:'eco' },
 };
 
 // ── SYSTÈME D'ÂGES ────────────────────────────────────────
@@ -1827,7 +1841,8 @@ const TEINTE_DEF = { p1:'bleu', p2:'vert', ia:'rouge', ia2:'violet', pillards:'r
 function initResearch(){
   return { iron_sword:false, bow_craft:false, iron_armor:false, masonry:false,
            cavalry:false, longbow:false, tactics:false, faith:false, engineering:false,
-           siege_smithing:false, cavalry_lance:false, fortification:false, logistics:false };
+           siege_smithing:false, cavalry_lance:false, fortification:false, logistics:false,
+           brouette:false, charrue:false, sentiers:false };
 }
 // Lecture seule : recherches d'un camp qui n'en a pas (pillards).
 const EMPTY_RESEARCH = initResearch();
@@ -1885,7 +1900,14 @@ function ageOf(owner){ const f=fac(owner); return f?f.age:0; }
 function rechercheDe(owner){ const f=fac(owner); return f?f.research:EMPTY_RESEARCH; }
 function popDe(owner){ const f=fac(owner); return f?f.pop:0; }
 function maxPopDe(owner){ const f=fac(owner); return f?f.maxPop:0; }
-function gatherMult(owner){ return AGE_BONUS[ageOf(owner)].gather*(civOf(owner).gatherMult||1); } // récolte croissante à chaque âge + bonus de civilisation
+// Point de passage UNIQUE du taux de récolte : âge, civilisation, et
+// désormais la Charrue Lourde. Multiplier ici plutôt que dans doGather ET
+// doFarm ET doFish évite qu'un des trois chemins oublie le bonus.
+function gatherMult(owner){
+  return AGE_BONUS[ageOf(owner)].gather
+       * (civOf(owner).gatherMult||1)
+       * (rechercheDe(owner).charrue?1.15:1);
+}
 
 // Raccourcis vers la faction LOCALE. Tout le code d'interface (HUD, panneaux,
 // sélection, brouillard affiché) continue de lire G.res / G.age / G.stats…
@@ -2235,7 +2257,7 @@ function doFish(u,dt){
   if(u.gTimer>=1/GRATE[RT.FISH]){
     u.gTimer=0;
     const a=Math.min(1,n.amt); n.amt-=a; u.inv=(u.inv||0)+a; u.invT=RT.FISH;
-    if(u.inv>=GCAP){ u.dropoff=findDropoff(u); u.state='fishReturn'; }
+    if(u.inv>=gatherCap(u.owner)){ u.dropoff=findDropoff(u); u.state='fishReturn'; }
   }
 }
 // Déplacement libre d'une Barque (pas de récolte en cours) : arrêt net à la
@@ -2511,6 +2533,7 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
   if(mil) atk=Math.round(atk*AGE_BONUS[age].milAtk); // ATK militaire croissant avec l'âge
   let spd=d.spd;
   if(rech.logistics&&mil) spd*=1.15;
+  if(rech.sentiers&&type===UT.VIL) spd*=1.15;   // Sentiers Paves (recherche economique)
   // Héros : nom/icône affichés selon la civilisation du propriétaire — les
   // statistiques de combat, elles, restent celles d'UDEF[UT.HERO] pour tous.
   const heroDef=(type===UT.HERO)?(HEROES[fac(owner)&&fac(owner).civ]||HEROES.francs):null;
@@ -7401,7 +7424,7 @@ function doGather(u,dt){
     u.inv+=a; u.invT=n.type;
     addFText(u.x,u.y-14,'+1','#f1c40f');
     sfx(n.type===RT.TREE?'chop':(n.type===RT.BERRY||n.type===RT.MEAT)?'pick':'mine');
-    if(u.inv>=GCAP||(!n.infinite&&n.amt<=0)){
+    if(u.inv>=gatherCap(u.owner)||(!n.infinite&&n.amt<=0)){
       n.gatherers=n.gatherers.filter(id=>id!==u.id);
       u.dropoff=findDropoff(u);
       u.state='return';
@@ -7446,7 +7469,7 @@ function doFarm(u,dt){
     const a=Math.min(1,f.foodLeft); f.foodLeft-=a; u.inv+=a; u.invT='farm';
     addFText(u.x,u.y-14,'+1','#8fbc44');
     sfx('pick');
-    if(u.inv>=GCAP){
+    if(u.inv>=gatherCap(u.owner)){
       f.farmers=(f.farmers||[]).filter(id=>id!==u.id);
       u.dropoff=findDropoff(u);
       u.state='return';
@@ -9048,10 +9071,18 @@ function updateUneIA(dt,a){
     // pour Milicien/Piquier, Arc Long pour Archer…) ne lui servent à rien.
     // Elle ne pioche donc que dans les techs génériques (isMilitary ou
     // bâtiments), les seules qui profitent réellement à son armée.
-    const AI_RESEARCH_POOL=['iron_armor','masonry','tactics','engineering','fortification'];
+    // Les trois recherches économiques profitent à l'IA exactement comme au
+    // joueur (gatherMult, gatherCap et la vitesse des villageois sont déjà
+    // génériques par faction) : les lui refuser lui imposerait un handicap
+    // que rien ne justifie, et le Moulin est de toute façon le deuxième
+    // bâtiment qu'elle pose.
+    const AI_RESEARCH_POOL=['iron_armor','masonry','tactics','engineering','fortification',
+                            'brouette','charrue','sentiers'];
+    const moulinReady=G.buildings.some(b=>b.owner===a.id&&b.type===BT.MILL&&!b.constructing);
     const pool=[];
-    if(forgeReady) for(const k of AI_RESEARCH_POOL) if(RDEF[k].cat==='forge') pool.push(k);
-    if(univReady)  for(const k of AI_RESEARCH_POOL) if(RDEF[k].cat==='univ')  pool.push(k);
+    if(forgeReady)  for(const k of AI_RESEARCH_POOL) if(RDEF[k].cat==='forge') pool.push(k);
+    if(univReady)   for(const k of AI_RESEARCH_POOL) if(RDEF[k].cat==='univ')  pool.push(k);
+    if(moulinReady) for(const k of AI_RESEARCH_POOL) if(RDEF[k].cat==='eco')   pool.push(k);
     const choix=pool.filter(k=>!a.research[k]&&aiAfford(RDEF[k].cost,saving,a));
     if(choix.length){
       const key=choix[(Math.random()*choix.length)|0];
@@ -9273,6 +9304,18 @@ function updateResearchFaction(dt,f){
       for(const u of G.units) if(u.owner===owner&&isMilitary(u.type)) u.spd*=1.15;
       if(local) notify('🥾 Vos troupes se déplacent plus vite !','#3498db');
     }
+    // Sentiers Pavés : même effet rétroactif que Logistique, côté civil.
+    if(r.type==='sentiers'){
+      for(const u of G.units) if(u.owner===owner&&u.type===UT.VIL) u.spd*=1.15;
+      if(local) notify('🛤️ Vos villageois se déplacent plus vite !','#3498db');
+    }
+    // Brouette et Charrue Lourde n'ont RIEN à faire ici : gatherCap() et
+    // gatherMult() lisent la recherche à chaque appel, donc le bonus vaut
+    // immédiatement pour un villageois DÉJÀ en train de porter une charge.
+    // C'est tout l'intérêt d'être passé par un point unique plutôt que de
+    // recopier la valeur sur l'unité comme le font les bonus militaires.
+    if(r.type==='brouette'&&local) notify('🛒 Vos villageois portent 30 unités au lieu de 22 !','#2ecc71');
+    if(r.type==='charrue'&&local) notify('🐂 +15% sur toutes vos récoltes !','#2ecc71');
   }
 }
 
@@ -11066,7 +11109,19 @@ function drawBuildAct(bar,b){
   // ── Camp Forestier / Camp Minier / Moulin : récolte + amélioration ──
   if(b.type===BT.LUMBER) drawCampUpgrade(bar,b,'🪵','bois');
   if(b.type===BT.MINE)   drawCampUpgrade(bar,b,'⛏️','pierre et or');
-  if(b.type===BT.MILL)   drawCampUpgrade(bar,b,'🌿','nourriture (baies et fermes)');
+  if(b.type===BT.MILL){
+    drawCampUpgrade(bar,b,'🌿','nourriture (baies et fermes)');
+    // Le Moulin abrite les recherches ÉCONOMIQUES : c'est le premier
+    // bâtiment de production que tout le monde pose, donc l'arbitrage
+    // « économie ou armée » se présente tôt, quand il compte encore.
+    mkBtn(bar,'🌾','Recherches\nÉconomiques',()=>openRP('eco'));
+    if(G.researchQ.length>0&&RDEF[G.researchQ[0].type]?.cat==='eco'){
+      const t=document.createElement('div');
+      t.style.cssText='color:#3498db;font-size:10px;padding:3px 6px;';
+      t.textContent=`⏳ ${RDEF[G.researchQ[0].type].nom}: ${Math.ceil(G.researchQ[0].timer)}s`;
+      bar.appendChild(t);
+    }
+  }
 
   // ── Tour Défensive : stats actuelles + amélioration ──
   if(b.type===BT.TOWER){
@@ -11255,7 +11310,8 @@ function updateSelInfo(e){
 function openRP(cat='forge'){
   const panel=document.getElementById('rpanel');
   const list=document.getElementById('rlist');
-  const titles={forge:'⚒️ Forge — Recherches',univ:'🎓 Université — Recherches Avancées'};
+  const titles={forge:'⚒️ Forge — Recherches',univ:'🎓 Université — Recherches Avancées',
+                eco:'💨 Moulin — Recherches Économiques'};
   document.querySelector('#rpanel h2').textContent=titles[cat]||'🔬 Recherches';
   list.innerHTML='';
   for(const[key,r] of Object.entries(RDEF)){

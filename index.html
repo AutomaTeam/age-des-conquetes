@@ -1842,7 +1842,14 @@ function initState() {
   };
   // Le joueur local. Les adversaires IA sont créés par initAI(), les pillards
   // ne servent qu'en Survie (vagues + garnisons des points d'intérêt).
-  G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:'Vous',res:diff.startRes,maxPop:5,civ:selectedCiv});
+  // « Vous » convient tant qu'on est seul devant l'ecran, mais ce nom VOYAGE
+  // en ligne : le client affichait « Vous » dans son bandeau adverse, dans
+  // « Vous a abandonne » et dans le bilan a deux colonnes. En reseau, l'hote
+  // se nomme donc de son pseudo, comme il nomme deja son adversaire.
+  const nomLocal=(typeof RESEAU!=='undefined'&&RESEAU.actif&&RESEAU.role==='hote')
+    ? ((typeof _mpEtat!=='undefined'&&_mpEtat.nom)||localStorage.getItem('adc_pseudo')||'Hôte')
+    : 'Vous';
+  G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:nomLocal,res:diff.startRes,maxPop:5,civ:selectedCiv});
   G.factions[FAC.PILL]=mkFaction(FAC.PILL,{genre:'neutre',equipe:0,hostileATous:true});
   // Partie en ligne : le second joueur humain existe des la creation de
   // l'etat, car mkBuilding/mkUnit lisent l'age et les recherches de leur
@@ -2326,6 +2333,11 @@ function revealFog(){
   G.fogVer=(G.fogVer||0)+1; // invalide le fond de mini-carte (voir dessinerFondMinimap)
   const visMult=1-(1-VISION_NIGHT_MULT)*nightFactor();
   for(const f of factionsHumaines()){
+    // Le CLIENT d'une partie en ligne n'a qu'une vue partielle des camps
+    // adverses : leur calque serait faux, et il n'est de toute facon jamais
+    // affiche (le rendu ne lit que celui de G.me). L'HOTE, lui, en a besoin
+    // pour filtrer ce qu'il envoie — voir visiblePour().
+    if(RESEAU.actif&&RESEAU.role==='client'&&f.id!==G.me) continue;
     const fog=f.fog;
     if(!fog||!fog.length) continue;
     const reveal=(tx,ty,rad)=>{
@@ -6676,40 +6688,51 @@ function update(dt){
   }
 }
 
-// Avancement d'âge (recherche en cours)
-function updateAgeUp(dt){ // (auto-sauvegarde déclenchée à la fin du passage d'âge)
-  if(!G.ageUpQ) return;
-  G.ageUpQ.timer-=dt;
-  if(G.ageUpQ.timer<=0){
-    const oldAge=G.age;
-    G.age++;
-    const a=AGES[G.age];
-    G.ageUpQ=null;
+// Avancement d'âge — un minuteur PAR CAMP HUMAIN, comme updateResearchQ.
+// Il ne lisait que G.ageUpQ, c'est-à-dire la faction LOCALE : en ligne, le
+// client avait beau payer sa montée d'âge (l'hôte validait l'ordre et
+// prélevait ses ressources), plus personne ne décomptait son minuteur — il
+// restait bloqué à 60 s et l'invité finissait la partie à l'Âge Sombre.
+// Les IA gardent leur propre chemin (a.ageQ, voir updateAI).
+function updateAgeUp(dt){
+  for(const f of factionsHumaines()) updateAgeUpFaction(dt,f);
+}
+function updateAgeUpFaction(dt,f){ // (auto-sauvegarde déclenchée à la fin du passage d'âge)
+  if(!f.ageUpQ) return;
+  f.ageUpQ.timer-=dt;
+  if(f.ageUpQ.timer>0) return;
+  const local=(f.id===G.me), oldAge=f.age;
+  f.age++;
+  const a=AGES[f.age];
+  f.ageUpQ=null;
+  // L'habillage (son, bannière, notifications) ne concerne que MON camp ;
+  // l'effet de jeu, lui, s'applique à celui qui a payé.
+  if(local){
     sfx('age');
     notify(`${a.ico} ${a.nom} atteint !`,'#f0c040');
     notify(`Apporte : ${a.bonus}`,'#e8d5a0',true);
     bigBanner(`${a.ico} ${a.nom}`);
-    if(G.age>=3) hintOnce('wonder',"🏛️ Âge Impérial atteint : vous pouvez désormais bâtir une Merveille — la garder debout 5 minutes une fois achevée gagne la partie.",'#d8c078');
-
-    // Recalcule proportionnellement les PV des bâtiments et des unités
-    // existants (dégâts déjà subis conservés en absolu — même principe que
-    // l'amélioration de tour), pour CHAQUE palier, pas seulement le premier
-    // et le dernier comme avant. L'ATK militaire suit la même logique.
-    const ob=AGE_BONUS[oldAge], nb=AGE_BONUS[G.age];
-    for(const b of G.buildings) if(estLocal(b)){
-      const newMax=Math.round(b.maxHp/ob.bldHp*nb.bldHp);
-      const dmg=b.maxHp-b.hp;
-      b.maxHp=newMax; b.hp=Math.max(1,newMax-dmg);
-    }
-    for(const u of G.units) if(estLocal(u)){
-      const newMaxHp=Math.round(u.maxHp/ob.unitHp*nb.unitHp);
-      const dmg=u.maxHp-u.hp;
-      u.maxHp=newMaxHp; u.hp=Math.max(1,newMaxHp-dmg);
-      if(isMilitary(u.type)) u.atk=Math.round(u.atk/ob.milAtk*nb.milAtk);
-    }
-    updatePopCap(); // les Maisons existantes logent aussitôt plus de monde
-    refreshUI();
+    if(f.age>=3) hintOnce('wonder',"🏛️ Âge Impérial atteint : vous pouvez désormais bâtir une Merveille — la garder debout 5 minutes une fois achevée gagne la partie.",'#d8c078');
   }
+
+  // Recalcule proportionnellement les PV des bâtiments et des unités
+  // existants DE CE CAMP (dégâts déjà subis conservés en absolu — même
+  // principe que l'amélioration de tour), pour CHAQUE palier. L'ATK
+  // militaire suit la même logique.
+  const ob=AGE_BONUS[oldAge], nb=AGE_BONUS[f.age];
+  for(const b of G.buildings) if(b.owner===f.id){
+    const newMax=Math.round(b.maxHp/ob.bldHp*nb.bldHp);
+    const dmg=b.maxHp-b.hp;
+    b.maxHp=newMax; b.hp=Math.max(1,newMax-dmg);
+  }
+  for(const u of G.units) if(u.owner===f.id){
+    const newMaxHp=Math.round(u.maxHp/ob.unitHp*nb.unitHp);
+    const dmg=u.maxHp-u.hp;
+    u.maxHp=newMaxHp; u.hp=Math.max(1,newMaxHp-dmg);
+    if(isMilitary(u.type)) u.atk=Math.round(u.atk/ob.milAtk*nb.milAtk);
+  }
+  updatePopCap(); // les Maisons existantes logent aussitôt plus de monde
+  if(local) refreshUI();
 }
 
 function updateUnits(dt){
@@ -9556,7 +9579,14 @@ function emettreOrdre(cmd,predire){
   // pas l'impression d'être morte pendant un aller-retour réseau.
   if(!envoyerReseau({t:'ORDRE',cmd})) return {ok:false,raison:'reseau'};
   const pred=predire?predire():null;
-  RESEAU.attente.set(cmd.seq,{cmd, annuler:pred&&pred.annuler});
+  // Seul un REJ retire une entree, or l'ecrasante majorite des ordres sont
+  // acceptes : la table grossissait donc pendant toute la partie. Un rejet
+  // revient en un aller-retour ; passe dix secondes, l'ordre est forcement
+  // accepte et l'entree ne sert plus a rien.
+  const maintenant=Date.now();
+  RESEAU.attente.set(cmd.seq,{cmd, annuler:pred&&pred.annuler, t:maintenant});
+  if(RESEAU.attente.size>64)
+    for(const [seq,e] of RESEAU.attente) if(maintenant-(e.t||0)>10000) RESEAU.attente.delete(seq);
   return pred&&pred.resultat ? pred.resultat : {ok:true, optimiste:true};
 }
 
@@ -9582,6 +9612,37 @@ function _bldDe(cmd,id){
 }
 const KO=r=>({ok:false,raison:r});
 const OK=info=>Object.assign({ok:true},info||{});
+
+// -- ARBRE TECHNOLOGIQUE : SOURCE DE VERITE DE L'HOTE --------------------
+// La barre d'action n'affiche que ces memes possibilites, mais un ordre venu
+// du RESEAU ne passe jamais par elle : sans ces tables, applyCommand ne
+// verifiait que le prix. Un client pouvait donc former un Paladin depuis une
+// Maison des l'Age Sombre, ou lancer Tactiques sans Universite -- il payait,
+// c'est tout. `age` : age minimum ; `rech` : recherche prealable.
+const PRODUCTION = {
+  [BT.TC]:        [{u:UT.VIL}],
+  [BT.BARRACKS]:  [{u:UT.MIL},{u:UT.ARC},{u:UT.PIKE,age:1}],
+  [BT.STABLE]:    [{u:UT.SCOUT},{u:UT.KNIGHT}],
+  [BT.MONASTERY]: [{u:UT.MONK}],
+  [BT.CASTLE]:    [{u:UT.PALADIN,rech:'faith'},{u:UT.XBOW,age:2},{u:UT.TREB,age:3},{u:UT.HERO}],
+  [BT.SIEGE]:     [{u:UT.RAM}],
+  [BT.DOCK]:      [{u:UT.BOAT}],
+};
+// Taux de change du Marche. Meme raison d'etre : ORD.TROC recopiait
+// aveuglement les DEUX quantites envoyees par le client, en se contentant de
+// verifier qu'il avait de quoi payer. Un {donne:'wood',qteDonne:0,
+// recoit:'gold',qteRecoit:999999} passait le controle et creditait 999 999
+// pieces -- ressources infinies pour l'invite d'une partie en ligne.
+const TROCS = [
+  {donne:'food',  qte:100, recoit:'gold', rend:60},
+  {donne:'wood',  qte:100, recoit:'gold', rend:60},
+  {donne:'stone', qte:100, recoit:'gold', rend:80},
+  {donne:'gold',  qte:80,  recoit:'wood', rend:100},
+];
+// Le camp possede-t-il un batiment de ce type, bati et debout ?
+function possedeBatiment(owner,type){
+  return G.buildings.some(b=>b.owner===owner&&b.type===type&&!b.constructing&&b.hp>0);
+}
 
 // Applique un ordre validé. SEULE fonction autorisée à muter l'état de jeu
 // pour le compte d'un joueur — la simulation (update) et l'IA gardent
@@ -9706,6 +9767,12 @@ function applyCommand(cmd){
   case ORD.FORMER: {
     const b=_bldDe(cmd); if(!b||b.constructing) return KO('cible');
     const cost=TCOST[cmd.unitType]; if(!cost) return KO('invalide');
+    // Ce batiment produit-il REELLEMENT cette unite, et le camp y a-t-il
+    // droit ? (voir PRODUCTION -- l'interface montre exactement ces regles)
+    const offre=(PRODUCTION[b.type]||[]).find(o=>o.u===cmd.unitType);
+    if(!offre) return KO('invalide');
+    if(offre.age!=null&&f.age<offre.age) return KO('age');
+    if(offre.rech&&!f.research[offre.rech]) return KO('invalide');
     // Héros : un seul par partie, même mort — pas de remplaçant (voir HEROES).
     if(cmd.unitType===UT.HERO){
       if(f.heroTrained||b.trainQ.includes(UT.HERO)) return KO('deja');
@@ -9747,6 +9814,9 @@ function applyCommand(cmd){
 
   case ORD.RECHERCHE: {
     const r=RDEF[cmd.cle]; if(!r) return KO('invalide');
+    // Le panneau de recherche s'ouvre depuis la Forge (cat 'forge') ou
+    // l'Universite (cat 'univ') : c'est ce batiment-la qui en donne le droit.
+    if(!possedeBatiment(cmd.f, r.cat==='univ'?BT.UNIV:BT.FORGE)) return KO('cible');
     if(f.research[cmd.cle]) return KO('deja');
     if(f.researchQ.some(x=>x.type===cmd.cle)) return KO('deja');
     if(!canAfford(r.cost,cmd.f)) return KO('ressources');
@@ -9921,10 +9991,17 @@ function applyCommand(cmd){
   }
 
   case ORD.TROC: {
+    // Le taux vient de TROCS, JAMAIS de l'ordre : les quantites recues ne
+    // servent qu'a identifier laquelle des quatre lignes du Marche est
+    // demandee (voir TROCS pour l'exploit que cela ferme).
+    const t=TROCS.find(x=>x.donne===cmd.donne&&x.recoit===cmd.recoit
+                        &&x.qte===cmd.qteDonne&&x.rend===cmd.qteRecoit);
+    if(!t) return KO('invalide');
+    if(!possedeBatiment(cmd.f,BT.MARKET)) return KO('cible');
     const p=resPool(cmd.f); if(!p) return KO('faction');
-    if((p[cmd.donne]||0)<cmd.qteDonne) return KO('ressources');
-    p[cmd.donne]-=cmd.qteDonne;
-    p[cmd.recoit]=(p[cmd.recoit]||0)+cmd.qteRecoit;
+    if((p[t.donne]||0)<t.qte) return KO('ressources');
+    p[t.donne]-=t.qte;
+    p[t.recoit]=(p[t.recoit]||0)+t.rend;
     f.stats.tradesDone++;
     return OK();
   }
@@ -10461,10 +10538,13 @@ function drawBuildAct(bar,b){
 
   // ── Marché ──
   if(b.type===BT.MARKET){
-    mkBtn(bar,'🍖→💰','100🍖\n→60💰',()=>tradeRes('food',100,'gold',60),false,{food:100});
-    mkBtn(bar,'🪵→💰','100🪵\n→60💰',()=>tradeRes('wood',100,'gold',60),false,{wood:100});
-    mkBtn(bar,'🪨→💰','100🪨\n→80💰',()=>tradeRes('stone',100,'gold',80),false,{stone:100});
-    mkBtn(bar,'💰→🪵','80💰\n→100🪵',()=>tradeRes('gold',80,'wood',100),false,{gold:80});
+    // Derives de TROCS, pas recopies : l'hote refuse tout taux qui n'y
+    // figure pas, un bouton qui divergerait ne produirait qu'un rejet.
+    const icoR=x=>x==='food'?'🍖':x==='wood'?'🪵':x==='stone'?'🪨':'💰';
+    for(const t of TROCS)
+      mkBtn(bar, icoR(t.donne)+'→'+icoR(t.recoit),
+            t.qte+icoR(t.donne)+'\n→'+t.rend+icoR(t.recoit),
+            ()=>tradeRes(t.donne,t.qte,t.recoit,t.rend), false, {[t.donne]:t.qte});
     drawTradeRoute(bar,b);
   }
 
@@ -11346,6 +11426,7 @@ function soumettreClassement(won){
 function showVictory(){
   G.running=false;
   envoyerBilanReseau();
+  arreterVeilleReseau();
   const fresh=finishGame(true);
   const ov=document.getElementById('overlay');
   ov.style.display='flex';
@@ -11369,6 +11450,7 @@ function showVictory(){
     ${G.gmode!=='survival'?'':`<button class="bigbtn" id="contBtn" style="background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:2px solid #2ecc71;" onclick="continuePlay()">⚔️ Continuer (sans fin)</button>`}
     <button class="bigbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Voir tous les succès</button>
   `;
+  quitterSessionReseau(); // le bilan est rendu : plus rien a echanger
 }
 function continuePlay(){
   document.getElementById('overlay').style.display='none';
@@ -11383,6 +11465,7 @@ window.continuePlay=continuePlay;
 function showGameOver(){
   G.running=false;
   envoyerBilanReseau();
+  arreterVeilleReseau();
   const fresh=finishGame(false);
   const gagnantMerveille=factionsJouantes().find(f=>f.merveilleAchevee&&f.id!==G.me);
   const cause=gagnantMerveille
@@ -11403,6 +11486,7 @@ function showGameOver(){
     <button class="bigbtn" onclick="location.reload()">🔄 Recommencer</button>
     <button class="bigbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Voir tous les succès</button>
   `;
+  quitterSessionReseau(); // le bilan est rendu : plus rien a echanger
 }
 
 // ── VITESSE DE JEU ────────────────────────────────────────
@@ -11623,6 +11707,7 @@ function closePause(){
 
 function quitGame(){
   effacerRejoinEnLigne();
+  quitterSessionReseau(true);
   tutoArreter();
   G.running=false; G.paused=false;
   document.getElementById('pausemenu').style.display='none';
@@ -11686,6 +11771,7 @@ const RESEAU = {
   tick:0,
   accDelta:0,
   pret:false,         // le client a fini de generer sa carte
+  snapEnVol:false,    // un SNAP est en cours de compression : aucun delta ne doit le doubler
   dernier:new Map(),  // id -> derniere valeur envoyee (hote)
   connusU:new Set(), connusB:new Set(), connusW:new Set(),
   attente:new Map(),  // seq -> ordre en attente d'acquittement (client)
@@ -11725,6 +11811,11 @@ function envoyerReseau(m){
 // en cas d'echec — le protocole reste fonctionnel, juste plus verbeux.
 const MARQUEUR_SNAP_GZ = 0x53; // 'S'
 async function envoyerSnapCompresse(m){
+  // Le SNAP part de facon ASYNCHRONE (compression) quand tout le reste part
+  // synchrone : sans ce drapeau, un delta emis dans l'intervalle doublait le
+  // SNAP sur le fil et etait jete par le client (pas encore `pret`) — en
+  // emportant une image de changements que l'hote croyait pourtant livree.
+  RESEAU.snapEnVol=true;
   try{
     if(typeof CompressionStream==='undefined'){ RESEAU.envoi(m); return; }
     const octets=new TextEncoder().encode(JSON.stringify(m));
@@ -11737,6 +11828,7 @@ async function envoyerSnapCompresse(m){
     enveloppe.set(gz,1);
     RESEAU.envoi(enveloppe.buffer);
   }catch(e){ try{ RESEAU.envoi(m); }catch(e2){} }
+  finally{ RESEAU.snapEnVol=false; }
 }
 
 // Decodage d'un message binaire recu (pour l'instant : uniquement le SNAP
@@ -11789,11 +11881,27 @@ function deserialiserBatiment(d){
   b.rally=d.y2?{x:d.y2[0],y:d.y2[1]}:null;
   return b;
 }
-function serialiserFaction(f){
-  return {i:f.id, g:f.genre, e:f.equipe, t:f.teinte, n:f.nom, cv:f.civ,
-          ht:f.hostileATous?1:0,
-          r:f.res, a:f.age, q:f.ageUpQ, rc:f.research, rq:f.researchQ,
-          p:f.pop, mp:f.maxPop, v:f.vaincu?1:0, mv:f.merveilleAchevee?1:0, hr:f.heroTrained?1:0};
+// `prive` : joint ou non ce que le brouillard de guerre est cense cacher —
+// caisse, recherches, files d'age et de recherche. Reserve aux factions du
+// MEME CAMP que le destinataire : sans ce filtre, le client lisait dans
+// G.factions les ressources et la liste de recherches exactes de l'hote et
+// des IA (le bandeau adverse s'interdit deja de les AFFICHER, mais la donnee
+// voyageait quand meme). Accessoirement ce sont les seuls champs qui bougent
+// en permanence : les retirer est ce qui rend le differentiel de
+// construireDelta reellement efficace.
+function serialiserFaction(f,prive){
+  const d={i:f.id, g:f.genre, e:f.equipe, t:f.teinte, n:f.nom, cv:f.civ,
+           ht:f.hostileATous?1:0, a:f.age,
+           p:f.pop, mp:f.maxPop, v:f.vaincu?1:0, mv:f.merveilleAchevee?1:0, hr:f.heroTrained?1:0};
+  if(prive){ d.r=f.res; d.q=f.ageUpQ; d.rc=f.research; d.rq=f.researchQ; }
+  return d;
+}
+// Toutes les factions telles que le DESTINATAIRE a le droit de les voir : la
+// sienne et celles de son equipe en entier, les autres amputees du prive.
+function factionsPour(dest){
+  const eq=dest?dest.equipe:null;
+  return Object.values(G.factions).map(f=>serialiserFaction(f,
+    !dest||f.id===dest.id||(eq!=null&&f.equipe===eq)));
 }
 function appliquerFaction(d){
   let f=G.factions[d.i];
@@ -11801,7 +11909,15 @@ function appliquerFaction(d){
     f=mkFaction(d.i,{genre:d.g,equipe:d.e,teinte:d.t,nom:d.n,hostileATous:!!d.ht,civ:d.cv});
     G.factions[d.i]=f;
   }
-  f.res=d.r; f.age=d.a; f.ageUpQ=d.q; f.research=d.rc; f.researchQ=d.rq;
+  // Les champs prives manquent legitimement pour une faction adverse (voir
+  // serialiserFaction) : ne JAMAIS les ecraser par undefined — mkUnit et
+  // mkBuilding lisent f.research a chaque deserialisation.
+  if(d.r!=null)  f.res=d.r;
+  else if(f.res&&f.res.food==null) f.res={food:0,wood:0,stone:0,gold:0};
+  if(d.rc!=null) f.research=d.rc;
+  if('q'  in d)  f.ageUpQ=d.q;
+  if('rq' in d)  f.researchQ=d.rq;
+  f.age=d.a;
   f.pop=d.p; f.maxPop=d.mp; f.vaincu=!!d.v; f.nom=d.n; f.teinte=d.t;
   if(d.cv) f.civ=d.cv;
   f.merveilleAchevee=!!d.mv;
@@ -11826,11 +11942,27 @@ function construireSnap(){
   RESEAU.connusB=new Set(visB.map(b=>b.id));
   RESEAU.connusW=new Set((G.wildlife||[]).map(w=>w.id));
   RESEAU.dernier.clear();
-  for(const u of visU) RESEAU.dernier.set('u'+u.id,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir});
+  for(const u of visU) RESEAU.dernier.set('u'+u.id,{x:u.x,y:u.y,h:u.hp,mh:u.maxHp,s:u.state,g:u.target,d:u.dir});
   for(const b of visB) RESEAU.dernier.set('b'+b.id,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing});
+  // Amorce le cache du differentiel de factions (voir construireDelta) :
+  // ce que le SNAP emporte est, par definition, deja connu du client.
+  const facs=factionsPour(dest);
+  for(const fs of facs){
+    // Amorce sous la MEME forme que construireDelta comparera plus tard : lui
+    // retire deja `rc` de l'objet avant de le comparer/mettre en cache (voir
+    // plus bas). Amorcer ici avec `fs` TEL QUEL (rc inclus) produisait une
+    // chaine que le premier delta ne pouvait plus jamais retrouver egale --
+    // chaque connexion se payait donc un envoi complet des factions en trop,
+    // l'optimisation ne jouant qu'a partir du DEUXIEME delta. `fs` lui-meme
+    // doit rester intact : c'est l'objet renvoye dans le SNAP (facs), amputer
+    // `rc` ici priverait le client de la recherche a la premiere reception.
+    RESEAU.dernier.set('fr'+fs.i, fs.rc?JSON.stringify(fs.rc):'');
+    const{rc,...sansRc}=fs;
+    RESEAU.dernier.set('f'+fs.i, JSON.stringify(sansRc));
+  }
   return {
     t:'SNAP', tick:RESEAU.tick, gt:+G.gameTime.toFixed(2),
-    fac:Object.values(G.factions).map(serialiserFaction),
+    fac:facs,
     nodes:G.nodes.filter(nd=>nd.amt!==nd.max).map(nd=>[nd.id,nd.amt]), // le reste vient de la graine
     // Reliques : la position vient elle aussi de la graine (genRelics tourne
     // identiquement des deux côtés) — seul le camp qui l'a mise à l'abri voyage.
@@ -11846,7 +11978,11 @@ function construireSnap(){
 
 // ── HOTE : delta ───────────────────────────────────────────────
 // Masque de bits par entite ; seuls les champs qui ont bouge voyagent.
-const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32;
+// M_MAXHP : les recherches (Armure de Fer) et les montees d'age recalculent
+// le maxHp des unites DEJA sur la carte. Sans ce bit, le client gardait le
+// maxHp du jour de leur creation : barres de vie faussees, « PV : 130/100 »
+// dans le panneau. Les batiments transmettaient deja le leur (e[8]).
+const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32, M_MAXHP=64;
 
 // Brouillard d'une faction ARBITRAIRE (pas forcement la locale, contrairement
 // a fogTileAt/G.fog) : sert a filtrer ce que l'hote envoie a l'adversaire.
@@ -11882,7 +12018,7 @@ function construireDelta(){
     const cle='u'+u.id, av=RESEAU.dernier.get(cle);
     if(!av){                                   // nouvelle unite : complete
       (d.newU||(d.newU=[])).push(serialiserUnite(u));
-      RESEAU.dernier.set(cle,{x:u.x,y:u.y,h:u.hp,s:u.state,g:u.target,d:u.dir});
+      RESEAU.dernier.set(cle,{x:u.x,y:u.y,h:u.hp,mh:u.maxHp,s:u.state,g:u.target,d:u.dir});
       continue;
     }
     let masque=0; const ch=[];
@@ -11892,6 +12028,7 @@ function construireDelta(){
     if(u.state!==av.s){ masque|=M_ETAT; ch.push(u.state); av.s=u.state; }
     if((u.target||null)!==(av.g||null)){ masque|=M_CIBLE; ch.push(u.target||null); av.g=u.target; }
     if(Math.abs((u.dir||0)-(av.d||0))>0.25){ masque|=M_DIR; ch.push(+(u.dir||0).toFixed(2)); av.d=u.dir; }
+    if(u.maxHp!==av.mh){ masque|=M_MAXHP; ch.push(u.maxHp); av.mh=u.maxHp; }
     if(masque) d.u.push([u.id,masque].concat(ch));
   }
   for(const id of RESEAU.connusU) if(!vus.has(id)){ d.rm.push(id); RESEAU.dernier.delete('u'+id); }
@@ -11956,8 +12093,21 @@ function construireDelta(){
   for(const id of RESEAU.connusW) if(!vusW.has(id)){ d.rmw.push(id); RESEAU.dernier.delete('w'+id); }
   RESEAU.connusW=vusW;
 
-  // Factions : caisse, age, population, recherches
-  d.fac=Object.values(G.factions).map(serialiserFaction);
+  // Factions : caisse, age, population, recherches. DIFFERENTIEL, comme le
+  // reste du delta : cet objet pesait a lui seul 2,1 Ko sur les 2,2 Ko d'un
+  // delta au repos — 95 % de la bande passante — reexpedies dix fois par
+  // seconde alors qu'il ne change qu'a la recolte, a la montee d'age ou a une
+  // recherche. Les recherches (240 o par faction) sortent en plus du lot :
+  // elles ne bougent que neuf fois dans une partie.
+  for(const fs of factionsPour(dest)){
+    const cleR='fr'+fs.i, sR=fs.rc?JSON.stringify(fs.rc):'';
+    const rcChange=RESEAU.dernier.get(cleR)!==sR;
+    if(rcChange) RESEAU.dernier.set(cleR,sR); else delete fs.rc;
+    const cle='f'+fs.i, s=JSON.stringify(fs);
+    if(!rcChange&&RESEAU.dernier.get(cle)===s) continue;
+    RESEAU.dernier.set(cle,s);
+    (d.fac||(d.fac=[])).push(fs);
+  }
   // Projectiles : trop peu nombreux pour meriter un differentiel
   d.p=G.projs.map(pr=>[pr.x|0,pr.y|0,pr.tx|0,pr.ty|0,pr.owner||'']);
   d.gt=+G.gameTime.toFixed(2);
@@ -11999,17 +12149,30 @@ function appliquerDelta(m){
   if(m.wave!=null) G.wave=m.wave;
   if(m.fac) for(const f of m.fac) appliquerFaction(f);
 
-  for(const nd of (m.n||[])){ const x=G.nodes.find(z=>z.id===nd[0]); if(x) x.amt=nd[1]; }
-  for(const rl of (m.rl||[])){ const x=G.relics&&G.relics.find(z=>z.id===rl[0]); if(x&&!x.bankedBy) x.bankedBy=rl[1]; }
-  for(const wd of (m.w||[])){ const x=G.wildlife&&G.wildlife.find(z=>z.id===wd[0]); if(x) x.hp=wd[1]; }
-  for(const id of (m.rmw||[])){ G.wildlife=(G.wildlife||[]).filter(z=>z.id!==id); }
+  // Resolution par INDEX plutot que par balayage : un `find` sur les ~460
+  // gisements pour chaque entree du delta, dix fois par seconde, finissait
+  // par couter plus cher que tout le reste du decodage reuni.
+  for(const nd of (m.n||[])){ const x=nodeById(nd[0]); if(x) x.amt=nd[1]; }
+  if(m.rl&&m.rl.length&&G.relics)
+    for(const rl of m.rl){ const x=G.relics.find(z=>z.id===rl[0]); if(x&&!x.bankedBy) x.bankedBy=rl[1]; }
+  if((m.w&&m.w.length)||(m.rmw&&m.rmw.length)){
+    const iw=new Map(); for(const w of (G.wildlife||[])) iw.set(w.id,w);
+    for(const wd of (m.w||[])){ const x=iw.get(wd[0]); if(x) x.hp=wd[1]; }
+    if(m.rmw&&m.rmw.length){
+      const abattus=new Set(m.rmw);              // un seul balayage pour tout le lot
+      G.wildlife=(G.wildlife||[]).filter(z=>!abattus.has(z.id));
+    }
+  }
 
+  // bldById/unitById plutot que .some() : l'index est reconstruit a la fin
+  // de chaque delta, et l'hote ne peut pas annoncer deux fois la meme entite
+  // dans un meme lot (il les tire d'un Set).
   for(const bd of (m.newB||[])){
-    if(G.buildings.some(b=>b.id===bd.i)) continue;
+    if(bldById(bd.i)) continue;
     placeBuilding(deserialiserBatiment(bd));
   }
   for(const ud of (m.newU||[])){
-    if(G.units.some(u=>u.id===ud.i)) continue;
+    if(unitById(ud.i)) continue;
     G.units.push(deserialiserUnite(ud));
   }
   rebuildIndex();
@@ -12023,6 +12186,7 @@ function appliquerDelta(m){
     if(masque&M_ETAT)  u.state=e[k++];
     if(masque&M_CIBLE) u.target=e[k++];
     if(masque&M_DIR)   u.dir=e[k++];
+    if(masque&M_MAXHP) u.maxHp=e[k++];
   }
   for(const e of (m.b||[])){
     const b=bldById(e[0]); if(!b) continue;
@@ -12042,19 +12206,34 @@ function appliquerDelta(m){
   }
 
   // Retraits : c'est ici que le client apprend les morts et les destructions.
-  for(const id of (m.rm||[])){
-    const u=unitById(id); if(!u) continue;
-    G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge'});
-    spawnParts(u.x,u.y,couleurMinimap(u,true),8);
-    G.units=G.units.filter(z=>z.id!==id);
-    G.sel=G.sel.filter(z=>z!==id);
+  // Un seul balayage du tableau pour TOUT le lot : reconstruire G.units a
+  // chaque identifiant retire coutait autant de copies du tableau qu'il y
+  // avait de morts — precisement au moment ou le lot est le plus gros.
+  if((m.rm||[]).length){
+    const morts=new Set();
+    for(const id of m.rm){
+      const u=unitById(id); if(!u) continue;
+      morts.add(id);
+      G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge'});
+      spawnParts(u.x,u.y,couleurMinimap(u,true),8);
+    }
+    if(morts.size){
+      G.units=G.units.filter(z=>!morts.has(z.id));
+      G.sel=G.sel.filter(z=>!morts.has(z));
+    }
   }
-  for(const id of (m.rmb||[])){
-    const b=bldById(id); if(!b) continue;
-    spawnParts(b.x,b.y,'#e74c3c',14);
-    for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++) if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=0;
-    G.buildings=G.buildings.filter(z=>z.id!==id);
-    G.sel=G.sel.filter(z=>z!==id);
+  if((m.rmb||[]).length){
+    const rases=new Set();
+    for(const id of m.rmb){
+      const b=bldById(id); if(!b) continue;
+      rases.add(id);
+      spawnParts(b.x,b.y,'#e74c3c',14);
+      for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++) if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=0;
+    }
+    if(rases.size){
+      G.buildings=G.buildings.filter(z=>!rases.has(z.id));
+      G.sel=G.sel.filter(z=>!rases.has(z));
+    }
   }
   if((m.rm||[]).length||(m.rmb||[]).length){ rebuildIndex(); updatePopCap(); }
 
@@ -12073,8 +12252,7 @@ function updateVisuel(dt){
   G.dt=dt;
   G.gameTime+=dt;                       // avance douce entre deux deltas
   G.dayPhase=(G.gameTime/90)%1;
-  rebuildIndex();
-  rebuildGrid();
+  rebuildGrid();          // reconstruit deja l'index id -> entite, inutile de le refaire
 
   const k=Math.min(1,dt*14);            // lissage de l'interpolation
   for(const u of G.units){
@@ -12131,6 +12309,7 @@ function recevoirReseau(m){
     case 'D':      if(RESEAU.pret) appliquerDelta(m); break;
     case 'ORDRE':  traiterOrdreDistant(m); break;
     case 'REJ':    traiterRejet(m); break;
+    case 'BAT':    break; // pouls : dernierRecu vient d'etre rafraichi plus haut
     case 'CHAT':   break; // gere par le panneau de salon
     case 'PAUSE':  appliquerPauseDistante(true,m.par,m.nom); break;
     case 'REPRISE':appliquerPauseDistante(false,m.par,m.nom); break;
@@ -12198,7 +12377,7 @@ function construireSalut(){
     t:'SALUT', proto:PROTO_VERSION,
     seed:G.seed, gmode:G.gmode, difficulty:G.difficulty,
     cols:COLS, rows:ROWS, simHz:SIM_HZ,
-    fac:Object.values(G.factions).map(serialiserFaction),
+    fac:factionsPour(RESEAU.adversaire&&G.factions[RESEAU.adversaire.id]),
     toi:FAC.P2,
   };
 }
@@ -12254,7 +12433,7 @@ function demarrerPartieClient(m){
 
 // ── EMISSION DES DELTAS (hote) ─────────────────────────────────
 function pousserReseau(dt){
-  if(!RESEAU.actif||RESEAU.role!=='hote'||!RESEAU.pret) return;
+  if(!RESEAU.actif||RESEAU.role!=='hote'||!RESEAU.pret||RESEAU.snapEnVol) return;
   RESEAU.accDelta+=dt;
   if(RESEAU.accDelta<DELTA_PERIODE) return;
   RESEAU.accDelta=0;
@@ -12344,6 +12523,20 @@ function traiterAbandon(m){
   const f=G.factions[m.par]; if(!f) return;
   f.vaincu=true; // le controle habituel de fin de partie (update()) tranche a la prochaine image
   notify('\uD83C\uDFF3\uFE0F '+f.nom+' a abandonn\u00e9','#f0c040');
+  // Celui qui abandonne coupe aussi son pouls : sans ce nettoyage, le camp
+  // reste en place voyait trois secondes plus tard un bandeau « connexion
+  // perdue », puis la boite « votre adversaire ne revient pas » — alors
+  // qu'il vient precisement d'apprendre que l'autre a renonce.
+  if(RESEAU.role==='hote'){
+    // L'hote garde la simulation : la partie continue hors ligne, contre les
+    // IA restantes (en 1v1+IA comme en 2v1 coop).
+    quitterSessionReseau();
+  } else {
+    // Le client, lui, ne simule RIEN : sans l'hote plus aucune image ne peut
+    // avancer. On lui sert tout de suite l'ecran deja prevu pour ce cas
+    // plutot que de le laisser trois minutes devant un plateau fige.
+    afficherEcranHoteParti();
+  }
 }
 
 // \u2500\u2500 SIGNAUX RAPIDES (chat 1 clic, touches 1-4) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -12467,11 +12660,21 @@ function lireRejoinEnLigne(){
 // reprise après coup : un rechargement accidentel reste la cause la plus
 // fréquente d'abandon involontaire d'une partie en ligne.
 window.addEventListener('beforeunload',e=>{
-  if(!reseauActif()) return;
+  if(!reseauActif()||!G.running) return; // rien a perdre une fois la partie finie
   e.preventDefault(); e.returnValue='';
 });
 
-let _minuteurVeille=null, _minuteurDecision=null;
+// Pouls APPLICATIF, distinct du PING/PONG du transport. Celui-la est
+// intercepte par le transport lui-meme (voir recevoir(), tout en bas) et
+// n'atteint JAMAIS recevoirReseau : il ne rafraichit donc jamais dernierRecu.
+// Or le client n'emet rien spontanement — un message ne part que lorsque le
+// joueur donne un ordre. Sans ce battement, l'hote constatait trois secondes
+// de silence des que son adversaire cessait de cliquer : il gelait la partie,
+// affichait « connexion perdue » et renegociait le WebRTC pour rien. Emis par
+// les DEUX camps, et par setInterval — surtout pas par la boucle de jeu, qui
+// s'arrete justement pendant une pause partagee ou un gel.
+const BAT_PERIODE = 1000;
+let _minuteurVeille=null, _minuteurDecision=null, _minuteurBattement=null;
 function demarrerVeilleReseau(){
   RESEAU.dernierRecu=Date.now();
   if(_minuteurVeille) clearInterval(_minuteurVeille);
@@ -12479,6 +12682,45 @@ function demarrerVeilleReseau(){
     if(!RESEAU.actif||RESEAU.enAttenteReconnexion||RESEAU.decisionRequise) return;
     if(Date.now()-RESEAU.dernierRecu>DELAI_GEL_RECO) entrerAttenteReconnexion();
   },500);
+  if(_minuteurBattement) clearInterval(_minuteurBattement);
+  _minuteurBattement=setInterval(()=>{ if(RESEAU.actif) envoyerReseau({t:'BAT'}); },BAT_PERIODE);
+}
+// La partie est finie (victoire, defaite, retour au menu) : il n'y a plus
+// rien a surveiller. Sans cet arret la veille continuait de tourner par-dessus
+// l'ecran de fin, y affichait le bandeau « connexion perdue » au bout de trois
+// secondes, puis trois minutes plus tard la boite « votre adversaire ne
+// revient pas » — le tout en renegociant un WebRTC dont plus personne n'a
+// l'usage.
+function arreterVeilleReseau(){
+  if(_minuteurVeille){ clearInterval(_minuteurVeille); _minuteurVeille=null; }
+  if(_minuteurBattement){ clearInterval(_minuteurBattement); _minuteurBattement=null; }
+  if(_minuteurDecision){ clearTimeout(_minuteurDecision); _minuteurDecision=null; }
+  if(RESEAU.pauseMinuteur){ clearTimeout(RESEAU.pauseMinuteur); RESEAU.pauseMinuteur=null; }
+  RESEAU.enAttenteReconnexion=false;
+  afficherBandeauReconnexion(false);
+}
+// Quitter une partie EN LIGNE doit remettre le jeu en mode solo. Sans cette
+// remise a zero, RESEAU.actif restait vrai apres un retour au menu : la
+// partie solo suivante voyait estHote() faux et faisait tourner
+// updateVisuel() a la place d'update() — plus aucune simulation, un temps de
+// jeu qui s'emballe et des villageois qui ne recoltent plus.
+// `fermerSalon` : supprimer aussi le salon cote serveur. Reserve au retour
+// explicite au menu — a la fin d'une partie, l'adversaire est peut-etre en
+// train d'afficher son propre ecran de fin, et lui faire disparaitre le salon
+// sous les pieds le renverrait vers « l'hote a quitte » au lieu de son
+// resultat. Le salon retombe de toute facon tout seul (onDisconnect).
+function quitterSessionReseau(fermerSalon){
+  if(!RESEAU.actif) return;
+  arreterVeilleReseau();
+  RESEAU.actif=false; RESEAU.role=null; RESEAU.pret=false; RESEAU.snapEnVol=false;
+  RESEAU.adversaire=null; RESEAU.finRecue=null; RESEAU.decisionRequise=false;
+  RESEAU.tick=0; RESEAU.accDelta=0; RESEAU.latence=0;
+  RESEAU.dernier.clear(); RESEAU.attente.clear();
+  RESEAU.connusU.clear(); RESEAU.connusB.clear(); RESEAU.connusW.clear();
+  afficherVoilePause(false);
+  const dec=document.getElementById('mp-decision-hote'); if(dec) dec.style.display='none';
+  mpVerrouillerVitesse();
+  if(fermerSalon) try{ window.MP&&window.MP.quitter&&window.MP.quitter(); }catch(e){}
 }
 function entrerAttenteReconnexion(){
   if(RESEAU.enAttenteReconnexion) return;
@@ -12512,6 +12754,10 @@ function afficherBandeauReconnexion(visible){
 // coupure) \u2014 inutile d'attendre les 60 s dans ce cas-la.
 function signalerSalonSupprime(){
   if(RESEAU.role!=='client') return;
+  // Course frequente : c'est MOI qui viens d'abandonner, l'hote a repris la
+  // main hors ligne et referme le salon dans la foulee. Mon ecran de fin est
+  // deja affiche — le remplacer par « l'hote a quitte » serait un contresens.
+  if(G.gameOver||G.victory||!G.running) return;
   if(_minuteurDecision){ clearTimeout(_minuteurDecision); _minuteurDecision=null; }
   RESEAU.enAttenteReconnexion=false;
   afficherBandeauReconnexion(false);
@@ -12548,6 +12794,7 @@ window.mpDecisionTerminer=mpDecisionTerminer;
 // soit vers le menu.
 function afficherEcranHoteParti(){
   effacerRejoinEnLigne();
+  arreterVeilleReseau();
   G.paused=true; RESEAU.actif=false;
   const ov=document.getElementById('overlay');
   ov.style.display='flex'; ov.classList.add('endscreen');

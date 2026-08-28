@@ -2829,6 +2829,13 @@ const SS=3;    // supersampling : sprites générés en 3×, dessinés réduits 
 // plafonne à ~170 px et un gisement à ~295 px. Travailler à la résolution
 // réellement utile divise d'autant le coût du flood fill ET la mémoire du
 // cache, sans aucune perte visible à l'écran.
+// Extension des planches illustrees. Point de passage UNIQUE : elle etait
+// ecrite en dur a quinze endroits, ce qui rendait tout changement de format
+// impossible a faire sans en oublier un — et un oubli est SILENCIEUX (le
+// fichier manquant fait simplement retomber sur le sprite procedural, voir
+// withIllustration/onerror), donc invisible jusqu'a ce qu'on remarque qu'un
+// batiment a perdu son illustration.
+const ASSET_EXT='.webp';
 const TRIM_W_BLD=512, TRIM_W_UNIT=320, TRIM_W_NODE=320, TRIM_W_ICON=256;
 const GRASS_VARIANTS=8; // nb de textures d'herbe distinctes (buildTerrain ↔ drawMap doivent s'accorder)
 const WATER_VARIANTS=6; // idem pour l'eau (buildTerrain ↔ drawMap)
@@ -3076,7 +3083,7 @@ function buildTrees(T){
   // illustration d'arbre (voir upgradeResourceNodes) : quand elle est prete,
   // les peindre en dessous est du travail integralement jete — et c'est le
   // plus cher des gisements.
-  const illus=illustrationPrete('assets/ressources/arbre.png');
+  const illus=illustrationPrete('assets/ressources/arbre'+ASSET_EXT);
   const palettes=[
     ['#1f4a18','#2f6322','#3f7d2e','#4f9038'],   // chêne classique
     ['#244e1a','#356128','#458038','#56a046'],   // frêne clair
@@ -3162,7 +3169,7 @@ function rockChunk(cx,cxp,cyp,r,rnd,baseCol,liteCol,darkCol){
 
 function buildStoneNode(T){
   SPR.stone=[];
-  const illus=illustrationPrete('assets/ressources/gisement_pierre.png');
+  const illus=illustrationPrete('assets/ressources/gisement_pierre'+ASSET_EXT);
   for(let v=0;v<3;v++){
     const S=Math.round(T*1.05);
     const{c,cx}=offCanvas(S,S);
@@ -3187,7 +3194,7 @@ function buildStoneNode(T){
 
 function buildGoldNode(T){
   SPR.gold=[];
-  const illus=illustrationPrete('assets/ressources/gisement_or.png');
+  const illus=illustrationPrete('assets/ressources/gisement_or'+ASSET_EXT);
   for(let v=0;v<3;v++){
     const S=Math.round(T*1.05);
     const{c,cx}=offCanvas(S,S);
@@ -3224,7 +3231,7 @@ function buildGoldNode(T){
 // davantage de fruits avec reflet, et 2 variantes pour casser la répétition.
 function buildBerry(T){
   SPR.berry=[];
-  const illus=illustrationPrete('assets/ressources/buisson_baies.png');
+  const illus=illustrationPrete('assets/ressources/buisson_baies'+ASSET_EXT);
   for(let v=0;v<3;v++){
     const S=Math.round(T*1.05);
     const{c,cx}=offCanvas(S,S);
@@ -3261,7 +3268,7 @@ function buildBerry(T){
 // sur l'eau. Trois argentés, nageoire caudale et reflet dorsal. ──
 function buildFish(T){
   SPR.fish=[];
-  const illus=illustrationPrete('assets/ressources/banc_poissons.png');
+  const illus=illustrationPrete('assets/ressources/banc_poissons'+ASSET_EXT);
   for(let v=0;v<3;v++){
     const S=Math.round(T*0.9);
     const{c,cx}=offCanvas(S,S);
@@ -3294,7 +3301,7 @@ function buildFish(T){
 // crue + os croisés, façon quartier de viande posé au sol. ──
 function buildMeat(T){
   SPR.meat=[];
-  const illus=illustrationPrete('assets/ressources/viande.png');
+  const illus=illustrationPrete('assets/ressources/viande'+ASSET_EXT);
   for(let v=0;v<2;v++){
     const S=Math.round(T*0.95);
     const{c,cx}=offCanvas(S,S);
@@ -3404,7 +3411,7 @@ function buildBuildings(T,i0,i1){
     // Seules les formes « age 0 / niveau 1 » ont une illustration : les
     // variantes d'age et de niveau construites plus bas restent procedurales.
     const illus=BLD_SPRITE_FILES[type]
-      ? illustrationPrete('assets/batiments/'+BLD_SPRITE_FILES[type]+'.png') : false;
+      ? illustrationPrete('assets/batiments/'+BLD_SPRITE_FILES[type]+ASSET_EXT) : false;
     const{c,cx}=offCanvas(pw,ph+T*0.5); // marge pour toit en relief
     if(!illus) drawBuildingSprite(cx,type,d,pw,ph,T,false);
     SPR.bld[type]={c,cx,oy,dw,dh};
@@ -3538,7 +3545,7 @@ function tintEnemyBuilding(base,W,H){
 // ici qu'une mise à l'échelle, soit un drawImage par bâtiment.
 function upgradeBuildingSprites(){
   for(const type in BLD_SPRITE_FILES){
-    withIllustration('assets/batiments/'+BLD_SPRITE_FILES[type]+'.png',TRIM_W_BLD,(url)=>{
+    withIllustration('assets/batiments/'+BLD_SPRITE_FILES[type]+ASSET_EXT,TRIM_W_BLD,(url)=>{
       const meta=SPR.bld[type]; if(!meta) return;
       const W=meta.c.width, H=meta.c.height;
       const fitted=fitBuildingImage(url,W,H); if(!fitted) return;
@@ -3583,7 +3590,7 @@ function upgradeBuildingSprites(){
     // les deux n'a pas d'importance, chacune ne touche que ses propres clés.
     const ageFiles=BLD_AGE_SPRITE_FILES[type];
     if(ageFiles) for(const age in ageFiles){
-      withIllustration('assets/batiments/'+ageFiles[age]+'.png',TRIM_W_BLD,(url)=>{
+      withIllustration('assets/batiments/'+ageFiles[age]+ASSET_EXT,TRIM_W_BLD,(url)=>{
         const cle=type+'_A'+age, cleE=cle+'_E';
         const meta=SPR.bld[cle]; if(!meta) return;
         const W=meta.c.width, H=meta.c.height;
@@ -3611,7 +3618,7 @@ function upgradeCivBuildingSprites(){
     for(const civ in BLD_CIV_SPRITE_FILES[type]){
       const files=BLD_CIV_SPRITE_FILES[type][civ];
       for(const age in files){
-        withIllustration('assets/batiments/'+files[age]+'.png',TRIM_W_BLD,(url)=>{
+        withIllustration('assets/batiments/'+files[age]+ASSET_EXT,TRIM_W_BLD,(url)=>{
           const fitted=fitBuildingImage(url,W,H); if(!fitted) return;
           const cle=type+'_'+civ+(age==='0'?'':'_A'+age);
           SPR.bldCiv[cle]=Object.assign({},ref,fitted);
@@ -4390,7 +4397,7 @@ function fitUnitImage(src,S){
 
 function upgradeUnitSprites(){
   for(const type in UNIT_SPRITE_FILES){
-    withIllustration('assets/unites/'+UNIT_SPRITE_FILES[type]+'.png',TRIM_W_UNIT,(url)=>{
+    withIllustration('assets/unites/'+UNIT_SPRITE_FILES[type]+ASSET_EXT,TRIM_W_UNIT,(url)=>{
       // Les trois poses partagent la même taille de canvas : un seul cadrage
       // suffit, réutilisé tel quel pour les deux frames de marche.
       let fitted=null, fittedS=-1;
@@ -4439,7 +4446,7 @@ function fitNodeImage(src,S,groundFrac){
 function upgradeResourceNodes(){
   for(const type in NODE_SPRITE_FILES){
     const gf=NODE_GROUND_FRAC[type];
-    withIllustration('assets/ressources/'+NODE_SPRITE_FILES[type]+'.png',TRIM_W_NODE,(url)=>{
+    withIllustration('assets/ressources/'+NODE_SPRITE_FILES[type]+ASSET_EXT,TRIM_W_NODE,(url)=>{
       const arr=SPR[type]; if(!arr||!arr.length) return;
       // Toutes les variantes procédurales d'un type ont la même taille : on ne
       // recadre qu'une fois et on partage le canvas obtenu.
@@ -4463,7 +4470,7 @@ const WILDLIFE_SPRITE_FILES={ deer:'cerf', boar:'sanglier' };
 const WILDLIFE_GROUND_FRAC=0.82;
 function upgradeWildlifeSprites(){
   for(const type in WILDLIFE_SPRITE_FILES){
-    withIllustration('assets/unites/'+WILDLIFE_SPRITE_FILES[type]+'.png',TRIM_W_NODE,(url)=>{
+    withIllustration('assets/unites/'+WILDLIFE_SPRITE_FILES[type]+ASSET_EXT,TRIM_W_NODE,(url)=>{
       const meta=SPR.wildlife[type]; if(!meta) return;
       const fitted=fitNodeImage(url,meta.c.width,WILDLIFE_GROUND_FRAC); if(!fitted) return;
       SPR.wildlife[type]=Object.assign({},meta,fitted);
@@ -4483,7 +4490,7 @@ const SINGLETON_SPRITE_FILES={
 function upgradeSingletonSprites(){
   for(const key in SINGLETON_SPRITE_FILES){
     const{file,frac}=SINGLETON_SPRITE_FILES[key];
-    withIllustration('assets/'+file+'.png',TRIM_W_NODE,(url)=>{
+    withIllustration('assets/'+file+ASSET_EXT,TRIM_W_NODE,(url)=>{
       const meta=SPR[key]; if(!meta) return;
       const fitted=fitNodeImage(url,meta.c.width,frac); if(!fitted) return;
       SPR[key]=Object.assign({},meta,fitted);
@@ -4768,7 +4775,7 @@ function buildUnitSprite(type,T,legPhase){
   const{c,cx}=offCanvas(S,S);
   // Meme raccourci que pour les batiments : l'illustration remplace la pose
   // de base ET les deux frames de foulee, inutile de peindre dessous.
-  if(UNIT_SPRITE_FILES[type]&&illustrationPrete('assets/unites/'+UNIT_SPRITE_FILES[type]+'.png'))
+  if(UNIT_SPRITE_FILES[type]&&illustrationPrete('assets/unites/'+UNIT_SPRITE_FILES[type]+ASSET_EXT))
     return {c,cx,S:S/SS};
   const cxp=S/2;
   const body=UCOL[type]||'#888';
@@ -5486,7 +5493,7 @@ function upgradeResourceIcons(){
   if(SPR.resIconsUpgrading) return;
   SPR.resIconsUpgrading=true;
   for(const key in RES_SPRITE_FILES){
-    withIllustration('assets/ressources/'+RES_SPRITE_FILES[key]+'.png',TRIM_W_ICON,(url)=>{
+    withIllustration('assets/ressources/'+RES_SPRITE_FILES[key]+ASSET_EXT,TRIM_W_ICON,(url)=>{
       const fitted=stripBgAndFit(url,ICS); if(!fitted) return;
       SPR.ico[key]=fitted;
       applyStaticIcons();

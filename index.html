@@ -1136,6 +1136,14 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
         <button class="diffbtn" data-c="mongols"   onclick="pickCiv('mongols')"><span class="dico">🏹</span><span class="dlabel">Mongols</span></button>
       </div>
       <p class="tip" id="civtip">Francs — +20% PV à la Cavalerie (Chevaliers, Paladins, Éclaireurs)</p>
+      <div class="diffrow" id="carterow">
+        <button class="diffbtn sel" data-k="plaines" onclick="pickCarte('plaines')"><span class="dico">🌾</span><span class="dlabel">Plaines</span></button>
+        <button class="diffbtn" data-k="foret"   onclick="pickCarte('foret')"><span class="dico">🌲</span><span class="dlabel">Grande Forêt</span></button>
+        <button class="diffbtn" data-k="arides"  onclick="pickCarte('arides')"><span class="dico">🪨</span><span class="dlabel">Terres Arides</span></button>
+        <button class="diffbtn" data-k="lacs"    onclick="pickCarte('lacs')"><span class="dico">🌊</span><span class="dlabel">Grands Lacs</span></button>
+        <button class="diffbtn" data-k="arene"   onclick="pickCarte('arene')"><span class="dico">🏟️</span><span class="dlabel">Arène</span></button>
+      </div>
+      <p class="tip" id="cartetip">Plaines — Équilibrée, la carte historique du jeu</p>
       <div class="seedrow">
         <label for="seedin">Graine</label>
         <input id="seedin" type="text" inputmode="numeric" placeholder="aléatoire" oninput="setGraine(this.value)">
@@ -1546,6 +1554,52 @@ const CIVS = {
                desc:'+20% ATK à distance · chasse deux fois plus rapide · Cavalier-Archer · Étriers de Fer',
                rangedAtkMult:1.20, chasseMult:2.0, unique:UT.CAVARC, techCiv:'etriers' },
 };
+// ── TYPES DE CARTE ────────────────────────────────────────
+// genMap() ne produisait qu'UN seul type de monde : lacs epars, forets
+// denses, or aux extremites, depart au centre. Aucun reglage, aucune
+// variante — et donc la meme partie a chaque fois, quelle que soit la graine.
+//
+// Chaque preset n'est qu'un jeu de MULTIPLICATEURS applique aux memes appels
+// place() : rien n'est reecrit, la sequence de tirages reste identique, donc
+// le determinisme partage hote/client (voir genMap et le groupe `carte` des
+// tests) est preserve tel quel.
+//
+// Ce qu'on ne trouvera PAS ici, et pourquoi :
+//   • pas de carte « Foret Noire » facon AoE2 : les arbres sont marques 2
+//     dans bmap, pas 3 — ils ne bloquent AUCUN passage. Une muraille
+//     d'arbres serait purement decorative tant que ce choix tient.
+//   • pas de carte « Iles » : sans navire de transport, les camps seraient
+//     inatteignables et la partie ne pourrait pas se terminer.
+const CARTES = {
+  plaines: { nom:'Plaines',      ico:'🌾',
+             desc:'Équilibrée — la carte historique du jeu' },
+  foret:   { nom:'Grande Forêt', ico:'🌲', foret:2.2, or:0.55, pierre:0.6, baies:1.3,
+             desc:'Bois surabondant, or et pierre rares — l’armée chère se paie cher' },
+  arides:  { nom:'Terres Arides', ico:'🪨', foret:0.45, or:1.6, pierre:1.7, baies:0.7, lacs:0.5,
+             desc:'Peu d’arbres, filons généreux — chaque bûcheron compte' },
+  lacs:    { nom:'Grands Lacs',   ico:'🌊', lacs:2.2, poissons:2.6, foret:0.9,
+             desc:'Beaucoup d’eau et de poisson — le Quai devient une vraie économie' },
+  arene:   { nom:'Arène',        ico:'🏟️', murs:true, foret:0.8, or:1.2,
+             desc:'Chaque camp démarre derrière une palissade à quatre portails' },
+};
+let selectedCarte='plaines';
+function pickCarte(key){
+  if(!CARTES[key]) return;
+  selectedCarte=key;
+  document.querySelectorAll('#carterow .diffbtn').forEach(b=>b.classList.toggle('sel', b.dataset.k===key));
+  const t=document.getElementById('cartetip');
+  if(t) t.textContent=`${CARTES[key].nom} — ${CARTES[key].desc}`;
+  try{ localStorage.setItem('adc_carte',key); }catch(e){}
+  updateCfgSummary();
+}
+window.pickCarte=pickCarte;
+// Reglages de la carte en cours. G.carte est pose par initState ; EMPTY sert
+// aux lectures faites avant la premiere partie.
+const CARTE_DEF=CARTES.plaines;
+function carteCfg(){ return (typeof G!=='undefined'&&G&&CARTES[G.carte])||CARTE_DEF; }
+// Multiplicateur d'un reglage, 1 par defaut.
+function cM(cle){ const v=carteCfg()[cle]; return v==null?1:v; }
+
 let selectedCiv='francs';
 function pickCiv(key){
   if(!CIVS[key]) return;
@@ -2031,6 +2085,9 @@ function initState() {
     // avec G.mode juste en dessous, qui est le mode d'INTERACTION en cours
     // (select/build/amove) et que le chargement d'une sauvegarde réinitialise.
     gmode:mode,
+    // Type de carte (voir CARTES). Fige a la creation de l'etat, comme gmode :
+    // genMap le lit, et il voyage avec la graine en multijoueur (construireSalut).
+    carte:selectedCarte,
     // Graine de la carte. Deux joueurs qui la partagent génèrent une carte
     // strictement identique : en multijoueur on transmet ces 4 octets au lieu
     // des 3 × 57 600 tuiles de terrain, blocage et brouillard (~500 Ko).
@@ -2129,10 +2186,14 @@ function genMap() {
   G.tiles=t; G.bmap=b;
   initFog(); // un calque de brouillard par faction humaine
 
-  // Lacs répartis sur toute la carte
+  // Lacs répartis sur toute la carte. Le RAYON suit le preset (voir CARTES) :
+  // agrandir les lacs plutot que d'en ajouter garde la sequence de tirages
+  // RND identique d'un preset a l'autre, donc le determinisme partage.
+  const mLac=cM('lacs');
   const lakes=[[SC(3),SC(3),SC(2)],[COLS-SC(4),SC(3),SC(2)],[SC(3),ROWS-SC(4),SC(2)],[COLS-SC(4),ROWS-SC(4),SC(2)],
                [COLS>>1,SC(8),SC(2)],[COLS>>1,ROWS-SC(9),SC(2)],
-               [SC(10),ROWS>>1,SC(1)],[COLS-SC(11),ROWS>>1,SC(1)]];
+               [SC(10),ROWS>>1,SC(1)],[COLS-SC(11),ROWS>>1,SC(1)]]
+              .map(([cx,cy,r])=>[cx,cy,Math.max(1,Math.round(r*mLac))]);
   for(const[cx,cy,r] of lakes){
     for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
       const x=cx+dx,y=cy+dy;
@@ -2259,8 +2320,9 @@ function genWildlife(){
 // traverser la terre (voir advanceNaval).
 const FISH_COUNT = 14, FISH_STOCK = 400;
 function genFish(){
+  const cible=Math.max(1,Math.round(FISH_COUNT*cM('poissons')));
   let placed=0, tries=0;
-  while(placed<FISH_COUNT&&tries<600){
+  while(placed<cible&&tries<600*cM('poissons')){
     tries++;
     const x=1+Math.floor(RND()*(COLS-2)), y=1+Math.floor(RND()*(ROWS-2));
     if(G.tiles[y][x]!==T_WATER) continue;
@@ -2387,7 +2449,15 @@ function doFishReturn(u,dt){
   else { u.state='idle'; u.target=null; }
 }
 
+// `cnt` est le nombre de gisements TENTES ; le preset de carte le module par
+// type (voir CARTES). On le fait ICI, en un seul point, plutot que sur les
+// quarante appels de genMap : le nombre de tirages RND change avec le preset,
+// mais reste identique pour un meme preset et une meme graine — c'est ce
+// couple-la qui doit etre deterministe, pas la comparaison entre presets.
+const CARTE_CLE_RES={ [RT.TREE]:'foret', [RT.GOLD]:'or', [RT.STONE]:'pierre', [RT.BERRY]:'baies' };
 function place(cx,cy,rx,cnt,type,amt){
+  const cle=CARTE_CLE_RES[type];
+  if(cle) cnt=Math.max(1,Math.round(cnt*cM(cle)));
   for(let i=0;i<cnt;i++){
     const a=RND()*Math.PI*2, d=RND()*rx;
     const x=Math.round(cx+Math.cos(a)*d), y=Math.round(cy+Math.sin(a)*d);
@@ -8877,6 +8947,9 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   tc.ai=true;
   placeBuilding(tc);
   a.baseX=tc.x; a.baseY=tc.y; a.tcId=tc.id;
+  // Arène : l'IA a droit à la même enceinte que le joueur, sinon le preset
+  // reviendrait à offrir une palissade gratuite au seul camp humain.
+  if(carteCfg().murs) poserMursArene(tc.tx,tc.ty,tc.w,tc.h,id);
   for(let i=0;i<4;i++){
     const u=mkUnit(UT.VIL,tc.x+(i-1.5)*BASE_TILE*0.9,tc.y+BASE_TILE*1.8,id);
     aiAdoptUnit(u,a);
@@ -13154,7 +13227,11 @@ function traiterRejet(m){
 function construireSalut(){
   return {
     t:'SALUT', proto:PROTO_VERSION,
-    seed:G.seed, gmode:G.gmode, difficulty:G.difficulty,
+    // Le type de carte voyage AVEC la graine : les deux ensemble decident du
+    // monde genere. Sans lui, l'hote en Grands Lacs et l'invite en Plaines
+    // partaient sur deux cartes differentes avec la meme graine, et TOUT
+    // divergeait des la premiere image.
+    seed:G.seed, carte:G.carte, gmode:G.gmode, difficulty:G.difficulty,
     cols:COLS, rows:ROWS, simHz:SIM_HZ,
     fac:factionsPour(RESEAU.adversaire&&G.factions[RESEAU.adversaire.id]),
     toi:FAC.P2,
@@ -13186,6 +13263,8 @@ function demarrerPartieClient(m){
   resizeCanvas();
 
   selectedMode=m.gmode; selectedDifficulty=m.difficulty;
+  // AVANT initState : c'est lui qui fige G.carte pour la partie.
+  if(m.carte&&CARTES[m.carte]) selectedCarte=m.carte;
   grainePartie=m.seed;
   initState();
   G.seed=m.seed;
@@ -14124,6 +14203,7 @@ function buildSaveData(){
       difficulty:G.difficulty,
       mode:G.gmode,
       seed:G.seed,
+      carte:G.carte,
       // Tous les camps, brouillard compris (chaque faction humaine a le sien).
       factions:JSON.parse(JSON.stringify(G.factions)),
       me:G.me,
@@ -14505,6 +14585,43 @@ function departsHumains(){
   return [[m,m],[COLS-m-2,ROWS-m-2]];
 }
 
+// ── ARÈNE : palissade de départ ────────────────────────────────
+// Un anneau de palissade autour d'un Centre Ville, percé de QUATRE PORTAILS
+// OUVERTS (un par face). Les portails sont indispensables : un mur pose
+// bmap=3, donc un anneau plein enfermerait les villageois loin de tout
+// gisement et le camp mourrait de faim — c'est exactement le risque qui a
+// fait écarter les murs de l'IA au chantier 4. Ouverts, ils laissent passer
+// (appliquerPortail met la case a 0) tout en restant fermables d'un clic.
+//
+// Les cases déjà occupées (eau, gisement, bâtiment) sont sautées : on ne
+// force jamais une pose, quitte a laisser l'anneau troue. Un mur qui ecrase
+// un lac serait pire que pas de mur.
+function poserMursArene(tx,ty,w,h,owner){
+  const r=6;                                   // rayon de l'enceinte, en cases
+  const x0=tx+(w>>1)-r, y0=ty+(h>>1)-r, x1=tx+(w>>1)+r, y1=ty+(h>>1)+r;
+  const mx=(x0+x1)>>1, my=(y0+y1)>>1;          // milieux de face : les portails
+  const poses=[];
+  for(let x=x0;x<=x1;x++) for(const y of [y0,y1]) poses.push([x,y,(x===mx)]);
+  for(let y=y0+1;y<y1;y++) for(const x of [x0,x1]) poses.push([x,y,(y===my)]);
+  let murs=0, portails=0;
+  for(const [x,y,estPortail] of poses){
+    if(x<1||y<1||x>=COLS-1||y>=ROWS-1) continue;
+    if(G.bmap[y][x]!==0) continue;             // eau, gisement, reserve, batiment
+    const b=mkBuilding(estPortail?BT.GATE:BT.WALL,x,y,owner);
+    b.constructing=false; b.progress=1;
+    // `open:true` AVANT placeBuilding : celui-ci lit deja b.open pour choisir
+    // sa marque (0 si ouvert, 3 sinon), donc rien a rebasculer ensuite.
+    // Et surtout PAS de G.buildings.push() ici : placeBuilding pousse
+    // lui-meme. Le faire en plus inserait chaque mur DEUX FOIS dans la liste
+    // (mesure : 94 batiments pour un anneau de 47), avec le meme id — tout
+    // ce qui balaye G.buildings aurait compte double.
+    if(estPortail) b.open=true;
+    placeBuilding(b);
+    if(estPortail) portails++; else murs++;
+  }
+  return {murs,portails};
+}
+
 // ── DÉMARRAGE ─────────────────────────────────────────────
 // Champ graine de l'écran-titre. Vide = tirage aléatoire à chaque partie
 // (comportement historique) ; renseigné = carte reproductible à l'identique,
@@ -14555,6 +14672,8 @@ function startGame(){
     if(x>=0&&y>=0&&x<COLS&&y<ROWS&&G.bmap[y][x]===9) G.bmap[y][x]=0;
   }
 
+  if(carteCfg().murs) poserMursArene(sTX,sTY,tc.w,tc.h,FAC.P1);
+
   // 3 Villageois (+ le bonus de civilisation : les Chinois en ont 5)
   const nVil=3+(civOf(FAC.P1).vilBonusDepart||0);
   for(let i=0;i<nVil;i++){
@@ -14577,6 +14696,7 @@ function startGame(){
     for(let y=pTY-1;y<=pTY+tc2.h;y++) for(let x=pTX-1;x<=pTX+tc2.w;x++){
       if(x>=0&&y>=0&&x<COLS&&y<ROWS&&G.bmap[y][x]===9) G.bmap[y][x]=0;
     }
+    if(carteCfg().murs) poserMursArene(pTX,pTY,tc2.w,tc2.h,FAC.P2);
     // Meme dotation que le joueur local, bonus de civilisation compris :
     // sans ce miroir, un invite jouant Chinois demarrerait avec 3 villageois
     // au lieu de 5 et sa civilisation ne vaudrait rien en ligne.

@@ -37,6 +37,7 @@ const EXPORTS = [
   'gatherCap', 'gatherMult', 'separerUnites', 'heroAuraMult', 'majHeros',
   'estSel', 'selMilitary', 'ASSET_EXT',
   'applyCommand', 'pickCiv', 'civKeyOf', 'civOf', 'PRODUCTION', 'ORD', 'mkFaction',
+  'CARTES', 'pickCarte', 'carteCfg', 'poserMursArene', 'construireSalut', 'T_WATER',
 ];
 
 function extraireScript(html) {

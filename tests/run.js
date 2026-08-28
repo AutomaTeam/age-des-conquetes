@@ -393,6 +393,99 @@ groupe('civilisations', () => {
   });
 });
 
+// ════════════════════════════════════════════════════════════
+groupe('cartes', () => {
+  const presets = ['plaines', 'foret', 'arides', 'lacs', 'arene'];
+  const avecCarte = (k, opts) => {
+    const j = charger();
+    j.__sandbox.selectedCarte = k;
+    j.pickCarte(k);
+    return partie(j, opts);
+  };
+
+  test('même preset + même graine → carte strictement identique', () => {
+    for (const k of presets) {
+      egalJSON(empreinteCarte(avecCarte(k, { graine: 909 })),
+               empreinteCarte(avecCarte(k, { graine: 909 })), `preset ${k}`);
+    }
+  });
+
+  test('chaque preset produit un monde réellement différent', () => {
+    const sigs = presets.map((k) => {
+      const j = avecCarte(k, { graine: 909 });
+      const n = {};
+      for (const nd of j.G.nodes) n[nd.type] = (n[nd.type] || 0) + 1;
+      let eau = 0;
+      for (let y = 0; y < j.ROWS; y++) for (let x = 0; x < j.COLS; x++) if (j.G.tiles[y][x] === j.T_WATER) eau++;
+      return JSON.stringify([n, eau]);
+    });
+    egal(new Set(sigs).size, presets.length, 'deux presets donnent le même monde');
+  });
+
+  test('les presets tiennent leur promesse', () => {
+    const compte = (k) => {
+      const j = avecCarte(k, { graine: 909 });
+      const n = {};
+      for (const nd of j.G.nodes) n[nd.type] = (n[nd.type] || 0) + 1;
+      let eau = 0;
+      for (let y = 0; y < j.ROWS; y++) for (let x = 0; x < j.COLS; x++) if (j.G.tiles[y][x] === j.T_WATER) eau++;
+      return { arbres: n.T || 0, or: n.G || 0, pierre: n.S || 0, poissons: n.PO || 0, eau };
+    };
+    const p = compte('plaines'), f = compte('foret'), a = compte('arides'), l = compte('lacs');
+    ok(f.arbres > p.arbres * 1.6, `Grande Forêt : ${f.arbres} arbres contre ${p.arbres} en Plaines`);
+    ok(f.or < p.or, 'Grande Forêt : l\'or devrait être plus rare');
+    ok(a.arbres < p.arbres * 0.7, `Terres Arides : ${a.arbres} arbres contre ${p.arbres}`);
+    ok(a.or > p.or && a.pierre > p.pierre, 'Terres Arides : filons plus généreux attendus');
+    ok(l.eau > p.eau * 2, `Grands Lacs : ${l.eau} cases d'eau contre ${p.eau}`);
+    ok(l.poissons > p.poissons * 1.5, 'Grands Lacs : plus de poisson attendu');
+  });
+
+  test('Arène : une enceinte par camp, percée de portails OUVERTS', () => {
+    const j = avecCarte('arene', { graine: 909 });
+    const murs = j.G.buildings.filter((b) => b.type === j.BT.WALL);
+    const portails = j.G.buildings.filter((b) => b.type === j.BT.GATE);
+    ok(murs.length > 60, `trop peu de murs : ${murs.length}`);
+    ok(portails.length >= 6, `trop peu de portails : ${portails.length}`);
+    ok(portails.every((g) => g.open), 'un portail de départ est fermé');
+    // Un portail fermé enfermerait le camp : la case doit être franchissable.
+    ok(portails.every((g) => !j.tileBlocked(g.tx, g.ty)), 'un portail bloque le passage');
+    // Chaque camp a la sienne — sinon le preset offrirait une palissade
+    // gratuite au seul joueur humain.
+    const camps = new Set(j.G.buildings.filter((b) => b.type === j.BT.TC).map((b) => b.owner));
+    for (const c of camps) ok(murs.some((m) => m.owner === c), `le camp ${c} n'a pas d'enceinte`);
+    // Aucun bâtiment en double (placeBuilding pousse lui-même dans
+    // G.buildings : un push explicite en plus insérait chaque mur deux fois).
+    const ids = j.G.buildings.map((b) => b.id);
+    egal(new Set(ids).size, ids.length, 'des bâtiments apparaissent en double dans G.buildings');
+  });
+
+  test('aucun preset n\'enferme un camp : la base adverse reste atteignable', () => {
+    // LE test qui compte. Une palissade sans portail praticable, ou un lac
+    // qui coupe la carte en deux, rendrait la partie impossible à terminer —
+    // et ça ne se voit pas à l'œil sur une carte de 240×240.
+    for (const k of presets) {
+      const j = avecCarte(k, { graine: 909 });
+      const tcs = j.G.buildings.filter((b) => b.type === j.BT.TC);
+      ok(tcs.length >= 2, `${k} : moins de deux Centres Ville`);
+      const [a, b] = tcs;
+      const p = j.findPath(a.x, a.y + j.BASE_TILE * 3, b.x, b.y + j.BASE_TILE * 3);
+      ok(Array.isArray(p) && p.length > 0, `${k} : aucun chemin entre les deux bases`);
+    }
+  });
+
+  test('le type de carte voyage avec la graine (sinon désync garantie)', () => {
+    const j = avecCarte('lacs', { graine: 909 });
+    const salut = j.construireSalut();
+    egal(salut.carte, 'lacs', 'construireSalut n\'emporte pas le type de carte');
+    egal(salut.seed, j.G.seed, 'construireSalut n\'emporte pas la graine');
+  });
+
+  test('la sauvegarde retient le type de carte', () => {
+    const j = avecCarte('arides', { graine: 909, pas: 60 });
+    egal(j.buildSaveData().carte, 'arides', 'type de carte absent de la sauvegarde');
+  });
+});
+
 // ── rapport ────────────────────────────────────────────────
 const cible = process.argv[2];
 const vus = cible ? resultats.filter((r) => r.groupe === cible) : resultats;

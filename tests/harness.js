@@ -38,6 +38,10 @@ const EXPORTS = [
   'estSel', 'selMilitary', 'ASSET_EXT',
   'applyCommand', 'pickCiv', 'civKeyOf', 'civOf', 'PRODUCTION', 'ORD', 'mkFaction',
   'CARTES', 'pickCarte', 'carteCfg', 'poserMursArene', 'construireSalut', 'T_WATER',
+  'TCOST', 'TROCS', 'AGE_BONUS', 'RELIC_COUNT', 'FARM_RESEED_COST', 'FARM_FOOD',
+  'MERVEILLE_WIN_TIME', 'canAfford', 'spend', 'resPool', 'updatePopCap',
+  'aiNextBuild', 'AI_TRAINERS', 'trainTime', 'possedeBatiment', 'appliquerDemolition',
+  'tryAutoReseed', 'hasAdjacentWater', 'updateUneIA', 'aiVilTarget',
 ];
 
 function extraireScript(html) {
@@ -77,6 +81,21 @@ function charger({ silencieux = true } = {}) {
   }
   // `G` est réassigné par initState() : on relit toujours la valeur vivante.
   Object.defineProperty(jeu, 'G', { get: () => sandbox.__lire('G'), configurable: true });
+
+  // Math.random DÉTERMINISTE, sur demande. La simulation en utilise en pleine
+  // boucle de jeu (ciblage de l'IA désynchronisé, chasse occasionnelle,
+  // particules) : tout test qui dépend de l'issue d'un combat est donc
+  // instable par nature. Le semer rend le résultat reproductible — et un test
+  // intermittent est pire que pas de test, il apprend à ignorer les échecs.
+  //
+  // On remplace Math.random DANS le contexte vm, pas celui de Node : les
+  // intrinsèques y sont distincts, le harnais lui-même n'est pas affecté.
+  jeu.semerAleatoire = (graine) => {
+    vm.runInContext(
+      'Math.random = (function(){ let s = ' + ((graine >>> 0) || 1) + ';' +
+      ' return function(){ s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; })();',
+      ctx, { filename: 'semerAleatoire' });
+  };
   jeu.__ctx = ctx;
   jeu.__sandbox = sandbox;
   return jeu;

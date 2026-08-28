@@ -1,8 +1,13 @@
 // Harnais de test du jeu — sans navigateur, sans dépendance, sans build.
 //
-//   node tests/run.js            tout
-//   node tests/run.js carte      un seul groupe (carte, reseau, sauvegarde,
-//                                chemin, combat)
+//   node tests/run.js            tout (~35 s)
+//   node tests/run.js ordres     un seul groupe
+//
+// Groupes : carte, reseau, sauvegarde, chemin, combat, civilisations,
+// cartes, ordres, economie, ages, finpartie, ia.
+// Le groupe `ia` compte pour les deux tiers du temps total : il simule de
+// vraies parties de 15 minutes, c'est le prix pour observer un comportement
+// qui n'existe qu'apres plusieurs minutes de jeu.
 //
 // Ce que ces tests gardent, ce sont les zones qu'on NE PEUT PAS vérifier à
 // l'œil : la sérialisation réseau, la migration de sauvegarde, le
@@ -52,6 +57,42 @@ const empreinteUnites = (j) => j.G.units.slice().sort((a, b) => a.id - b.id)
 const empreinteBatiments = (j) => j.G.buildings.slice().sort((a, b) => a.id - b.id)
   .map((b) => [b.id, b.type, b.owner, b.tx, b.ty, Math.round(b.hp), !!b.constructing]);
 const empreinteBmap = (j) => j.G.bmap.map((l) => l.join('')).join('|');
+
+// ── utilitaires de scénario ────────────────────────────────
+// Pose un bâtiment TERMINÉ. Ne jamais faire `G.buildings.push` en plus :
+// placeBuilding pousse lui-même (voir le groupe `cartes`).
+function batir(j, type, tx, ty, owner) {
+  const b = j.mkBuilding(type, tx, ty, owner != null ? owner : j.G.me);
+  b.constructing = false; b.progress = 1;
+  j.placeBuilding(b);
+  j.rebuildIndex();
+  return b;
+}
+// Caisse pleine pour un camp donné : la plupart des tests d'ordres veulent
+// vérifier une RÈGLE, pas se heurter au prix.
+function riche(j, owner) {
+  Object.assign(j.resPool(owner != null ? owner : j.G.me),
+    { food: 99999, wood: 99999, stone: 99999, gold: 99999 });
+}
+// Émet un ordre comme le ferait le réseau : directement dans applyCommand,
+// sans passer par l'interface. C'est le chemin qu'emprunte un client, donc
+// celui qui doit être verrouillé.
+function ordreDe(j, owner, t, charge) {
+  return j.applyCommand(Object.assign({ t, f: owner != null ? owner : j.G.me }, charge || {}));
+}
+// Une case libre proche d'un point, pour poser sans se heurter au terrain.
+function caseLibre(j, tx, ty, w, h) {
+  for (let r = 0; r < 30; r++) {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const x = tx + dx, y = ty + dy;
+      if (x < 1 || y < 1 || x + w >= j.COLS || y + h >= j.ROWS) continue;
+      let libre = true;
+      for (let a = 0; a < h && libre; a++) for (let b = 0; b < w && libre; b++) if (j.G.bmap[y + a][x + b] !== 0) libre = false;
+      if (libre) return { tx: x, ty: y };
+    }
+  }
+  return null;
+}
 
 function partie(j, { graine = 4242, mode = 'conquest', diff = 'normal', pas = 0 } = {}) {
   j.__sandbox.selectedMode = mode;
@@ -242,8 +283,22 @@ groupe('chemin', () => {
 // ════════════════════════════════════════════════════════════
 groupe('combat', () => {
   test('le triangle de contres tient', () => {
+    // Joue chaque affrontement sous TROIS graines d'aléa et exige la
+    // majorité. La simulation utilise Math.random en pleine boucle (ciblage
+    // de l'IA désynchronisé, chasse, particules) : un duel unique est donc
+    // instable, et ce test a effectivement échoué par intermittence sur
+    // Archer/Piquier avant d'être écrit ainsi. La majorité sur graines
+    // fixées donne un résultat à la fois REPRODUCTIBLE et robuste à un
+    // affrontement serré.
     const j = partie(charger(), { graine: 4242 });
-    const duel = (x, y, n) => {
+    const mk = j.__sandbox.mkFaction;
+    j.G.factions.tA = mk('tA', { genre: 'neutre', equipe: 91, hostileATous: true, civ: 'francs', nom: 'A' });
+    j.G.factions.tB = mk('tB', { genre: 'neutre', equipe: 92, hostileATous: true, civ: 'francs', nom: 'B' });
+    // Deux factions JUMELLES : même automate des deux côtés. Opposer une
+    // escouade en marche d'attaque à une escouade sur l'automate ennemi
+    // biaise massivement le résultat — voir la mémoire du chantier 2.
+    const duel = (x, y, n, alea) => {
+      j.semerAleatoire(alea);
       j.G.units.length = 0; j.G.projs.length = 0;
       const cx = j.COLS * j.BASE_TILE / 2, cy = j.ROWS * j.BASE_TILE / 2;
       const A = [], B = [];
@@ -255,16 +310,20 @@ groupe('combat', () => {
       for (let k = 0; k < 6000; k++) { j.update(j.SIM_DT); if (!A.some((u) => u.hp > 0) || !B.some((u) => u.hp > 0)) break; }
       return [A.filter((u) => u.hp > 0).length, B.filter((u) => u.hp > 0).length];
     };
-    // Deux factions jumelles : MÊME automate des deux côtés. Opposer une
-    // escouade en marche d'attaque à une escouade sur l'automate ennemi
-    // biaise massivement le résultat — voir la mémoire du chantier 2.
-    const mk = j.__sandbox.mkFaction;
-    j.G.factions.tA = mk('tA', { genre: 'neutre', equipe: 91, hostileATous: true, civ: 'francs', nom: 'A' });
-    j.G.factions.tB = mk('tB', { genre: 'neutre', equipe: 92, hostileATous: true, civ: 'francs', nom: 'B' });
-    const gagnant = (x, y) => { const [a, b] = duel(x, y, 10); return a > b ? x : b > a ? y : null; };
-    egal(gagnant(j.UT.PIKE, j.UT.KNIGHT), j.UT.PIKE, 'le Piquier doit battre le Chevalier');
-    egal(gagnant(j.UT.ARC, j.UT.PIKE), j.UT.ARC, 'l\'Archer doit battre le Piquier');
-    egal(gagnant(j.UT.KNIGHT, j.UT.ARC), j.UT.KNIGHT, 'le Chevalier doit battre l\'Archer');
+    const majorite = (x, y) => {
+      let victoires = 0;
+      const detail = [];
+      for (const alea of [1, 7, 31]) {
+        const [a, b] = duel(x, y, 10, alea);
+        detail.push(`${a}-${b}`);
+        if (a > b) victoires++;
+      }
+      return { gagne: victoires >= 2, score: `${victoires}/3 (${detail.join(', ')})` };
+    };
+    for (const [x, y] of [[j.UT.PIKE, j.UT.KNIGHT], [j.UT.ARC, j.UT.PIKE], [j.UT.KNIGHT, j.UT.ARC]]) {
+      const r = majorite(x, y);
+      ok(r.gagne, `${j.UDEF[x].nom} doit battre ${j.UDEF[y].nom} : ${r.score}`);
+    }
   });
 
   test('un coup fait toujours au moins 1 dégât', () => {
@@ -483,6 +542,407 @@ groupe('cartes', () => {
   test('la sauvegarde retient le type de carte', () => {
     const j = avecCarte('arides', { graine: 909, pas: 60 });
     egal(j.buildSaveData().carte, 'arides', 'type de carte absent de la sauvegarde');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// applyCommand est la SEULE porte par laquelle un joueur mute l'état, et en
+// ligne c'est elle qui reçoit les ordres du client. Tout ce qu'elle ne
+// vérifie pas est exploitable : l'interface, elle, ne verrouille que
+// l'affichage. Ces tests visent donc les REFUS, pas les cas nominaux.
+groupe('ordres', () => {
+  test('un ordre ne peut pas déplacer les unités d\'un AUTRE camp', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const sien = j.G.units.find((u) => j.estLocal(u));
+    const autre = j.G.units.find((u) => !j.estLocal(u) && u.hp > 0);
+    ok(!!autre, 'aucune unité adverse pour le test');
+    const avant = { x: autre.x, y: autre.y, s: autre.state };
+    const r = ordreDe(j, j.G.me, 'DEPL', { ids: [autre.id], x: 100, y: 100 });
+    egal(r.ok, false, 'un camp a pu ordonner le déplacement des unités adverses');
+    egalJSON([autre.x, autre.y, autre.state], [avant.x, avant.y, avant.s], 'unité adverse déplacée');
+    ok(ordreDe(j, j.G.me, 'DEPL', { ids: [sien.id], x: 100, y: 100 }).ok, 'son propre ordre est refusé');
+  });
+
+  test('BATIR : verrous d\'âge, case occupée, hors carte, Quai sans eau', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi();
+    const p = caseLibre(j, 60, 60, 3, 3);
+    egal(ordreDe(j, j.G.me, 'BATIR', { type: j.BT.CASTLE, tx: p.tx, ty: p.ty }).ok, false, 'Château bâti avant l\'Âge des Châteaux');
+    egal(ordreDe(j, j.G.me, 'BATIR', { type: j.BT.SIEGE, tx: p.tx, ty: p.ty }).ok, false, 'Atelier de siège bâti trop tôt');
+    egal(ordreDe(j, j.G.me, 'BATIR', { type: j.BT.WONDER, tx: p.tx, ty: p.ty }).ok, false, 'Merveille bâtie avant l\'Âge Impérial');
+    f.age = 2;
+    ok(ordreDe(j, j.G.me, 'BATIR', { type: j.BT.CASTLE, tx: p.tx, ty: p.ty }).ok, 'Château refusé à l\'Âge des Châteaux');
+    // La même case n'est plus libre.
+    egal(ordreDe(j, j.G.me, 'BATIR', { type: j.BT.HOUSE, tx: p.tx, ty: p.ty }).ok, false, 'bâtiment posé sur une case occupée');
+    egal(ordreDe(j, j.G.me, 'BATIR', { type: j.BT.HOUSE, tx: -5, ty: 10 }).ok, false, 'bâtiment posé hors carte');
+    egal(ordreDe(j, j.G.me, 'BATIR', { type: 'PAS_UN_TYPE', tx: 20, ty: 20 }).ok, false, 'type de bâtiment inventé accepté');
+    // Quai : doit toucher l'eau.
+    let sec = null;
+    for (let y = 2; y < 60 && !sec; y++) for (let x = 2; x < 60 && !sec; x++) {
+      if (j.G.bmap[y][x] === 0 && j.G.bmap[y + 1][x] === 0 && j.G.bmap[y][x + 1] === 0 && j.G.bmap[y + 1][x + 1] === 0
+          && !j.__sandbox.hasAdjacentWater(x, y, 2, 2)) sec = { x, y };
+    }
+    if (sec) egal(ordreDe(j, j.G.me, 'BATIR', { type: j.BT.DOCK, tx: sec.x, ty: sec.y }).ok, false, 'Quai bâti loin de l\'eau');
+  });
+
+  test('BATIR : sans les ressources, rien n\'est posé ni prélevé', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const f = j.moi();
+    Object.assign(f.res, { food: 0, wood: 0, stone: 0, gold: 0 });
+    const n = j.G.buildings.length;
+    const p = caseLibre(j, 60, 60, 2, 2);
+    egal(ordreDe(j, j.G.me, 'BATIR', { type: j.BT.BARRACKS, tx: p.tx, ty: p.ty }).ok, false, 'bâti sans ressources');
+    egal(j.G.buildings.length, n, 'un bâtiment a été posé quand même');
+    egalJSON([f.res.wood, f.res.stone], [0, 0], 'des ressources ont été prélevées');
+  });
+
+  test('FORMER : l\'arbre technologique est vérifié côté hôte', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi(); f.maxPop = 200;
+    const p = caseLibre(j, 60, 60, 3, 3);
+    const castle = batir(j, j.BT.CASTLE, p.tx, p.ty);
+    f.maxPop = 200;
+    egal(ordreDe(j, j.G.me, 'FORMER', { bId: castle.id, unitType: j.UT.PALADIN }).ok, false, 'Paladin formé sans Foi Divine');
+    egal(ordreDe(j, j.G.me, 'FORMER', { bId: castle.id, unitType: j.UT.XBOW }).ok, false, 'Arbalétrier formé avant l\'Âge des Châteaux');
+    // Un bâtiment qui ne produit pas cette unité doit refuser.
+    const p2 = caseLibre(j, 70, 70, 1, 1);
+    const maison = batir(j, j.BT.HOUSE, p2.tx, p2.ty);
+    egal(ordreDe(j, j.G.me, 'FORMER', { bId: maison.id, unitType: j.UT.PALADIN }).ok, false, 'Paladin formé depuis une Maison');
+    f.research.faith = true; f.age = 3; f.maxPop = 200;
+    ok(ordreDe(j, j.G.me, 'FORMER', { bId: castle.id, unitType: j.UT.PALADIN }).ok, 'Paladin refusé alors que tout est réuni');
+  });
+
+  test('FORMER : le plafond de population est respecté', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi();
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    f.maxPop = f.pop;   // plein
+    egal(ordreDe(j, j.G.me, 'FORMER', { bId: tc.id, unitType: j.UT.VIL }).ok, false, 'unité formée au-delà du plafond');
+    f.maxPop = f.pop + 5;
+    ok(ordreDe(j, j.G.me, 'FORMER', { bId: tc.id, unitType: j.UT.VIL }).ok, 'unité refusée alors qu\'il reste de la place');
+  });
+
+  test('FORMER : le Héros est unique, et son annulation rend la chance', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi(); f.age = 3; f.maxPop = 200;
+    const p = caseLibre(j, 60, 60, 3, 3);
+    const castle = batir(j, j.BT.CASTLE, p.tx, p.ty);
+    f.maxPop = 200;
+    ok(ordreDe(j, j.G.me, 'FORMER', { bId: castle.id, unitType: j.UT.HERO }).ok, 'premier Héros refusé');
+    egal(f.heroTrained, true, 'heroTrained non posé');
+    egal(ordreDe(j, j.G.me, 'FORMER', { bId: castle.id, unitType: j.UT.HERO }).ok, false, 'deuxième Héros accepté');
+    const i = castle.trainQ.indexOf(j.UT.HERO);
+    ok(ordreDe(j, j.G.me, 'ANNULER_FORMATION', { bId: castle.id, index: i }).ok, 'annulation refusée');
+    egal(f.heroTrained, false, 'annuler le Héros ne rend pas la chance de la partie');
+    ok(ordreDe(j, j.G.me, 'FORMER', { bId: castle.id, unitType: j.UT.HERO }).ok, 'Héros refusé après annulation');
+  });
+
+  test('TROC : le taux vient de la table, jamais de l\'ordre', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi();
+    const p = caseLibre(j, 60, 60, 2, 2);
+    batir(j, j.BT.MARKET, p.tx, p.ty);
+    const t = j.TROCS[0];
+    const or0 = f.res.gold;
+    // Taux forgé : c'est l'exploit que TROCS ferme (ressources infinies).
+    egal(ordreDe(j, j.G.me, 'TROC', { donne: t.donne, recoit: t.recoit, qteDonne: 0, qteRecoit: 999999 }).ok, false, 'taux de troc forgé accepté');
+    egal(f.res.gold, or0, 'de l\'or a été crédité par un troc forgé');
+    // Taux légitime.
+    const avant = { d: f.res[t.donne], r: f.res[t.recoit] };
+    ok(ordreDe(j, j.G.me, 'TROC', { donne: t.donne, recoit: t.recoit, qteDonne: t.qte, qteRecoit: t.rend }).ok, 'troc légitime refusé');
+    egal(f.res[t.donne], avant.d - t.qte, 'quantité donnée incorrecte');
+    egal(f.res[t.recoit], avant.r + t.rend, 'quantité reçue incorrecte');
+  });
+
+  test('TROC : sans Marché, aucun échange', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const t = j.TROCS[0];
+    egal(j.possedeBatiment(j.G.me, j.BT.MARKET), false, 'le camp a déjà un Marché');
+    egal(ordreDe(j, j.G.me, 'TROC', { donne: t.donne, recoit: t.recoit, qteDonne: t.qte, qteRecoit: t.rend }).ok, false, 'troc sans Marché');
+  });
+
+  test('DEMOLIR : le Centre Ville est indestructible par ordre', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    egal(ordreDe(j, j.G.me, 'DEMOLIR', { bId: tc.id }).ok, false, 'Centre Ville démoli par ordre');
+    ok(j.G.buildings.some((b) => b.id === tc.id), 'le Centre Ville a disparu');
+    // ...et on ne démolit pas non plus celui du voisin.
+    const adverse = j.G.buildings.find((b) => b.type === j.BT.TC && !j.estLocal(b));
+    if (adverse) egal(ordreDe(j, j.G.me, 'DEMOLIR', { bId: adverse.id }).ok, false, 'bâtiment adverse démoli');
+  });
+
+  test('GARNIR : capacité respectée, siège exclu', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const p = caseLibre(j, 60, 60, 1, 2);
+    const tour = batir(j, j.BT.TOWER, p.tx, p.ty);
+    const cap = j.BDEF[j.BT.TOWER].garrisonCap;
+    const ids = [];
+    for (let i = 0; i < cap + 3; i++) { const u = j.mkUnit(j.UT.ARC, tour.x, tour.y, j.G.me); j.G.units.push(u); ids.push(u.id); }
+    const belier = j.mkUnit(j.UT.RAM, tour.x, tour.y, j.G.me); j.G.units.push(belier);
+    j.rebuildIndex();
+    const r = ordreDe(j, j.G.me, 'GARNIR', { ids, bId: tour.id });
+    ok(r.ok, 'garnison refusée');
+    egal(r.n, cap, `la tour a accepté ${r.n} unités pour une capacité de ${cap}`);
+    const r2 = ordreDe(j, j.G.me, 'GARNIR', { ids: [belier.id], bId: tour.id });
+    egal(r2.ok, false, 'un Bélier est entré en garnison');
+  });
+
+  test('ROUTE_COMMERCIALE : deux Marchés distincts, et pas celui de l\'ennemi', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const a = batir(j, j.BT.MARKET, ...Object.values(caseLibre(j, 60, 60, 2, 2)));
+    const b = batir(j, j.BT.MARKET, ...Object.values(caseLibre(j, 70, 60, 2, 2)));
+    egal(ordreDe(j, j.G.me, 'ROUTE_COMMERCIALE', { bId: a.id, toId: a.id }).ok, false, 'route vers soi-même');
+    ok(ordreDe(j, j.G.me, 'ROUTE_COMMERCIALE', { bId: a.id, toId: b.id }).ok, 'route légitime refusée');
+    ok(!!a.tradeRoute, 'route non posée');
+    // Marché ennemi
+    const ia = j.G.factions.ia;
+    if (ia) {
+      const e = batir(j, j.BT.MARKET, ...Object.values(caseLibre(j, 80, 60, 2, 2)), ia.id);
+      egal(ordreDe(j, j.G.me, 'ROUTE_COMMERCIALE', { bId: a.id, toId: e.id }).ok, false, 'route commerciale vers un Marché ennemi');
+    }
+  });
+
+  test('RELIQUE : un seul Moine par relique', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const relic = (j.G.relics || [])[0];
+    ok(!!relic, 'aucune relique sur la carte');
+    const m1 = j.mkUnit(j.UT.MONK, relic.x, relic.y, j.G.me);
+    const m2 = j.mkUnit(j.UT.MONK, relic.x, relic.y, j.G.me);
+    j.G.units.push(m1, m2); j.rebuildIndex();
+    ok(ordreDe(j, j.G.me, 'RELIQUE', { ids: [m1.id], relicId: relic.id }).ok, 'premier Moine refusé');
+    egal(ordreDe(j, j.G.me, 'RELIQUE', { ids: [m2.id], relicId: relic.id }).ok, false, 'deux Moines sur la même relique');
+  });
+
+  test('AGE : coût prélevé une fois, pas de double file', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const f = j.moi();
+    Object.assign(f.res, { food: 0, wood: 0, stone: 0, gold: 0 });
+    egal(ordreDe(j, j.G.me, 'AGE', {}).ok, false, 'montée d\'âge sans ressources');
+    riche(j);
+    const cout = j.AGES[1].cost.food;
+    const avant = f.res.food;
+    ok(ordreDe(j, j.G.me, 'AGE', {}).ok, 'montée d\'âge refusée');
+    egal(f.res.food, avant - cout, 'coût de montée d\'âge incorrect');
+    egal(ordreDe(j, j.G.me, 'AGE', {}).ok, false, 'deuxième montée d\'âge mise en file');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+groupe('economie', () => {
+  test('la récolte crédite la caisse du BON camp', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const ia = j.G.factions.ia;
+    ok(!!ia, 'pas d\'IA en mode Conquête');
+    const bois0 = { p1: j.moi().res.wood, ia: ia.res.wood };
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const arbre = j.G.nodes.filter((n) => n.type === j.RT.TREE && n.amt > 0)
+      .sort((a, b) => Math.hypot(a.x - tc.x, a.y - tc.y) - Math.hypot(b.x - tc.x, b.y - tc.y))[0];
+    for (let i = 0; i < 4; i++) {
+      const u = j.mkUnit(j.UT.VIL, tc.x + 20, tc.y + 20, j.G.me);
+      u.state = 'gather'; u.target = arbre.id; j.G.units.push(u); j.moi().pop++;
+    }
+    j.rebuildIndex();
+    for (let k = 0; k < 2400; k++) j.update(j.SIM_DT);
+    ok(j.moi().res.wood > bois0.p1, 'le joueur n\'a rien récolté');
+    // L'IA récolte de son côté, mais JAMAIS dans la caisse du joueur : ce
+    // qu'on garde ici, c'est qu'aucun camp ne se sert dans l'autre.
+    ok(j.moi().res.wood - bois0.p1 > 50, 'récolte anormalement faible');
+  });
+
+  test('le re-semis d\'une ferme est facturé à SON propriétaire', () => {
+    // Le commentaire de tryAutoReseed documente précisément ce piège : sans
+    // owner explicite, l'hôte payait pour les champs du client.
+    const j = partie(charger(), { graine: 4242 });
+    const ia = j.G.factions.ia;
+    riche(j, j.G.me); riche(j, ia.id);
+    const p = caseLibre(j, 60, 60, 2, 2);
+    const ferme = batir(j, j.BT.FARM, p.tx, p.ty, ia.id);
+    ferme.foodLeft = 0;
+    const boisJoueur = j.moi().res.wood, boisIA = ia.res.wood;
+    j.__sandbox.tryAutoReseed(ferme);
+    egal(j.moi().res.wood, boisJoueur, 'le joueur a payé le champ de l\'IA');
+    egal(ia.res.wood, boisIA - j.FARM_RESEED_COST.wood, 'l\'IA n\'a pas payé son propre champ');
+    egal(ferme.foodLeft, j.FARM_FOOD, 'le champ n\'a pas été re-semé');
+  });
+
+  test('Francs : le re-semis est gratuit', () => {
+    const j = charger();
+    j.__sandbox.selectedCiv = 'francs'; j.pickCiv('francs');
+    partie(j, { graine: 4242 });
+    riche(j);
+    const p = caseLibre(j, 60, 60, 2, 2);
+    const ferme = batir(j, j.BT.FARM, p.tx, p.ty, j.G.me);
+    ferme.foodLeft = 0;
+    const bois = j.moi().res.wood;
+    j.__sandbox.tryAutoReseed(ferme);
+    egal(j.moi().res.wood, bois, 'les Francs ont payé leur re-semis');
+    egal(ferme.foodLeft, j.FARM_FOOD, 'champ non re-semé');
+  });
+
+  test('les reliques mises à l\'abri rapportent de l\'or', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const relic = (j.G.relics || [])[0];
+    relic.bankedBy = j.G.me;
+    const or0 = j.moi().res.gold;
+    for (let k = 0; k < 1800; k++) j.update(j.SIM_DT);   // 60 s
+    ok(j.moi().res.gold > or0, 'une relique à l\'abri ne rapporte rien');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+groupe('ages', () => {
+  test('la montée d\'âge applique ses bonus RÉTROACTIVEMENT', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi();
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const u = j.mkUnit(j.UT.MIL, tc.x, tc.y, j.G.me); j.G.units.push(u); j.rebuildIndex();
+    const avant = { bat: tc.maxHp, uHp: u.maxHp, uAtk: u.atk };
+    ok(ordreDe(j, j.G.me, 'AGE', {}).ok, 'montée d\'âge refusée');
+    // Le minuteur doit s'écouler : sinon rien ne s'applique.
+    for (let k = 0; k < 30 * 90; k++) { j.update(j.SIM_DT); if (f.age >= 1) break; }
+    egal(f.age, 1, 'l\'âge n\'a pas été atteint');
+    ok(tc.maxHp > avant.bat, `PV du bâtiment non relevés : ${avant.bat} → ${tc.maxHp}`);
+    ok(u.maxHp > avant.uHp, `PV de l'unité déjà en jeu non relevés : ${avant.uHp} → ${u.maxHp}`);
+    ok(u.atk > avant.uAtk, `ATK de l'unité déjà en jeu non relevée : ${avant.uAtk} → ${u.atk}`);
+  });
+
+  test('une unité formée APRÈS a les mêmes statistiques qu\'une unité relevée', () => {
+    // C'est l'invariant qui casse le plus discrètement : mkUnit et les effets
+    // rétroactifs doivent viser exactement les mêmes bonus.
+    const j = partie(charger(), { graine: 4242 });
+    const f = j.moi();
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const ancienne = j.mkUnit(j.UT.MIL, tc.x, tc.y, j.G.me); j.G.units.push(ancienne); j.rebuildIndex();
+    riche(j);
+    ok(ordreDe(j, j.G.me, 'AGE', {}).ok);
+    for (let k = 0; k < 30 * 90; k++) { j.update(j.SIM_DT); if (f.age >= 1) break; }
+    const nouvelle = j.mkUnit(j.UT.MIL, tc.x, tc.y, j.G.me);
+    egal(ancienne.maxHp, nouvelle.maxHp, 'PV divergents entre unité relevée et unité neuve');
+    egal(ancienne.atk, nouvelle.atk, 'ATK divergente entre unité relevée et unité neuve');
+  });
+
+  test('le plafond de population suit les bâtiments et l\'âge', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi();
+    const avant = f.maxPop;
+    const p = caseLibre(j, 60, 60, 1, 1);
+    batir(j, j.BT.HOUSE, p.tx, p.ty);
+    j.updatePopCap();
+    egal(f.maxPop, avant + j.AGE_BONUS[f.age].housePop, 'une Maison n\'ajoute pas la bonne population');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+groupe('finpartie', () => {
+  test('un camp sans Centre Ville est éliminé', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const ia = j.G.factions.ia;
+    egal(ia.vaincu, false, 'l\'IA démarre vaincue');
+    for (const b of j.G.buildings.filter((b) => b.owner === ia.id && b.type === j.BT.TC)) b.hp = 0;
+    for (let k = 0; k < 60; k++) j.update(j.SIM_DT);
+    egal(ia.vaincu, true, 'un camp sans Centre Ville reste en lice');
+  });
+
+  test('Conquête : la victoire tombe quand tous les rivaux sont éliminés', () => {
+    const j = partie(charger(), { graine: 4242 });
+    egal(j.G.victory, false, 'victoire acquise dès le départ');
+    for (const b of j.G.buildings.filter((b) => !j.estLocal(b) && b.type === j.BT.TC)) b.hp = 0;
+    for (let k = 0; k < 120; k++) { j.update(j.SIM_DT); if (j.G.victory) break; }
+    egal(j.G.victory, true, 'aucune victoire malgré tous les rivaux éliminés');
+  });
+
+  test('la défaite tombe quand le joueur perd son Centre Ville', () => {
+    const j = partie(charger(), { graine: 4242 });
+    for (const b of j.G.buildings.filter((b) => j.estLocal(b) && b.type === j.BT.TC)) b.hp = 0;
+    for (let k = 0; k < 120; k++) { j.update(j.SIM_DT); if (j.G.gameOver) break; }
+    egal(j.G.gameOver, true, 'aucune défaite malgré la perte du Centre Ville');
+  });
+
+  test('Merveille : victoire seulement APRÈS le délai, et pas avant', () => {
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi(); f.age = 3;
+    const p = caseLibre(j, 60, 60, 3, 3);
+    batir(j, j.BT.WONDER, p.tx, p.ty);
+    // À peine achevée : rien ne doit se produire.
+    for (let k = 0; k < 300; k++) j.update(j.SIM_DT);
+    egal(j.G.victory, false, `la Merveille donne la victoire avant les ${j.MERVEILLE_WIN_TIME} s réglementaires`);
+    // Puis on laisse filer le compte à rebours.
+    for (let k = 0; k < 30 * (j.MERVEILLE_WIN_TIME + 20); k++) { j.update(j.SIM_DT); if (j.G.victory) break; }
+    egal(j.G.victory, true, 'la Merveille achevée et tenue ne donne pas la victoire');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+groupe('ia', () => {
+  test('les Moines de l\'IA sont plafonnés au nombre de reliques', () => {
+    // On teste la RÈGLE, pas son apparition au bout d'un quart d'heure. La
+    // première version simulait 15 minutes puis vérifiait `monks <=
+    // RELIC_COUNT` : elle passait À VIDE, parce que l'IA n'a en fait produit
+    // aucun Moine sur cette durée (0 <= 5 est vrai). Un test qui ne peut pas
+    // échouer ne garde rien.
+    const monter = (nMoines) => {
+      const j = partie(charger(), { graine: 4242 });
+      const a = j.G.factions.ia;
+      riche(j, a.id);
+      a.maxPop = 200;
+      a.vilTarget = 1;                                  // l'IA ne cherche plus de villageois
+      const p = caseLibre(j, Math.round(a.baseX / j.BASE_TILE) + 4, Math.round(a.baseY / j.BASE_TILE) + 4, 1, 2);
+      const mo = batir(j, j.BT.MONASTERY, p.tx, p.ty, a.id);
+      for (let i = 0; i < nMoines; i++) j.G.units.push(j.mkUnit(j.UT.MONK, a.baseX, a.baseY, a.id));
+      j.rebuildIndex();
+      // Plusieurs tics de décision : `a.think` ne laisse passer la boucle de
+      // production qu'une fois par AI_THINK.
+      for (let k = 0; k < 40; k++) { a.think = 0; j.updateUneIA(0.5, a); }
+      return mo.trainQ.filter((t) => t === j.UT.MONK).length;
+    };
+    const cap = charger().RELIC_COUNT;
+    ok(monter(0) > 0, "l'IA ne met aucun Moine en file quand elle n'en a aucun : le test ne prouverait rien");
+    egal(monter(cap), 0, `l'IA met encore des Moines en file alors qu'elle en a déjà ${cap} (une par relique)`);
+  });
+
+  test('l\'IA sait produire du siège, et seulement à partir de l\'Âge des Châteaux', () => {
+    const j = partie(charger(), { graine: 4242 });
+    ok(!!j.AI_TRAINERS[j.BT.SIEGE], 'l\'IA n\'a aucun bâtiment de siège dans son roster');
+    ok(j.AI_TRAINERS[j.BT.SIEGE].includes(j.UT.RAM), 'l\'Atelier de siège de l\'IA ne produit pas de Bélier');
+    // L'atelier doit apparaître dans son plan de construction à l'âge 2.
+    const a = j.G.factions.ia;
+    a.age = 2;
+    const vus = new Set();
+    for (let i = 0; i < 40; i++) {
+      const n = j.aiNextBuild(30, a);
+      if (!n) break;
+      vus.add(n.type);
+      // On simule sa construction pour passer au suivant.
+      const p = caseLibre(j, Math.round(a.baseX / j.BASE_TILE), Math.round(a.baseY / j.BASE_TILE), j.BDEF[n.type].w, j.BDEF[n.type].h);
+      if (!p) break;
+      batir(j, n.type, p.tx, p.ty, a.id);
+    }
+    ok(vus.has(j.BT.SIEGE), 'l\'Atelier de siège n\'apparaît jamais dans le plan de construction de l\'IA');
+  });
+
+  test('l\'assaut passe par un rassemblement avant de partir', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    const phases = [];
+    for (let k = 0; k < 30 * 900; k++) {
+      j.update(j.SIM_DT);
+      if (phases[phases.length - 1] !== a.phase) phases.push(a.phase);
+      if (phases.filter((p) => p === 'assaut').length >= 1) break;
+    }
+    const i = phases.indexOf('assaut');
+    ok(i > 0, 'aucun assaut lancé en 15 minutes');
+    egal(phases[i - 1], 'rassemble', `l'assaut n'a pas été précédé d'un rassemblement : ${JSON.stringify(phases)}`);
   });
 });
 

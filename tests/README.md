@@ -4,8 +4,11 @@
 node tests/run.js
 ```
 
-Un groupe seul : `node tests/run.js reseau` (groupes : `carte`, `reseau`,
-`sauvegarde`, `chemin`, `combat`).
+Un groupe seul : `node tests/run.js reseau`.
+
+**57 tests, 12 groupes, ~25 s.** Le groupe `ia` compte pour le tiers du
+temps : il simule une vraie partie jusqu'au premier assaut, c'est le prix
+pour observer un comportement qui n'existe qu'apres plusieurs minutes.
 
 Aucune dépendance, aucun `npm install`, aucun build — comme le jeu lui-même.
 Node 18+ suffit.
@@ -16,6 +19,13 @@ Le jeu se relit très bien à l'écran : si une unité se déplace mal ou si un
 bâtiment est mal dessiné, ça se voit. Ces tests couvrent donc uniquement ce
 qui **ne se voit pas** :
 
+- **`ordres`** — `applyCommand`, la SEULE porte par laquelle un joueur mute
+  l'état, et en ligne celle qui reçoit les ordres du client. Tout ce qu'elle
+  ne vérifie pas est exploitable : l'interface, elle, ne verrouille que
+  l'affichage. Ces tests visent donc les REFUS (verrous d'âge, arbre
+  technologique, plafond de population, taux de troc forgé, ordre sur les
+  unités d'un autre camp, démolition du Centre Ville…), pas les cas
+  nominaux.
 - **`reseau`** — la sérialisation hôte → client. Une divergence n'apparaît
   qu'en partie en ligne, chez l'invité, et souvent plusieurs minutes après
   la cause. C'est le groupe le plus rentable : il a trouvé dès sa première
@@ -30,6 +40,19 @@ qui **ne se voit pas** :
 - **`chemin`** — contournement d'obstacle et ligne de vue.
 - **`combat`** — le triangle de contres (Piquier > Chevalier > Archer >
   Piquier) et les invariants de `degatsContre`.
+- **`civilisations`** — unité unique et recherche exclusive refusées aux
+  autres camps, même par ordre réseau forgé ; bonus économiques réels.
+- **`cartes`** — les cinq presets, et surtout : aucun n'enferme un camp (un
+  `findPath` réel entre les deux Centres Ville).
+- **`economie`** — la récolte crédite le BON camp, le re-semis d'une ferme
+  est facturé à SON propriétaire (le piège que documente `tryAutoReseed`).
+- **`ages`** — les bonus de montee d'age s'appliquent rétroactivement, et
+  une unité formée APRÈS a exactement les mêmes statistiques qu'une unité
+  relevée. C'est l'invariant qui casse le plus discrètement.
+- **`finpartie`** — élimination, victoire, défaite, et la Merveille qui ne
+  doit PAS donner la victoire avant son délai.
+- **`ia`** — plafond des Moines, atelier de siège au roster, et l'assaut qui
+  passe bien par un rassemblement.
 
 Le **rendu n'est pas testé** et ne doit pas l'être ici : les bouchons ne
 dessinent rien.
@@ -63,7 +86,7 @@ visible des tests ; une entrée absente d'`index.html` fait échouer le
 chargement avec un message explicite, plutôt que de laisser un test vérifier
 `undefined`.
 
-Deux pièges rencontrés en écrivant ces tests, et qui reviendront :
+Cinq pièges rencontrés en écrivant ces tests, et qui reviendront :
 
 1. **Les duels doivent opposer deux factions JUMELLES** (même genre, même
    civ, mêmes recherches). Opposer une escouade en marche d'attaque à une
@@ -71,4 +94,18 @@ Deux pièges rencontrés en écrivant ces tests, et qui reviendront :
    automates, et le second gagne quoi qu'il arrive.
 2. **La carte générée a des lacs, marqués `3` dans `bmap` comme les murs.**
    Un test de pathfinding qui choisit un point de départ en dur a de bonnes
-   chances de partir dans un lac. Chercher une case libre.
+   chances de partir dans un lac. Chercher une case libre (`caseLibre`).
+3. **La simulation utilise `Math.random` en pleine boucle de jeu** (ciblage
+   de l'IA désynchronisé, chasse, particules). Tout test dont l'issue dépend
+   d'un combat est donc instable par nature — le triangle de contres a
+   échoué par intermittence avant d'être réécrit. Appeler
+   `j.semerAleatoire(n)` pour un aléa reproductible, et exiger la majorité
+   sur plusieurs graines plutôt qu'un résultat unique.
+4. **`placeBuilding` pousse lui-même dans `G.buildings`.** Ne jamais faire de
+   `push` en plus : chaque bâtiment serait inséré deux fois avec le même id.
+   Utiliser l'utilitaire `batir()`.
+5. **Un test qui ne peut pas échouer ne garde rien.** Le plafond des Moines
+   de l'IA était vérifié après 15 minutes simulées par `monks <= 5` — or
+   l'IA n'en produit aucun sur cette durée, donc le test passait à vide.
+   Tester la RÈGLE (l'IA en met-elle un de plus quand elle en a déjà 5 ?)
+   plutôt que d'attendre qu'elle se manifeste.

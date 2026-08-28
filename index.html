@@ -1304,27 +1304,91 @@ const UT = { VIL:'V', MIL:'M', ARC:'A', KNIGHT:'K', MONK:'MON', PALADIN:'P',
              PIKE:'PK', XBOW:'XB', TREB:'TR', RAM:'RM', SCOUT:'SC', HERO:'HE', BOAT:'BO',
              ENEMI:'E', ENEMIA:'EA', ENEMI_G:'EG', ENEMI_C:'EC', ENEMI_BOSS:'EB' };
 
+// ── CLASSES D'ARMURE ET TYPES D'ATTAQUE ────────────────────
+// Chaque unité n'avait qu'UN chiffre d'attaque, et les deux seuls contres du
+// jeu étaient codés en dur dans doAttack (Piquier ×2 contre la cavalerie,
+// siège ×1,5 contre les bâtiments). Sans armure, aucune composition d'armée
+// n'existait : le Paladin battait tout ce qui n'était pas Piquier, et la
+// stratégie optimale se réduisait à produire une seule unité.
+//
+//   `cls`     — ce que l'unité EST (ce contre quoi on prend un bonus)
+//   `atkType` — 'm' (mêlée/contondant) ou 'p' (perforant/trait)
+//   `armor`   — réduction PLATE, par type d'attaque reçue
+//
+// L'armure se soustrait, le bonus s'ajoute, et le tout passe par un point
+// unique : degatsContre(). Un coup fait toujours 1 dégât au minimum, sinon
+// une unité suffisamment blindée deviendrait littéralement invulnérable.
+const CLS = { INF:'inf', ARC:'arc', CAV:'cav', SIEGE:'siege', VIL:'vil', MOINE:'moine', NAV:'nav', BAT:'bat' };
+const CLS_NOM = { inf:'Infanterie', arc:'Tireur', cav:'Cavalerie', siege:'Siège',
+                  vil:'Civil', moine:'Moine', nav:'Navire', bat:'Bâtiment' };
+
 // Définitions unités
 const UDEF = {
-  [UT.VIL]:     { nom:'Villageois',    hp:28,  spd:1.8, atk:3,  rng:1.2, atkSpd:1.0 },
-  [UT.MIL]:     { nom:'Milicien',      hp:55,  spd:2.2, atk:10, rng:1.2, atkSpd:1.3 },
-  [UT.ARC]:     { nom:'Archer',        hp:38,  spd:2.0, atk:7,  rng:4.5, atkSpd:1.0 },
-  [UT.KNIGHT]:  { nom:'Chevalier',     hp:95,  spd:2.8, atk:15, rng:1.3, atkSpd:1.2 },
-  [UT.MONK]:    { nom:'Moine',         hp:32,  spd:1.7, atk:1,  rng:1.2, atkSpd:0.5 },
-  [UT.PALADIN]: { nom:'Paladin',       hp:150, spd:2.5, atk:20, rng:1.5, atkSpd:1.1 },
-  [UT.PIKE]:    { nom:'Piquier',       hp:70,  spd:2.0, atk:13, rng:1.5, atkSpd:1.1 },
-  [UT.XBOW]:    { nom:'Arbalétrier',   hp:45,  spd:1.9, atk:11, rng:5.2, atkSpd:1.1 },
-  [UT.TREB]:    { nom:'Trébuchet',     hp:60,  spd:0.8, atk:55, rng:8.0, atkSpd:0.25, siege:true },
-  [UT.RAM]:     { nom:'Bélier',        hp:220, spd:1.4, atk:35, rng:1.2, atkSpd:0.5,  siege:true },
-  [UT.SCOUT]:   { nom:'Éclaireur',     hp:40,  spd:3.3, atk:5,  rng:1.2, atkSpd:0.9 },
-  [UT.HERO]:    { nom:'Héros',         hp:220, spd:2.6, atk:20, rng:1.4, atkSpd:1.2 }, // nom/stats de combat identiques pour les 4 civs ; seuls le nom et l'icône affichés varient (voir HEROES)
-  [UT.BOAT]:    { nom:'Barque de Pêche', hp:50, spd:2.2, atk:0,  rng:1,   atkSpd:1.0, naval:true }, // sans combat en v1 — voir advanceNaval
-  [UT.ENEMI]:   { nom:'Pillard',       hp:38,  spd:1.6, atk:7,  rng:1.2, atkSpd:1.0 },
-  [UT.ENEMIA]:  { nom:'Archer Pillard',hp:28,  spd:1.7, atk:5,  rng:4.0, atkSpd:0.8 },
-  [UT.ENEMI_G]: { nom:'Géant',         hp:160, spd:1.2, atk:20, rng:1.2, atkSpd:0.7 },
-  [UT.ENEMI_C]: { nom:'Cavalier Noir', hp:90,  spd:3.0, atk:14, rng:1.3, atkSpd:1.1 },
-  [UT.ENEMI_BOSS]:{nom:'Seigneur de Guerre',hp:900,spd:1.4,atk:40,rng:1.5,atkSpd:0.9 },
+  [UT.VIL]:     { nom:'Villageois',    hp:28,  spd:1.8, atk:3,  rng:1.2, atkSpd:1.0, cls:CLS.VIL,   atkType:'m', armor:{m:0,p:0} },
+  [UT.MIL]:     { nom:'Milicien',      hp:55,  spd:2.2, atk:10, rng:1.2, atkSpd:1.3, cls:CLS.INF,   atkType:'m', armor:{m:1,p:1} },
+  [UT.ARC]:     { nom:'Archer',        hp:38,  spd:2.0, atk:7,  rng:4.5, atkSpd:1.0, cls:CLS.ARC,   atkType:'p', armor:{m:0,p:0} },
+  [UT.KNIGHT]:  { nom:'Chevalier',     hp:95,  spd:2.8, atk:15, rng:1.3, atkSpd:1.2, cls:CLS.CAV,   atkType:'m', armor:{m:2,p:2} },
+  [UT.MONK]:    { nom:'Moine',         hp:32,  spd:1.7, atk:1,  rng:1.2, atkSpd:0.5, cls:CLS.MOINE, atkType:'m', armor:{m:0,p:0} },
+  [UT.PALADIN]: { nom:'Paladin',       hp:150, spd:2.5, atk:20, rng:1.5, atkSpd:1.1, cls:CLS.CAV,   atkType:'m', armor:{m:3,p:3} },
+  [UT.PIKE]:    { nom:'Piquier',       hp:70,  spd:2.0, atk:13, rng:1.5, atkSpd:1.1, cls:CLS.INF,   atkType:'m', armor:{m:0,p:0} },
+  [UT.XBOW]:    { nom:'Arbalétrier',   hp:45,  spd:1.9, atk:11, rng:5.2, atkSpd:1.1, cls:CLS.ARC,   atkType:'p', armor:{m:0,p:1} },
+  [UT.TREB]:    { nom:'Trébuchet',     hp:60,  spd:0.8, atk:55, rng:8.0, atkSpd:0.25, siege:true, cls:CLS.SIEGE, atkType:'p', armor:{m:1,p:5} },
+  [UT.RAM]:     { nom:'Bélier',        hp:220, spd:1.4, atk:35, rng:1.2, atkSpd:0.5,  siege:true, cls:CLS.SIEGE, atkType:'m', armor:{m:0,p:8} }, // quasi immunisé au trait, fondu en mêlée : c'est sa signature
+  [UT.SCOUT]:   { nom:'Éclaireur',     hp:40,  spd:3.3, atk:5,  rng:1.2, atkSpd:0.9, cls:CLS.CAV,   atkType:'m', armor:{m:0,p:2} },
+  [UT.HERO]:    { nom:'Héros',         hp:220, spd:2.6, atk:20, rng:1.4, atkSpd:1.2, cls:CLS.CAV,   atkType:'m', armor:{m:3,p:3} }, // nom/stats de combat identiques pour les 4 civs ; seuls le nom et l'icône affichés varient (voir HEROES)
+  [UT.BOAT]:    { nom:'Barque de Pêche', hp:50, spd:2.2, atk:0,  rng:1,   atkSpd:1.0, naval:true, cls:CLS.NAV, atkType:'p', armor:{m:0,p:0} }, // sans combat en v1 — voir advanceNaval
+  [UT.ENEMI]:   { nom:'Pillard',       hp:38,  spd:1.6, atk:7,  rng:1.2, atkSpd:1.0, cls:CLS.INF,   atkType:'m', armor:{m:1,p:1} },
+  [UT.ENEMIA]:  { nom:'Archer Pillard',hp:28,  spd:1.7, atk:5,  rng:4.0, atkSpd:0.8, cls:CLS.ARC,   atkType:'p', armor:{m:0,p:0} },
+  [UT.ENEMI_G]: { nom:'Géant',         hp:160, spd:1.2, atk:20, rng:1.2, atkSpd:0.7, cls:CLS.INF,   atkType:'m', armor:{m:2,p:2} },
+  [UT.ENEMI_C]: { nom:'Cavalier Noir', hp:90,  spd:3.0, atk:14, rng:1.3, atkSpd:1.1, cls:CLS.CAV,   atkType:'m', armor:{m:2,p:2} },
+  [UT.ENEMI_BOSS]:{nom:'Seigneur de Guerre',hp:900,spd:1.4,atk:40,rng:1.5,atkSpd:0.9, cls:CLS.INF,  atkType:'m', armor:{m:4,p:4} },
 };
+
+// Bonus PLAT par type d'attaquant, contre la CLASSE de la cible. Table de
+// contres du jeu : c'est ici, et nulle part ailleurs, qu'on décide qui bat
+// qui. Les valeurs reprennent exactement les deux contres historiques
+// (Piquier ×2 sur la cavalerie ≈ 13→26, siège ×1,5 sur les bâtiments,
+// Seigneur de Guerre ×1,6 sur les bâtiments) pour ne pas déséquilibrer
+// l'existant, et ajoutent les chaînons qui manquaient.
+const BONUS = {
+  // +25 et non +13 : le Chevalier a ~114 PV une fois la recherche Cavalerie
+  // passée, contre 70 au Piquier. Un simple doublement des dégâts (l'ancien
+  // ×2) laissait le Chevalier gagner le duel à effectif égal — le « contre »
+  // n'en était pas un. Mesuré : 10 Piquiers battent désormais 10 Chevaliers.
+  // Le Paladin, lui, gagne toujours à effectif égal, et c'est voulu : il
+  // coûte trois fois le prix, le Piquier le contre au COÛT, pas au nombre.
+  [UT.PIKE]:      { cav:25, siege:8 },
+  [UT.MIL]:       { siege:4 },
+  [UT.KNIGHT]:    { arc:6 },             // la cavalerie fond sur les tireurs...
+  [UT.PALADIN]:   { arc:8 },
+  [UT.SCOUT]:     { arc:4, moine:8 },    // ...et l'Éclaireur va chercher les Moines
+  // Le tireur n'a ni la vitesse ni les PV pour survivre au corps à corps :
+  // sa seule fenêtre, ce sont les quelques volées tirées pendant que
+  // l'infanterie traverse sa portée. Sans ce bonus, elles ne pesaient rien
+  // et l'Archer perdait contre TOUT (7 dégâts pour 70 PV de Piquier).
+  [UT.ARC]:       { inf:7, vil:2 },
+  [UT.XBOW]:      { inf:9 },
+  [UT.RAM]:       { bat:18 },            // 35 + 18 = 53 ≈ l'ancien 35×1,5
+  [UT.TREB]:      { bat:28 },            // 55 + 28 = 83 ≈ l'ancien 55×1,5
+  [UT.ENEMI_C]:   { arc:6 },
+  [UT.ENEMI_G]:   { bat:8 },
+  [UT.ENEMI_BOSS]:{ bat:24 },            // 40 + 24 = 64 ≈ l'ancien 40×1,6
+};
+// Armure des bâtiments. Relevée de {1,2} à {2,3} une fois l'IA dotée d'un
+// atelier de siège (voir AI_TRAINERS[BT.SIEGE]) : un tireur ne démolit
+// pratiquement plus un bâtiment (l'Archer Pillard passe de 5 dégâts à 2),
+// ce qui est le comportement attendu du genre, sans pour autant neutraliser
+// l'IA avant qu'elle n'atteigne l'Âge des Châteaux.
+//
+// Pas les {3,5} d'un vrai AoE2, et c'est délibéré : mesuré sur une partie
+// où le joueur ne fait rien, l'IA rase le Centre Ville à t=756s en {1,2},
+// t=816s en {2,3} et t=780s en {3,5} — l'armure n'est donc pas le facteur
+// limitant tant que le joueur est passif. Mais face à un joueur qui se
+// défend VRAIMENT, une armure de 5 en perforant rendrait l'armée de l'IA
+// (majoritairement des Archers Pillards avant l'Âge des Châteaux) incapable
+// d'entamer quoi que ce soit. À reconsidérer seulement après une vraie
+// session de jeu contre un joueur qui construit des murs.
+const BLD_ARMOR = { m:2, p:3 };
 
 // Coûts d'entraînement
 const TCOST = {
@@ -1479,6 +1543,49 @@ function heroAuraMult(u){
   }
   return 1;
 }
+
+// ── CALCUL DES DÉGÂTS (point de passage UNIQUE) ────────────
+// Tout coup porté dans le jeu passe par ici : mêlée (doAttack), riposte de
+// l'IA bloquée par un mur (updateEnemyAI), impact de projectile ciblé ET
+// dégâts de zone d'un tir de siège (updateProjs), tir automatique d'une
+// Tour ou d'un Château (updateBuildings). Auparavant chacun de ces cinq
+// endroits refaisait son propre calcul — d'où un bélier qui frappait
+// à dégâts nus quand il atteignait un mur par le chemin de repli.
+//
+// `profil` décrit l'ATTAQUANT indépendamment de l'unité elle-même : un
+// projectile survit à son tireur (et un tir de siège touche des cibles que
+// le tireur ne visait pas), il doit donc emporter de quoi recalculer les
+// dégâts à l'impact, contre chaque victime.
+function profilAttaque(u){
+  return { atk:u.atk*heroAuraMult(u), type:u.type };
+}
+function estBatiment(e){ return e&&e.w!=null&&e.tx!=null; }
+function classeDe(e){
+  if(estBatiment(e)) return CLS.BAT;
+  const d=UDEF[e.type];
+  return (d&&d.cls)||CLS.INF;
+}
+function armureDe(e){
+  if(estBatiment(e)) return BLD_ARMOR;
+  const d=UDEF[e.type], a=(d&&d.armor)||{m:0,p:0};
+  // Armure de Fer : la recherche qui donnait déjà +30% PV protège aussi
+  // d'un point contre les deux types d'attaque. Lue à la volée plutôt que
+  // recopiée sur l'unité : rien de nouveau n'a besoin de voyager sur le
+  // réseau (voir serialiserUnite), la faction suffit à la retrouver.
+  const r=rechercheDe(e.owner);
+  if(r.iron_armor&&isMilitary(e.type)) return {m:a.m+1,p:a.p+1};
+  return a;
+}
+function degatsContre(profil,cible){
+  const d=profil.type!=null?UDEF[profil.type]:null;
+  const bonus=(BONUS[profil.type]||{})[classeDe(cible)]||0;
+  // Un tir de bâtiment (Tour/Château) n'a pas de type d'unité : il compte
+  // comme un trait, sans aucun bonus de contre.
+  const arm=armureDe(cible)[(d&&d.atkType)||'p']||0;
+  return Math.max(1,Math.round(profil.atk+bonus-arm));
+}
+// Raccourci pour les coups portés directement par une unité présente.
+function degatsDe(u,cible){ return degatsContre(profilAttaque(u),cible); }
 
 // ── VÉTÉRANCE ────────────────────────────────────────────
 // Une unité militaire qui survit à ses combats gagne de l'XP à chaque
@@ -6602,6 +6709,13 @@ function update(dt){
   updateBuildings(dt);
   updateEnemyAI(dt);
   updateAI(dt);           // adversaire du mode Conquête (économie, chantiers, armée)
+  // APRÈS tous les déplacements, et pas dans updateUnits : les unités du
+  // joueur bougent dans updateUnits, celles de l'IA et des pillards dans
+  // updateEnemyAI. Une passe unique en aval traite donc les deux camps —
+  // et un chevalier peut être écarté par un pillard, pas seulement par les
+  // siens. Ne tourne que chez l'hôte : update() n'est appelé que par lui
+  // (voir loop), le client se contente d'interpoler l'état reçu.
+  separerUnites(dt);
   updateProjs(dt);
   updateParts(dt);
   updateFTexts(dt);
@@ -6911,6 +7025,133 @@ function stepBlocked(u,nx,ny){
   const moved=Math.hypot(u.x-ox,u.y-oy), wanted=Math.hypot(nx-ox,ny-oy);
   return wanted>0.0001 && moved < wanted*0.35;
 }
+
+// ── SÉPARATION DES UNITÉS ──────────────────────────────────
+// Rien n'empêchait jusqu'ici deux unités d'occuper le même pixel :
+// stepBlocked() ne teste que les murs. Quarante chevaliers envoyés sur un
+// même point convergeaient donc en UNE SEULE PILE, et formation() n'était
+// que cosmétique — la galette s'effondrait dessus dès le premier pas.
+//
+// Passe DOUCE, appelée une fois par pas de simulation APRÈS tous les
+// déplacements (voir update) : chaque unité repousse ses voisines trop
+// proches d'un décalage plafonné. Pas de physique, pas d'impulsion
+// accumulée d'une image sur l'autre — donc ni vibration ni emballement.
+const SEP_R_DEF   = BASE_TILE*0.28;   // demi-écart visé entre deux unités
+const SEP_R_SIEGE = BASE_TILE*0.45;   // Bélier / Trébuchet : encombrants
+const SEP_SPEED   = BASE_TILE*1.2;    // déplacement maximum par seconde
+// États ancrés à un poste précis calculé ailleurs : les déplacer ferait
+// osciller l'automate correspondant — nodeApproach vise déjà à 90 % du seuil
+// de contact, farmSpot pose le fermier SUR son sillon, doBuild sur le
+// pourtour du chantier. Ils restent des OBSTACLES pour les autres (ils sont
+// bien vus par la boucle intérieure), mais ne bougent jamais eux-mêmes.
+const SEP_ANCRES = new Set(['garrison','farm','gather','build']);
+function sepRayon(u){ const d=UDEF[u.type]; return (d&&d.siege)?SEP_R_SIEGE:SEP_R_DEF; }
+// Grille dédiée, d'une TUILE de côté : la grille spatiale générale
+// (GRID_SZ=200, soit 5,3 tuiles) est bien trop grossière ici — à forte
+// population, chacune de ses cellules contient des dizaines d'unités et le
+// balayage 3×3 redeviendrait quadratique. Listes chaînées sur tableaux
+// typés : aucune allocation une fois la première image passée.
+const _sepHead = new Int32Array(COLS*ROWS);
+let   _sepNext = new Int32Array(0);
+let   _sepPX = new Float32Array(0), _sepPY = new Float32Array(0);
+let   _sepX  = new Float32Array(0), _sepY  = new Float32Array(0), _sepRad = new Float32Array(0);
+// Demi-voisinage : chaque paire n'est examinée QU'UNE FOIS. Les quatre
+// directions complémentaires ((-1,0), (+1,-1), (0,-1), (-1,-1)) sont
+// couvertes quand c'est la cellule d'en face qui est le sujet. Balayer les
+// 8 voisines reviendrait à calculer deux fois chaque distance.
+const SEP_VOIS = [[1,0],[-1,1],[0,1],[1,1]];
+// Une paire (i,j) : la poussée est portée au crédit des DEUX, en sens
+// opposé. C'est ce qui rend le résultat indépendant de l'ordre de parcours.
+function sepPousser(i,j,xi,yi,ri){
+  const want=ri+_sepRad[j];
+  let ex=xi-_sepX[j], ey=yi-_sepY[j];
+  const d2=ex*ex+ey*ey;
+  if(d2>=want*want) return;
+  let d=Math.sqrt(d2);
+  if(d<0.001){
+    // Superposition exacte : aucune direction n'est « juste ». On en tire
+    // une de l'unité elle-même (animT est déjà semé sur son id, voir
+    // mkUnit) plutôt que de Math.random(), qui désynchroniserait l'hôte
+    // et le client.
+    const u=G.units[i], a=u.animT||(u.id*2.399963);
+    ex=Math.cos(a); ey=Math.sin(a); d=1;
+  }
+  const k=(want-d)*0.5/d;   // chacun fait la moitié du chemin
+  const px=ex*k, py=ey*k;
+  _sepPX[i]+=px; _sepPY[i]+=py;
+  _sepPX[j]-=px; _sepPY[j]-=py;
+}
+function sepEligible(u){
+  const d=UDEF[u.type];
+  return u.hp>0 && !(d&&d.naval) && u.state!=='garrison';
+}
+function separerUnites(dt){
+  const N=G.units.length;
+  if(N<2) return;
+  if(_sepNext.length<N){
+    const cap=N+64;
+    _sepNext=new Int32Array(cap); _sepPX=new Float32Array(cap); _sepPY=new Float32Array(cap);
+    _sepX=new Float32Array(cap); _sepY=new Float32Array(cap); _sepRad=new Float32Array(cap);
+  }
+  _sepHead.fill(-1);
+  // Semis. Position et rayon sont recopiés dans des tableaux typés : la
+  // boucle intérieure tourne des dizaines de milliers de fois par pas, et y
+  // déréférencer l'objet unité (puis UDEF[u.type]) coûtait plus cher que le
+  // calcul de distance lui-même. `_sepRad[i]<0` marque une unité non
+  // éligible : un seul test au lieu de rappeler sepEligible.
+  for(let i=0;i<N;i++){
+    const u=G.units[i];
+    _sepPX[i]=0; _sepPY[i]=0; _sepRad[i]=-1;
+    if(!sepEligible(u)) continue;
+    const tx=u.x/BASE_TILE|0, ty=u.y/BASE_TILE|0;
+    if(tx<0||ty<0||tx>=COLS||ty>=ROWS) continue;   // hors carte : jamais semé, donc jamais poussé
+    _sepX[i]=u.x; _sepY[i]=u.y; _sepRad[i]=sepRayon(u);
+    const c=ty*COLS+tx;
+    _sepNext[i]=_sepHead[c]; _sepHead[c]=i;
+  }
+  // Accumulation. La poussée est calculée pour TOUT LE MONDE (y compris les
+  // unités ancrées) puis appliquée seulement aux unités libres : le calcul
+  // reste additif et indépendant de l'ordre du tableau — donc déterministe,
+  // ce qu'exige la simulation partagée hôte/client (voir construireDelta).
+  for(let c=0,nc=COLS*ROWS;c<nc;c++){
+    let i=_sepHead[c];
+    if(i===-1) continue;
+    const cx=c%COLS, cy=(c/COLS)|0;
+    for(;i!==-1;i=_sepNext[i]){
+      const xi=_sepX[i], yi=_sepY[i], ri=_sepRad[i];
+      // (a) voisines de la MÊME cellule, une seule fois par paire
+      for(let j=_sepNext[i];j!==-1;j=_sepNext[j]) sepPousser(i,j,xi,yi,ri);
+      // (b) quatre cellules du demi-voisinage
+      for(let v=0;v<4;v++){
+        const nx=cx+SEP_VOIS[v][0], ny=cy+SEP_VOIS[v][1];
+        if(nx<0||ny<0||nx>=COLS||ny>=ROWS) continue;
+        for(let j=_sepHead[ny*COLS+nx];j!==-1;j=_sepNext[j]) sepPousser(i,j,xi,yi,ri);
+      }
+    }
+  }
+  // Application, plafonnée. Les unités ancrées ont bien été comptées comme
+  // obstacles ci-dessus mais ne bougent pas.
+  const cap=SEP_SPEED*dt, maxX=COLS*BASE_TILE-1, maxY=ROWS*BASE_TILE-1;
+  for(let i=0;i<N;i++){
+    let px=_sepPX[i], py=_sepPY[i];
+    if(px===0&&py===0) continue;
+    const u=G.units[i];
+    if(SEP_ANCRES.has(u.state)) continue;
+    const m=Math.hypot(px,py);
+    if(m>cap){ const s=cap/m; px*=s; py*=s; }
+    // Même glissement que stepBlocked : une séparation ne doit JAMAIS
+    // pousser une unité à travers un mur (ni l'enfermer si elle est déjà
+    // dedans — le cas est laissé à stepBlocked, qui sait l'en faire sortir).
+    const nx=u.x+px, ny=u.y+py;
+    if(!wallAt(nx,ny)){ u.x=nx; u.y=ny; }
+    else if(!wallAt(nx,u.y)){ u.x=nx; }
+    else if(!wallAt(u.x,ny)){ u.y=ny; }
+    // wallAt() renvoie false hors carte : le bord doit être borné à part.
+    if(u.x<1) u.x=1; else if(u.x>maxX) u.x=maxX;
+    if(u.y<1) u.y=1; else if(u.y>maxY) u.y=maxY;
+  }
+}
+
 // ── PATHFINDING (A* sur tuiles) ────────────────────────────
 // Jusqu'ici une unité bloquée ne savait que glisser le long de l'obstacle :
 // une palissade en L ou un lac la collait indéfiniment. On ne calcule un
@@ -7464,14 +7705,12 @@ function doAttack(u,dt){
   u.dir=Math.atan2(dy,dx);
   if(u.atkCd<=0){
     u.atkCd=1/u.atkSpd;
-    let dmg=Math.round(u.atk*heroAuraMult(u));
-    // Bonus piquier vs cavalerie
-    const cav=[UT.KNIGHT,UT.PALADIN,UT.ENEMI_C].includes(tgt.type);
-    if(u.type===UT.PIKE&&cav) dmg=Math.round(dmg*2);
-    // Bonus siège vs bâtiments
-    const isB=bldById(tgt.id);
-    if(UDEF[u.type].siege&&isB) dmg=Math.round(dmg*1.5);
-    if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,dmg);
+    // Bonus de contre et armure : voir BONUS/UDEF.armor et degatsContre.
+    // Un tir ne fige PAS ses dégâts au départ (voir shootProj) : la flèche
+    // emporte le profil de son tireur et se résout à l'impact, contre la
+    // cible réellement touchée.
+    const dmg=degatsDe(u,tgt);
+    if(u.rng>BASE_TILE*1.5) shootProj(u,tgt);
     else { dealDmg(tgt,dmg,u); if(tgt.hp<=0) awardKillXP(u.id); }
   }
 }
@@ -7750,13 +7989,12 @@ function updateEnemyAI(dt){
           if(w){ tgt=w; u.target=w.id; u.state='attack'; u.moving=false;
             if(u.atkCd<=0){
               u.atkCd=1/u.atkSpd;
-              // Même calcul que le chemin d'attaque normal ci-dessous (aura de
-              // Héros + bonus du Boss contre les bâtiments) : ce repli servait
-              // des dégâts nus, rendant une unité anormalement faible contre
-              // un mur simplement parce qu'elle l'a atteint par ce chemin-ci.
-              let dmg=Math.round(u.atk*heroAuraMult(u));
-              if(u.type===UT.ENEMI_BOSS) dmg=Math.round(dmg*1.6);
-              dealDmg(w,dmg,u); if(w.hp<=0) awardKillXP(u.id);
+              // Même calcul que le chemin d'attaque normal ci-dessous : ce
+              // repli servait des dégâts nus, rendant une unité anormalement
+              // faible contre un mur simplement parce qu'elle l'a atteint par
+              // ce chemin-ci. degatsDe() est désormais LE point de passage
+              // unique — aura de Héros, bonus de contre et armure compris.
+              dealDmg(w,degatsDe(u,w),u); if(w.hp<=0) awardKillXP(u.id);
             } }
         }
       }
@@ -7764,11 +8002,10 @@ function updateEnemyAI(dt){
       u.state='attack'; u.moving=false; u.dir=Math.atan2(dy,dx);
       if(u.atkCd<=0){
         u.atkCd=1/u.atkSpd;
-        let dmg=Math.round(u.atk*heroAuraMult(u));
-        const isB=bldById(tgt.id);
-        if(u.type===UT.ENEMI_BOSS&&isB) dmg=Math.round(dmg*1.6); // boss casse les murs vite
-        if(u.rng>BASE_TILE*1.5) shootProj(u,tgt,dmg);
-        else { dealDmg(tgt,dmg,u); if(tgt.hp<=0) awardKillXP(u.id); }
+        // Le boss casse toujours les murs vite : son ancien ×1,6 contre les
+        // bâtiments est repris tel quel par BONUS[ENEMI_BOSS].bat.
+        if(u.rng>BASE_TILE*1.5) shootProj(u,tgt);
+        else { const dmg=degatsDe(u,tgt); dealDmg(tgt,dmg,u); if(tgt.hp<=0) awardKillXP(u.id); }
       }
     }
   }
@@ -7844,10 +8081,20 @@ function couleurMinimap(e,unite){
 
 // Le booléen `isEnemy` ne servait qu'à colorer le trait : on mémorise
 // désormais le camp tireur, qui donne la teinte ET crédite les dégâts.
-function shootProj(from,tgt,dmg){
+// Le projectile emporte le PROFIL de son tireur (force + type d'unité), pas
+// un nombre de dégâts figé au départ : il survit à son tireur, et un tir de
+// siège touche en zone des cibles que celui-ci ne visait pas — chaque
+// victime doit être résolue contre SA propre armure (voir updateProjs).
+// `from` peut être une unité ou un pseudo-tireur de bâtiment (Tour/Château),
+// qui n'a pas de `type` : degatsContre le traite alors comme un trait sans
+// bonus de contre.
+function shootProj(from,tgt){
   const d0=Math.max(1,Math.hypot(tgt.x-from.x,tgt.y-from.y));
   G.projs.push({id:G.nid++,x:from.x,y:from.y,tx:tgt.x,ty:tgt.y,
-    targetId:tgt.id,atk:dmg!=null?dmg:from.atk,spd:8*BASE_TILE,owner:from.owner,life:1,d0,
+    targetId:tgt.id,
+    atk:from.type!=null?from.atk*heroAuraMult(from):from.atk,
+    srcType:from.type!=null?from.type:null,   // type d'UNITÉ du tireur (null = tir de bâtiment), pas le 'm'/'p' d'UDEF.atkType
+    spd:8*BASE_TILE,owner:from.owner,life:1,d0,
     siege:!!(from.type&&UDEF[from.type]&&UDEF[from.type].siege),
     // Tireur exact, pour créditer l'XP de vétérance au bon endroit (voir
     // awardKillXP) — undefined pour un tir de bâtiment (Tour/Château, objet
@@ -7890,19 +8137,24 @@ function updateProjs(dt){
         spawnParts(p.tx,p.ty,'#e0d8c8',6);
         shakeScreen(7);
         const splash=2*BASE_TILE;
+        // Chaque victime de la zone est résolue contre SA propre armure :
+        // un boulet qui rase un mur ne fait pas les mêmes dégâts au piquier
+        // planté à côté. C'est précisément ce qu'un montant figé au départ
+        // ne pouvait pas exprimer.
+        const prof={atk:p.atk,type:p.srcType};
         for(const u of G.units){
-          if(estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash){ dealDmg(u,p.atk,p); if(u.hp<=0) awardKillXP(p.shooterId); }
+          if(estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash){ dealDmg(u,degatsContre(prof,u),p); if(u.hp<=0) awardKillXP(p.shooterId); }
         }
         for(const b of G.buildings){
           // Même crédit d'XP que le tir ciblé ci-dessous (else) : sans le
           // if(b.hp<=0) awardKillXP, un Trébuchet — qui tire quasi toujours
           // en zone — ne montait jamais en grade en rasant des bâtiments,
           // pourtant son usage principal.
-          if(estHostile(p,b)&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash){ dealDmg(b,p.atk,p); if(b.hp<=0) awardKillXP(p.shooterId); }
+          if(estHostile(p,b)&&Math.hypot(b.x-p.tx,b.y-p.ty)<splash){ dealDmg(b,degatsContre(prof,b),p); if(b.hp<=0) awardKillXP(p.shooterId); }
         }
       } else {
         const t=unitById(p.targetId)||bldById(p.targetId);
-        if(t&&t.hp>0){ dealDmg(t,p.atk,p); if(t.hp<=0) awardKillXP(p.shooterId); }
+        if(t&&t.hp>0){ dealDmg(t,degatsContre({atk:p.atk,type:p.srcType},t),p); if(t.hp<=0) awardKillXP(p.shooterId); }
       }
       p.life=0;
     } else {
@@ -8090,6 +8342,7 @@ const AI_TCOST = {
   [UT.ENEMI_G]:    { food:110, gold:60 },
   [UT.ENEMI_BOSS]: { food:400, gold:300 },
   [UT.MONK]:       { food:45,  gold:20 }, // même tarif que le Moine du joueur — voir AI_TRAINERS[BT.MONASTERY]
+  [UT.RAM]:        { wood:180, gold:60 }, // idem : pas de reskin « pillard », c'est le Bélier du joueur
 };
 const AI_TTIME = { [UT.VIL]:20, [UT.ENEMI]:16, [UT.ENEMIA]:19, [UT.ENEMI_C]:26, [UT.ENEMI_G]:34, [UT.ENEMI_BOSS]:70 };
 // Durée d'entraînement, quel que soit le camp : la file de formation partagée
@@ -8105,10 +8358,17 @@ const AI_TRAINERS = {
   // Le Moine n'a pas de reskin « guerrier » : civil des deux côtés, il sert
   // uniquement à ramasser les reliques (voir aiRelicHunt) — jamais au combat.
   [BT.MONASTERY]:[UT.MONK],
+  // Sans atelier de siège, l'IA n'avait AUCUN moyen d'ouvrir une base murée :
+  // il ne lui restait que le repli « je tape le mur parce que je suis
+  // coincée » (voir updateEnemyAI), c'est-à-dire une unité de mêlée qui
+  // gratte une palissade à dégâts réduits. Le Bélier est repris tel quel du
+  // roster du joueur, comme le Moine : pas de reskin « pillard », il est
+  // reconnaissable et sa fonction est lisible.
+  [BT.SIEGE]:    [UT.RAM],
 };
 // Âge minimum requis pour chaque unité adverse (même logique de palier que
 // les déblocages du joueur).
-const AI_UNIT_AGE = { [UT.ENEMI_G]:2, [UT.ENEMI_BOSS]:3 };
+const AI_UNIT_AGE = { [UT.ENEMI_G]:2, [UT.ENEMI_BOSS]:3, [UT.RAM]:2 };
 
 // `reserve` = ressources mises de côté et intouchables pour cette dépense.
 // Sert à l'épargne de montée d'âge : sans elle, l'IA réinvestissait chaque
@@ -8279,6 +8539,12 @@ function aiNextBuild(vilCount,a){
   const milTarget=Math.max(2,Math.min(6,Math.floor((vilCount||0)/12)+1));
   if(a.age>=1&&!n(BT.STABLE)) return {type:BT.STABLE};
   if(a.age>=1&&n(BT.BARRACKS)<milTarget) return {type:BT.BARRACKS};
+  // Atelier de siège dès l'Âge des Châteaux, et AVANT toute l'économie
+  // avancée (Marchés, Monastère, Université, Château) : sans lui l'IA reste
+  // incapable d'ouvrir une base murée — c'est le premier mur, au sens
+  // propre, contre lequel elle butait. Le placer en queue de liste revenait
+  // à ne jamais le construire dans une partie de durée normale.
+  if(a.age>=2&&!n(BT.SIEGE)) return {type:BT.SIEGE};
   if(a.age>=2&&n(BT.STABLE)<milTarget-1) return {type:BT.STABLE};
   // Économie avancée : Marché ×2 (route commerciale, voir aiTradeRoute),
   // Monastère (reliques, voir aiRelicHunt) et Université (recherches
@@ -8497,6 +8763,118 @@ function aiVilTarget(a){
   return Math.max(base,Math.min(cible,AI_VIL_MAX,Math.max(base,a.maxPop||base)));
 }
 
+// ── ASSAUTS DE L'IA : RASSEMBLER, PUIS FRAPPER ─────────────
+// L'IA libérait TOUTE son armée d'un coup (`u.camp=null`) et chaque unité
+// partait seule vers la cible la plus proche : l'armée arrivait en file
+// indienne et se faisait tuer par paquets de trois, quelle que soit sa
+// taille. Elle se rassemble désormais à mi-chemin avant de frapper.
+//
+// Aucun mécanisme nouveau : on réutilise la GARDE de camp (`u.camp`,
+// `u.campX/campY`) déjà en place pour les garnisons de points d'intérêt.
+// updateEnemyAI sait déjà ramener une garde à son poste et ne lui faire
+// engager que les intrus proches — c'est exactement un point de ralliement.
+// 0,3 et non la moitié du trajet : sur une carte de 240 tuiles, se masser à
+// mi-chemin demandait plus d'une minute de marche à un Pillard (1,6 tuile/s)
+// — le délai de garde expirait toujours avant le quorum et le rassemblement
+// ne servait à rien. Le but est de PARTIR ENSEMBLE, pas d'avancer : un point
+// proche de la base remplit cet office et se remplit vite.
+const AI_RALLY_PART = 0.3;           // part du trajet base→cible où l'on se masse
+const AI_RALLY_RAYON = BASE_TILE*7;  // « arrivé au point de ralliement »
+const AI_RALLY_QUORUM = 0.8;         // 80 % de l'armée présente = on part
+// Délai de garde CALCULÉ sur le trajet réel plutôt que figé : une constante
+// arbitraire est soit trop courte sur grande carte (le rassemblement ne se
+// produit jamais), soit trop longue sur petite (l'IA reste plantée alors que
+// tout le monde est arrivé). 1,8× le temps de marche théorique de l'unité la
+// plus lente, avec un plancher.
+function aiRallyDelai(a,army){
+  let spdMin=Infinity;
+  for(const u of army) if(u.spd<spdMin) spdMin=u.spd;
+  if(!isFinite(spdMin)||spdMin<=0) spdMin=1;
+  const d=Math.hypot(a.rallyX-a.baseX,a.rallyY-a.baseY)/BASE_TILE;
+  return Math.max(20,Math.min(120,d/spdMin*1.8));
+}
+const AI_DEFENSE_RAYON = BASE_TILE*16;
+const AI_DEFENSE_DUREE = 35;         // secondes de rappel après la dernière alerte
+
+// Centre Ville hostile le plus proche : l'objectif de l'assaut.
+function aiCibleBase(a){
+  let best=null,bd=Infinity;
+  for(const b of G.buildings){
+    if(b.type!==BT.TC||b.hp<=0||!estHostile(a.id,b)) continue;
+    const d=Math.hypot(b.x-a.baseX,b.y-a.baseY);
+    if(d<bd){ bd=d; best=b; }
+  }
+  return best;
+}
+// Poste une armée en garde autour d'un point (ralliement ou repli défensif).
+function aiPoster(army,x,y){
+  for(const u of army){ u.camp=u.owner; u.campX=x; u.campY=y; u.target=null; }
+}
+function majPhaseAssaut(dt,a,army){
+  const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+
+  // ── Défense ── une menace près de la base rappelle l'armée, où qu'elle
+  // soit. `defenseJusqua` donne l'hystérésis : sans elle, un seul éclaireur
+  // qui rôde annulerait tous les assauts de la partie.
+  const tc=bldById(a.tcId);
+  if(tc&&(a.scanDef=(a.scanDef||0)-dt)<=0){
+    a.scanDef=0.5;
+    const menace=nearestBy(tc.x,tc.y,AI_DEFENSE_RAYON,e=>e.hp>0&&estHostile(a.id,e));
+    if(menace) a.defenseJusqua=G.gameTime+AI_DEFENSE_DUREE;
+  }
+  if(a.defenseJusqua>G.gameTime){
+    if(a.phase!=='defense'){
+      a.phase='defense';
+      aiPoster(army,a.baseX,a.baseY);
+      if(a.raids>0) notify(`🛡 ${a.nom} rappelle son armée en défense`,'#e67e22');
+    } else aiPoster(army,a.baseX,a.baseY);   // rattrape les recrues sorties depuis
+    return;
+  }
+  if(a.phase==='defense') a.phase=null;      // menace écartée : on reprend le cours normal
+
+  // ── Rassemblement ── on attend le quorum, ou l'expiration du délai : sans
+  // ce plafond, une seule unité coincée derrière un lac gèlerait l'assaut
+  // pour le restant de la partie.
+  if(a.phase==='rassemble'){
+    aiPoster(army,a.rallyX,a.rallyY);        // les recrues rejoignent le point, elles aussi
+    // Est « prêt » celui qui a rejoint le point... mais AUSSI celui qui est
+    // déjà plus près de la cible que le point de ralliement lui-même : un
+    // rescapé de l'assaut précédent, encore au contact dans la base adverse,
+    // est au front — le faire revenir en arrière pour repartir serait absurde,
+    // et c'est ce qui faisait expirer le délai à chaque vague après la
+    // première.
+    const dCible=Math.hypot(a.rallyX-a.cibleX,a.rallyY-a.cibleY);
+    const prets=army.filter(u=>Math.hypot(u.x-a.rallyX,u.y-a.rallyY)<=AI_RALLY_RAYON
+                             ||Math.hypot(u.x-a.cibleX,u.y-a.cibleY)<dCible).length;
+    const quorum=army.length&&prets/army.length>=AI_RALLY_QUORUM;
+    if(!quorum&&G.gameTime-a.phaseT<aiRallyDelai(a,army)) return;
+    a.rallyQuorum=quorum;   // trace : l'assaut est-il parti groupé ou par expiration ?
+    // camp effacé = l'unité cesse de garder son poste et part chasser avec
+    // la logique de ciblage ennemie déjà en place.
+    for(const u of army){ u.camp=null; u.target=null; u.state='idle'; }
+    a.phase='assaut';
+    a.raids++;
+    a.atkTimer=tune.atkEvery;
+    a.atkMin+=tune.atkStep;
+    sfx('wave');
+    bigBanner(`🏴 ASSAUT ENNEMI ${a.raids}`);
+    notify(`🏴 ${a.nom} lance un assaut ! (${army.length} unités)`,'#e74c3c');
+    return;
+  }
+
+  // ── Déclenchement ── le compte à rebours et l'effectif décident, comme
+  // avant ; c'est ce qui suit qui change : on se masse d'abord.
+  if(a.atkTimer<=0&&army.length>=a.atkMin){
+    const cible=aiCibleBase(a);
+    if(!cible) return;                       // plus personne à attaquer
+    a.cibleX=cible.x; a.cibleY=cible.y;
+    a.rallyX=a.baseX+(cible.x-a.baseX)*AI_RALLY_PART;
+    a.rallyY=a.baseY+(cible.y-a.baseY)*AI_RALLY_PART;
+    a.phase='rassemble'; a.phaseT=G.gameTime;
+    aiPoster(army,a.rallyX,a.rallyY);
+  }
+}
+
 function updateUneIA(dt,a){
   if(!a||a.vaincu) return;
 
@@ -8536,19 +8914,12 @@ function updateUneIA(dt,a){
   // « dette » et déclenchait son 1er assaut à la seconde où sa 6e unité
   // sortait — puis affichait « assaut : 0s » pendant tout ce temps.
   a.atkTimer=Math.max(0,a.atkTimer-dt);
-  const army=G.units.filter(u=>u.owner===a.id&&u.type!==UT.VIL);
-  if(a.atkTimer<=0&&army.length>=a.atkMin){
-    const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
-    // camp effacé = l'unité cesse de garder la base et part chasser le
-    // joueur avec la logique de ciblage ennemie déjà en place.
-    for(const u of army){ u.camp=null; u.target=null; u.state='idle'; }
-    a.raids++;
-    a.atkTimer=tune.atkEvery;
-    a.atkMin+=tune.atkStep;
-    sfx('wave');
-    bigBanner(`🏴 ASSAUT ENNEMI ${a.raids}`);
-    notify(`🏴 L'ennemi lance un assaut ! (${army.length} unités)`,'#e74c3c');
-  }
+  // Le Moine ne combat pas (updateEnemyAI l'exclut explicitement) : le
+  // compter dans l'armée faisait déclencher des assauts sur un effectif qui
+  // n'existait pas — trois moines chasseurs de reliques pouvaient à eux
+  // seuls faire franchir le seuil `atkMin`.
+  const army=G.units.filter(u=>u.owner===a.id&&u.type!==UT.VIL&&u.type!==UT.MONK);
+  majPhaseAssaut(dt,a,army);
 
   a.think-=dt;
   if(a.think>0) return;
@@ -8609,7 +8980,13 @@ function updateUneIA(dt,a){
     // Bâtiments militaires : on ne produit qu'une fois l'économie lancée,
     // pour ne pas étrangler les chantiers dès les premières minutes.
     if(vils.length<Math.min(6,a.vilTarget)) continue;
-    const avail=roster.filter(t=>(AI_UNIT_AGE[t]||0)<=a.age&&aiAfford(AI_TCOST[t],saving,a));
+    // Le Moine ne sert QU'À ramasser les reliques (voir aiRelicHunt) et ne
+    // combat jamais : au-delà d'un porteur par relique de la carte, chaque
+    // Moine supplémentaire est une place de population et 45🍖+20💰 jetés.
+    // Mesuré avant plafond : 16 Moines pour 5 reliques.
+    const monks=G.units.filter(u=>u.owner===a.id&&u.type===UT.MONK).length;
+    const avail=roster.filter(t=>(AI_UNIT_AGE[t]||0)<=a.age&&aiAfford(AI_TCOST[t],saving,a)
+                                &&!(t===UT.MONK&&monks>=RELIC_COUNT));
     if(!avail.length) continue;
     const type=avail[(Math.random()*avail.length)|0];
     aiSpend(AI_TCOST[type],a);
@@ -9118,6 +9495,128 @@ canvas.addEventListener('contextmenu',e=>{
 window.addEventListener('keydown',e=>{
   if(e.key==='Escape') cancelOrDeselect();
 });
+
+// ── CLAVIER ──────────────────────────────────────────────────
+// Le jeu ne connaissait que Échap, Ctrl+1-9, 1-9 et Alt+1-4 : agréable au
+// doigt sur mobile, pénible au clavier sur PC — l'inverse de ce qu'on attend
+// d'un jeu de stratégie. Tout ce qui suit pointe sur les MÊMES fonctions que
+// les boutons correspondants, jamais sur une copie de leur logique.
+//
+// Un raccourci ne doit jamais se déclencher pendant qu'on tape : le chat
+// multijoueur, le champ de graine et le pseudo sont des <input>.
+function saisieEnCours(e){
+  const c=e.target;
+  return !!(c&&(c.tagName==='INPUT'||c.tagName==='TEXTAREA'||c.isContentEditable));
+}
+
+// ── Caméra aux flèches ──
+// Volontairement PAS sur ZQSD/WASD : `A` et `S` sont les touches attendues
+// pour « marche d'attaque » et « stop » dans tout le genre (AoE2, StarCraft),
+// et la caméra aux flèches est justement la convention d'AoE2. Les deux ne
+// pouvaient pas cohabiter ; les commandes ont gagné.
+const CAM_KEYS = { ArrowLeft:[-1,0], ArrowRight:[1,0], ArrowUp:[0,-1], ArrowDown:[0,1] };
+const CAM_TILES_PAR_S = 18;   // vitesse en TUILES/s : constante quel que soit le zoom
+const _camTouches = new Set();
+// Défilement appliqué à la CADENCE D'AFFICHAGE (voir loop), pas dans
+// updateGlide : celui-ci tourne au pas de simulation, donc deux fois plus
+// souvent en vitesse ×2 — la caméra aurait accéléré avec la vitesse de jeu.
+function updateCamClavier(dt){
+  if(!_camTouches.size) return;
+  let dx=0, dy=0;
+  for(const k of _camTouches){ const v=CAM_KEYS[k]; if(v){ dx+=v[0]; dy+=v[1]; } }
+  if(!dx&&!dy) return;
+  const n=Math.hypot(dx,dy)||1;               // diagonale : même vitesse qu'en ligne droite
+  const p=CAM_TILES_PAR_S*TILE*dt;
+  G.cam.x+=dx/n*p; G.cam.y+=dy/n*p;
+  clampCam();
+}
+
+// ── Prochain villageois inactif ──
+// Le badge 👷 de la barre du haut promettait « cliquez pour les
+// sélectionner » depuis toujours... sans le moindre gestionnaire de clic.
+// Une seule fonction sert désormais les deux entrées, badge et touche.
+let _idleIdx=0;
+function villageoisInactifSuivant(){
+  const libres=G.units.filter(u=>u.type===UT.VIL&&u.state==='idle'&&estLocal(u));
+  if(!libres.length){ notify('Aucun villageois inactif','#95a5a6'); return; }
+  _idleIdx=_idleIdx%libres.length;
+  const u=libres[_idleIdx];
+  _idleIdx=(_idleIdx+1)%libres.length;        // appuis successifs : on parcourt la liste
+  G.sel=[u.id]; G.mode='select';
+  camCenterOn(u.x,u.y);
+  refreshUI(); sfx('tap');
+  notify(`👷 Villageois inactif (${libres.length} au total)`,'#f0c040');
+}
+{
+  const badge=document.getElementById('idlebtn-inner');
+  if(badge) badge.addEventListener('click',villageoisInactifSuivant);
+}
+
+// ── Retour au Centre Ville ──
+function allerCentreVille(){
+  const tc=G.buildings.find(b=>b.type===BT.TC&&estLocal(b));
+  if(!tc){ notify('Plus de Centre Ville','#e74c3c'); return; }
+  camCenterOn(tc.x,tc.y); sfx('tap');
+}
+
+// ── Onglet construction ──
+// N'ouvre rien de neuf : sélectionne un villageois (celui déjà sélectionné,
+// sinon un inactif, sinon n'importe lequel) et bascule sur l'onglet
+// Économie, ce qui fait dessiner la barre de construction par drawUnitAct.
+function ouvrirConstruction(){
+  const dejaVil=G.units.find(u=>G.sel.includes(u.id)&&u.type===UT.VIL&&estLocal(u));
+  const v=dejaVil
+    || G.units.find(u=>u.type===UT.VIL&&u.state==='idle'&&estLocal(u))
+    || G.units.find(u=>u.type===UT.VIL&&estLocal(u));
+  if(!v){ notify('Aucun villageois disponible','#e67e22'); return; }
+  if(!dejaVil) G.sel=[v.id];
+  G.mode='select'; G.buildTab=0;
+  refreshUI(); sfx('tap');
+}
+
+// ── Q/W/E/R : les quatre premières actions d'un BÂTIMENT sélectionné ──
+// Réservé aux bâtiments, et c'est ce qui évite toute collision : un bâtiment
+// n'a ni marche d'attaque (A), ni stop (S), ni posture (C). On déclenche le
+// VRAI bouton de la barre — donc le même coût, le même flash de ressources,
+// le même verrou d'âge, sans rien réimplémenter.
+const ACT_KEYS = ['KeyQ','KeyW','KeyE','KeyR'];
+function actionBarre(i){
+  const bar=document.getElementById('actbar');
+  const btns=bar?bar.querySelectorAll('.btn:not(.locked):not(.nohotkey)'):[];
+  if(i>=btns.length){ notify('Aucune action à cet emplacement','#95a5a6'); return; }
+  btns[i].click();
+}
+
+window.addEventListener('keydown',e=>{
+  if(!G.running||G.paused||saisieEnCours(e)) return;
+  if(e.ctrlKey||e.metaKey||e.altKey) return;   // Ctrl+1-9 et Alt+1-4 ont déjà leur gestionnaire
+  if(CAM_KEYS[e.key]){ _camTouches.add(e.key); e.preventDefault(); return; }
+  const selBld=G.sel.length===1&&G.buildings.find(b=>b.id===G.sel[0]&&estLocal(b));
+  if(selBld){
+    const i=ACT_KEYS.indexOf(e.code);
+    if(i>=0){ actionBarre(i); e.preventDefault(); return; }
+  }
+  switch(e.code){
+    case 'KeyH':          allerCentreVille(); break;
+    case 'Period':
+    case 'NumpadDecimal': villageoisInactifSuivant(); break;
+    case 'KeyB':          ouvrirConstruction(); break;
+    case 'KeyA':          orderAMove(); break;
+    case 'KeyC':          cycleStance(); break;
+    case 'KeyS': {
+      const ids=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)).map(u=>u.id);
+      if(!ids.length){ notify('Aucune unité sélectionnée','#e67e22'); break; }
+      emettreOrdre(ordre(ORD.STOP,{ids})); sfx('tap');
+      break;
+    }
+    default: return;
+  }
+  e.preventDefault();
+});
+window.addEventListener('keyup',e=>{ _camTouches.delete(e.key); });
+// Sans ça, une flèche encore enfoncée au moment où l'on quitte l'onglet
+// reste « appuyée » pour toujours : la caméra part en glissade au retour.
+window.addEventListener('blur',()=>_camTouches.clear());
 
 // ── GROUPES DE CONTRÔLE ──────────────────────────────────────
 // Ctrl+1..9 assigne la sélection courante, 1..9 la rappelle ; un second
@@ -10362,12 +10861,19 @@ function tradeRes(fromR,fromV,toR,toV){
 
 function addCommonBuildingBtns(bar,b){
   if(b.type===BT.TC) return; // le Centre Ville n'est pas démolissable
-  mkBtn(bar,'🧨','Démolir\n+25%',()=>{
+  const btn=mkBtn(bar,'🧨','Démolir\n+25%',()=>{
     if(b._confirmDemo){ demolishBuilding(b); return; }
     b._confirmDemo=true;
     notify('Touchez à nouveau 🧨 pour confirmer','#e67e22');
     setTimeout(()=>{ b._confirmDemo=false; },3000);
   },false);
+  // Jamais atteignable au clavier (voir actionBarre) : la démolition est la
+  // seule action destructrice de la barre, et elle occupe le DERNIER
+  // emplacement — donc pile sous Q/W/E/R sur une Caserne ou une Écurie, qui
+  // n'ont que deux ou trois boutons. La double confirmation ne suffit pas :
+  // deux appuis sur la même touche, c'est précisément ce qu'un doigt fait
+  // quand il croit que le premier n'a pas pris.
+  btn.classList.add('nohotkey');
 }
 
 function drawBuildAct(bar,b){
@@ -10724,7 +11230,25 @@ function updateSelInfo(e){
   const desc=[];
   if(G.units.find(u=>u.id===e.id)&&e.state!=='idle') desc.push(stateLabels[e.state]||e.state);
   if(e.trainQ?.length>0) desc.push(`File: ${e.trainQ.length}`);
+  // Armure et contres : un système de contre invisible ne sert à rien — le
+  // joueur doit pouvoir lire POURQUOI son Piquier fond sous les flèches et
+  // écrase la cavalerie. Bâtiments compris : leur armure est réelle aussi.
+  const arm=armureDe(e);
+  if(arm.m||arm.p) desc.push(`🛡 ${arm.m}/${arm.p}`);
+  if(isUnit){
+    const cb=BONUS[e.type];
+    if(cb) desc.push('⚔ +'+Object.entries(cb).map(([c,v])=>`${v} vs ${CLS_NOM[c]||c}`).join(', '));
+  }
   document.getElementById('seldesc').textContent=desc.join(' | ');
+  // Le détail tient rarement sur une ligne dans le bandeau : l'info-bulle
+  // reprend tout, y compris ce que la classe de l'unité lui fait SUBIR.
+  const sd=document.getElementById('seldesc');
+  if(isUnit){
+    const d=UDEF[e.type];
+    sd.title=`${name} — ${CLS_NOM[d.cls]||d.cls}\n`+
+      `Attaque ${e.atk} (${d.atkType==='m'?'mêlée':'perforant'})\n`+
+      `Armure ${arm.m} mêlée / ${arm.p} perforant`;
+  } else sd.title=`${name}\nArmure ${arm.m} mêlée / ${arm.p} perforant`;
 }
 
 // ── PANNEAU RECHERCHE ─────────────────────────────────────
@@ -11202,7 +11726,17 @@ const CONTROLES = [
   { key:'Clic droit / Échap', desc:'Annule la construction ou la marche d’attaque en cours, sinon désélectionne.' },
   { key:'Molette / pincement', desc:'Zoom avant/arrière.' },
   { key:'Glisser le fond', desc:'Déplace la caméra.' },
-  { sec:'Clavier' },
+  { sec:'Clavier — caméra' },
+  { key:'Flèches',     desc:'Déplace la caméra (maintenir). Deux flèches à la fois pour la diagonale.' },
+  { key:'H',           desc:'Recentre la caméra sur votre Centre Ville.' },
+  { key:'.',           desc:'Sélectionne le prochain villageois inactif et va le voir. Appuis successifs : on passe au suivant. (Le badge 👷 en haut à droite fait la même chose.)' },
+  { sec:'Clavier — ordres' },
+  { key:'A',           desc:'Marche d’attaque : vos unités engageront tout ennemi croisé en chemin.' },
+  { key:'S',           desc:'Stop — interrompt l’ordre en cours de la sélection.' },
+  { key:'C',           desc:'Change la posture des unités militaires sélectionnées (Agressif / Défensif / Tenir).' },
+  { key:'B',           desc:'Ouvre le menu de construction (sélectionne un villageois au besoin).' },
+  { key:'Q W E R',     desc:'Bâtiment sélectionné : déclenche ses quatre premières actions (former une unité, améliorer…).' },
+  { sec:'Clavier — sélection' },
   { key:'Échap',       desc:'Annule / désélectionne.' },
   { key:'Ctrl + 1-9',  desc:'Assigne la sélection courante au groupe de contrôle correspondant.' },
   { key:'1-9',         desc:'Rappelle ce groupe de contrôle. Un second appui rapide sur le même chiffre recentre la caméra dessus.' },
@@ -13697,6 +14231,10 @@ function loop(ts){
   }
   if(steps>=SIM_MAX_STEPS) _simAccum=0; // décroche plutôt que de spiraler si la machine rame
   const dt=frameDt; // pour le rafraîchissement UI ci-dessous (cadence réelle, pas simulée)
+  // Caméra au clavier : à la cadence d'AFFICHAGE et non au pas de simulation
+  // (voir updateCamClavier) — sinon elle irait deux fois plus vite en ×2, et
+  // ne bougerait plus du tout chez le client d'une partie en ligne.
+  updateCamClavier(dt);
   render();
   updateHUD();
   _uiRefreshCd-=dt;

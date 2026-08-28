@@ -12765,8 +12765,20 @@ function appliquerSnap(m){
   G.buildings=[];
   // Purge des marques laissees par des batiments (1=ferme, 3=solide,
   // 9=reserve) : le terrain lui-meme (eau, gisements) ne doit pas bouger.
+  //
+  // ATTENTION : l'EAU est elle aussi marquee 3 par genMap (`b[y][x]=3` sur
+  // les lacs) -- exactement la meme valeur qu'un batiment solide. La purge
+  // remettait donc les ~1900 cases de lac a 0 : des le PREMIER snapshot
+  // recu, les lacs cessaient de bloquer le passage CHEZ LE CLIENT
+  // uniquement, ses unites traversaient l'eau et son pathfinding divergeait
+  // de celui de l'hote -- l'invariant meme que le commentaire ci-dessus
+  // pretend proteger. On re-derive donc la marque du terrain au lieu de la
+  // mettre a zero aveuglement. (Trouve par tests/run.js, groupe `reseau` ;
+  // invisible a l'oeil : la carte s'affiche pareil, seuls les deplacements
+  // divergent, et seulement chez l'invite.)
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
-    const v=G.bmap[y][x]; if(v===1||v===3||v===9) G.bmap[y][x]=0;
+    const v=G.bmap[y][x];
+    if(v===1||v===3||v===9) G.bmap[y][x]=(G.tiles[y][x]===T_WATER)?3:0;
   }
   for(const bd of m.bat) placeBuilding(deserialiserBatiment(bd)); // placeBuilding pousse lui-meme
   G.units=m.uni.map(deserialiserUnite);

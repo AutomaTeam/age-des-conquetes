@@ -1540,14 +1540,43 @@ const HERO_AURA_RADIUS = BASE_TILE*6;
 const HERO_AURA_MULT = 1.15;
 // Multiplicateur d'ATK pour une unité militaire à portée d'un héros allié
 // vivant (le héros lui-même en profite aussi : rien ne l'exclut du calcul).
+// Héros vivants, recensés UNE FOIS par pas de simulation (voir update).
+// heroAuraMult est appelé à chaque coup porté par chaque unité — mêlée,
+// projectile, riposte de l'IA : balayer tout G.units à chaque fois, c'était
+// des centaines de milliers d'itérations par seconde en grosse bataille
+// pour retrouver au plus quatre héros (un par camp, voir f.heroTrained).
+let _heros=[];
+function majHeros(){
+  _heros.length=0;
+  for(const u of G.units) if(u.type===UT.HERO&&u.hp>0) _heros.push(u);
+}
 function heroAuraMult(u){
-  if(!isMilitary(u.type)) return 1;
-  for(const h of G.units){
-    if(h.type!==UT.HERO||h.hp<=0) continue;
-    if(h.owner!==u.owner) continue;
+  // Sortie immédiate dans le cas de très loin le plus fréquent : aucun héros
+  // sur la carte. Avant, ce cas coûtait quand même un balayage complet.
+  if(!_heros.length||!isMilitary(u.type)) return 1;
+  for(const h of _heros){
+    if(h.hp<=0||h.owner!==u.owner) continue;   // un héros peut mourir dans le pas courant
     if(Math.hypot(h.x-u.x,h.y-u.y)<=HERO_AURA_RADIUS) return HERO_AURA_MULT;
   }
   return 1;
+}
+
+// ── SÉLECTION : appartenance en O(1) ───────────────────────
+// `estSel(id)` À L'INTÉRIEUR d'un balayage de toutes les unités
+// (selMilitary, assignerGroupe, les ordres de la barre d'action...) donne un
+// O(n×m) : 300 unités sélectionnées sur 900 en jeu, c'est 270 000
+// comparaisons par appel, et ces appels partent au rythme des clics.
+//
+// Le cache est indexé sur la RÉFÉRENCE du tableau, et c'est ce qui le rend
+// exact sans discipline : G.sel n'est jamais muté en place dans tout le
+// fichier (aucun push/splice — vérifié), il est toujours RÉASSIGNÉ. Toute
+// modification change donc la référence et invalide le cache d'elle-même.
+// Si un jour un `G.sel.push(...)` apparaît, ce cache devient faux : passer
+// alors par une fonction de mutation dédiée.
+let _selSet=new Set(), _selRef=null;
+function estSel(id){
+  if(_selRef!==G.sel){ _selRef=G.sel; _selSet=new Set(G.sel); }
+  return _selSet.has(id);
 }
 
 // ── CALCUL DES DÉGÂTS (point de passage UNIQUE) ────────────
@@ -2505,7 +2534,14 @@ function refreshNodePos(){
 // recherche qui pourraient déclencher ces bonus entre-temps.
 const MIL_TYPES=[UT.MIL,UT.ARC,UT.KNIGHT,UT.PALADIN,UT.PIKE,UT.XBOW,UT.TREB,UT.RAM,UT.SCOUT,UT.HERO,
                  UT.ENEMI,UT.ENEMIA,UT.ENEMI_G,UT.ENEMI_C,UT.ENEMI_BOSS];
-function isMilitary(type){ return MIL_TYPES.includes(type); }
+// Set, pas Array.includes : isMilitary est appelé DANS des balayages de
+// toute l'armée (selMilitary, heroAuraMult, les statistiques par seconde,
+// les effets rétroactifs de recherche…), et chaque appel reparcourait les
+// quinze types. Mesuré : c'était le vrai coût de selMilitary, plus que le
+// `G.sel.includes` que l'audit désignait — d'où ce correctif, découvert en
+// mesurant l'autre.
+const MIL_SET=new Set(MIL_TYPES);
+function isMilitary(type){ return MIL_SET.has(type); }
 
 // Les bonus de recherche et d'âge s'appliquent désormais à TOUT camp, lus
 // dans sa propre faction. Auparavant ils étaient réservés à owner==='player'
@@ -6118,7 +6154,7 @@ function drawBuildings(){
     // plein. Un cadre continu autour d'un bâtiment de 2×2 cases masque le
     // liseré du toit et se confond avec les murs ; les équerres désignent
     // sans rien recouvrir, et se lisent tout de suite comme un viseur.
-    if(G.sel.includes(b.id)){
+    if(estSel(b.id)){
       const rx=Math.round(bx)-2, ry=Math.round(by)-2, rw=pw+4, rh=ph+4;
       const a=Math.max(5,Math.min(rw,rh)*0.28); // longueur de branche
       ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=4; ctx.lineCap='butt';
@@ -6134,7 +6170,7 @@ function drawBuildings(){
     }
     // Barre PV
     const hpr=b.hp/b.maxHp;
-    if(hpr<1||G.sel.includes(b.id)){
+    if(hpr<1||estSel(b.id)){
       ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(bx,by-9,pw,5);
       ctx.fillStyle=hpr>.6?'#2ecc71':hpr>.3?'#f39c12':'#e74c3c';
       ctx.fillRect(bx,by-9,pw*hpr,5);
@@ -6364,7 +6400,7 @@ function drawUnits(){
       ctx.beginPath(); ctx.ellipse(sx,sy,S*0.27,S*0.13,0,0,Math.PI*2); ctx.stroke();
     }
     // anneau de sélection
-    if(G.sel.includes(u.id)){
+    if(estSel(u.id)){
       const pul=1+Math.sin(G.gameTime*4)*0.08; // pulsation douce
       ctx.strokeStyle='#f1c40f'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.ellipse(sx,sy,S*0.3*pul,S*0.15*pul,0,0,Math.PI*2); ctx.stroke();
@@ -6581,7 +6617,7 @@ function drawHoverRing(){
   const h=G.hover;
   if(!h||G.mode!=='select') return;
   if(h.kind==='unit'){
-    if(G.sel.includes(h.id)) return;
+    if(estSel(h.id)) return;
     const u=unitById(h.id); if(!u) return;
     const{x:sx,y:sy}=ws(u.x,u.y);
     const spr0=SPR.unit[u.type];
@@ -6589,7 +6625,7 @@ function drawHoverRing(){
     ctx.strokeStyle='rgba(255,255,255,.65)'; ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.ellipse(sx,sy,S*0.32,S*0.16,0,0,Math.PI*2); ctx.stroke();
   } else if(h.kind==='building'){
-    if(G.sel.includes(h.id)) return;
+    if(estSel(h.id)) return;
     const b=bldById(h.id); if(!b) return;
     const pw=b.w*TILE, ph=b.h*TILE;
     const{x:sx,y:sy}=ws(b.x,b.y);
@@ -6728,6 +6764,7 @@ function update(dt){
   G.dayPhase=(G.gameTime/90)%1; // cycle de 90s
   _pfFrame=0;               // budget de recherches de chemin pour cette image
   rebuildGrid();
+  majHeros();               // recensement unique des héros (voir heroAuraMult)
   updateUnits(dt);
   updateBuildings(dt);
   updateEnemyAI(dt);
@@ -9607,7 +9644,7 @@ function allerCentreVille(){
 // sinon un inactif, sinon n'importe lequel) et bascule sur l'onglet
 // Économie, ce qui fait dessiner la barre de construction par drawUnitAct.
 function ouvrirConstruction(){
-  const dejaVil=G.units.find(u=>G.sel.includes(u.id)&&u.type===UT.VIL&&estLocal(u));
+  const dejaVil=G.units.find(u=>estSel(u.id)&&u.type===UT.VIL&&estLocal(u));
   const v=dejaVil
     || G.units.find(u=>u.type===UT.VIL&&u.state==='idle'&&estLocal(u))
     || G.units.find(u=>u.type===UT.VIL&&estLocal(u));
@@ -9647,7 +9684,7 @@ window.addEventListener('keydown',e=>{
     case 'KeyA':          orderAMove(); break;
     case 'KeyC':          cycleStance(); break;
     case 'KeyS': {
-      const ids=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)).map(u=>u.id);
+      const ids=G.units.filter(u=>estSel(u.id)&&estLocal(u)).map(u=>u.id);
       if(!ids.length){ notify('Aucune unité sélectionnée','#e67e22'); break; }
       emettreOrdre(ordre(ORD.STOP,{ids})); sfx('tap');
       break;
@@ -9673,7 +9710,7 @@ window.addEventListener('blur',()=>_camTouches.clear());
 // seul `e.code` ('Digit1'..'Digit9') reste fiable quel que soit le clavier.
 let _dernierGroupeAppui=0, _dernierGroupeTouche=null;
 function assignerGroupe(n){
-  const ids=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)).map(u=>u.id);
+  const ids=G.units.filter(u=>estSel(u.id)&&estLocal(u)).map(u=>u.id);
   if(!ids.length) return;
   G.groupes[n]=ids;
   notify(`Groupe ${n} : ${ids.length} unité(s) assignée(s)`,'#3498db');
@@ -9856,7 +9893,7 @@ function handleTap(sx,sy){
     if(estLocal(tBuilding)){
       // Ferme avec stock + villageois sélectionnés => les envoyer récolter dessus
       if(tBuilding.type===BT.FARM && !tBuilding.constructing){
-        const vils=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
+        const vils=G.units.filter(u=>estSel(u.id)&&u.type===UT.VIL);
         if(vils.length>0){
           const r=emettreOrdre(ordre(ORD.FERME,{ids:vils.map(u=>u.id), bId:tBuilding.id}));
           if(r.ok){
@@ -9869,7 +9906,7 @@ function handleTap(sx,sy){
       }
       // Chantier en cours => y envoyer les villageois sélectionnés (reprise de construction)
       if(tBuilding.constructing){
-        const vb=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
+        const vb=G.units.filter(u=>estSel(u.id)&&u.type===UT.VIL);
         if(vb.length>0){
           const r=emettreOrdre(ordre(ORD.CHANTIER,{ids:vb.map(u=>u.id), bId:tBuilding.id}));
           if(r.ok){
@@ -9881,7 +9918,7 @@ function handleTap(sx,sy){
       }
       // Villageois sélectionnés + bâtiment endommagé => réparation
       if(tBuilding.hp<tBuilding.maxHp&&!tBuilding.constructing){
-        const vr=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
+        const vr=G.units.filter(u=>estSel(u.id)&&u.type===UT.VIL);
         if(vr.length>0){
           const r=emettreOrdre(ordre(ORD.REPARE,{ids:vr.map(u=>u.id), bId:tBuilding.id}));
           if(r.ok){
@@ -9897,7 +9934,7 @@ function handleTap(sx,sy){
       // endommagé continue de le réparer plutôt que de s'y enfermer.
       const gcap=BDEF[tBuilding.type].garrisonCap;
       if(gcap&&!tBuilding.constructing){
-        const gArmy=G.units.filter(u=>G.sel.includes(u.id)&&u.state!=='garrison'&&u.type!==UT.TREB&&u.type!==UT.RAM);
+        const gArmy=G.units.filter(u=>estSel(u.id)&&u.state!=='garrison'&&u.type!==UT.TREB&&u.type!==UT.RAM);
         if(gArmy.length>0){
           const r=emettreOrdre(ordre(ORD.GARNIR,{ids:gArmy.map(u=>u.id), bId:tBuilding.id}));
           if(r.ok){
@@ -9917,7 +9954,7 @@ function handleTap(sx,sy){
   // voir plus bas) : un villageois ne sait pas nager, donc exclu ici.
   const tNode=G.nodes.find(n=>n.amt>0&&n.type!==RT.FISH&&Math.hypot(n.x-wx,n.y-wy)<BASE_TILE*.9);
   if(tNode){
-    const vils=G.units.filter(u=>G.sel.includes(u.id)&&u.type===UT.VIL);
+    const vils=G.units.filter(u=>estSel(u.id)&&u.type===UT.VIL);
     if(vils.length>0){
       const r=emettreOrdre(ordre(ORD.RECOLTE,{ids:vils.map(u=>u.id), nodeId:tNode.id}));
       if(r.ok){
@@ -9933,7 +9970,7 @@ function handleTap(sx,sy){
   // Banc de poisson touché ? Seules les Barques savent y pêcher.
   const tFish=G.nodes.find(n=>n.type===RT.FISH&&n.amt>0&&Math.hypot(n.x-wx,n.y-wy)<BASE_TILE*.9);
   if(tFish){
-    const boats=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)&&u.type===UT.BOAT);
+    const boats=G.units.filter(u=>estSel(u.id)&&estLocal(u)&&u.type===UT.BOAT);
     if(boats.length>0){
       const r=emettreOrdre(ordre(ORD.PECHER,{ids:boats.map(u=>u.id), nodeId:tFish.id}));
       if(r.ok){ G.moveTarget={x:tFish.x,y:tFish.y}; G.mtTimer=1.5; notify('🐟 Barque en route vers le banc…','#7fb8e8'); }
@@ -9944,7 +9981,7 @@ function handleTap(sx,sy){
   // Relique touchée ? Seul un Moine peut la porter — un seul suffit.
   const tRelic=G.relics&&G.relics.find(r=>relicFree(r)&&Math.hypot(r.x-wx,r.y-wy)<BASE_TILE*.9);
   if(tRelic){
-    const monk=G.units.find(u=>G.sel.includes(u.id)&&u.type===UT.MONK);
+    const monk=G.units.find(u=>estSel(u.id)&&u.type===UT.MONK);
     if(monk){
       const r=emettreOrdre(ordre(ORD.RELIQUE,{ids:[monk.id], relicId:tRelic.id}));
       if(r.ok){ G.moveTarget={x:tRelic.x,y:tRelic.y}; G.mtTimer=1.5; notify('🏺 Le moine part récupérer la relique…','#f0c040'); }
@@ -9956,7 +9993,7 @@ function handleTap(sx,sy){
   // chasser (villageois compris, à ses risques face à un sanglier).
   const tWild=(G.wildlife||[]).find(w=>w.hp>0&&Math.hypot(w.x-wx,w.y-wy)<BASE_TILE*.9);
   if(tWild){
-    const hunters=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)&&u.type!==UT.MONK);
+    const hunters=G.units.filter(u=>estSel(u.id)&&estLocal(u)&&u.type!==UT.MONK);
     if(hunters.length>0){
       const r=emettreOrdre(ordre(ORD.CHASSER,{ids:hunters.map(u=>u.id), wildlifeId:tWild.id}));
       if(r.ok){ G.moveTarget={x:tWild.x,y:tWild.y}; G.mtTimer=1.5; notify(`${WILDLIFE_DEF[tWild.type].ico} En chasse…`,'#8fbc44'); }
@@ -9966,7 +10003,7 @@ function handleTap(sx,sy){
 
   // Sol : déplacer les unités sélectionnées
   if(G.sel.length>0){
-    const selUnits=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u));
+    const selUnits=G.units.filter(u=>estSel(u.id)&&estLocal(u));
     if(selUnits.length>0){
       // Les Barques vivent sur un déplacement dédié (voir advanceNaval) :
       // le déplacement terrestre partagé les traiterait à tort comme
@@ -10009,7 +10046,7 @@ function formation(cx,cy,n){
 const STANCES=['agg','def','hold'];
 const STANCE_LBL={agg:'Agressif',def:'Défensif',hold:'Tenir'};
 const STANCE_ICO={agg:'⚔️',def:'🛡',hold:'📍'};
-function selMilitary(){ return G.units.filter(u=>G.sel.includes(u.id)&&isMilitary(u.type)); }
+function selMilitary(){ return G.units.filter(u=>estSel(u.id)&&isMilitary(u.type)); }
 function cycleStance(){
   const us=selMilitary();
   if(!us.length){ notify('Aucune unité militaire sélectionnée','#e67e22'); return; }
@@ -10026,7 +10063,7 @@ function orderAMove(){
 }
 
 function cmdAttack(tgt){
-  const ids=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)).map(u=>u.id);
+  const ids=G.units.filter(u=>estSel(u.id)&&estLocal(u)).map(u=>u.id);
   if(!ids.length) return;
   emettreOrdre(ordre(ORD.ATK,{ids, cible:tgt.id, genreCible:bldById(tgt.id)?'b':'u'}));
 }
@@ -10053,7 +10090,7 @@ function updateGhost(tx,ty){
 
 function confirmBuild(tx,ty){
   const type=G.buildType, d=BDEF[type];
-  const batisseurs=G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)&&u.type===UT.VIL).map(u=>u.id);
+  const batisseurs=G.units.filter(u=>estSel(u.id)&&estLocal(u)&&u.type===UT.VIL).map(u=>u.id);
   const r=emettreOrdre(ordre(ORD.BATIR,{type, tx, ty, batisseurs}));
   if(!r.ok){
     if(r.raison==='age'){ notify('🔒 Nécessite l\'Âge des Châteaux','#e74c3c'); exitBuild(); }
@@ -10621,7 +10658,7 @@ function updateDeselBtn(){
   const show=G.sel.length>0&&G.mode!=='build';
   btn.style.display=show?'flex':'none';
   if(show){
-    const nU=G.units.filter(u=>G.sel.includes(u.id)).length;
+    const nU=G.units.filter(u=>estSel(u.id)).length;
     document.getElementById('deselcnt').textContent=nU>1?String(nU):'';
   }
 }
@@ -10775,7 +10812,7 @@ function updateActBar(){
   const e=G.sel.length===1?(G.units.find(u=>u.id===G.sel[0])||G.buildings.find(b=>b.id===G.sel[0])):null;
   if(!e&&G.sel.length>1){
     // Multi-sélection
-    mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:G.units.filter(u=>G.sel.includes(u.id)&&estLocal(u)).map(u=>u.id)})));
+    mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:G.units.filter(u=>estSel(u.id)&&estLocal(u)).map(u=>u.id)})));
     const mils=selMilitary();
     if(mils.length){
       mkBtn(bar,'🎯','Marche\nd\'attaque',orderAMove);
@@ -11257,7 +11294,7 @@ function updateSelInfo(e){
   const hpr=document.getElementById('hprow');
   if(!e){
     // Sélection multiple : afficher un résumé plutôt que rien
-    const units=G.units.filter(u=>G.sel.includes(u.id));
+    const units=G.units.filter(u=>estSel(u.id));
     if(units.length>1){
       si.style.display='block';
       if(hpr) hpr.style.display='none';
@@ -11863,7 +11900,7 @@ window.openClassement=openClassement; window.closeClassement=closeClassement;
 // réellement fait le geste, plutôt que d'attendre un simple clic "Suivant".
 const TUTO_STEPS = [
   { txt:'Bienvenue à Âge des Conquêtes ! Sélectionnez un de vos 3 villageois en tapant dessus.',
-    fait:()=>G.units.some(u=>estLocal(u)&&u.type===UT.VIL&&G.sel.includes(u.id)) },
+    fait:()=>G.units.some(u=>estLocal(u)&&u.type===UT.VIL&&estSel(u.id)) },
   { txt:'Bien joué ! Tapez maintenant un arbre, un gisement de pierre/or ou un buisson de baies proche pour l\'envoyer récolter.',
     fait:()=>G.units.some(u=>estLocal(u)&&(u.state==='gather'||u.state==='farm')) },
   { txt:'Ouvrez le menu de construction (icône 🔨 en bas à gauche) et posez une Maison — chaque Maison augmente votre population maximale.',

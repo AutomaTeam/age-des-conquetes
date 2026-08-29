@@ -164,20 +164,29 @@ function ws(wx,wy){ const S=TILE/BASE_TILE; return {x:wx*S-G.cam.x, y:wy*S-G.cam
 // Écran -> monde, réciproque exacte de ws().
 function sw(sx,sy){ const S=TILE/BASE_TILE; return {x:(sx+G.cam.x)/S, y:(sy-54+G.cam.y)/S}; }
 
-// Ramène une abscisse/ordonnée CSS sur la grille du PIXEL ÉCRAN.
+// ── POURQUOI TOUT LE SOL RAISONNE EN PIXELS ÉCRAN ─────────
 //
 // Le contexte est mis à l'échelle par DPR : une position CSS entière tombe sur
-// un pixel écran fractionnaire dès que DPR n'est pas entier (1,25 sur un écran
+// un pixel écran FRACTIONNAIRE dès que DPR n'est pas entier (1,25 sur un écran
 // Windows à 125 %). Tout ce qui est peint là par `drawImage` avec une taille
 // imposée est rééchantillonné à cheval sur deux pixels, et son bord — qui n'a
 // rien à fondre au-delà — se mélange avec du transparent : la jointure devient
 // translucide et le fond de page transparaît dessous, en fines lignes sombres.
+// Le sol en a porté trois d'affilée, chacune trouvée en mesurant l'alpha :
+// entre pavés (215 au lieu de 255), entre cases d'eau (205), et le long des
+// rives (151).
 //
-// À utiliser pour les BORNES d'une case, jamais pour sa largeur : on aligne le
-// bord gauche puis le bord droit, et on prend la différence. Aligner la
-// position seule, en gardant TILE comme largeur, laisserait le bord droit
-// fractionnaire — donc la couture intacte un bord sur deux.
-const alignerEcran=v=>Math.round(v*DPR)/DPR;
+// La règle qui les supprime toutes : le sol dérive ses positions d'une CAMÉRA
+// QUANTIFIÉE AU PIXEL ÉCRAN (camDevX/camDevY dans drawMap), et on aligne les
+// BORNES d'une case, jamais sa largeur — on prend le bord gauche puis le bord
+// droit, et la différence. Aligner la position seule en gardant TILE comme
+// largeur laisserait le bord droit fractionnaire, donc la couture intacte un
+// bord sur deux. Pavés, eau animée et rendu de repli dérivent ainsi de la même
+// expression et coïncident au pixel.
+//
+// Corollaire : ne jamais laisser une couche statique faire un TROU en comptant
+// sur une couche mobile pour le combler — c'était l'origine de la couture des
+// rives (voir EAU_FOND dans terrainChunk).
 
 // ── CACHE DE TERRAIN PAR PAVÉS ────────────────────────────
 // Le sol est STATIQUE : ni la variante d'herbe, ni son miroir, ni le
@@ -188,11 +197,15 @@ const alignerEcran=v=>Math.round(v*DPR)/DPR;
 // ne change pas ; seule l'eau, animée, reste peinte à chaque image
 // par-dessus.
 const TCHUNK=8;
-// Plafond mémoire du cache, mesuré en pixels (×4 octets → ~32 Mo). L'ensemble
-// réellement visible ne dépasse jamais ~45 pavés au zoom minimum ni ~12 au zoom
-// maximum : ce plafond laisse donc une marge confortable pour les allers-retours
-// de caméra, tout en bornant ce qu'un long panoramique (ou des clics répétés sur
-// la mini-carte, qui téléportent la vue) peut accumuler sur un téléphone.
+// Plafond mémoire du cache, mesuré en pixels ÉCRAN (×4 octets → ~30 Mo). Les
+// pavés étant peints à la résolution de l'écran, ce plafond borne bien des
+// octets et non un nombre de pavés : à DPR élevé chaque pavé pèse plus lourd,
+// donc il en tient moins en cache — ce qui est le comportement voulu.
+// L'ensemble réellement visible ne dépasse jamais ~45 pavés au zoom minimum ni
+// ~12 au zoom maximum ; mesuré à DPR 1,25, cela fait 3,0 Mpx au zoom minimum et
+// 4,5 Mpx au maximum, soit une marge qui tient encore à DPR 2. Le plafond borne
+// ce qu'un long panoramique (ou des clics répétés sur la mini-carte, qui
+// téléportent la vue) peut accumuler sur un téléphone.
 const TCHUNK_PIXELS=8e6;
 // Pavés générés au plus par image. Un panoramique normal n'en réclame que 0,2
 // par image ; ce budget ne sert qu'aux rafales — changement de zoom (qui les
@@ -242,7 +255,10 @@ function grassSprite(x,y){
 function drawPatches(g,ccx,ccy,ox,oy){
   const sol=solCfg();
   if(!sol.densite) return;
-  const wmax=g.canvas.width, hmax=g.canvas.height;
+  // Le canvas cible est en pixels ÉCRAN (pavé de terrain) ou est le canvas
+  // principal, lui aussi en pixels écran : dans les deux cas on raisonne ici
+  // en unités CSS, comme le transform du contexte.
+  const wmax=g.canvas.width/DPR, hmax=g.canvas.height/DPR;
   for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
     const px2=ccx+dx, py2=ccy+dy;
     if(px2<0||py2<0) continue;
@@ -281,7 +297,21 @@ function terrainChunk(ccx,ccy){
   if(_tchunkBudget<=0) return null;   // budget épuisé : rendu direct cette image
   _tchunkBudget--;
   const x0=ccx*TCHUNK, y0=ccy*TCHUNK;
-  const ox=Math.round(x0*TILE), oy=Math.round(y0*TILE);
+  // Origine et taille en PIXELS ÉCRAN. Le pavé était stocké en pixels CSS puis
+  // agrandi par le transform DPR à l'affichage : sur un écran à 125 % il ne
+  // portait que 80 % des pixels qu'il couvrait (50 % sur un écran 2×), et tout
+  // le détail du sol passait par un agrandissement. Les textures étant
+  // supersamplées ×3 (114 px de source pour une case de 38), il y avait bien du
+  // détail à récupérer : le pavé est désormais peint à la résolution réelle de
+  // l'écran et composé 1:1, sans agrandissement.
+  const oxDev=Math.round(x0*TILE*DPR), oyDev=Math.round(y0*TILE*DPR);
+  const ox=oxDev/DPR, oy=oyDev/DPR;   // la même origine, en unités CSS
+  // Bornes de case, en CSS mais toutes multiples de 1/DPR : elles retombent
+  // donc exactement sur des frontières de pixel écran. C'est ce qui fait
+  // coïncider AU PIXEL la grille interne du pavé et celle de l'eau animée
+  // (voir BX/BY dans drawMap) — les deux dérivent de la même expression.
+  const bX=x=>(Math.round(x*TILE*DPR)-oxDev)/DPR;
+  const bY=y=>(Math.round(y*TILE*DPR)-oyDev)/DPR;
   // Le pavé fait EXACTEMENT la largeur de ses huit cases, sans marge. Il en
   // portait deux pixels, parce que la dernière case était peinte sur TILE
   // pixels flottants depuis une position arrondie et pouvait déborder d'une
@@ -295,8 +325,11 @@ function terrainChunk(ccx,ccy){
   // donc plus de marge à prévoir et un pavé opaque d'un bord à l'autre.
   // À lire avec l'alignement écran de drawMap : les deux sont nécessaires,
   // les mesures sont là-bas.
-  const w=Math.round((x0+TCHUNK)*TILE)-ox, h=Math.round((y0+TCHUNK)*TILE)-oy;
-  const{c,cx:g}=offCanvas(w,h);
+  const wDev=Math.round((x0+TCHUNK)*TILE*DPR)-oxDev, hDev=Math.round((y0+TCHUNK)*TILE*DPR)-oyDev;
+  const{c,cx:g}=offCanvas(wDev,hDev);
+  // Le canvas est en pixels écran, mais tout ce qui peint dedans (cases, rive,
+  // clairières) continue de raisonner en unités CSS : le transform s'en charge.
+  g.setTransform(DPR,0,0,DPR,0,0);
   g.imageSmoothingEnabled=true;
   const ex=Math.min(COLS-1,x0+TCHUNK-1), ey=Math.min(ROWS-1,y0+TCHUNK-1);
   const teinte=solCfg().teinte;
@@ -314,11 +347,11 @@ function terrainChunk(ccx,ccy){
   // se couvrait d'une grille de lignes sombres.
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
     if(G.tiles[y][x]===T_WATER) continue;   // l'eau est animée : hors cache
-    const px2=Math.round(x*TILE)-ox, py2=Math.round(y*TILE)-oy;
-    // Largeur d'un bord ARRONDI au bord arrondi suivant, et non TILE pixels
-    // flottants : les cases pavent alors le canvas exactement, sans se
-    // chevaucher ni laisser de jour, et la dernière ne déborde pas.
-    const dw=Math.round((x+1)*TILE)-ox-px2, dh=Math.round((y+1)*TILE)-oy-py2;
+    const px2=bX(x), py2=bY(y);
+    // Largeur d'un bord au bord suivant, et non TILE pixels flottants : les
+    // cases pavent alors le canvas exactement, sans se chevaucher ni laisser
+    // de jour, et la dernière ne déborde pas.
+    const dw=bX(x+1)-px2, dh=bY(y+1)-py2;
     const sp=grassSprite(x,y);
     if(sp) g.drawImage(sp.c,px2,py2,dw,dh);
     if(teinte){ g.fillStyle=teinte; g.fillRect(px2,py2,dw,dh); }
@@ -340,15 +373,15 @@ function terrainChunk(ccx,ccy){
   // subsiste, mais il ne découvre plus que de l'eau unie au lieu du vide.
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
     if(G.tiles[y][x]!==T_WATER) continue;
-    const px2=Math.round(x*TILE)-ox, py2=Math.round(y*TILE)-oy;
+    const px2=bX(x), py2=bY(y);
     g.fillStyle=EAU_FOND;
-    g.fillRect(px2,py2,Math.round((x+1)*TILE)-ox-px2,Math.round((y+1)*TILE)-oy-py2);
+    g.fillRect(px2,py2,bX(x+1)-px2,bY(y+1)-py2);
   }
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
     if(G.tiles[y][x]===T_WATER) continue;
-    drawShore(g,x,y,Math.round(x*TILE)-ox,Math.round(y*TILE)-oy);
+    drawShore(g,x,y,bX(x),bY(y));
   }
-  const ch={c,ox,oy,used:_frameId};
+  const ch={c,oxDev,oyDev,used:_frameId};
   _tchunks.set(key,ch);
   return ch;
 }
@@ -364,16 +397,19 @@ function drawMap(){
   // 1) sol statique, par pavés pré-rendus
   const c0=(sx/TCHUNK)|0, c1=(ex/TCHUNK)|0, r0=(sy/TCHUNK)|0, r1=(ey/TCHUNK)|0;
   let manquants=null;
-  // Pavé posé sur la grille du pixel ÉCRAN (voir alignerEcran). C'est la
-  // MOITIÉ de la correction des fines lignes sombres tous les huit cases ;
-  // l'autre moitié est la suppression de la marge du pavé (voir
-  // terrainChunk). Mesuré, alpha moyen de la colonne de jointure sur 500
-  // lignes : 215 à l'origine, 237 en alignant seulement, 221 en supprimant
-  // seulement la marge, 255 avec les deux. Ne pas en retirer une en croyant
-  // que l'autre suffit — chacune laisse la carte quadrillée de lignes.
+  // Caméra quantifiée au PIXEL ÉCRAN. Tout le sol — pavés, eau, repli — en
+  // dérive, ce qui met ces trois surfaces sur une seule et même grille, celle
+  // de l'écran. C'est ce qui supprime les coutures : elles venaient toutes de
+  // deux grilles voisines qui divergeaient d'une fraction de pixel.
+  // Le décalage de 54 px (barre du haut) est absorbé ICI, dans camDevY : le
+  // laisser hors du calcul le ferait retomber sur 67,5 pixels écran et
+  // désalignerait tout d'un demi-pixel.
+  const camDevX=Math.round(cx*DPR), camDevY=Math.round((cy-54)*DPR);
+  // Le pavé est en pixels écran : on le compose 1:1, taille explicite en CSS.
   for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++){
     const ch=terrainChunk(c,r);
-    if(ch) ctx.drawImage(ch.c,alignerEcran(ch.ox-cx),alignerEcran(ch.oy-cy+54));
+    if(ch) ctx.drawImage(ch.c,(ch.oxDev-camDevX)/DPR,(ch.oyDev-camDevY)/DPR,
+                              ch.c.width/DPR,ch.c.height/DPR);
     else (manquants||(manquants=[])).push(c,r);
   }
   // Bornes de case alignées sur le pixel écran, pré-calculées une fois pour
@@ -383,8 +419,8 @@ function drawMap(){
   // BX[i] est le bord GAUCHE de la case sx+i, BX[i+1] son bord droit — d'où
   // la borne supplémentaire.
   const BX=new Float64Array(ex-sx+2), BY=new Float64Array(ey-sy+2);
-  for(let i=0;i<BX.length;i++) BX[i]=alignerEcran((sx+i)*TILE-cx);
-  for(let i=0;i<BY.length;i++) BY[i]=alignerEcran((sy+i)*TILE-cy+54);
+  for(let i=0;i<BX.length;i++) BX[i]=(Math.round((sx+i)*TILE*DPR)-camDevX)/DPR;
+  for(let i=0;i<BY.length;i++) BY[i]=(Math.round((sy+i)*TILE*DPR)-camDevY)/DPR;
 
   // Pavés pas encore générés (budget épuisé) : rendu direct pour cette image
   // seulement — ils rejoindront le cache aux images suivantes.
@@ -406,9 +442,11 @@ function drawMap(){
       // sur le pavé voisin, lui déjà peint depuis le cache avec la sienne.
       ctx.save();
       ctx.beginPath();
-      ctx.rect(Math.round(bx*TILE-cx),Math.round(by*TILE-cy+54),Math.ceil(TCHUNK*TILE),Math.ceil(TCHUNK*TILE));
+      const rx=(Math.round(bx*TILE*DPR)-camDevX)/DPR, ry=(Math.round(by*TILE*DPR)-camDevY)/DPR;
+      ctx.rect(rx,ry,(Math.round((bx+TCHUNK)*TILE*DPR)-camDevX)/DPR-rx,
+                     (Math.round((by+TCHUNK)*TILE*DPR)-camDevY)/DPR-ry);
       ctx.clip();
-      drawPatches(ctx,manquants[i],manquants[i+1],cx,cy-54);
+      drawPatches(ctx,manquants[i],manquants[i+1],camDevX/DPR,camDevY/DPR);
       ctx.restore();
       for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
         if(G.tiles[y][x]===T_WATER) continue;
@@ -419,14 +457,13 @@ function drawMap(){
 
   // 2) eau animée, peinte à chaque image par-dessus les pavés.
   //
-  // Bornes alignées sur le pixel écran (BX/BY), comme le pavé : le lac est le
-  // pire cas de la couture décrite dans alignerEcran. Le pavé de terrain SAUTE
-  // les cases d'eau — il n'y a donc rien d'opaque dessous, et une jointure
-  // translucide y laisse voir le fond de page directement. Mesuré au cœur d'un
+  // Bornes BX/BY, issues de la même caméra quantifiée que le pavé : le lac est
+  // le pire cas de la couture décrite en tête de fichier, car le pavé n'y pose
+  // qu'un fond uni sous une eau animée qui, elle, bouge. Mesuré au cœur d'un
   // lac avant correction : colonnes à alpha 205 toutes les deux cases, lignes à
   // alpha 218 à chaque case. (Une jointure sur deux seulement en colonnes :
-  // avec TILE=38 et DPR=1,25, un bord de case sur deux tombe déjà par chance
-  // sur un pixel écran entier.)
+  // avec TILE=38 et DPR=1,25, un bord de case sur deux tombait déjà par chance
+  // sur un pixel écran entier — de quoi rendre le motif trompeur à l'œil.)
   for(let y=sy;y<=ey;y++) for(let x=sx;x<=ex;x++){
     if(G.tiles[y][x]!==T_WATER) continue;
     const px2=BX[x-sx], py2=BY[y-sy];
@@ -443,7 +480,7 @@ function drawMap(){
   // 3) purge des pavés hors écran quand le cache dépasse son plafond, mesuré
   // en pixels et non en nombre de pavés : un pavé au zoom maximum pèse une
   // quinzaine de fois celui du zoom minimum.
-  const pxx=Math.ceil(TCHUNK*TILE);   // le pavé n'a plus de marge
+  const pxx=Math.ceil(TCHUNK*TILE*DPR);   // pavé sans marge, en pixels écran
   if(_tchunks.size*pxx*pxx>TCHUNK_PIXELS){
     for(const [k,ch] of _tchunks) if(ch.used!==_frameId) _tchunks.delete(k);
   }

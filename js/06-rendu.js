@@ -164,6 +164,21 @@ function ws(wx,wy){ const S=TILE/BASE_TILE; return {x:wx*S-G.cam.x, y:wy*S-G.cam
 // Écran -> monde, réciproque exacte de ws().
 function sw(sx,sy){ const S=TILE/BASE_TILE; return {x:(sx+G.cam.x)/S, y:(sy-54+G.cam.y)/S}; }
 
+// Ramène une abscisse/ordonnée CSS sur la grille du PIXEL ÉCRAN.
+//
+// Le contexte est mis à l'échelle par DPR : une position CSS entière tombe sur
+// un pixel écran fractionnaire dès que DPR n'est pas entier (1,25 sur un écran
+// Windows à 125 %). Tout ce qui est peint là par `drawImage` avec une taille
+// imposée est rééchantillonné à cheval sur deux pixels, et son bord — qui n'a
+// rien à fondre au-delà — se mélange avec du transparent : la jointure devient
+// translucide et le fond de page transparaît dessous, en fines lignes sombres.
+//
+// À utiliser pour les BORNES d'une case, jamais pour sa largeur : on aligne le
+// bord gauche puis le bord droit, et on prend la différence. Aligner la
+// position seule, en gardant TILE comme largeur, laisserait le bord droit
+// fractionnaire — donc la couture intacte un bord sur deux.
+const alignerEcran=v=>Math.round(v*DPR)/DPR;
+
 // ── CACHE DE TERRAIN PAR PAVÉS ────────────────────────────
 // Le sol est STATIQUE : ni la variante d'herbe, ni son miroir, ni le
 // liséré de rive ne changent d'une image à l'autre. Le redessiner case par
@@ -329,26 +344,28 @@ function drawMap(){
   // 1) sol statique, par pavés pré-rendus
   const c0=(sx/TCHUNK)|0, c1=(ex/TCHUNK)|0, r0=(sy/TCHUNK)|0, r1=(ey/TCHUNK)|0;
   let manquants=null;
-  // Position arrondie au PIXEL ÉCRAN RÉEL, et non au pixel CSS. Le contexte
-  // est mis à l'échelle par DPR : une position CSS entière tombe sur un pixel
-  // écran fractionnaire dès que DPR n'est pas entier (1,25 sur un écran
-  // Windows à 125 %). Le pavé était alors rééchantillonné à cheval sur deux
-  // pixels, et son bord — qui n'a rien à fondre au-delà — se mélangeait avec
-  // du transparent.
-  //
-  // C'est la MOITIÉ de la correction des fines lignes sombres tous les huit
-  // cases ; l'autre moitié est la suppression de la marge du pavé (voir
+  // Pavé posé sur la grille du pixel ÉCRAN (voir alignerEcran). C'est la
+  // MOITIÉ de la correction des fines lignes sombres tous les huit cases ;
+  // l'autre moitié est la suppression de la marge du pavé (voir
   // terrainChunk). Mesuré, alpha moyen de la colonne de jointure sur 500
   // lignes : 215 à l'origine, 237 en alignant seulement, 221 en supprimant
   // seulement la marge, 255 avec les deux. Ne pas en retirer une en croyant
-  // que l'autre suffit — chacune laisse la carte quadrillée de lignes, le
-  // fond de page transparaissant dessous.
-  const alignerX=v=>Math.round(v*DPR)/DPR;
+  // que l'autre suffit — chacune laisse la carte quadrillée de lignes.
   for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++){
     const ch=terrainChunk(c,r);
-    if(ch) ctx.drawImage(ch.c,alignerX(ch.ox-cx),alignerX(ch.oy-cy+54));
+    if(ch) ctx.drawImage(ch.c,alignerEcran(ch.ox-cx),alignerEcran(ch.oy-cy+54));
     else (manquants||(manquants=[])).push(c,r);
   }
+  // Bornes de case alignées sur le pixel écran, pré-calculées une fois pour
+  // toute la fenêtre visible : le repli ci-dessous et l'eau animée peignent
+  // case par case dans le canvas principal (contrairement à l'herbe, cuite
+  // dans le pavé), et sont donc exposés exactement à la même couture.
+  // BX[i] est le bord GAUCHE de la case sx+i, BX[i+1] son bord droit — d'où
+  // la borne supplémentaire.
+  const BX=new Float64Array(ex-sx+2), BY=new Float64Array(ey-sy+2);
+  for(let i=0;i<BX.length;i++) BX[i]=alignerEcran((sx+i)*TILE-cx);
+  for(let i=0;i<BY.length;i++) BY[i]=alignerEcran((sy+i)*TILE-cy+54);
+
   // Pavés pas encore générés (budget épuisé) : rendu direct pour cette image
   // seulement — ils rejoindront le cache aux images suivantes.
   if(manquants){
@@ -358,13 +375,11 @@ function drawMap(){
       const mex=Math.min(ex,bx+TCHUNK-1), mey=Math.min(ey,by+TCHUNK-1);
       for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
         if(G.tiles[y][x]===T_WATER) continue;
-        const px2=Math.round(x*TILE-cx), py2=Math.round(y*TILE-cy+54);
+        const px2=BX[x-sx], py2=BY[y-sy];
+        const dw=BX[x-sx+1]-px2, dh=BY[y-sy+1]-py2;
         const sp=grassSprite(x,y);
-        if(sp) ctx.drawImage(sp.c,px2,py2,TILE,TILE);
-        if(teinte){  // bords arrondis, comme dans le pavé : voir terrainChunk
-          ctx.fillStyle=teinte;
-          ctx.fillRect(px2,py2,Math.round((x+1)*TILE-cx)-px2,Math.round((y+1)*TILE-cy+54)-py2);
-        }
+        if(sp) ctx.drawImage(sp.c,px2,py2,dw,dh);
+        if(teinte){ ctx.fillStyle=teinte; ctx.fillRect(px2,py2,dw,dh); }
       }
       // Clairières du pavé manquant, écrêtées à SON rectangle : sans ce
       // découpage, une plaque débordante viendrait se poser une seconde fois
@@ -377,22 +392,32 @@ function drawMap(){
       ctx.restore();
       for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
         if(G.tiles[y][x]===T_WATER) continue;
-        drawShore(ctx,x,y,Math.round(x*TILE-cx),Math.round(y*TILE-cy+54));
+        drawShore(ctx,x,y,BX[x-sx],BY[y-sy]);
       }
     }
   }
 
-  // 2) eau animée, peinte à chaque image par-dessus les pavés
+  // 2) eau animée, peinte à chaque image par-dessus les pavés.
+  //
+  // Bornes alignées sur le pixel écran (BX/BY), comme le pavé : le lac est le
+  // pire cas de la couture décrite dans alignerEcran. Le pavé de terrain SAUTE
+  // les cases d'eau — il n'y a donc rien d'opaque dessous, et une jointure
+  // translucide y laisse voir le fond de page directement. Mesuré au cœur d'un
+  // lac avant correction : colonnes à alpha 205 toutes les deux cases, lignes à
+  // alpha 218 à chaque case. (Une jointure sur deux seulement en colonnes :
+  // avec TILE=38 et DPR=1,25, un bord de case sur deux tombe déjà par chance
+  // sur un pixel écran entier.)
   for(let y=sy;y<=ey;y++) for(let x=sx;x<=ex;x++){
     if(G.tiles[y][x]!==T_WATER) continue;
-    const px2=Math.round(x*TILE-cx), py2=Math.round(y*TILE-cy+54);
+    const px2=BX[x-sx], py2=BY[y-sy];
+    const dw=BX[x-sx+1]-px2, dh=BY[y-sy+1]-py2;
     // variante stable par tuile (même principe que l'herbe) : sans elle,
     // toutes les cases d'un lac porteraient les crêtes aux mêmes hauteurs
     // et se rejoindraient en longues bandes rectilignes.
     let hw=(x*2246822519+y*3266489917)|0; hw=(hw^(hw>>15))*668265263|0; hw=(hw^(hw>>13))|0;
     const vw=((hw%WATER_VARIANTS)+WATER_VARIANTS)%WATER_VARIANTS;
     const sp=SPR.terrain['water'+vw+'_'+waterFrame];
-    if(sp) ctx.drawImage(sp.c,px2,py2,TILE,TILE);
+    if(sp) ctx.drawImage(sp.c,px2,py2,dw,dh);
   }
 
   // 3) purge des pavés hors écran quand le cache dépasse son plafond, mesuré

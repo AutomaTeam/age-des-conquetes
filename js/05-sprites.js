@@ -55,6 +55,11 @@ const ASSET_EXT='.webp';
 const TRIM_W_BLD=512, TRIM_W_UNIT=320, TRIM_W_NODE=320, TRIM_W_ICON=256;
 const GRASS_VARIANTS=8; // nb de textures d'herbe distinctes (buildTerrain ↔ drawMap doivent s'accorder)
 const WATER_VARIANTS=6; // idem pour l'eau (buildTerrain ↔ drawMap)
+// Couleur de fond de l'eau. Sert DEUX fois, et les deux doivent rester
+// d'accord : c'est la base du sprite d'eau (buildTerrainEau) et le fond opaque
+// peint sous les cases d'eau dans le pavé de terrain (terrainChunk), qui
+// empêche la jointure des rives de laisser voir le fond de page.
+const EAU_FOND='#215f92';
 
 // Crée un canvas hors-écran
 function offCanvas(w,h){
@@ -246,7 +251,7 @@ function buildTerrainEau(T){
   // dans une surface d'eau vue de dessus ne justifie un réseau orthogonal.
   for(let v=0;v<WATER_VARIANTS;v++) for(let f=0;f<4;f++){
     const{c,cx}=offCanvas(T,T); const rnd=srnd(v*131+f*31+7);
-    px(cx,0,0,T,T,'#215f92');
+    px(cx,0,0,T,T,EAU_FOND);
     // Fonds : deux bandes très sombres et très douces, elles aussi ondulées,
     // qui donnent un peu de profondeur sans marquer de bord de tuile.
     const bande=(base,amp,per,ph,thick,col)=>{

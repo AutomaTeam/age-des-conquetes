@@ -324,6 +324,26 @@ function terrainChunk(ccx,ccy){
     if(teinte){ g.fillStyle=teinte; g.fillRect(px2,py2,dw,dh); }
   }
   drawPatches(g,ccx,ccy,ox,oy);
+  // FOND D'EAU OPAQUE sous les cases d'eau. Le pavé les laissait en trou, à
+  // charge pour l'eau animée de les combler à chaque image — mais les deux ne
+  // sont pas posées sur la même grille : le pavé est aligné EN BLOC, donc ses
+  // cases tombent à « origine alignée + un entier de pixels CSS », tandis que
+  // l'eau animée est alignée case par case sur le pixel écran. Les deux grilles
+  // divergent d'un demi-pixel écran, et l'écart s'ouvrait exactement le long de
+  // chaque RIVE : une colonne à alpha 151 sur toute la hauteur du lac, le fond
+  // de page visible au travers.
+  //
+  // Plutôt que de faire coïncider les deux grilles au pixel près — fragile, et
+  // à refaire à chaque fois qu'une surface s'ajoute —, on supprime le trou :
+  // sous l'eau animée il y a désormais la couleur de fond de l'eau (la même que
+  // la base du sprite, voir buildTerrainEau). Le décalage d'un demi-pixel
+  // subsiste, mais il ne découvre plus que de l'eau unie au lieu du vide.
+  for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
+    if(G.tiles[y][x]!==T_WATER) continue;
+    const px2=Math.round(x*TILE)-ox, py2=Math.round(y*TILE)-oy;
+    g.fillStyle=EAU_FOND;
+    g.fillRect(px2,py2,Math.round((x+1)*TILE)-ox-px2,Math.round((y+1)*TILE)-oy-py2);
+  }
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
     if(G.tiles[y][x]===T_WATER) continue;
     drawShore(g,x,y,Math.round(x*TILE)-ox,Math.round(y*TILE)-oy);

@@ -324,17 +324,46 @@ const CIVS = {
 //     d'arbres serait purement decorative tant que ce choix tient.
 //   • pas de carte « Iles » : sans navire de transport, les camps seraient
 //     inatteignables et la partie ne pourrait pas se terminer.
+//
+// Chaque preset porte aussi son SOL (voir SOLS plus bas) : jusqu'ici les cinq
+// cartes se ressemblaient trait pour trait une fois en jeu — meme vert, meme
+// texture — et seule la densite des ressources les distinguait. Le sol est la
+// premiere chose qu'on voit ; c'est lui qui doit dire ou l'on joue.
 const CARTES = {
-  plaines: { nom:'Plaines',      ico:'🌾',
+  plaines: { nom:'Plaines',      ico:'🌾', sol:'plaines',
              desc:'Équilibrée — la carte historique du jeu' },
-  foret:   { nom:'Grande Forêt', ico:'🌲', foret:2.2, or:0.55, pierre:0.6, baies:1.3,
+  foret:   { nom:'Grande Forêt', ico:'🌲', foret:2.2, or:0.55, pierre:0.6, baies:1.3, sol:'foret',
              desc:'Bois surabondant, or et pierre rares — l’armée chère se paie cher' },
-  arides:  { nom:'Terres Arides', ico:'🪨', foret:0.45, or:1.6, pierre:1.7, baies:0.7, lacs:0.5,
+  arides:  { nom:'Terres Arides', ico:'🪨', foret:0.45, or:1.6, pierre:1.7, baies:0.7, lacs:0.5, sol:'arides',
              desc:'Peu d’arbres, filons généreux — chaque bûcheron compte' },
-  lacs:    { nom:'Grands Lacs',   ico:'🌊', lacs:2.2, poissons:2.6, foret:0.9,
+  lacs:    { nom:'Grands Lacs',   ico:'🌊', lacs:2.2, poissons:2.6, foret:0.9, sol:'lacs',
              desc:'Beaucoup d’eau et de poisson — le Quai devient une vraie économie' },
-  arene:   { nom:'Arène',        ico:'🏟️', murs:true, foret:0.8, or:1.2,
+  arene:   { nom:'Arène',        ico:'🏟️', murs:true, foret:0.8, or:1.2, sol:'arene',
              desc:'Chaque camp démarre derrière une palissade à quatre portails' },
+};
+
+// ── SOL PAR TYPE DE CARTE ─────────────────────────────────
+// Trois reglages seulement, appliques par-dessus la MEME texture d'herbe
+// procedurale (voir buildTerrain) — aucune texture supplementaire a generer,
+// donc aucun cout d'atlas ni de memoire :
+//   • `teinte` : voile plaque case par case dans le pave de terrain. Il
+//     deplace la teinte generale du sol sans effacer le grain, les brins ni
+//     les touffes, qui restent lisibles au travers. `null` = herbe nue.
+//   • `terre`  : couleur des clairieres de terre battue (voir drawPatches),
+//     en composantes r,g,b — l'opacite est posee par le degrade.
+//   • `densite`: probabilite qu'un pave de 8x8 cases porte une clairiere.
+//     0.90 sur les Terres Arides (la terre y perce partout), 0.30 sous la
+//     futaie (l'humus reste couvert).
+//   • `mini`   : le meme sol, aplati en une couleur, pour la mini-carte —
+//     sans quoi une carte aride verte en miniature contredirait le terrain.
+const SOLS = {
+  plaines: { teinte:null,                       terre:'128,106,66', densite:0.50, mini:'#53823a' },
+  foret:   { teinte:'rgba(34,68,32,.26)',       terre:'74,58,36',   densite:0.30, mini:'#3f6b30' },
+  arides:  { teinte:'rgba(178,146,80,.52)',     terre:'152,122,74', densite:0.90, mini:'#87873f' },
+  lacs:    { teinte:'rgba(96,158,74,.20)',      terre:'112,96,60',  densite:0.30, mini:'#4f8a3c' },
+  // L'arene est une plaine pietinee : meme vert, mais la terre y affleure
+  // deux fois plus souvent qu'ailleurs.
+  arene:   { teinte:'rgba(120,104,62,.14)',     terre:'128,106,66', densite:0.70, mini:'#4f7d3a' },
 };
 let selectedCarte='plaines';
 function pickCarte(key){
@@ -353,6 +382,10 @@ const CARTE_DEF=CARTES.plaines;
 function carteCfg(){ return (typeof G!=='undefined'&&G&&CARTES[G.carte])||CARTE_DEF; }
 // Multiplicateur d'un reglage, 1 par defaut.
 function cM(cle){ const v=carteCfg()[cle]; return v==null?1:v; }
+// Reglages de sol de la carte en cours (voir SOLS). Retombe sur les Plaines
+// pour toute carte qui n'en declare pas — y compris une sauvegarde ancienne
+// enregistree avant l'existence de ce champ.
+function solCfg(){ return SOLS[carteCfg().sol]||SOLS.plaines; }
 
 let selectedCiv='francs';
 function pickCiv(key){

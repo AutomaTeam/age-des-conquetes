@@ -76,6 +76,34 @@ Le mode se choisit sur l'écran-titre, en plus de la difficulté.
   affrontez ensemble un seul seigneur IA, à la difficulté choisie sur
   l'écran-titre. Lancé seul, ce mode se joue comme la Conquête.
 
+## Types de carte
+
+Choisi sur l'écran-titre, à côté du mode et de la difficulté. Les cinq presets
+ne sont **que des multiplicateurs** appliqués aux mêmes appels de génération :
+la séquence de tirages aléatoires reste identique d'un preset à l'autre, donc
+le déterminisme partagé hôte/client tient tel quel.
+
+| Carte | Ce qui change |
+|---|---|
+| **Plaines** | Équilibrée — la carte historique du jeu |
+| **Grande Forêt** | Bois surabondant, or et pierre rares |
+| **Terres Arides** | Peu d'arbres, filons généreux, lacs deux fois plus petits |
+| **Grands Lacs** | Beaucoup d'eau et de poisson — le Quai devient une économie |
+| **Arène** | Chaque camp démarre derrière une palissade à quatre portails |
+
+Chaque preset porte aussi son **sol** (table `SOLS`, `01-regles.js`) : une
+teinte de biome et une densité de clairières de terre battue, plus la couleur
+correspondante en mini-carte. Sans ça, les cinq cartes se ressemblaient trait
+pour trait une fois en jeu — même vert, même texture — et seule la densité des
+ressources les distinguait. Ce sont des réglages posés **par-dessus la même
+texture d'herbe procédurale** : aucune texture supplémentaire à générer, donc
+aucun coût d'atlas ni de mémoire.
+
+Ce qu'on ne trouvera PAS, et pourquoi : pas de « Forêt Noire » (les arbres ne
+bloquent aucun passage, une muraille d'arbres serait purement décorative), pas
+d'« Îles » (sans navire de transport, les camps seraient inatteignables et la
+partie ne pourrait pas se terminer).
+
 ## Contenu
 
 - Récolte de ressources (bois, pierre, or, nourriture), construction de
@@ -113,9 +141,18 @@ centaines d'unités. Quatre caches portent l'essentiel du travail :
   discrets (et non pour chaque cran de molette), par étapes réparties sur
   plusieurs images, avec bascule atomique : aucune image ne montre un atlas
   à moitié reconstruit.
-- **Sol par pavés** — l'herbe et les lisérés de rive sont statiques, donc
-  pré-rendus par pavés de 8×8 cases ; seule l'eau, animée, est repeinte à
-  chaque image.
+- **Sol par pavés** — l'herbe, la teinte de biome, les clairières de terre et
+  les lisérés de rive sont statiques, donc pré-rendus par pavés de 8×8 cases ;
+  seule l'eau, animée, est repeinte à chaque image. Les clairières sont
+  déterministes par position de pavé et débordent sur les neuf pavés voisins,
+  pour n'être ni tranchées à la couture ni déplacées quand un pavé est purgé
+  du cache puis regénéré.
+- **Calques de macro-variation** — deux motifs répétés en coordonnées monde
+  (une douzaine de cases, puis une quarantaine) qui cassent la platitude du
+  tapis d'herbe pour un `fillRect` chacun par image, quel que soit le nombre
+  de cases à l'écran. Le calque large a une texture de taille FIXE, agrandie
+  par le motif lui-même : indexée sur `TILE`, elle aurait pesé 26 Mo au zoom
+  maximum.
 - **Fond de mini-carte** — recalculé au rythme du brouillard de guerre (cinq
   fois par seconde) au lieu de balayer les 57 600 cases à chaque image.
 

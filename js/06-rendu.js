@@ -202,6 +202,63 @@ function grassSprite(x,y){
   return SPR.terrain[m?('grass'+v+'m'+m):('grass'+v)];
 }
 
+// ── CLAIRIÈRES DE TERRE ───────────────────────────────────
+// Le sol n'était qu'un tapis d'herbe uniforme : la variété tenait entièrement
+// aux 32 aspects de tuile, tous de la MÊME couleur, plus un voile de macro-
+// variation. À l'échelle d'une plaine, ça reste plat — rien n'a la taille
+// d'un accident de terrain.
+//
+// Ces clairières travaillent à l'échelle intermédiaire, celle qui manquait :
+// des plaques de terre battue de deux à six cases de large, aux contours
+// organiques (quatre ellipses dégradées qui se chevauchent, jamais un
+// cercle), semées une au plus par pavé de 8×8.
+//
+// Trois propriétés, toutes nécessaires :
+//  • DÉTERMINISTES par position de pavé (hachage de ccx/ccy, pas de RND) :
+//    la même clairière est peinte à l'identique par l'hôte et par le client,
+//    et elle ne bouge pas quand le pavé est purgé du cache puis regénéré.
+//  • PEINTES DANS LE PAVÉ, donc une fois pour toutes : coût nul par image,
+//    exactement comme l'herbe et la rive (voir terrainChunk).
+//  • DÉBORDANTES : on parcourt les neuf pavés voisins, pas seulement le
+//    sien. Une clairière posée près d'un bord se prolonge donc dans le pavé
+//    d'à côté au lieu d'être tranchée net à la couture.
+// Les plaques qui mordent sur l'eau ne posent pas de problème : l'eau,
+// animée, est repeinte par-dessus le pavé à chaque image (voir drawMap).
+function drawPatches(g,ccx,ccy,ox,oy){
+  const sol=solCfg();
+  if(!sol.densite) return;
+  const wmax=g.canvas.width, hmax=g.canvas.height;
+  for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+    const px2=ccx+dx, py2=ccy+dy;
+    if(px2<0||py2<0) continue;
+    // Générateur local au pavé : quelques tirages seulement, mais il doit
+    // être décorrélé de celui de l'herbe (qui hache la CASE) pour qu'une
+    // clairière ne tombe pas systématiquement sur la même variante.
+    let h=(px2*2654435761+py2*1597334677+911)|0;
+    h=(h^(h>>>13))*1274126177|0; h=(h^(h>>>16))|0;
+    const rnd=()=>{ h=(h*1664525+1013904223)|0; return ((h>>>8)&0xffffff)/0x1000000; };
+    if(rnd()>=sol.densite) continue;
+    const cxp=(px2*TCHUNK+rnd()*TCHUNK)*TILE-ox;
+    const cyp=(py2*TCHUNK+rnd()*TCHUNK)*TILE-oy;
+    const R=TILE*(1.1+rnd()*2.0);
+    // Rejet rapide : une clairière d'un pavé voisin qui ne mord pas sur
+    // celui-ci ne coûte que le hachage ci-dessus.
+    if(cxp<-R||cyp<-R||cxp>wmax+R||cyp>hmax+R) continue;
+    for(let k=0;k<4;k++){
+      const bx=cxp+(rnd()-0.5)*R*0.95, by=cyp+(rnd()-0.5)*R*0.95;
+      const br=R*(0.42+rnd()*0.52);
+      const gr=g.createRadialGradient(bx,by,0,bx,by,br);
+      // Cœur franc, bord fondu : c'est le fondu qui empêche la plaque de se
+      // lire comme un disque posé sur l'herbe.
+      gr.addColorStop(0,'rgba('+sol.terre+',.42)');
+      gr.addColorStop(0.55,'rgba('+sol.terre+',.22)');
+      gr.addColorStop(1,'rgba('+sol.terre+',0)');
+      g.fillStyle=gr;
+      g.fillRect(bx-br,by-br,br*2,br*2);
+    }
+  }
+}
+
 function terrainChunk(ccx,ccy){
   const key=ccy*4096+ccx;
   const hit=_tchunks.get(key);
@@ -216,12 +273,33 @@ function terrainChunk(ccx,ccy){
   const{c,cx:g}=offCanvas(w,h);
   g.imageSmoothingEnabled=true;
   const ex=Math.min(COLS-1,x0+TCHUNK-1), ey=Math.min(ROWS-1,y0+TCHUNK-1);
+  const teinte=solCfg().teinte;
+  // Trois passes séparées, et dans cet ordre : le voile de biome ne doit pas
+  // recouvrir la rive (le sable resterait vert sous la futaie), et les
+  // clairières doivent passer SOUS l'écume, pas dessus. Le voile est plaqué
+  // case par case plutôt qu'en un seul fillRect sur tout le pavé : cela
+  // laisse intactes les cases d'eau, restées transparentes.
+  //
+  // Le rectangle du voile va d'un bord ARRONDI au bord arrondi suivant, et
+  // non sur TILE pixels flottants comme le sprite d'herbe. La nuance compte :
+  // TILE n'est pas entier, deux cases voisines se chevauchaient donc d'une
+  // fraction de pixel — invisible sur un sprite opaque, mais le voile étant
+  // translucide, la colonne commune recevait DEUX fois la teinte et la carte
+  // se couvrait d'une grille de lignes sombres.
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
     if(G.tiles[y][x]===T_WATER) continue;   // l'eau est animée : hors cache
     const px2=Math.round(x*TILE)-ox, py2=Math.round(y*TILE)-oy;
     const sp=grassSprite(x,y);
     if(sp) g.drawImage(sp.c,px2,py2,TILE,TILE);
-    drawShore(g,x,y,px2,py2);
+    if(teinte){
+      g.fillStyle=teinte;
+      g.fillRect(px2,py2,Math.round((x+1)*TILE)-ox-px2,Math.round((y+1)*TILE)-oy-py2);
+    }
+  }
+  drawPatches(g,ccx,ccy,ox,oy);
+  for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
+    if(G.tiles[y][x]===T_WATER) continue;
+    drawShore(g,x,y,Math.round(x*TILE)-ox,Math.round(y*TILE)-oy);
   }
   const ch={c,ox,oy,used:_frameId};
   _tchunks.set(key,ch);
@@ -246,15 +324,34 @@ function drawMap(){
   }
   // Pavés pas encore générés (budget épuisé) : rendu direct pour cette image
   // seulement — ils rejoindront le cache aux images suivantes.
-  if(manquants) for(let i=0;i<manquants.length;i+=2){
-    const bx=manquants[i]*TCHUNK, by=manquants[i+1]*TCHUNK;
-    const mex=Math.min(ex,bx+TCHUNK-1), mey=Math.min(ey,by+TCHUNK-1);
-    for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
-      if(G.tiles[y][x]===T_WATER) continue;
-      const px2=Math.round(x*TILE-cx), py2=Math.round(y*TILE-cy+54);
-      const sp=grassSprite(x,y);
-      if(sp) ctx.drawImage(sp.c,px2,py2,TILE,TILE);
-      drawShore(ctx,x,y,px2,py2);
+  if(manquants){
+    const teinte=solCfg().teinte;
+    for(let i=0;i<manquants.length;i+=2){
+      const bx=manquants[i]*TCHUNK, by=manquants[i+1]*TCHUNK;
+      const mex=Math.min(ex,bx+TCHUNK-1), mey=Math.min(ey,by+TCHUNK-1);
+      for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
+        if(G.tiles[y][x]===T_WATER) continue;
+        const px2=Math.round(x*TILE-cx), py2=Math.round(y*TILE-cy+54);
+        const sp=grassSprite(x,y);
+        if(sp) ctx.drawImage(sp.c,px2,py2,TILE,TILE);
+        if(teinte){  // bords arrondis, comme dans le pavé : voir terrainChunk
+          ctx.fillStyle=teinte;
+          ctx.fillRect(px2,py2,Math.round((x+1)*TILE-cx)-px2,Math.round((y+1)*TILE-cy+54)-py2);
+        }
+      }
+      // Clairières du pavé manquant, écrêtées à SON rectangle : sans ce
+      // découpage, une plaque débordante viendrait se poser une seconde fois
+      // sur le pavé voisin, lui déjà peint depuis le cache avec la sienne.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(Math.round(bx*TILE-cx),Math.round(by*TILE-cy+54),Math.ceil(TCHUNK*TILE),Math.ceil(TCHUNK*TILE));
+      ctx.clip();
+      drawPatches(ctx,manquants[i],manquants[i+1],cx,cy-54);
+      ctx.restore();
+      for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
+        if(G.tiles[y][x]===T_WATER) continue;
+        drawShore(ctx,x,y,Math.round(x*TILE-cx),Math.round(y*TILE-cy+54));
+      }
     }
   }
 
@@ -279,15 +376,18 @@ function drawMap(){
     for(const [k,ch] of _tchunks) if(ch.used!==_frameId) _tchunks.delete(k);
   }
 
-  // Calque de variation lente, en coordonnées monde (voir buildMacro).
-  if(SPR.macroPat){
-    const P=SPR.macro.P, gh=gameH();
+  // Calques de variation lente, en coordonnées monde (voir buildMacro) : le
+  // large d'abord — c'est le fond de vallée —, le fin par-dessus.
+  const gh=gameH();
+  const calque=(pat,P)=>{
     ctx.save();
-    ctx.fillStyle=SPR.macroPat;
+    ctx.fillStyle=pat;
     ctx.translate(-(((cx%P)+P)%P), 54-(((cy%P)+P)%P));
     ctx.fillRect(0,0,W+P,gh+P);
     ctx.restore();
-  }
+  };
+  if(SPR.macroLargePat) calque(SPR.macroLargePat,SPR.macroLargeP);
+  if(SPR.macroPat) calque(SPR.macroPat,SPR.macro.P);
 }
 
 // Liséré de rive (transition herbe→eau façon AoE2)
@@ -988,14 +1088,14 @@ function dessinerFondMinimap(mw,mh,K,scx,scy){
   // dévoiler à la souris ce que le joueur n'a jamais exploré à l'écran.
   g.globalAlpha=1;
   g.fillStyle='#000'; g.fillRect(0,0,mw,mh);
-  // Terrain (herbe/eau) : uniquement sur les cases déjà explorées
+  // Terrain (herbe/eau) : uniquement sur les cases déjà explorées.
+  // Le sol suit le type de carte (voir SOLS) — une carte aride doit se lire
+  // ocre en miniature comme elle se lit ocre à l'écran.
+  const solMini=solCfg().mini;
   for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
     const f=fogTileAt(x,y);
     if(f===0) continue;
-    // Ton moyen de la palette d'herbe (8 variantes autour de #58 8a 39) — la
-    // mini-carte utilisait un vert bien plus sombre, décalé par rapport à la
-    // carte principale une fois celle-ci enrichie.
-    g.fillStyle=G.tiles[y][x]===T_WATER?'#2472a4':'#53823a';
+    g.fillStyle=G.tiles[y][x]===T_WATER?'#2472a4':solMini;
     if(f===1) g.globalAlpha=0.55; // exploré mais hors vue actuelle : assombri
     g.fillRect(x*scx*BASE_TILE,y*scy*BASE_TILE,scx*BASE_TILE+1,scy*BASE_TILE+1);
     g.globalAlpha=1;

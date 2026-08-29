@@ -2914,6 +2914,43 @@ function buildMacro(){
   }
   SPR.macro={c,cx,P};
   SPR.macroPat=ctx.createPattern(c,'repeat');
+  buildMacroLarge();
+}
+
+// Deuxième calque de macro-variation, TROIS FOIS PLUS LARGE que le premier
+// (une quarantaine de cases de côté, soit plus que l'écran au zoom minimum).
+// Le calque fin donne du relief à l'échelle du hameau ; celui-ci donne les
+// grandes régions — un versant entier légèrement plus clair, une combe plus
+// sombre — ce qui empêche une longue traversée de carte de se lire uniforme.
+//
+// Sa texture est de taille FIXE (256 px) et non indexée sur TILE : à ce
+// niveau de flou, l'agrandissement ne se voit pas, et une texture de
+// 40×TILE aurait pesé jusqu'à 2 600 px de côté (26 Mo) au zoom maximum. La
+// mise à l'échelle est confiée au motif lui-même, donc gratuite.
+const MACRO_L_TEX=256, MACRO_L_TUILES=40;
+function buildMacroLarge(){
+  const P=MACRO_L_TEX;
+  const{c,cx}=offCanvas(P,P); const rnd=srnd(90210);
+  for(let i=0;i<9;i++){
+    const bx=rnd()*P, by=rnd()*P, r=P*(0.22+rnd()*0.22);
+    const sombre=rnd()<0.5;
+    for(let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++){
+      const g=cx.createRadialGradient(bx+ox*P,by+oy*P,0,bx+ox*P,by+oy*P,r);
+      g.addColorStop(0,sombre?'rgba(22,42,16,.20)':'rgba(182,214,138,.15)');
+      g.addColorStop(1,'rgba(0,0,0,0)');
+      cx.fillStyle=g;
+      cx.fillRect(bx+ox*P-r,by+oy*P-r,r*2,r*2);
+    }
+  }
+  const pat=ctx.createPattern(c,'repeat');
+  // setTransform n'existe pas partout (vieux WebKit) : sans lui on se passe
+  // simplement du calque large, le rendu reste celui d'avant.
+  if(pat&&pat.setTransform){
+    const k=TILE*MACRO_L_TUILES/P;
+    try{ pat.setTransform(new DOMMatrix([k,0,0,k,0,0])); }
+    catch(e){ SPR.macroLargePat=null; SPR.macroLargeP=0; return; }
+    SPR.macroLargePat=pat; SPR.macroLargeP=TILE*MACRO_L_TUILES;
+  } else { SPR.macroLargePat=null; SPR.macroLargeP=0; }
 }
 function buildGlow(){
   const R=64, {c,cx}=offCanvas(R*2,R*2);

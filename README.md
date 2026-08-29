@@ -150,7 +150,7 @@ passe pas — pas une simple coquetterie.
 Le **Centre Ville** a, lui, une illustration **dédiée par palier d'âge** (Âge
 Sombre / Féodal / Châteaux / Impérial), pour que le bâtiment le plus visible
 de la carte montre vraiment la progression de la partie. Voir
-`BLD_AGE_SPRITE_FILES` dans `index.html` pour ajouter cette même couverture
+`BLD_AGE_SPRITE_FILES` dans `js/05-sprites.js` pour ajouter cette même couverture
 à un autre bâtiment.
 
 Le Centre Ville a en plus une illustration **dédiée par civilisation**, croisée
@@ -164,7 +164,7 @@ avec les quatre âges — **complète pour les quatre camps jouables** :
 - **Mongols** : yourte de feutre sur base fortifiée en bois, étendards en
   queue de cheval, camp qui s'étend (plusieurs yourtes) aux âges avancés.
 
-Voir `BLD_CIV_SPRITE_FILES` dans `index.html` pour étendre cette couverture
+Voir `BLD_CIV_SPRITE_FILES` dans `js/05-sprites.js` pour étendre cette couverture
 à un autre bâtiment.
 
 Le détourage de chaque planche n'est fait **qu'une seule fois par partie** et
@@ -189,7 +189,7 @@ ami*) sert à la fois :
 
 Techniquement, tout repose sur **Firebase Authentication** (`GoogleAuthProvider`,
 avec le scope Drive `drive.appdata` demandé en plus au moment du consentement)
-— voir `window.MP.connecter` dans `index.html`, bloc « TRANSPORT MULTIJOUEUR
+— voir `window.MP.connecter` dans le bloc `<script type="module">` d'`index.html`
 + CONNEXION GOOGLE ». Un seul écran de consentement Google couvre les deux
 usages ; se connecter depuis n'importe lequel des trois boutons connecte
 partout ailleurs dans l'app.
@@ -247,8 +247,8 @@ partie créée/rejointe sans avoir à fermer tout le panneau.
 5. **Authentication → Settings → Domaines autorisés** → ajouter le domaine
    d'hébergement (`automateam.fr`) ; `localhost` y est déjà par défaut.
 6. **Paramètres du projet → Vos applications → Web** → copier l'objet de
-   configuration dans `index.html`, constante `FIREBASE_CONFIG` (tout en bas,
-   bloc « TRANSPORT MULTIJOUEUR »). Ces valeurs sont **publiques** : la
+   configuration dans `index.html`, constante `FIREBASE_CONFIG` (dans le bloc
+   `<script type="module">`, tout en bas). Ces valeurs sont **publiques** : la
    sécurité repose entièrement sur les règles ci-dessous, appliquées côté
    serveur.
 

@@ -66,10 +66,14 @@ dessinent rien.
 
 ## Comment ça marche
 
-`harness.js` extrait le grand `<script>` classique d'`index.html` et
-l'évalue dans un `vm` Node muni des bouchons de `stub-dom.js`. Les `const` de
-premier niveau d'un script `vm` restent dans sa portée lexicale, d'où la
-ligne d'export ajoutée à la fin du source.
+`harness.js` lit la LISTE des `<script src="js/…">` d'`index.html` — une
+seule source de vérité pour l'ordre de chargement, et un fichier ajouté au
+jeu entre automatiquement dans les tests — puis évalue chaque fichier
+SÉPARÉMENT dans un `vm` Node muni des bouchons de `stub-dom.js`. Les évaluer
+séparément (et non concaténés) reproduit fidèlement le découpage, en
+particulier le fait qu'une fonction déclarée dans un fichier n'est PAS
+hissée dans les précédents. Les `const` de premier niveau restent dans la
+portée lexicale du contexte, d'où la ligne d'export évaluée en dernier.
 
 Le second bloc `<script type="module">` (Firebase) est ignoré : il ne publie
 que `window.MP`, que tout le jeu appelle derrière des gardes `window.MP?.…`.

@@ -44,18 +44,20 @@ const EXPORTS = [
   'tryAutoReseed', 'hasAdjacentWater', 'updateUneIA', 'aiVilTarget', 'updateVisuel',
 ];
 
-function extraireScript(html) {
-  // Premier bloc <script> sans attribut (le grand script classique).
-  const i = html.indexOf('<script>');
-  if (i < 0) throw new Error("bloc <script> introuvable dans index.html");
-  const j = html.indexOf('</script>', i);
-  if (j < 0) throw new Error("</script> introuvable");
-  return html.slice(i + '<script>'.length, j);
+// L'ORDRE de chargement est significatif (scripts classiques partageant une
+// seule portée globale). On le lit donc dans index.html plutôt que de le
+// recopier ici : une seule source de vérité, et un fichier ajouté au jeu
+// entre automatiquement dans les tests.
+function sourcesDuJeu() {
+  const html = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
+  const re = /<script\s+src="(js\/[^"]+)"><\/script>/g;
+  const fichiers = [...html.matchAll(re)].map((m) => m[1]);
+  if (!fichiers.length) throw new Error('aucun <script src="js/…"> dans index.html');
+  return fichiers.map((f) => ({ nom: f, code: fs.readFileSync(path.join(RACINE, f), 'utf8') }));
 }
 
 function charger({ silencieux = true } = {}) {
-  const html = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
-  const src = extraireScript(html);
+  const sources = sourcesDuJeu();
 
   const sandbox = Object.create(null);
   installer(sandbox);
@@ -72,7 +74,22 @@ function charger({ silencieux = true } = {}) {
     ';globalThis.__lire = (n) => eval(n);\n';
 
   const ctx = vm.createContext(sandbox);
-  vm.runInContext(src + exportLigne, ctx, { filename: 'index.html', timeout: 60000 });
+  // Chaque fichier est évalué SÉPARÉMENT, comme le navigateur le fait. C'est
+  // ce qui reproduit fidèlement le découpage — en particulier le fait qu'une
+  // fonction déclarée dans un fichier n'est PAS hissée dans les précédents.
+  // Le nom du fichier est passé à `vm` pour que les traces d'erreur désignent
+  // le bon fichier et la bonne ligne.
+  for (const { nom, code } of sources) {
+    try {
+      vm.runInContext(code, ctx, { filename: nom, timeout: 60000 });
+    } catch (e) {
+      e.message = `${nom} : ${e.message}`;
+      throw e;
+    }
+  }
+  // L'export doit voir les déclarations de TOUS les fichiers : leur portée
+  // lexicale globale est commune, un dernier script suffit donc.
+  vm.runInContext(exportLigne, ctx, { filename: 'exports', timeout: 60000 });
 
   const jeu = sandbox.__jeu;
   const manquants = EXPORTS.filter((n) => jeu[n] === undefined);

@@ -1,13 +1,61 @@
 # Âge des Conquêtes
 
-Petit jeu de stratégie en temps réel (façon Age of Empires II), en un seul
-fichier HTML/JS/Canvas autonome — aucune dépendance, aucun build.
+Petit jeu de stratégie en temps réel (façon Age of Empires II) en HTML/JS/
+Canvas — **aucune dépendance, aucun build, aucun outillage**.
 
 ## Jouer
 
 Ouvrez [`index.html`](index.html) dans un navigateur (ou servez le dossier
 avec n'importe quel serveur statique). Le jeu tourne aussi bien en local
 qu'hébergé sur GitHub Pages.
+
+## Organisation du code
+
+Le code vivait dans un unique `<script>` de 13 500 lignes. Il est désormais
+réparti en quatorze fichiers sous [`js/`](js/), chargés **dans l'ordre** par
+`index.html` — ordre qui est significatif :
+
+| Fichier | Contenu |
+|---|---|
+| `01-regles.js` | Constantes, tables d'unités et de bâtiments, armures et contres, difficultés, civilisations, types de carte, âges |
+| `02-etat.js` | État global `G` et factions |
+| `03-carte.js` | Génération de carte, naval, points d'intérêt, grille spatiale, brouillard |
+| `04-entites.js` | `mkUnit` / `mkBuilding` et améliorations de bâtiments |
+| `05-sprites.js` | Atlas pixel art, icônes, surcouche illustrée, teintes |
+| `06-rendu.js` | Sol par pavés, entités, effets, mini-carte |
+| `07-simulation.js` | Boucle `update`, séparation, pathfinding, récolte, combat, vagues |
+| `08-ia.js` | Adversaire du mode Conquête |
+| `09-entree.js` | Tactile, souris, clavier, sélection |
+| `10-ordres.js` | Couche d'ordres — le seul point de mutation de l'état |
+| `11-interface.js` | HUD, panneaux, sons, succès, bilan, pause, zoom |
+| `12-reseau.js` | Transport, protocole, salon multijoueur |
+| `13-cloud.js` | Connexion Google, Drive, sauvegarde et migration |
+| `14-demarrage.js` | Boucle de jeu, démarrage de partie |
+
+Ce sont des **scripts classiques**, pas des modules ES : ni `import`, ni
+`export`. Ils partagent le même environnement lexical global, exactement comme
+lorsqu'ils ne formaient qu'un seul bloc — le découpage est purement physique,
+la sémantique est inchangée.
+
+*Pourquoi pas des modules ES* : le code a été écrit dans une seule portée où
+tout appelle tout, et son graphe de dépendances est massivement circulaire.
+Des modules exigeraient de dénouer ces cycles un par un — une réécriture, pas
+un découpage. Et surtout, un module ES est refusé en `file://` par la
+politique d'origine des navigateurs : passer aux modules coûterait la
+possibilité d'ouvrir le jeu par un double-clic, que les scripts classiques
+préservent.
+
+## Tests
+
+```bash
+node tests/run.js
+```
+
+67 tests, 13 groupes, ~32 s, sans dépendance ni build — comme le jeu. Ils
+couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
+(instantané **et** delta), le déterminisme de la carte, la validation des
+ordres côté hôte, l'économie, les montees d'âge et la fin de partie. Voir
+[`tests/README.md`](tests/README.md).
 
 ## Modes de jeu
 

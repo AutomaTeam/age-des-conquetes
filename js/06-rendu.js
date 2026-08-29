@@ -267,9 +267,20 @@ function terrainChunk(ccx,ccy){
   _tchunkBudget--;
   const x0=ccx*TCHUNK, y0=ccy*TCHUNK;
   const ox=Math.round(x0*TILE), oy=Math.round(y0*TILE);
-  // +2 px de marge : la dernière case est peinte sur TILE pixels flottants
-  // depuis une position arrondie, elle peut déborder d'une fraction de pixel.
-  const w=Math.ceil((x0+TCHUNK)*TILE)-ox+2, h=Math.ceil((y0+TCHUNK)*TILE)-oy+2;
+  // Le pavé fait EXACTEMENT la largeur de ses huit cases, sans marge. Il en
+  // portait deux pixels, parce que la dernière case était peinte sur TILE
+  // pixels flottants depuis une position arrondie et pouvait déborder d'une
+  // fraction de pixel. Cette marge restait quasi transparente (alpha ~26), et
+  // le pavé étant rééchantillonné à l'affichage, le filtrage bilinéaire de sa
+  // dernière colonne OPAQUE allait chercher la marge voisine — donc du
+  // transparent — et rendait la jointure translucide.
+  //
+  // On supprime la cause plutôt que de la masquer : les cases pavent le
+  // canvas exactement (largeurs arrondies ci-dessous), plus rien ne déborde,
+  // donc plus de marge à prévoir et un pavé opaque d'un bord à l'autre.
+  // À lire avec l'alignement écran de drawMap : les deux sont nécessaires,
+  // les mesures sont là-bas.
+  const w=Math.round((x0+TCHUNK)*TILE)-ox, h=Math.round((y0+TCHUNK)*TILE)-oy;
   const{c,cx:g}=offCanvas(w,h);
   g.imageSmoothingEnabled=true;
   const ex=Math.min(COLS-1,x0+TCHUNK-1), ey=Math.min(ROWS-1,y0+TCHUNK-1);
@@ -289,12 +300,13 @@ function terrainChunk(ccx,ccy){
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
     if(G.tiles[y][x]===T_WATER) continue;   // l'eau est animée : hors cache
     const px2=Math.round(x*TILE)-ox, py2=Math.round(y*TILE)-oy;
+    // Largeur d'un bord ARRONDI au bord arrondi suivant, et non TILE pixels
+    // flottants : les cases pavent alors le canvas exactement, sans se
+    // chevaucher ni laisser de jour, et la dernière ne déborde pas.
+    const dw=Math.round((x+1)*TILE)-ox-px2, dh=Math.round((y+1)*TILE)-oy-py2;
     const sp=grassSprite(x,y);
-    if(sp) g.drawImage(sp.c,px2,py2,TILE,TILE);
-    if(teinte){
-      g.fillStyle=teinte;
-      g.fillRect(px2,py2,Math.round((x+1)*TILE)-ox-px2,Math.round((y+1)*TILE)-oy-py2);
-    }
+    if(sp) g.drawImage(sp.c,px2,py2,dw,dh);
+    if(teinte){ g.fillStyle=teinte; g.fillRect(px2,py2,dw,dh); }
   }
   drawPatches(g,ccx,ccy,ox,oy);
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
@@ -317,9 +329,24 @@ function drawMap(){
   // 1) sol statique, par pavés pré-rendus
   const c0=(sx/TCHUNK)|0, c1=(ex/TCHUNK)|0, r0=(sy/TCHUNK)|0, r1=(ey/TCHUNK)|0;
   let manquants=null;
+  // Position arrondie au PIXEL ÉCRAN RÉEL, et non au pixel CSS. Le contexte
+  // est mis à l'échelle par DPR : une position CSS entière tombe sur un pixel
+  // écran fractionnaire dès que DPR n'est pas entier (1,25 sur un écran
+  // Windows à 125 %). Le pavé était alors rééchantillonné à cheval sur deux
+  // pixels, et son bord — qui n'a rien à fondre au-delà — se mélangeait avec
+  // du transparent.
+  //
+  // C'est la MOITIÉ de la correction des fines lignes sombres tous les huit
+  // cases ; l'autre moitié est la suppression de la marge du pavé (voir
+  // terrainChunk). Mesuré, alpha moyen de la colonne de jointure sur 500
+  // lignes : 215 à l'origine, 237 en alignant seulement, 221 en supprimant
+  // seulement la marge, 255 avec les deux. Ne pas en retirer une en croyant
+  // que l'autre suffit — chacune laisse la carte quadrillée de lignes, le
+  // fond de page transparaissant dessous.
+  const alignerX=v=>Math.round(v*DPR)/DPR;
   for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++){
     const ch=terrainChunk(c,r);
-    if(ch) ctx.drawImage(ch.c,Math.round(ch.ox-cx),Math.round(ch.oy-cy)+54);
+    if(ch) ctx.drawImage(ch.c,alignerX(ch.ox-cx),alignerX(ch.oy-cy+54));
     else (manquants||(manquants=[])).push(c,r);
   }
   // Pavés pas encore générés (budget épuisé) : rendu direct pour cette image
@@ -371,7 +398,7 @@ function drawMap(){
   // 3) purge des pavés hors écran quand le cache dépasse son plafond, mesuré
   // en pixels et non en nombre de pavés : un pavé au zoom maximum pèse une
   // quinzaine de fois celui du zoom minimum.
-  const pxx=Math.ceil(TCHUNK*TILE)+2;
+  const pxx=Math.ceil(TCHUNK*TILE);   // le pavé n'a plus de marge
   if(_tchunks.size*pxx*pxx>TCHUNK_PIXELS){
     for(const [k,ch] of _tchunks) if(ch.used!==_frameId) _tchunks.delete(k);
   }

@@ -2917,7 +2917,12 @@ function buildMacro(){
       cx.fillRect(bx+ox*P-r,by+oy*P-r,r*2,r*2);
     }
   }
-  SPR.macro={c,cx,P};
+  // On ne garde que la PÉRIODE, pas le canvas : une fois le motif créé, la
+  // texture ne sert plus à rien, et `createPattern` en tient sa propre copie.
+  // Le canvas restait pourtant référencé par SPR.macro — 0,8 Mo au zoom
+  // normal, 2,1 Mo au zoom maximum, retenus pour un seul nombre. Symétrique
+  // de macroLargeP ci-dessous.
+  SPR.macroP=P;
   SPR.macroPat=ctx.createPattern(c,'repeat');
   buildMacroLarge();
 }

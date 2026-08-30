@@ -496,7 +496,7 @@ function drawMap(){
     ctx.restore();
   };
   if(SPR.macroLargePat) calque(SPR.macroLargePat,SPR.macroLargeP);
-  if(SPR.macroPat) calque(SPR.macroPat,SPR.macro.P);
+  if(SPR.macroPat) calque(SPR.macroPat,SPR.macroP);
 }
 
 // Liséré de rive (transition herbe→eau façon AoE2)

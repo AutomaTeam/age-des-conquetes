@@ -518,6 +518,33 @@ groupe('cartes', () => {
     egal(new Set(ids).size, ids.length, 'des bâtiments apparaissent en double dans G.buildings');
   });
 
+  test('Arène : l\'enceinte est ÉTANCHE — pas de brèche autour d\'un arbre', () => {
+    // Un gisement pose bmap=2, qui ne BLOQUE PAS (seul 3 bloque). La pose du
+    // mur y était sautée : chaque arbre pris dans le tracé ouvrait une brèche
+    // franchissable, et l'on entrait dans l'arène « entre la palissade et
+    // l'arbre ». Le défaut dépend de la graine — d'où le balayage plutôt
+    // qu'une seule carte.
+    for (const graine of [909, 1234, 4242, 77777, 31415]) {
+      const j = avecCarte('arene', { graine });
+      for (const tc of j.G.buildings.filter((b) => b.type === j.BT.TC)) {
+        const r = 6;
+        const x0 = tc.tx + (tc.w >> 1) - r, y0 = tc.ty + (tc.h >> 1) - r;
+        const x1 = tc.tx + (tc.w >> 1) + r, y1 = tc.ty + (tc.h >> 1) + r;
+        const mx = (x0 + x1) >> 1, my = (y0 + y1) >> 1;
+        const cases = [];
+        for (let x = x0; x <= x1; x++) for (const y of [y0, y1]) cases.push([x, y, x === mx]);
+        for (let y = y0 + 1; y < y1; y++) for (const x of [x0, x1]) cases.push([x, y, y === my]);
+        for (const [x, y, estPortail] of cases) {
+          if (estPortail) continue;              // les 4 portails DOIVENT laisser passer
+          if (x < 1 || y < 1 || x >= j.COLS - 1 || y >= j.ROWS - 1) continue;
+          ok(j.tileBlocked(x, y),
+             `graine ${graine} : brèche en ${x},${y} (bmap ${j.G.bmap[y][x]})`);
+        }
+      }
+    }
+  });
+
+
   test('aucun preset n\'enferme un camp : la base adverse reste atteignable', () => {
     // LE test qui compte. Une palissade sans portail praticable, ou un lac
     // qui coupe la carte en deux, rendrait la partie impossible à terminer —

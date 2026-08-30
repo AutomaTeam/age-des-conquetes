@@ -74,9 +74,17 @@ function departsHumains(){
 // fait écarter les murs de l'IA au chantier 4. Ouverts, ils laissent passer
 // (appliquerPortail met la case a 0) tout en restant fermables d'un clic.
 //
-// Les cases déjà occupées (eau, gisement, bâtiment) sont sautées : on ne
-// force jamais une pose, quitte a laisser l'anneau troue. Un mur qui ecrase
-// un lac serait pire que pas de mur.
+// Une case d'EAU ou de batiment (bmap 3) est sautee : un mur qui ecrase un
+// lac serait pire que pas de mur, et l'eau bloque deja les unites terrestres,
+// donc l'anneau reste etanche.
+//
+// Une case de GISEMENT (bmap 2), en revanche, ne doit PAS etre sautee : un
+// arbre ne bloque rien (bmap 2 n'est pas 3, voir estBloque), donc chaque
+// arbre pris dans le trace ouvrait une breche franchissable dans l'enceinte
+// — on entrait dans l'arene en passant « entre la palissade et l'arbre ».
+// Le gisement est donc degage sous la palissade. C'est deterministe (meme
+// graine, memes gisements, memes retraits), donc l'hote et le client
+// obtiennent la meme enceinte.
 function poserMursArene(tx,ty,w,h,owner){
   const r=6;                                   // rayon de l'enceinte, en cases
   const x0=tx+(w>>1)-r, y0=ty+(h>>1)-r, x1=tx+(w>>1)+r, y1=ty+(h>>1)+r;
@@ -84,10 +92,15 @@ function poserMursArene(tx,ty,w,h,owner){
   const poses=[];
   for(let x=x0;x<=x1;x++) for(const y of [y0,y1]) poses.push([x,y,(x===mx)]);
   for(let y=y0+1;y<y1;y++) for(const x of [x0,x1]) poses.push([x,y,(y===my)]);
-  let murs=0, portails=0;
+  let murs=0, portails=0, degages=0;
   for(const [x,y,estPortail] of poses){
     if(x<1||y<1||x>=COLS-1||y>=ROWS-1) continue;
-    if(G.bmap[y][x]!==0) continue;             // eau, gisement, reserve, batiment
+    // Gisement sur le trace : on le degage plutot que de laisser une breche.
+    if(G.bmap[y][x]===2){
+      for(const nd of G.nodes) if(nd.tx===x&&nd.ty===y&&nd.amt>0){ nd.amt=0; degages++; }
+      G.bmap[y][x]=0;
+    }
+    if(G.bmap[y][x]!==0) continue;             // eau, batiment : on saute
     const b=mkBuilding(estPortail?BT.GATE:BT.WALL,x,y,owner);
     b.constructing=false; b.progress=1;
     // `open:true` AVANT placeBuilding : celui-ci lit deja b.open pour choisir
@@ -100,7 +113,7 @@ function poserMursArene(tx,ty,w,h,owner){
     placeBuilding(b);
     if(estPortail) portails++; else murs++;
   }
-  return {murs,portails};
+  return {murs,portails,degages};
 }
 
 // ── DÉMARRAGE ─────────────────────────────────────────────

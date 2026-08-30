@@ -17,8 +17,11 @@
 // la carte sans que tout se retrouve tassé dans un coin. Les expressions
 // qui référencent déjà COLS/ROWS (COLS>>1, COLS-8…) restent telles quelles :
 // elles sont déjà proportionnelles.
-const MAPSCALE = COLS/60;
-const SC = n => Math.round(n*MAPSCALE);
+// COLS/ROWS n'étant plus constants (la taille se choisit sur l'écran-titre,
+// voir TAILLES), l'échelle est RELUE à chaque appel : figée dans une const au
+// chargement, elle serait restée celle de la taille par défaut et une carte
+// « Petite » aurait gardé les décalages d'une carte 240×240.
+const SC = n => Math.round(n*(COLS/60));
 // Graine choisie par le joueur (champ de l'écran-titre) ou imposée par
 // l'hôte en multijoueur ; null = tirage aléatoire à chaque partie.
 let grainePartie=null;
@@ -26,6 +29,87 @@ let grainePartie=null;
 // est aussi utilisé par l'atlas) pour qu'un changement de zoom, qui régénère
 // les sprites, ne décale jamais la suite aléatoire du terrain.
 let RND=Math.random;
+
+// ── EMPLACEMENTS DE DÉPART DES FACTIONS HUMAINES ──────────
+// Un seul joueur démarre au centre, comme depuis toujours. Dès qu'un second
+// humain existe, les départs se répartissent sur un ANNEAU centré sur la
+// carte, à un angle tiré de la graine — le principe d'Age of Empires II.
+//
+// Ce que ça remplace : deux ancrages fixes, toujours les mêmes (coin haut
+// gauche et coin bas droit). La partie en ligne se rejouait donc à
+// l'identique d'une graine à l'autre, chacun sachant d'avance où chercher
+// l'autre. L'anneau garde la seule propriété qui compte — les camps sont à
+// égale distance du centre, donc des mêmes ressources centrales — et rend
+// l'orientation imprévisible.
+//
+// Deux ALLIÉS (mode coopératif) sont posés côte à côte plutôt qu'aux
+// antipodes : s'entraider est le sens même du mode, une demi-carte d'écart
+// le rendrait impraticable.
+//
+// Entièrement déterministe (graine + nombre de joueurs), et tiré d'un
+// générateur DISTINCT de RND : ajouter un tirage à la suite du terrain
+// décalerait toute la carte, et l'hôte comme le client doivent obtenir
+// exactement les mêmes départs.
+const DEPART_RAYON = 0.38;  // fraction du côté de la carte
+const DEPART_ALLIES = 0.5;  // écart angulaire entre deux alliés (radians)
+// srnd est un générateur de Lehmer : sa PREMIÈRE valeur est (graine×16807)
+// modulo 2^31-1, c'est-à-dire une fonction quasi affine de la graine. Deux
+// graines voisines (11 et 22, ce que tape un joueur qui essaie « une autre
+// carte ») en sortent donc à 0,0005 radian l'une de l'autre — soit très
+// exactement le même angle de départ. Le générateur de la carte ne souffre
+// pas de ce défaut parce qu'il tire des milliers de fois ; ici on ne tire
+// qu'UNE fois, il faut donc brasser la graine avant.
+function melangerGraine(n){
+  let h=n>>>0;
+  h=Math.imul(h^(h>>>16),0x2c1b3c6d)>>>0;
+  h=Math.imul(h^(h>>>13),0x297a2d39)>>>0;
+  h=(h^(h>>>16))>>>0;
+  return h%2147483646+1;
+}
+function departsHumains(){
+  const humains=factionsHumaines();
+  const h=Math.max(1,humains.length);
+  const cx=(COLS>>1)-1, cy=(ROWS>>1)-1;
+  if(h<2) return [[cx,cy]];
+  const rnd=srnd(melangerGraine(G.seed^0x6d2b79f5));
+  const a0=rnd()*Math.PI*2;
+  const R=Math.min(COLS,ROWS)*DEPART_RAYON;
+  const allies=humains.every(f=>f.equipe===humains[0].equipe);
+  const pas=allies?DEPART_ALLIES:(Math.PI*2/h);
+  const m=SC(8);                            // marge au bord, proportionnelle
+  const borne=v=>Math.max(m,Math.min(COLS-m-2,Math.round(v)));
+  const out=[];
+  for(let i=0;i<h;i++){
+    const a=a0+i*pas;
+    out.push([borne(cx+Math.cos(a)*R), borne(cy+Math.sin(a)*R)]);
+  }
+  return out;
+}
+
+// L'anneau ne connaît pas le terrain : son point peut tomber en plein lac.
+// On glisse alors vers la case libre la plus proche, en carrés concentriques
+// — ordre de parcours fixe, donc même résultat des deux côtés du réseau.
+function departLibre(tx,ty,w,h){
+  const libre=(x,y)=>{
+    if(x<1||y<1||x+w>=COLS-1||y+h>=ROWS-1) return false;
+    for(let dy=-1;dy<=h;dy++) for(let dx=-1;dx<=w;dx++)
+      if(G.bmap[y+dy][x+dx]!==0) return false;
+    return true;
+  };
+  if(libre(tx,ty)) return [tx,ty];
+  for(let r=1;r<=40;r++){
+    for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+      if(Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
+      if(libre(tx+dx,ty+dy)) return [tx+dx,ty+dy];
+    }
+  }
+  return [tx,ty];  // carte pathologique : on garde l'ancre plutôt que rien
+}
+function resoudreDeparts(){
+  const d=BDEF[BT.TC];
+  return departsHumains().map(([tx,ty])=>departLibre(tx,ty,d.w,d.h));
+}
+
 function genMap() {
   invalidateTerrainChunks(); // les pavés en cache décrivent l'ancienne carte
   _mmFondVer=-1;             // idem pour le fond de mini-carte
@@ -50,17 +134,27 @@ function genMap() {
     }
   }
 
-  // Réserve l'emplacement du Centre Ville de départ (+ 1 case de marge)
-  // AVANT de semer les ressources. Sans ça, un gisement peut tomber pile
-  // sous le futur Centre Ville et devenir à jamais inaccessible une fois
-  // celui-ci posé (les bâtiments bloquent désormais physiquement le
-  // passage — voir placeBuilding). Marque temporaire (9), nettoyée après
-  // la pose réelle du Centre Ville dans startGame().
+  // Emplacements de départ des humains, arrêtés ICI : les lacs sont creusés
+  // (donc on peut s'en écarter) et les ressources ne sont pas encore semées
+  // (donc on peut réserver la place). Ils sont mémorisés dans G.departs, que
+  // startGame() lit ensuite pour poser les Centres Villes.
+  G.departs=resoudreDeparts();
+
+  // Réserve l'emplacement de CHAQUE Centre Ville de départ (+ 1 case de
+  // marge) AVANT de semer les ressources. Sans ça, un gisement peut tomber
+  // pile sous le futur Centre Ville et devenir à jamais inaccessible une
+  // fois celui-ci posé (les bâtiments bloquent désormais physiquement le
+  // passage — voir placeBuilding). La réservation ne couvrait que le centre
+  // de la carte : en multijoueur, où plus personne ne démarre au centre,
+  // elle protégeait un emplacement que personne n'occupait et laissait les
+  // deux vraies bases se faire ensevelir. Marque temporaire (9), nettoyée
+  // après la pose réelle des Centres Villes dans startGame().
   {
     const tcW=BDEF[BT.TC].w, tcH=BDEF[BT.TC].h;
-    const rsX=(COLS>>1)-1, rsY=(ROWS>>1)-1;
-    for(let y=rsY-1;y<=rsY+tcH;y++) for(let x=rsX-1;x<=rsX+tcW;x++){
-      if(x>=0&&y>=0&&x<COLS&&y<ROWS&&b[y][x]===0) b[y][x]=9;
+    for(const [rsX,rsY] of G.departs){
+      for(let y=rsY-1;y<=rsY+tcH;y++) for(let x=rsX-1;x<=rsX+tcW;x++){
+        if(x>=0&&y>=0&&x<COLS&&y<ROWS&&b[y][x]===0) b[y][x]=9;
+      }
     }
   }
 
@@ -304,9 +398,16 @@ function doFishReturn(u,dt){
 // mais reste identique pour un meme preset et une meme graine — c'est ce
 // couple-la qui doit etre deterministe, pas la comparaison entre presets.
 const CARTE_CLE_RES={ [RT.TREE]:'foret', [RT.GOLD]:'or', [RT.STONE]:'pierre', [RT.BERRY]:'baies' };
+// Le nombre de gisements suit aussi la TAILLE de la carte, linéairement (et
+// non selon la surface) : SC() écarte déjà les gisements les uns des autres
+// quand la carte grandit, et n'ajouter aucun gisement en plus aurait fait
+// d'une grande carte un désert qu'on traverse sans rien trouver. Le facteur
+// vaut exactement 1 à 240 cases de côté : la carte historique ne bouge pas
+// d'un gisement.
 function place(cx,cy,rx,cnt,type,amt){
   const cle=CARTE_CLE_RES[type];
   if(cle) cnt=Math.max(1,Math.round(cnt*cM(cle)));
+  cnt=Math.max(1,Math.round(cnt*(COLS/240)));
   for(let i=0;i<cnt;i++){
     const a=RND()*Math.PI*2, d=RND()*rx;
     const x=Math.round(cx+Math.cos(a)*d), y=Math.round(cy+Math.sin(a)*d);

@@ -4,7 +4,7 @@
 //   node tests/run.js ordres     un seul groupe
 //
 // Groupes : carte, reseau, sauvegarde, chemin, combat, civilisations,
-// cartes, ordres, economie, ages, finpartie, ia.
+// cartes, tailles, ordres, economie, ages, finpartie, ia, delta.
 // Le groupe `ia` compte pour les deux tiers du temps total : il simule de
 // vraies parties de 15 minutes, c'est le prix pour observer un comportement
 // qui n'existe qu'apres plusieurs minutes de jeu.
@@ -566,9 +566,222 @@ groupe('cartes', () => {
     egal(salut.seed, j.G.seed, 'construireSalut n\'emporte pas la graine');
   });
 
+  // ── SOL ────────────────────────────────────────────────────
+  // Le sol n'est plus une herbe unique repeinte d'un voile : chaque carte
+  // décrit sa MATIÈRE (voir SOLS), et buildTerrain peint ses huit variantes
+  // avec. Rien de tout cela n'est vérifiable en pixels ici — les bouchons DOM
+  // ne dessinent pas —, mais la TABLE, elle, se vérifie : c'est elle qui a
+  // laissé passer pendant longtemps une steppe fleurie de marguerites.
+  const hexRGB = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const moyenne = (cols) => {
+    const t = cols.map(hexRGB).reduce((a, c) => [a[0] + c[0], a[1] + c[1], a[2] + c[2]], [0, 0, 0]);
+    return t.map((v) => Math.round(v / cols.length));
+  };
+
+  test('chaque carte décrit un sol complet', () => {
+    for (const k of Object.keys(charger().CARTES)) {
+      const j = charger();
+      const sol = j.SOLS[j.CARTES[k].sol];
+      ok(!!sol, `la carte ${k} n'a pas de sol`);
+      egal(sol.base.length, j.GRASS_VARIANTS, `${k} : il faut un fond par variante d'herbe`);
+      for (const champ of ['touffe', 'brins', 'grain', 'decors', 'macro', 'macroL', 'sable', 'terre', 'mini']) {
+        ok(sol[champ] != null, `${k} : champ ${champ} manquant`);
+      }
+      egal(sol.decors.length, 4, `${k} : quatre décors attendus (une variante sur deux)`);
+      for (const d of sol.decors) ok(typeof j.DECORS_SOL[d] === 'function', `${k} : décor inconnu « ${d} »`);
+      egal(sol.sable.length, 3, `${k} : la rive veut fond, ton sombre, ton clair`);
+      egal(sol.brins.cols.length, 3, `${k} : un brin se peint en trois tons`);
+    }
+  });
+
+  test('deux cartes ne partagent jamais le même sol', () => {
+    // C'est TOUT l'objet du changement : avec un simple voile, la Grande Forêt
+    // et les Plaines rendaient le même vert à 26 % près, et seule la mini-carte
+    // les distinguait.
+    const j = charger();
+    const vus = new Map();
+    for (const k of Object.keys(j.CARTES)) {
+      const sol = j.SOLS[j.CARTES[k].sol];
+      const sig = moyenne(sol.base).join(',');
+      ok(!vus.has(sig), `${k} et ${vus.get(sig)} ont le même sol`);
+      vus.set(sig, k);
+    }
+    // …et l'écart doit être VISIBLE, pas seulement non nul.
+    const cles = Object.keys(j.CARTES);
+    for (let a = 0; a < cles.length; a++) for (let b = a + 1; b < cles.length; b++) {
+      const ca = moyenne(j.SOLS[j.CARTES[cles[a]].sol].base);
+      const cb = moyenne(j.SOLS[j.CARTES[cles[b]].sol].base);
+      const d = Math.max(...ca.map((v, i) => Math.abs(v - cb[i])));
+      ok(d >= 8, `${cles[a]} et ${cles[b]} : sols trop proches (${d} au canal le plus écarté)`);
+    }
+  });
+
+  test('la mini-carte ne contredit pas le terrain', () => {
+    // Une carte aride qui se lit verte en miniature ment au joueur : c'est sur
+    // la mini-carte qu'il choisit où aller.
+    const j = charger();
+    for (const k of Object.keys(j.CARTES)) {
+      const sol = j.SOLS[j.CARTES[k].sol];
+      const base = moyenne(sol.base), mini = hexRGB(sol.mini);
+      const d = Math.max(...base.map((v, i) => Math.abs(v - mini[i])));
+      ok(d <= 20, `${k} : la couleur de mini-carte s'écarte de ${d} du sol réel`);
+    }
+  });
+
+  test('le voile de biome a bien disparu', () => {
+    // Il valait mieux le retirer que le réduire : opaque, il effaçait le grain
+    // et les brins qu'il recouvrait. Si le champ revient, c'est que quelqu'un
+    // a réintroduit la passe de fillRect par case.
+    const j = charger();
+    for (const k of Object.keys(j.CARTES)) {
+      ok(j.SOLS[j.CARTES[k].sol].teinte === undefined, `${k} : le voile « teinte » est de retour`);
+    }
+  });
+
   test('la sauvegarde retient le type de carte', () => {
     const j = avecCarte('arides', { graine: 909, pas: 60 });
     egal(j.buildSaveData().carte, 'arides', 'type de carte absent de la sauvegarde');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// COLS/ROWS ne sont plus des constantes. Tout ce qui était dimensionné une
+// fois pour toutes au chargement (grille de séparation, buffers A*, échelle
+// SC() de la génération) doit suivre — un oubli ne se voit pas à l'œil : il
+// écrit hors des bornes ou tasse toute la carte dans un coin.
+groupe('tailles', () => {
+  const cles = ['petite', 'moyenne', 'normale', 'grande'];
+  const lire = (j, n) => j.__sandbox.__lire(n);
+  const avecTaille = (k, opts) => {
+    const j = charger();
+    j.pickTaille(k);
+    return partie(j, opts);
+  };
+  // Deux humains, montés comme l'hôte d'une partie en ligne : c'est le seul
+  // cas où plusieurs départs coexistent.
+  const duo = (opts = {}) => {
+    const j = charger();
+    if (opts.taille) j.pickTaille(opts.taille);
+    j.RESEAU.actif = true; j.RESEAU.role = 'hote';
+    j.RESEAU.adversaire = { id: j.FAC.P2, nom: 'Invité' };
+    return partie(j, opts);
+  };
+  const tcDe = (j, id) => j.G.buildings.find((b) => b.type === j.BT.TC && b.owner === id);
+
+  test('chaque taille produit une carte à ses dimensions', () => {
+    for (const k of cles) {
+      const j = avecTaille(k, { graine: 909 });
+      const n = j.TAILLES[k].n;
+      egal(lire(j, 'COLS'), n, `${k} : COLS`);
+      egal(lire(j, 'ROWS'), n, `${k} : ROWS`);
+      egal(j.G.tiles.length, n, `${k} : lignes de tuiles`);
+      egal(j.G.tiles[0].length, n, `${k} : colonnes de tuiles`);
+      egal(j.G.bmap.length, n, `${k} : lignes de blocage`);
+      egal(j.G.taille, k, `${k} : taille non figée dans l'état`);
+    }
+  });
+
+  test('même taille + même graine → carte strictement identique', () => {
+    for (const k of ['petite', 'grande']) {
+      egalJSON(empreinteCarte(avecTaille(k, { graine: 909 })),
+               empreinteCarte(avecTaille(k, { graine: 909 })), `taille ${k}`);
+    }
+  });
+
+  test('une carte redimensionnée reste jouable (grilles et A* suivent)', () => {
+    // La grille de séparation et les buffers du pathfinding sont des tableaux
+    // TYPÉS dimensionnés sur COLS*ROWS : oublier de les réallouer ne lève rien
+    // tout de suite, ça écrit simplement à côté. On fait donc tourner de vraies
+    // parties, aux deux extrêmes, en exigeant un chemin de bout en bout.
+    for (const k of ['petite', 'grande']) {
+      const j = avecTaille(k, { graine: 909, pas: 120 });
+      const n = j.TAILLES[k].n;
+      ok(!!tcDe(j, j.FAC.P1), `${k} : pas de Centre Ville`);
+      // Un chemin COURT mais dans le coin le plus éloigné de l'origine : ses
+      // indices (ty*COLS+tx) sont les plus grands de la carte, donc les
+      // premiers à sortir des buffers si ceux-ci étaient restés dimensionnés
+      // pour la taille précédente. Court, parce que le budget d'exploration
+      // (PF_BUDGET) ne permet de toute façon pas de traverser 320 cases.
+      // Le coin peut être un lac : on prend les deux cases praticables les
+      // plus proches, sinon on testerait le blocage, pas les buffers.
+      const praticable = (depuis) => {
+        for (let d = depuis; d < depuis + 40; d++) if (!j.tileBlocked(n - d, n - d)) return n - d;
+        throw new Error(`${k} : aucune case praticable sur la diagonale`);
+      };
+      const t1 = praticable(20), t2 = praticable(6);
+      const c = (t) => (t + 0.5) * j.BASE_TILE;
+      const p = j.findPath(c(t1), c(t1), c(t2), c(t2));
+      ok(Array.isArray(p) && p.length > 0,
+         `${k} : aucun chemin dans le coin lointain (buffers non redimensionnés ?)`);
+      for (const u of j.G.units) {
+        ok(u.x >= 0 && u.y >= 0 && u.x <= n * j.BASE_TILE && u.y <= n * j.BASE_TILE,
+           `${k} : unité hors carte en ${Math.round(u.x)},${Math.round(u.y)}`);
+      }
+    }
+  });
+
+  test("les gisements suivent la taille : une grande carte n'est pas un désert", () => {
+    const compte = (k) => avecTaille(k, { graine: 909 }).G.nodes.length;
+    const p = compte('petite'), n = compte('normale'), g = compte('grande');
+    ok(p < n && n < g, `gisements : petite ${p}, normale ${n}, grande ${g}`);
+    // Densité au moins comparable : la grande carte a 1,78 fois la surface de
+    // la normale, elle doit avoir nettement plus d'un gisement de plus.
+    ok(g > n * 1.2, `la grande carte n'est pas assez fournie : ${g} contre ${n}`);
+  });
+
+  test('la taille voyage avec la graine (sinon désync garantie)', () => {
+    const j = duo({ graine: 909, taille: 'petite' });
+    const salut = j.construireSalut();
+    egal(salut.taille, 'petite', "construireSalut n'emporte pas la taille de carte");
+    egal(j.buildSaveData().taille, 'petite', 'taille absente de la sauvegarde');
+  });
+
+  test('à deux, les départs sont éloignés — jamais côte à côte', () => {
+    for (const graine of [909, 1234, 4242, 77777, 31415]) {
+      const j = duo({ graine });
+      const a = tcDe(j, j.FAC.P1), b = tcDe(j, j.FAC.P2);
+      ok(!!a && !!b, `graine ${graine} : il manque un Centre Ville`);
+      const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
+      ok(d > lire(j, 'COLS') * 0.5,
+         `graine ${graine} : bases distantes de ${Math.round(d)} cases seulement`);
+    }
+  });
+
+  test('les départs varient avec la graine (et non deux coins figés)', () => {
+    // Graines VOISINES, à dessein : c'est ce qu'un joueur tape quand il veut
+    // « une autre carte ». Un générateur de Lehmer non brassé sort la même
+    // valeur à 0,0005 près pour 11 et 22 — mêmes angles, mêmes départs, alors
+    // que six graines éloignées, elles, passaient sans rien voir.
+    const vus = new Set();
+    for (const graine of [11, 12, 13, 22, 33, 44]) {
+      const j = duo({ graine });
+      const tc = tcDe(j, j.FAC.P1);
+      vus.add(tc.tx + ',' + tc.ty);
+    }
+    ok(vus.size >= 5, `six graines n'ont produit que ${vus.size} départs distincts`);
+  });
+
+  test("aucun départ dans l'eau, aucun gisement sous une base", () => {
+    for (const graine of [909, 1234, 4242, 77777, 31415]) {
+      const j = duo({ graine });
+      for (const tc of j.G.buildings.filter((b) => b.type === j.BT.TC)) {
+        for (let dy = 0; dy < tc.h; dy++) for (let dx = 0; dx < tc.w; dx++) {
+          egal(j.G.tiles[tc.ty + dy][tc.tx + dx], 0,
+               `graine ${graine} : base ${tc.owner} posée sur de l'eau`);
+        }
+        const dessous = j.G.nodes.filter((n) => n.amt > 0
+          && n.tx >= tc.tx && n.tx < tc.tx + tc.w && n.ty >= tc.ty && n.ty < tc.ty + tc.h);
+        egal(dessous.length, 0, `graine ${graine} : gisement enseveli sous la base ${tc.owner}`);
+      }
+    }
+  });
+
+  test('alliés : le mode coopératif les pose côte à côte, pas aux antipodes', () => {
+    const j = duo({ graine: 909, mode: 'coop2v1' });
+    const a = tcDe(j, j.FAC.P1), b = tcDe(j, j.FAC.P2);
+    const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
+    ok(d > 8, `alliés collés l'un à l'autre : ${Math.round(d)} cases`);
+    ok(d < lire(j, 'COLS') * 0.35, `alliés trop éloignés pour s'entraider : ${Math.round(d)} cases`);
   });
 });
 
@@ -1002,6 +1215,17 @@ groupe('delta', () => {
     if (vueTotale) hote.voirTout();
 
     const client = charger();
+    // Le client est monté avec LES MÊMES factions que l'hôte avant de générer
+    // sa carte — c'est ce que fait demarrerPartieClient (il applique m.fac
+    // AVANT genMap). Ce n'est pas un détail de mise en scène : depuis que les
+    // départs humains se répartissent sur un anneau (voir departsHumains), la
+    // carte réserve la place de CHAQUE base, donc le nombre de factions
+    // humaines présentes à la génération fait partie de ce qui doit être
+    // identique des deux côtés. Un client monté en solo produisait une carte
+    // légèrement différente — et le gibier, régénéré depuis la graine, n'y
+    // tombait pas au même endroit.
+    client.RESEAU.actif = true; client.RESEAU.role = 'hote';
+    client.RESEAU.adversaire = { id: client.FAC.P2, nom: 'Invité' };
     partie(client, { graine });
     client.G.me = client.FAC.P2; client.G.hote = false;
     if (vueTotale) hote.voirTout();

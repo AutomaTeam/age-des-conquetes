@@ -126,13 +126,21 @@ partie ne pourrait pas se terminer).
   d'économie monte avec le temps au lieu de plafonner après cinq minutes, ils
   enchaînent les montées d'âge et leurs assauts grossissent à chaque vague.
 
+Le sol est lui aussi procédural, et chaque type de carte a sa propre
+matière : huit variantes de texture (× quatre miroirs) peintes dans la
+palette de la carte, avec ses propres brins, son grain et ses décors —
+champignons et fougères en sous-bois, cailloux et terre craquelée en
+steppe. Ce n'est pas un voile de couleur posé sur une herbe unique : un
+voile ne change pas une matière, il efface celle qu'il recouvre.
+
 Le rendu (bâtiments, unités, icônes) est généré en pixel art par code
 directement en `<canvas>` — et progressivement enrichi par des illustrations
 IA en surcouche (voir *Assets illustrés* ci-dessous).
 
 ## Performances
 
-Le jeu vise 60 images/seconde sur une carte de 240×240 cases avec plusieurs
+Le jeu vise 60 images/seconde sur une carte de 240×240 cases — la taille par
+défaut, réglable de 120×120 à 320×320 sur l'écran-titre — avec plusieurs
 centaines d'unités. Quatre caches portent l'essentiel du travail :
 
 - **Détourage des illustrations** — fait une fois par planche et par

@@ -19,8 +19,12 @@
 // ── CONSTANTES ────────────────────────────────────────────
 const BASE_TILE = 38;       // taille de tuile de base (px CSS)
 let   TILE      = 38;       // taille courante (avec zoom)
-const COLS      = 240;
-const ROWS      = 240;
+// COLS/ROWS ne sont plus des constantes : la taille de la carte se choisit
+// sur l'ecran-titre (voir TAILLES plus bas) et n'est figee qu'a la creation
+// de l'etat, par appliquerTailleCarte(). Tout le reste du jeu continue de
+// les LIRE comme avant — c'est le seul point d'ecriture.
+let   COLS      = 240;
+let   ROWS      = 240;
 const DPR       = Math.min(window.devicePixelRatio || 1, 2);
 
 // Tuiles
@@ -343,27 +347,110 @@ const CARTES = {
 };
 
 // ── SOL PAR TYPE DE CARTE ─────────────────────────────────
-// Trois reglages seulement, appliques par-dessus la MEME texture d'herbe
-// procedurale (voir buildTerrain) — aucune texture supplementaire a generer,
-// donc aucun cout d'atlas ni de memoire :
-//   • `teinte` : voile plaque case par case dans le pave de terrain. Il
-//     deplace la teinte generale du sol sans effacer le grain, les brins ni
-//     les touffes, qui restent lisibles au travers. `null` = herbe nue.
-//   • `terre`  : couleur des clairieres de terre battue (voir drawPatches),
-//     en composantes r,g,b — l'opacite est posee par le degrade.
-//   • `densite`: probabilite qu'un pave de 8x8 cases porte une clairiere.
-//     0.90 sur les Terres Arides (la terre y perce partout), 0.30 sous la
-//     futaie (l'humus reste couvert).
-//   • `mini`   : le meme sol, aplati en une couleur, pour la mini-carte —
-//     sans quoi une carte aride verte en miniature contredirait le terrain.
+// AVANT : une SEULE texture d'herbe procédurale pour les cinq cartes, plus un
+// voile de couleur plaqué par-dessus (`teinte`). Trois défauts, tous visibles
+// à l'écran :
+//   • un voile ne change pas une matière. À 26 % la Grande Forêt était
+//     indiscernable des Plaines ; à 52 % les Terres Arides viraient au vert
+//     olive boueux — et le voile, opaque, effaçait le grain, les brins et les
+//     touffes qu'il recouvrait. Plus une carte devait changer, plus son sol
+//     perdait sa texture.
+//   • les brins d'herbe verts, la fleur jaune et la marguerite blanche
+//     restaient dessous, sur TOUTES les cartes : une terre aride fleurie.
+//   • les deux calques de macro-variation (voir buildMacro) étaient peints en
+//     VERT en dur, quelle que soit la carte : des nuages verts flottaient sur
+//     l'ocre des Terres Arides.
+//
+// DEPUIS : chaque carte décrit sa propre MATIÈRE, et buildTerrain peint ses
+// huit variantes d'herbe avec. Le voile a disparu. Coût nul : la carte est
+// figée pour toute la partie (G.carte), on ne génère donc jamais qu'un seul
+// jeu de textures — exactement le même nombre de canevas qu'avant.
+//
+//   • base    : les huit fonds, volontairement quasi identiques (±2 par
+//     composante). L'écart entre variantes doit venir des DÉTAILS, jamais du
+//     fond : un fond qui varie se lit comme un damier de tuiles.
+//   • touffe  : les deux couleurs des taches douces (ombre, lumière).
+//   • brins   : nombre et trois tons des brins (base, tige, pointe éclairée).
+//     Les Terres Arides en ont peu, en jaune paille ; le sous-bois beaucoup,
+//     en vert sombre.
+//   • grain   : le dithering fin, un ton sombre et un ton clair.
+//   • decors  : quatre décors signature (voir DECORS_SOL), posés une variante
+//     sur deux — avec un décor par tuile, le sol se couvre de confettis dès
+//     qu'on zoome.
+//   • macro / macroL : couleurs des deux calques de variation lente.
+//   • sable   : la rive (fond, ton sombre, ton clair).
+//   • terre   : couleur des clairières de terre battue (voir drawPatches), en
+//     composantes r,g,b — l'opacité est posée par le dégradé.
+//   • densite : probabilité qu'un pavé de 8x8 cases porte une clairière.
+//   • mini    : le même sol aplati en une couleur, pour la mini-carte. Doit
+//     suivre `base` : une carte aride verte en miniature contredirait le terrain.
 const SOLS = {
-  plaines: { teinte:null,                       terre:'128,106,66', densite:0.50, mini:'#53823a' },
-  foret:   { teinte:'rgba(34,68,32,.26)',       terre:'74,58,36',   densite:0.30, mini:'#3f6b30' },
-  arides:  { teinte:'rgba(178,146,80,.52)',     terre:'152,122,74', densite:0.90, mini:'#87873f' },
-  lacs:    { teinte:'rgba(96,158,74,.20)',      terre:'112,96,60',  densite:0.30, mini:'#4f8a3c' },
-  // L'arene est une plaine pietinee : meme vert, mais la terre y affleure
-  // deux fois plus souvent qu'ailleurs.
-  arene:   { teinte:'rgba(120,104,62,.14)',     terre:'128,106,66', densite:0.70, mini:'#4f7d3a' },
+  // Prairie franche — la référence historique du jeu, inchangée.
+  plaines: {
+    base:['#54832f','#568530','#538130','#55842e','#568331','#54822f','#558430','#538230'],
+    touffe:['rgba(35,62,22,.09)','rgba(150,195,105,.08)'],
+    brins:{ n:9, cols:['#33581f','#437029','#5e9438'] },
+    grain:['rgba(0,0,0,.10)','rgba(255,255,255,.08)'],
+    decors:['fleur','galets','marguerite','brindille'],
+    macro:['rgba(26,46,18,.23)','rgba(170,206,124,.18)'],
+    macroL:['rgba(22,42,16,.20)','rgba(182,214,138,.15)'],
+    sable:['#d9c48a','rgba(170,140,85,.35)','rgba(245,232,185,.5)'],
+    terre:'128,106,66', densite:0.50, mini:'#53823a',
+  },
+  // Sous-bois : vert profond et froid, humus qui perce, herbe haute et dense.
+  // La lumière y est rare — d'où une tache d'ombre plus marquée que la tache
+  // claire, l'inverse de la prairie.
+  foret: {
+    base:['#3d6a26','#3f6c28','#3c6825','#3e6b27','#406d29','#3d6926','#3f6b28','#3c6a25'],
+    touffe:['rgba(18,40,12,.13)','rgba(110,160,80,.07)'],
+    brins:{ n:12, cols:['#25451a','#356021','#4a7c2c'] },
+    grain:['rgba(0,0,0,.12)','rgba(255,255,255,.06)'],
+    decors:['fougere','champignon','feuilles','pomme_pin'],
+    macro:['rgba(14,32,10,.26)','rgba(120,166,86,.14)'],
+    macroL:['rgba(12,30,10,.22)','rgba(126,170,92,.12)'],
+    sable:['#c2ad7e','rgba(140,116,70,.38)','rgba(226,214,172,.45)'],
+    terre:'74,58,36', densite:0.30, mini:'#3e6a29',
+  },
+  // Steppe sèche : ce n'est plus de l'herbe teintée, c'est de la TERRE. Les
+  // brins y sont rares et couleur paille, et les décors ne sont plus des
+  // fleurs mais des cailloux, des fissures et des touffes grillées.
+  arides: {
+    base:['#9c8b52','#9e8d54','#9a8950','#9d8c53','#9f8e55','#9b8a51','#9d8b53','#9a8a50'],
+    touffe:['rgba(110,88,44,.13)','rgba(214,196,142,.10)'],
+    brins:{ n:5, cols:['#8a7a3e','#a3924f','#c0ae6a'] },
+    grain:['rgba(0,0,0,.10)','rgba(255,255,255,.10)'],
+    decors:['cailloux','fissure','herbe_seche','brindille'],
+    macro:['rgba(96,74,36,.20)','rgba(226,208,152,.16)'],
+    macroL:['rgba(88,68,34,.18)','rgba(232,214,160,.14)'],
+    sable:['#e0cf9e','rgba(176,150,98,.35)','rgba(250,242,205,.5)'],
+    terre:'140,112,64', densite:0.70, mini:'#93854b',
+  },
+  // Prairie humide : un vert plus frais et plus bleu que la plaine, des
+  // roseaux et de la mousse au lieu des fleurs des champs.
+  lacs: {
+    base:['#428a40','#448c42','#41883f','#438b41','#458d43','#428a40','#448b42','#418940'],
+    touffe:['rgba(24,64,34,.10)','rgba(150,208,140,.09)'],
+    brins:{ n:10, cols:['#2a6630','#3b8640','#55a458'] },
+    grain:['rgba(0,0,0,.10)','rgba(255,255,255,.09)'],
+    decors:['roseau','galets','marguerite','mousse'],
+    macro:['rgba(22,48,24,.22)','rgba(176,214,140,.18)'],
+    macroL:['rgba(18,44,22,.19)','rgba(184,218,148,.15)'],
+    sable:['#d6c894','rgba(158,138,92,.38)','rgba(242,236,200,.5)'],
+    terre:'112,96,60', densite:0.30, mini:'#438a41',
+  },
+  // Terre battue : l'herbe y est rase et fatiguée, la terre affleure partout.
+  // Entre la prairie et la steppe, et volontairement plus terne que les deux.
+  arene: {
+    base:['#5f7a35','#617c37','#5e7934','#607b36','#627d38','#5f7a35','#617b37','#5e7a34'],
+    touffe:['rgba(70,58,30,.12)','rgba(160,190,110,.08)'],
+    brins:{ n:5, cols:['#3d5a20','#4c6c28','#658c38'] },
+    grain:['rgba(0,0,0,.11)','rgba(255,255,255,.08)'],
+    decors:['galets','sillon','herbe_seche','brindille'],
+    macro:['rgba(60,54,24,.20)','rgba(190,200,132,.15)'],
+    macroL:['rgba(56,52,24,.18)','rgba(196,204,140,.13)'],
+    sable:['#d9c48a','rgba(170,140,85,.35)','rgba(245,232,185,.5)'],
+    terre:'128,106,66', densite:0.70, mini:'#5b7838',
+  },
 };
 let selectedCarte='plaines';
 function pickCarte(key){
@@ -386,6 +473,59 @@ function cM(cle){ const v=carteCfg()[cle]; return v==null?1:v; }
 // pour toute carte qui n'en declare pas — y compris une sauvegarde ancienne
 // enregistree avant l'existence de ce champ.
 function solCfg(){ return SOLS[carteCfg().sol]||SOLS.plaines; }
+
+// ── TAILLE DE LA CARTE ────────────────────────────────────
+// Jusqu'ici COLS/ROWS etaient des constantes : toute partie se jouait sur
+// 240x240, quel que soit le nombre de joueurs. Une carte se choisit
+// desormais comme un preset — meme generateur, meme graine, meme sequence
+// de tirages, seule l'echelle change (SC() dans 03-carte.js remet deja tous
+// les decalages fixes a l'echelle de COLS/ROWS).
+//
+// Le nombre de GISEMENTS suit la taille LINEAIREMENT (voir place()), pas la
+// surface : une petite carte doit rester dense pour un duel serre, une
+// grande ne doit pas devenir un desert qu'on traverse sans rien trouver.
+// Le facteur vaut exactement 1 a 240 — la carte historique est donc
+// inchangee, gisement pour gisement.
+//
+// 320 est le plafond volontaire : la separation des unites balaye COLS*ROWS
+// cellules a chaque pas de simulation (voir separerUnites), c'est le seul
+// cout du jeu qui croit avec la SURFACE de la carte.
+const TAILLES = {
+  petite:  { nom:'Petite',  ico:'🔸', n:120,
+             desc:'120 x 120 — duel serré, le rival est vite trouvé' },
+  moyenne: { nom:'Moyenne', ico:'🔶', n:180,
+             desc:'180 x 180 — un peu de place pour prendre ses aises' },
+  normale: { nom:'Normale', ico:'🟠', n:240,
+             desc:'240 x 240 — la taille historique du jeu' },
+  grande:  { nom:'Grande',  ico:'🔴', n:320,
+             desc:'320 x 320 — longues parties, expansion et exploration' },
+};
+let selectedTaille='normale';
+// SEUL point d'ecriture de COLS/ROWS. Appele par initState (partie neuve,
+// hote et client) et par le chargement d'une sauvegarde, jamais en cours de
+// partie : changer la taille sous les pieds d'une simulation en cours
+// invaliderait toutes les grilles.
+function appliquerTailleCarte(n){
+  n=Math.max(60,Math.min(400,Math.round(n)||240));
+  if(n===COLS&&n===ROWS) return;
+  COLS=n; ROWS=n;
+  // Les tableaux typees dimensionnes au chargement (grille de separation,
+  // buffers du pathfinding) decrivent l'ancienne taille : sans cette
+  // reallocation, la premiere image ecrirait hors des bornes.
+  if(typeof redimensionnerBuffersCarte==='function') redimensionnerBuffersCarte();
+  if(typeof invalidateTerrainChunks==='function') invalidateTerrainChunks();
+}
+function tailleCfg(){ return TAILLES[selectedTaille]||TAILLES.normale; }
+function pickTaille(key){
+  if(!TAILLES[key]) return;
+  selectedTaille=key;
+  document.querySelectorAll('#taillerow .diffbtn').forEach(b=>b.classList.toggle('sel', b.dataset.t===key));
+  const t=document.getElementById('tailletip');
+  if(t) t.textContent=`${TAILLES[key].nom} — ${TAILLES[key].desc}`;
+  try{ localStorage.setItem('adc_taille',key); }catch(e){}
+  updateCfgSummary();
+}
+window.pickTaille=pickTaille;
 
 let selectedCiv='francs';
 function pickCiv(key){

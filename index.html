@@ -1144,6 +1144,13 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
         <button class="diffbtn" data-k="arene"   onclick="pickCarte('arene')"><span class="dico">🏟️</span><span class="dlabel">Arène</span></button>
       </div>
       <p class="tip" id="cartetip">Plaines — Équilibrée, la carte historique du jeu</p>
+      <div class="diffrow" id="taillerow">
+        <button class="diffbtn" data-t="petite"  onclick="pickTaille('petite')"><span class="dico">🔸</span><span class="dlabel">Petite</span></button>
+        <button class="diffbtn" data-t="moyenne" onclick="pickTaille('moyenne')"><span class="dico">🔶</span><span class="dlabel">Moyenne</span></button>
+        <button class="diffbtn sel" data-t="normale" onclick="pickTaille('normale')"><span class="dico">🟠</span><span class="dlabel">Normale</span></button>
+        <button class="diffbtn" data-t="grande"  onclick="pickTaille('grande')"><span class="dico">🔴</span><span class="dlabel">Grande</span></button>
+      </div>
+      <p class="tip" id="tailletip">Normale — 240 x 240, la taille historique du jeu</p>
       <div class="seedrow">
         <label for="seedin">Graine</label>
         <input id="seedin" type="text" inputmode="numeric" placeholder="aléatoire" oninput="setGraine(this.value)">

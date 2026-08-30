@@ -6,7 +6,7 @@ node tests/run.js
 
 Un groupe seul : `node tests/run.js reseau`.
 
-**67 tests, 13 groupes, ~32 s.** Les groupes `ia` et `delta` comptent pour
+**81 tests, 14 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -50,7 +50,19 @@ qui **ne se voit pas** :
 - **`civilisations`** — unité unique et recherche exclusive refusées aux
   autres camps, même par ordre réseau forgé ; bonus économiques réels.
 - **`cartes`** — les cinq presets, et surtout : aucun n'enferme un camp (un
-  `findPath` réel entre les deux Centres Ville).
+  `findPath` réel entre les deux Centres Ville). Plus la table des SOLS :
+  chaque carte doit décrire une matière complète, aucune ne doit partager le
+  sol d'une autre, et sa couleur de mini-carte ne doit pas contredire son
+  terrain. Les pixels ne sont pas testables ici (les bouchons ne dessinent
+  rien) — la table, si, et c'est elle qui avait laissé passer une steppe
+  fleurie de marguerites.
+- **`tailles`** — `COLS`/`ROWS` ne sont plus des constantes : la carte se
+  choisit en quatre tailles. On vérifie que tout ce qui en dérive suit —
+  dimensions réelles des grilles, buffers typés de la séparation et du
+  pathfinding (les oublier ne lève rien : ça écrit à côté), densité de
+  gisements — et que les départs humains se répartissent sur l'anneau au
+  lieu de deux coins figés : éloignés, variables selon la graine, jamais
+  dans l'eau, jamais sur un gisement.
 - **`economie`** — la récolte crédite le BON camp, le re-semis d'une ferme
   est facturé à SON propriétaire (le piège que documente `tryAutoReseed`).
 - **`ages`** — les bonus de montee d'age s'appliquent rétroactivement, et

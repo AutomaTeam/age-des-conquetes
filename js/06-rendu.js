@@ -332,19 +332,14 @@ function terrainChunk(ccx,ccy){
   g.setTransform(DPR,0,0,DPR,0,0);
   g.imageSmoothingEnabled=true;
   const ex=Math.min(COLS-1,x0+TCHUNK-1), ey=Math.min(ROWS-1,y0+TCHUNK-1);
-  const teinte=solCfg().teinte;
-  // Trois passes séparées, et dans cet ordre : le voile de biome ne doit pas
-  // recouvrir la rive (le sable resterait vert sous la futaie), et les
-  // clairières doivent passer SOUS l'écume, pas dessus. Le voile est plaqué
-  // case par case plutôt qu'en un seul fillRect sur tout le pavé : cela
-  // laisse intactes les cases d'eau, restées transparentes.
+  // Passes séparées, et dans cet ordre : les clairières doivent passer SOUS
+  // l'écume de rive, pas dessus.
   //
-  // Le rectangle du voile va d'un bord ARRONDI au bord arrondi suivant, et
-  // non sur TILE pixels flottants comme le sprite d'herbe. La nuance compte :
-  // TILE n'est pas entier, deux cases voisines se chevauchaient donc d'une
-  // fraction de pixel — invisible sur un sprite opaque, mais le voile étant
-  // translucide, la colonne commune recevait DEUX fois la teinte et la carte
-  // se couvrait d'une grille de lignes sombres.
+  // Il y avait ici une troisième passe, un voile de couleur par biome plaqué
+  // case par case au-dessus de l'herbe. Elle a disparu : la couleur de la
+  // carte est maintenant PEINTE DANS la texture (voir SOLS et buildTerrain),
+  // ce qui la rend franche sans effacer le grain — et supprime au passage un
+  // fillRect translucide par case et par pavé.
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
     if(G.tiles[y][x]===T_WATER) continue;   // l'eau est animée : hors cache
     const px2=bX(x), py2=bY(y);
@@ -354,7 +349,6 @@ function terrainChunk(ccx,ccy){
     const dw=bX(x+1)-px2, dh=bY(y+1)-py2;
     const sp=grassSprite(x,y);
     if(sp) g.drawImage(sp.c,px2,py2,dw,dh);
-    if(teinte){ g.fillStyle=teinte; g.fillRect(px2,py2,dw,dh); }
   }
   drawPatches(g,ccx,ccy,ox,oy);
   // FOND D'EAU OPAQUE sous les cases d'eau. Le pavé les laissait en trou, à
@@ -425,7 +419,6 @@ function drawMap(){
   // Pavés pas encore générés (budget épuisé) : rendu direct pour cette image
   // seulement — ils rejoindront le cache aux images suivantes.
   if(manquants){
-    const teinte=solCfg().teinte;
     for(let i=0;i<manquants.length;i+=2){
       const bx=manquants[i]*TCHUNK, by=manquants[i+1]*TCHUNK;
       const mex=Math.min(ex,bx+TCHUNK-1), mey=Math.min(ey,by+TCHUNK-1);
@@ -435,7 +428,6 @@ function drawMap(){
         const dw=BX[x-sx+1]-px2, dh=BY[y-sy+1]-py2;
         const sp=grassSprite(x,y);
         if(sp) ctx.drawImage(sp.c,px2,py2,dw,dh);
-        if(teinte){ ctx.fillStyle=teinte; ctx.fillRect(px2,py2,dw,dh); }
       }
       // Clairières du pavé manquant, écrêtées à SON rectangle : sans ce
       // découpage, une plaque débordante viendrait se poser une seconde fois

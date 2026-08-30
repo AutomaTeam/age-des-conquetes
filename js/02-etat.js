@@ -135,6 +135,11 @@ function installerShims(){
 function initState() {
   const diff=DIFFS[selectedDifficulty]||DIFFS.normal;
   const mode=MODES[selectedMode]?selectedMode:'survival';
+  // Taille de la carte : figée ICI, AVANT toute allocation de grille (tuiles,
+  // blocage, brouillard) et avant genMap. C'est le seul moment où COLS/ROWS
+  // changent de valeur — voir appliquerTailleCarte.
+  const taille=TAILLES[selectedTaille]?selectedTaille:'normale';
+  appliquerTailleCarte(TAILLES[taille].n);
   G = {
     difficulty:selectedDifficulty,
     // gmode = mode de PARTIE (survival/conquest/conquest2). À ne pas confondre
@@ -144,6 +149,10 @@ function initState() {
     // Type de carte (voir CARTES). Fige a la creation de l'etat, comme gmode :
     // genMap le lit, et il voyage avec la graine en multijoueur (construireSalut).
     carte:selectedCarte,
+    // Taille de la carte (voir TAILLES). Figée à la création de l'état comme
+    // carte et gmode : elle voyage avec la graine en multijoueur (voir
+    // construireSalut) et part dans la sauvegarde.
+    taille,
     // Graine de la carte. Deux joueurs qui la partagent génèrent une carte
     // strictement identique : en multijoueur on transmet ces 4 octets au lieu
     // des 3 × 57 600 tuiles de terrain, blocage et brouillard (~500 Ko).

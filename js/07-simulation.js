@@ -366,7 +366,7 @@ function sepRayon(u){ const d=UDEF[u.type]; return (d&&d.siege)?SEP_R_SIEGE:SEP_
 // population, chacune de ses cellules contient des dizaines d'unités et le
 // balayage 3×3 redeviendrait quadratique. Listes chaînées sur tableaux
 // typés : aucune allocation une fois la première image passée.
-const _sepHead = new Int32Array(COLS*ROWS);
+let   _sepHead = new Int32Array(COLS*ROWS);
 let   _sepNext = new Int32Array(0);
 let   _sepPX = new Float32Array(0), _sepPY = new Float32Array(0);
 let   _sepX  = new Float32Array(0), _sepY  = new Float32Array(0), _sepRad = new Float32Array(0);
@@ -475,11 +475,29 @@ function separerUnites(dt){
 const PF_BUDGET=1200;         // tuiles explorées au maximum par recherche
 const PF_PER_FRAME=3;         // recherches simultanées maximum par image
 const PF_DX=[1,-1,0,0, 1,1,-1,-1], PF_DY=[0,0,1,-1, 1,-1,1,-1];
-const PF={ n:COLS*ROWS };
-PF.g=new Float32Array(PF.n); PF.f=new Float32Array(PF.n);
-PF.from=new Int32Array(PF.n); PF.stamp=new Int32Array(PF.n);
-PF.closed=new Int32Array(PF.n); PF.heap=new Int32Array(PF.n+1);
+const PF={ n:0 };
 PF.hn=0; PF.run=0;
+
+// Les deux structures ci-dessus (grille de séparation, buffers A*) sont
+// dimensionnées sur COLS*ROWS. Tant que la carte faisait toujours 240×240
+// elles pouvaient être allouées une fois pour toutes au chargement ; la
+// taille se choisit désormais sur l'écran-titre (voir TAILLES), donc
+// appliquerTailleCarte() rappelle cette fonction à chaque changement —
+// sans quoi la première image écrirait hors des bornes de l'ancienne
+// carte. Appelée aussi ci-dessous, pour la taille par défaut.
+function redimensionnerBuffersCarte(){
+  if(_sepHead.length!==COLS*ROWS) _sepHead=new Int32Array(COLS*ROWS);
+  if(PF.n===COLS*ROWS) return;
+  PF.n=COLS*ROWS;
+  PF.g=new Float32Array(PF.n); PF.f=new Float32Array(PF.n);
+  PF.from=new Int32Array(PF.n); PF.stamp=new Int32Array(PF.n);
+  PF.closed=new Int32Array(PF.n); PF.heap=new Int32Array(PF.n+1);
+  // Les marques de visite repartent à zéro avec les tableaux : le compteur
+  // de passage doit repartir avec elles, sinon la première recherche sur la
+  // nouvelle carte prendrait des cases neuves pour des cases déjà fermées.
+  PF.hn=0; PF.run=0;
+}
+redimensionnerBuffersCarte();
 let _pfFrame=0;
 
 function tileBlocked(tx,ty){

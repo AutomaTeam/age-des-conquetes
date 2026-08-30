@@ -49,7 +49,10 @@ window.transportLocal=transportLocal;
 // Le transport est abstrait (RESEAU.envoi) : window.MP en production, une
 // simple boucle locale pour les tests. Rien ici ne connait Firebase.
 
-const PROTO_VERSION = 1;
+// v2 : la SALUT porte la taille de carte (champ `taille`). Un client v1 ne
+// la lirait pas et générerait un monde 240×240 face à un hôte qui en a
+// choisi un autre — tout diverge dès la première image, donc incompatible.
+const PROTO_VERSION = 2;
 const DELTA_HZ      = 10;
 const DELTA_PERIODE = 1/DELTA_HZ;
 const SEUIL_POS     = 1;    // unites-monde : en deca, on ne renvoie pas la position
@@ -683,7 +686,9 @@ function construireSalut(){
     // monde genere. Sans lui, l'hote en Grands Lacs et l'invite en Plaines
     // partaient sur deux cartes differentes avec la meme graine, et TOUT
     // divergeait des la premiere image.
-    seed:G.seed, carte:G.carte, gmode:G.gmode, difficulty:G.difficulty,
+    // Idem pour la TAILLE de la carte : type et taille ensemble décident du
+    // monde que la graine engendre.
+    seed:G.seed, carte:G.carte, taille:G.taille, gmode:G.gmode, difficulty:G.difficulty,
     cols:COLS, rows:ROWS, simHz:SIM_HZ,
     fac:factionsPour(RESEAU.adversaire&&G.factions[RESEAU.adversaire.id]),
     toi:FAC.P2,
@@ -715,8 +720,10 @@ function demarrerPartieClient(m){
   resizeCanvas();
 
   selectedMode=m.gmode; selectedDifficulty=m.difficulty;
-  // AVANT initState : c'est lui qui fige G.carte pour la partie.
+  // AVANT initState : c'est lui qui fige G.carte ET G.taille pour la partie
+  // (et c'est appliquerTailleCarte, appelé par initState, qui pose COLS/ROWS).
   if(m.carte&&CARTES[m.carte]) selectedCarte=m.carte;
+  if(m.taille&&TAILLES[m.taille]) selectedTaille=m.taille;
   grainePartie=m.seed;
   initState();
   G.seed=m.seed;

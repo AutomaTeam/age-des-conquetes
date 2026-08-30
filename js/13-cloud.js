@@ -239,6 +239,11 @@ function buildSaveData(){
       mode:G.gmode,
       seed:G.seed,
       carte:G.carte,
+      // Taille de la carte (voir TAILLES). Le chargement la relit d'abord
+      // dans les tuiles sauvegardées, ce champ n'est qu'un confort de
+      // lecture — mais il permet de revenir à l'écran-titre sur le bon
+      // réglage après avoir repris une partie.
+      taille:G.taille,
       // Tous les camps, brouillard compris (chaque faction humaine a le sien).
       factions:JSON.parse(JSON.stringify(G.factions)),
       me:G.me,
@@ -397,6 +402,27 @@ async function loadGame(key=SAVE_KEY){
     document.getElementById('overlay').style.display='none';
     document.getElementById('pausebtn-inner').innerHTML=iconImg('⏸',16);
     resizeCanvas();
+    // Taille de la carte AVANT toute lecture de COLS/ROWS ci-dessous (repli
+    // du brouillard, bornage des unités, re-marquage des bâtiments) : une
+    // partie 320×320 rechargée avec COLS resté à 240 laisserait un tiers de
+    // la carte hors des grilles. La source de vérité est la TAILLE RÉELLE
+    // des tuiles enregistrées — les sauvegardes antérieures à ce champ
+    // s'ouvrent donc correctement elles aussi.
+    {
+      const n=(data.tiles&&data.tiles.length)
+              ||(TAILLES[data.taille]&&TAILLES[data.taille].n)||240;
+      appliquerTailleCarte(n);
+      if(data.taille&&TAILLES[data.taille]) selectedTaille=data.taille;
+    }
+    // Type de carte AVANT buildSprites() ci-dessous : depuis que chaque carte
+    // a sa propre texture de sol (voir SOLS), c'est lui qui décide de la
+    // matière peinte dans l'atlas. Restauré trop tard, une partie « Terres
+    // Arides » se rouvrait avec l'herbe de la carte précédente.
+    // G.carte n'était d'ailleurs pas restauré du tout : le sol, la mini-carte
+    // et les multiplicateurs de preset lisent tous carteCfg()/solCfg().
+    selectedCarte=(data.carte&&CARTES[data.carte])?data.carte:'plaines';
+    G.carte=selectedCarte;
+    G.taille=selectedTaille;
     // On restaure le TILE EXACT de la sauvegarde plutôt que de le recalculer
     // depuis zoomLevel (qui ne suit plus le zoom réel depuis les pincements
     // libres) : sans ça, les positions sauvegardées — en pixels, à l'ancien
@@ -518,6 +544,21 @@ try{
   if(savedCiv&&CIVS[savedCiv]) selectedCiv=savedCiv;
 }catch(e){}
 try{ pickCiv(selectedCiv); }catch(e){}
+
+// Idem pour le type et la taille de carte. pickCarte() et pickTaille()
+// écrivaient déjà leur choix dans localStorage, mais personne ne le relisait :
+// l'écran-titre revenait aux Plaines à chaque ouverture, quel qu'ait été le
+// dernier choix.
+try{
+  const savedCarte=localStorage.getItem('adc_carte');
+  if(savedCarte&&CARTES[savedCarte]) selectedCarte=savedCarte;
+}catch(e){}
+try{ pickCarte(selectedCarte); }catch(e){}
+try{
+  const savedTaille=localStorage.getItem('adc_taille');
+  if(savedTaille&&TAILLES[savedTaille]) selectedTaille=savedTaille;
+}catch(e){}
+try{ pickTaille(selectedTaille); }catch(e){}
 
 // Idem pour le mode de partie, puis chargement du profil persistant (succès
 // acquis, parties jouées) : l'écran-titre doit afficher la progression réelle

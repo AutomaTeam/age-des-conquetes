@@ -55,17 +55,6 @@ function loop(ts){
   requestAnimationFrame(loop);
 }
 
-// Emplacements de départ des factions humaines, dans l'ordre. Un seul joueur
-// démarre au centre (comme avant) ; à deux, ils se font face sur la diagonale,
-// à égale distance du centre. Purement déterministe : aucun tirage.
-function departsHumains(){
-  const h=factionsHumaines().length;
-  const c=[(COLS>>1)-1,(ROWS>>1)-1];
-  if(h<2) return [c];
-  const m=SC(12); // marge au bord, proportionnelle à la taille de carte
-  return [[m,m],[COLS-m-2,ROWS-m-2]];
-}
-
 // ── ARÈNE : palissade de départ ────────────────────────────────
 // Un anneau de palissade autour d'un Centre Ville, percé de QUATRE PORTAILS
 // OUVERTS (un par face). Les portails sont indispensables : un mur pose
@@ -154,9 +143,12 @@ function startGame(){
 
   // Centre-ville de départ. En solo le joueur reste au centre (comportement
   // historique) ; dès qu'un second humain existe, les deux prennent des
-  // ancrages OPPOSÉS et déterministes, pour que la partie soit équitable et
-  // identique des deux côtés de la connexion.
-  const dep=departsHumains();
+  // départs répartis sur un anneau, déterministes, pour que la partie soit
+  // équitable et identique des deux côtés de la connexion. Les emplacements
+  // ont été arrêtés par genMap (voir departsHumains/resoudreDeparts), qui a
+  // aussi réservé la place : les relire ici plutôt que les recalculer garan-
+  // tit qu'on pose bien les Centres Villes là où le terrain a été dégagé.
+  const dep=(G.departs&&G.departs.length)?G.departs:resoudreDeparts();
   const sTX=dep[0][0], sTY=dep[0][1];
   const tc=mkBuilding(BT.TC,sTX,sTY,FAC.P1);
   placeBuilding(tc);

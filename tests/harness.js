@@ -38,6 +38,8 @@ const EXPORTS = [
   'estSel', 'selMilitary', 'ASSET_EXT',
   'applyCommand', 'pickCiv', 'civKeyOf', 'civOf', 'PRODUCTION', 'ORD', 'mkFaction',
   'CARTES', 'pickCarte', 'carteCfg', 'poserMursArene', 'construireSalut', 'T_WATER',
+  'TAILLES', 'pickTaille', 'departsHumains',
+  'SOLS', 'DECORS_SOL', 'GRASS_VARIANTS', 'solCfg',
   'TCOST', 'TROCS', 'AGE_BONUS', 'RELIC_COUNT', 'FARM_RESEED_COST', 'FARM_FOOD',
   'MERVEILLE_WIN_TIME', 'canAfford', 'spend', 'resPool', 'updatePopCap',
   'aiNextBuild', 'AI_TRAINERS', 'trainTime', 'possedeBatiment', 'appliquerDemolition',

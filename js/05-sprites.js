@@ -87,99 +87,169 @@ function srnd(seed){ let s=seed%2147483647; if(s<=0)s+=2147483646; return ()=>(s
 // le démarrage de partie où l'on a besoin de l'atlas complet immédiatement.
 // C'est de loin la plus grosse étape (57 canevas, ~33 ms au zoom maximum) :
 // la scinder en deux suffit à la faire tenir dans une image.
+// ── DÉCORS SIGNATURE DU SOL ───────────────────────────────────────────
+// Un petit motif posé sur une variante d'herbe sur deux (voir buildTerrain).
+// C'est LUI qui distingue une variante de sa voisine — le fond, lui, doit
+// rester quasi identique d'une variante à l'autre, sinon la carte se lit en
+// damier. Chaque carte pioche ses quatre décors dans cette table (SOLS.decors)
+// : ce sont eux qui donnent à un sous-bois ses champignons et à une steppe ses
+// cailloux, là où tout le monde partageait la même fleur jaune.
+const DECORS_SOL = {
+  fleur(cx,dx,dy){                                   // fleur jaune des champs
+    px(cx,dx,dy,1,3,'#3a6024');
+    cx.fillStyle='#f0d55a'; cx.beginPath(); cx.arc(dx,dy-2,2.6,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#8a6a1a'; cx.beginPath(); cx.arc(dx,dy-2,1,0,Math.PI*2); cx.fill();
+  },
+  galets(cx,dx,dy){                                  // cailloux gris
+    px(cx,dx,dy,4,3,'#8a8a86'); px(cx,dx,dy,2,2,'#a8a8a2');
+    px(cx,dx+5,dy+3,3,2,'#77776f');
+  },
+  marguerite(cx,dx,dy){                              // marguerite blanche
+    px(cx,dx,dy,1,3,'#3a6024');
+    cx.fillStyle='#eef0e4';
+    for(const[petX,petY] of [[-2,0],[2,0],[0,-2],[0,2],[-1.4,-1.4],[1.4,1.4]]){
+      cx.beginPath(); cx.ellipse(dx+petX,dy-2+petY,1.3,0.9,Math.atan2(petY,petX),0,Math.PI*2); cx.fill();
+    }
+    cx.fillStyle='#e8c840'; cx.beginPath(); cx.arc(dx,dy-2,1.2,0,Math.PI*2); cx.fill();
+  },
+  brindille(cx,dx,dy){                               // brindille sèche
+    cx.strokeStyle='#6a4e28'; cx.lineWidth=1.4;
+    cx.beginPath(); cx.moveTo(dx-4,dy+2); cx.lineTo(dx+4,dy-2); cx.stroke();
+    cx.beginPath(); cx.moveTo(dx-1,dy); cx.lineTo(dx+1,dy-3); cx.stroke();
+  },
+  champignon(cx,dx,dy){                              // champignon du sous-bois
+    px(cx,dx,dy,2,4,'#e8dcc0');
+    cx.fillStyle='#b8443a'; cx.beginPath(); cx.ellipse(dx+1,dy-2,3.2,2.2,0,0,Math.PI*2); cx.fill();
+    px(cx,dx,dy-3,1,1,'#f0d0c8'); px(cx,dx+2,dy-2,1,1,'#f0d0c8');
+  },
+  feuilles(cx,dx,dy){                                // feuilles mortes
+    px(cx,dx,dy,3,2,'#a86a2e'); px(cx,dx+4,dy+2,2,2,'#c88838');
+    px(cx,dx-3,dy+3,3,2,'#8d5a26');
+  },
+  // Fougère : trois paires de folioles le long d'une tige penchée. Le motif le
+  // plus « sous-bois » qui tienne en une douzaine de pixels.
+  fougere(cx,dx,dy){
+    cx.strokeStyle='#2f5a20'; cx.lineWidth=1.2;
+    cx.beginPath(); cx.moveTo(dx,dy+4); cx.lineTo(dx+2,dy-5); cx.stroke();
+    cx.strokeStyle='#3f7429'; cx.lineWidth=1;
+    for(let k=0;k<3;k++){
+      const yy=dy+2-k*3, xx=dx+k*0.7;
+      cx.beginPath(); cx.moveTo(xx,yy); cx.lineTo(xx-3.2,yy-1.6); cx.stroke();
+      cx.beginPath(); cx.moveTo(xx,yy); cx.lineTo(xx+3.2,yy-1.6); cx.stroke();
+    }
+  },
+  // Pomme de pin : un cône d'écailles, deux tons pour le volume.
+  pomme_pin(cx,dx,dy){
+    px(cx,dx,dy-4,3,6,'#4e3418');
+    px(cx,dx,dy-4,2,2,'#6b4a24'); px(cx,dx+1,dy-1,2,2,'#6b4a24');
+    px(cx,dx-1,dy+1,4,2,'#3d2812');
+  },
+  // Cailloux de steppe : plus clairs et plus dispersés que les galets de
+  // rivière — sur une terre ocre, du gris franc ferait tache.
+  cailloux(cx,dx,dy){
+    px(cx,dx,dy,3,2,'#b6a67e'); px(cx,dx,dy,2,1,'#cfc099');
+    px(cx,dx+4,dy+2,2,2,'#a08f6a'); px(cx,dx-3,dy+3,2,1,'#c2b28a');
+  },
+  // Terre craquelée : deux fentes sombres qui se rejoignent. C'est le motif
+  // qui dit « sec » sans qu'on ait besoin d'y ajouter la moindre couleur.
+  fissure(cx,dx,dy){
+    cx.strokeStyle='rgba(96,74,38,.55)'; cx.lineWidth=1;
+    cx.beginPath(); cx.moveTo(dx-5,dy-3); cx.lineTo(dx,dy); cx.lineTo(dx+5,dy-2); cx.stroke();
+    cx.beginPath(); cx.moveTo(dx,dy); cx.lineTo(dx+1,dy+4); cx.stroke();
+  },
+  // Touffe d'herbe grillée : les mêmes brins que la prairie, mais couchés et
+  // couleur paille.
+  herbe_seche(cx,dx,dy){
+    cx.strokeStyle='#b5a464'; cx.lineWidth=1.2;
+    for(const dxx of [-3,-1,1,3]){
+      cx.beginPath(); cx.moveTo(dx+dxx,dy+3); cx.lineTo(dx+dxx*1.8,dy-3); cx.stroke();
+    }
+    px(cx,dx-4,dy+3,9,1,'rgba(120,100,54,.5)');
+  },
+  // Roseaux de bord d'eau : tiges hautes coiffées d'un épi brun.
+  roseau(cx,dx,dy){
+    cx.strokeStyle='#3f7a34'; cx.lineWidth=1.2;
+    for(const [xx,h] of [[-2,7],[1,9],[4,6]]){
+      cx.beginPath(); cx.moveTo(dx+xx,dy+4); cx.lineTo(dx+xx+1,dy+4-h); cx.stroke();
+      px(cx,dx+xx,dy+3-h,2,3,'#7a5a2e');
+    }
+  },
+  // Mousse : deux plaques vert vif aux bords irréguliers, comme sur une
+  // pierre humide.
+  mousse(cx,dx,dy){
+    cx.fillStyle='rgba(104,152,58,.55)';
+    cx.beginPath(); cx.ellipse(dx,dy,3.4,2.2,0.4,0,Math.PI*2); cx.fill();
+    cx.fillStyle='rgba(126,176,74,.45)';
+    cx.beginPath(); cx.ellipse(dx+4,dy+2,2.2,1.6,-0.3,0,Math.PI*2); cx.fill();
+  },
+  // Sillon : une ornière de terre battue, deux traits parallèles. Le décor de
+  // l'arène — un sol qu'on piétine.
+  sillon(cx,dx,dy){
+    px(cx,dx-5,dy,11,2,'rgba(104,84,48,.45)');
+    px(cx,dx-4,dy+3,9,1,'rgba(120,98,58,.35)');
+  },
+};
+
+// Étape 1 = herbe et sable, 2 = eau, absent = tout d'un bloc (démarrage de
+// partie, où l'atlas complet est nécessaire immédiatement).
+//
+// Tout ce qui suit lit solCfg() : la MATIÈRE du sol appartient à la carte
+// (voir SOLS). Comme la carte est figée pour la partie entière, on ne peint
+// jamais qu'un seul jeu de huit variantes — le coût est celui d'avant, mais
+// une steppe est enfin faite de terre et non d'herbe repeinte.
 function buildTerrain(T,partie){
   if(partie===2) return buildTerrainEau(T);
+  const sol=solCfg();
   // Base QUASI UNIE d'une variante à l'autre (±2 sur chaque composante) :
-  // l'ancienne palette s'étalait de #4a7a33 à #609140, soit ~20 % d'écart de
-  // luminosité — assez pour que chaque tuile se lise comme un carré distinct
-  // et que la carte entière apparaisse en damier. La variété doit venir des
-  // DÉTAILS (touffes, fleurs, galets), jamais du fond : lui doit être
-  // invisible d'une case à l'autre.
-  const grassBase=['#54832f','#568530','#538130','#55842e','#568331','#54822f','#558430','#538230'];
+  // une palette qui s'étalerait de #4a7a33 à #609140 (~20 % d'écart de
+  // luminosité) suffit à faire lire chaque tuile comme un carré distinct et
+  // la carte entière comme un damier. La variété doit venir des DÉTAILS —
+  // touffes, brins, décors —, jamais du fond.
   for(let v=0;v<GRASS_VARIANTS;v++){
     const{c,cx}=offCanvas(T,T);
     const rnd=srnd(v*97+13);
-    px(cx,0,0,T,T,grassBase[v]);
+    px(cx,0,0,T,T,sol.base[v%sol.base.length]);
 
     // Touffes organiques (ombre/lumière) en ellipses douces plutôt qu'en
     // carrés alignés sur une grille : une fois le sprite réduit avec
     // lissage, ça se lit comme des zones naturelles, pas un damier.
-    // Touffes plus nombreuses mais BEAUCOUP plus discrètes : une grosse tache
-    // à 20 % d'opacité tenant sur une seule case se lit comme « cette tuile-là
-    // est plus sombre » ; dix taches à 8 % se lisent comme du relief.
+    // Nombreuses mais BEAUCOUP plus discrètes : une grosse tache à 20 %
+    // d'opacité tenant sur une seule case se lit comme « cette tuile-là est
+    // plus sombre » ; dix taches à 8 % se lisent comme du relief.
     const nBlobs=11+((rnd()*5)|0);
     for(let i=0;i<nBlobs;i++){
       const bx=rnd()*T, by=rnd()*T, br=T*(0.07+rnd()*0.11);
       cx.beginPath(); cx.ellipse(bx,by,br,br*0.72,rnd()*Math.PI,0,Math.PI*2);
-      cx.fillStyle=rnd()<0.55?'rgba(35,62,22,.09)':'rgba(150,195,105,.08)';
+      cx.fillStyle=rnd()<0.55?sol.touffe[0]:sol.touffe[1];
       cx.fill();
     }
 
-    // Brins d'herbe en 3 tons (base → tige → pointe éclairée), légèrement
-    // penchés — plus de relief qu'un brin plat à deux couleurs.
-    for(let i=0;i<9;i++){
+    // Brins en 3 tons (base → tige → pointe éclairée), légèrement penchés :
+    // plus de relief qu'un brin plat à deux couleurs. Leur NOMBRE fait
+    // l'essentiel de la différence entre un sous-bois (douze brins verts
+    // serrés) et une steppe (cinq brins de paille).
+    const bc=sol.brins.cols;
+    for(let i=0;i<sol.brins.n;i++){
       const gx=(rnd()*(T-8)|0)+4, gy=(rnd()*(T-12)|0)+8, lean=1+((rnd()*2)|0);
-      px(cx,gx,gy-2,2,4,'#33581f');
-      px(cx,gx+lean,gy-6,2,5,'#437029');
-      px(cx,gx+lean*2,gy-9,2,4,'#5e9438');
+      px(cx,gx,gy-2,2,4,bc[0]);
+      px(cx,gx+lean,gy-6,2,5,bc[1]);
+      px(cx,gx+lean*2,gy-9,2,4,bc[2]);
     }
 
     // Grain fin (dithering pixel-art classique, casse les aplats)
     for(let i=0;i<14;i++){
       const dx=(rnd()*T)|0, dy=(rnd()*T)|0;
-      cx.fillStyle=rnd()<0.5?'rgba(0,0,0,.10)':'rgba(255,255,255,.08)';
+      cx.fillStyle=rnd()<0.5?sol.grain[0]:sol.grain[1];
       cx.fillRect(dx,dy,1,1);
     }
 
-    // Détail signature — un par variante (fleur, galets, trèfle, champignon,
-    // brindille, marguerite, feuilles mortes, pousse claire) : avec 8
-    // variantes bien différenciées, aucune tuile ne ressemble vraiment à sa
-    // voisine même sur une grande carte.
-    // Une variante sur deux seulement porte son détail : avec un détail par
-    // tuile, le tapis d'herbe se couvrait de confettis colorés (fleurs,
-    // trèfles, champignons) dès qu'on zoomait. Les variantes impaires restent
-    // de l'herbe nue et servent de respiration entre les autres.
-    const dx=(rnd()*(T-12)|0)+6, dy=(rnd()*(T-12)|0)+6;
-    // …et parmi les huit décors dessinés plus bas, on ne garde que les quatre
-    // discrets (fleur jaune, galets, marguerite, brindille) : trèfle mauve,
-    // champignon rouge et feuilles mortes tranchaient trop sur le vert.
-    if(v%2===0) switch([0,1,5,4][v>>1]){
-      case 0: // fleur jaune
-        px(cx,dx,dy,1,3,'#3a6024');
-        cx.fillStyle='#f0d55a'; cx.beginPath(); cx.arc(dx,dy-2,2.6,0,Math.PI*2); cx.fill();
-        cx.fillStyle='#8a6a1a'; cx.beginPath(); cx.arc(dx,dy-2,1,0,Math.PI*2); cx.fill();
-        break;
-      case 1: // galets
-        px(cx,dx,dy,4,3,'#8a8a86'); px(cx,dx,dy,2,2,'#a8a8a2');
-        px(cx,dx+5,dy+3,3,2,'#77776f');
-        break;
-      case 2: // touffe mauve (trèfle en fleur)
-        px(cx,dx,dy,2,2,'#c9a0d9'); px(cx,dx+3,dy+2,2,2,'#c9a0d9');
-        px(cx,dx+1,dy+4,2,2,'#b587c9');
-        break;
-      case 3: // champignon
-        px(cx,dx,dy,2,4,'#e8dcc0');
-        cx.fillStyle='#b8443a'; cx.beginPath(); cx.ellipse(dx+1,dy-2,3.2,2.2,0,0,Math.PI*2); cx.fill();
-        cx.fillStyle='#f0d0c8'; px(cx,dx,dy-3,1,1,'#f0d0c8'); px(cx,dx+2,dy-2,1,1,'#f0d0c8');
-        break;
-      case 4: // brindille sèche
-        cx.strokeStyle='#6a4e28'; cx.lineWidth=1.4;
-        cx.beginPath(); cx.moveTo(dx-4,dy+2); cx.lineTo(dx+4,dy-2); cx.stroke();
-        cx.beginPath(); cx.moveTo(dx-1,dy); cx.lineTo(dx+1,dy-3); cx.stroke();
-        break;
-      case 5: // marguerite blanche
-        px(cx,dx,dy,1,3,'#3a6024');
-        cx.fillStyle='#eef0e4';
-        for(const[petX,petY] of [[-2,0],[2,0],[0,-2],[0,2],[-1.4,-1.4],[1.4,1.4]]){
-          cx.beginPath(); cx.ellipse(dx+petX,dy-2+petY,1.3,0.9,Math.atan2(petY,petX),0,Math.PI*2); cx.fill();
-        }
-        cx.fillStyle='#e8c840'; cx.beginPath(); cx.arc(dx,dy-2,1.2,0,Math.PI*2); cx.fill();
-        break;
-      case 6: // feuilles mortes
-        px(cx,dx,dy,3,2,'#a86a2e'); px(cx,dx+4,dy+2,2,2,'#c88838');
-        break;
-      default: // pousse claire (variation de hauteur d'herbe)
-        px(cx,dx,dy,2,5,'#3f6b28'); px(cx,dx+2,dy+2,2,3,'#4a7d30');
+    // Décor signature — une variante sur DEUX seulement. Avec un décor par
+    // tuile, le tapis se couvrait de confettis dès qu'on zoomait ; les
+    // variantes impaires restent nues et servent de respiration.
+    const dx=(rnd()*(T-14)|0)+7, dy=(rnd()*(T-14)|0)+7;
+    if(v%2===0){
+      const f=DECORS_SOL[sol.decors[(v>>1)%sol.decors.length]];
+      if(f) f(cx,dx,dy);
     }
 
     // Touffes sur les bords : estompe la limite entre tuiles voisines.
@@ -188,15 +258,15 @@ function buildTerrain(T,partie){
     // c'est ce déséquilibre qui dessinait des lignes de séparation nettes.
     for(let e=0;e<4;e++) for(let i=0;i<4;i++){
       const o=(rnd()*T)|0, dth=Math.max(2,T/14|0);
-      cx.fillStyle=rnd()<0.5?'rgba(70,110,45,.16)':'rgba(110,155,72,.13)';
+      cx.fillStyle=rnd()<0.5?sol.touffe[0]:sol.touffe[1];
       if(e===0) cx.fillRect(o,0,dth,dth); else if(e===1) cx.fillRect(o,T-dth,dth,dth);
       else if(e===2) cx.fillRect(0,o,dth,dth); else cx.fillRect(T-dth,o,dth,dth);
     }
     SPR.terrain['grass'+v]={c,cx};
     // Trois copies miroir par variante (H, V, HV). 8 textures deviennent 32
-    // orientations : sur une carte de 3 600 cases, deux tuiles identiques
-    // côte à côte deviennent rares, et le motif répétitif disparaît sans
-    // coûter une seule texture supplémentaire à dessiner à la main.
+    // orientations : sur une grande carte, deux tuiles identiques côte à côte
+    // deviennent rares, et le motif répétitif disparaît sans coûter une seule
+    // texture supplémentaire à dessiner.
     for(const m of [1,2,3]){
       const f=offCanvas(T,T);
       f.cx.save();
@@ -208,15 +278,18 @@ function buildTerrain(T,partie){
     }
   }
 
-  // Sable (rives) — grain plus riche, dégradé et quelques galets/bois flotté
+  // Sable (rives) — grain riche, dégradé et quelques galets. Sa palette suit
+  // la carte : une plage de sous-bois est vaseuse, une rive de steppe est
+  // presque blanche, et la même rive dorée partout trahissait le biome.
   {
     const{c,cx}=offCanvas(T,T); const rnd=srnd(555);
-    px(cx,0,0,T,T,'#d9c48a');
+    const [sFond,sSombre,sClair]=sol.sable;
+    px(cx,0,0,T,T,sFond);
     const step=Math.max(3,T/10|0);
     for(let y=0;y<T;y+=step) for(let x=0;x<T;x+=step){
       const r=rnd();
-      if(r<0.18) px(cx,x,y,step,step,'rgba(170,140,85,.35)');
-      else if(r<0.30) px(cx,x,y,step,step,'rgba(245,232,185,.5)');
+      if(r<0.18) px(cx,x,y,step,step,sSombre);
+      else if(r<0.30) px(cx,x,y,step,step,sClair);
     }
     for(let i=0;i<10;i++){
       const dx=(rnd()*T)|0, dy=(rnd()*T)|0;
@@ -2903,6 +2976,10 @@ function buildSprites(refT){
 function buildMacro(){
   const P=Math.max(128,Math.round(TILE*12));
   const{c,cx}=offCanvas(P,P); const rnd=srnd(4242);
+  // Couleurs prises sur la carte (voir SOLS.macro) et non plus en dur : ces
+  // taches recouvrent TOUT le sol visible, un vert d'herbe posé sur une
+  // steppe ocre s'y lisait comme des nuages verts.
+  const mc=solCfg().macro;
   for(let i=0;i<26;i++){
     const bx=rnd()*P, by=rnd()*P, r=P*(0.10+rnd()*0.17);
     const sombre=rnd()<0.5;
@@ -2911,7 +2988,7 @@ function buildMacro(){
     // le bord opposé, donc la texture se répète sans couture visible.
     for(let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++){
       const g=cx.createRadialGradient(bx+ox*P,by+oy*P,0,bx+ox*P,by+oy*P,r);
-      g.addColorStop(0,sombre?'rgba(26,46,18,.23)':'rgba(170,206,124,.18)');
+      g.addColorStop(0,sombre?mc[0]:mc[1]);
       g.addColorStop(1,'rgba(0,0,0,0)');
       cx.fillStyle=g;
       cx.fillRect(bx+ox*P-r,by+oy*P-r,r*2,r*2);
@@ -2941,12 +3018,13 @@ const MACRO_L_TEX=256, MACRO_L_TUILES=40;
 function buildMacroLarge(){
   const P=MACRO_L_TEX;
   const{c,cx}=offCanvas(P,P); const rnd=srnd(90210);
+  const mc=solCfg().macroL;   // voir buildMacro : même raison
   for(let i=0;i<9;i++){
     const bx=rnd()*P, by=rnd()*P, r=P*(0.22+rnd()*0.22);
     const sombre=rnd()<0.5;
     for(let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++){
       const g=cx.createRadialGradient(bx+ox*P,by+oy*P,0,bx+ox*P,by+oy*P,r);
-      g.addColorStop(0,sombre?'rgba(22,42,16,.20)':'rgba(182,214,138,.15)');
+      g.addColorStop(0,sombre?mc[0]:mc[1]);
       g.addColorStop(1,'rgba(0,0,0,0)');
       cx.fillStyle=g;
       cx.fillRect(bx+ox*P-r,by+oy*P-r,r*2,r*2);

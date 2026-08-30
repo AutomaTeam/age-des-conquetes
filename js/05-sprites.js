@@ -726,32 +726,9 @@ const BLD_CIV_SPRITE_FILES={
 // centré horizontalement dans un canvas de dimensions (W,H) identiques au
 // sprite procédural remplacé — la géométrie de placement à l'affichage ne
 // change donc pas.
-// Recadrage horizontal avant ajustement, par type de batiment. Fraction de
-// la LARGEUR conservee, centree.
-//
-// Le Portail en a besoin : sa planche est une porterie de pierre flanquee de
-// ses PROPRES courtines, soit un rapport 1,59 (493x310) la ou le Mur est une
-// palissade en 0,79 (412x520). L'ajustement conservant les proportions, c'est
-// la largeur qui contraignait : le portail ne remplissait que 68 px de haut
-// contre 135 pour le mur — il se lisait comme un arc enfonce dans la cloture,
-// deux fois trop bas. Or ces courtines sont redondantes : les cases voisines
-// SONT deja des murs. En les recadrant, la porterie retrouve un rapport
-// proche de celui du mur, donc la meme hauteur de silhouette, et l'enceinte
-// se lit d'un seul tenant.
-//
-// Ce que le recadrage ne corrige PAS : la porterie est en pierre, la
-// palissade en bois. Les deux ne s'accorderont vraiment qu'avec une planche
-// de portail en bois (assets/batiments/portail.webp).
-const BLD_CADRAGE={ [BT.GATE]:0.60 };
-
-function fitBuildingImage(src,W,H,cadrage){
+function fitBuildingImage(src,W,H){
   const t=stripBgTrimmed(src,TRIM_W_BLD); if(!t) return null;
-  let{c:wc,minX,minY,bw,bh}=t;
-  if(cadrage&&cadrage<1){
-    const garde=Math.max(1,Math.round(bw*cadrage));
-    minX+=Math.round((bw-garde)/2);
-    bw=garde;
-  }
+  const{c:wc,minX,minY,bw,bh}=t;
   const{c,cx}=offCanvas(W,H);
   const scale=Math.min(W*0.94/bw,H*0.94/bh);
   const dw=bw*scale, dh=bh*scale;
@@ -792,7 +769,7 @@ function upgradeBuildingSprites(){
     withIllustration('assets/batiments/'+BLD_SPRITE_FILES[type]+ASSET_EXT,TRIM_W_BLD,(url)=>{
       const meta=SPR.bld[type]; if(!meta) return;
       const W=meta.c.width, H=meta.c.height;
-      const fitted=fitBuildingImage(url,W,H,BLD_CADRAGE[type]); if(!fitted) return;
+      const fitted=fitBuildingImage(url,W,H); if(!fitted) return;
       const fittedE=tintEnemyBuilding(fitted,W,H);
       // Le Portail OUVERT doit rester lisible d'un coup d'œil : c'est un état
       // de JEU (on passe / on ne passe pas), pas une simple coquetterie. Avec

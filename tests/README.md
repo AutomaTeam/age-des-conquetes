@@ -6,7 +6,7 @@ node tests/run.js
 
 Un groupe seul : `node tests/run.js reseau`.
 
-**81 tests, 14 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
+**83 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -72,6 +72,16 @@ qui **ne se voit pas** :
   doit PAS donner la victoire avant son délai.
 - **`ia`** — plafond des Moines, atelier de siège au roster, et l'assaut qui
   passe bien par un rassemblement.
+- **`charge`** — des invariants de COÛT, pas de résultat. Ce sont les seuls
+  défauts qui ne se voient pas du tout en petite partie et qui rendent une
+  grosse partie injouable. Deux pour l'instant : le BUDGET de balayage du
+  voisinage (le reciblage est censé tourner 4×/s et par unité ; une garde de
+  point d'intérêt sans cible, ou une tour qui ne voit rien, rebalayaient à
+  chaque image), et la passe de séparation qui doit survivre à une
+  population qui grossit — si sa liste de cellules survit à une réallocation
+  du tableau de têtes, la boucle de chaînage ne se termine plus et l'onglet
+  se fige. Une régression sur ce second point BLOQUE ce fichier au lieu de
+  l'échouer : c'est le symptôme lui-même, et il vaut mieux ça que rien.
 
 Le **rendu n'est pas testé** et ne doit pas l'être ici : les bouchons ne
 dessinent rien.

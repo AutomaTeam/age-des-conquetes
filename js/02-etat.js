@@ -90,6 +90,14 @@ function factionsJouantes(){ return G.factions?Object.values(G.factions).filter(
 // gère les équipes et les pillards hostiles à tous.
 function estHostile(a,b){
   if(!a||!b) return false;
+  // Raccourci « même propriétaire ». C'est le cas le plus courant dans une
+  // mêlée — on croise surtout les siens — et il valait deux lectures de table
+  // par candidat balayé, sur la fonction la plus appelée de la simulation.
+  // Le test explicite sur `undefined` est indispensable : `estHostile` accepte
+  // aussi un identifiant de camp NU — updateUneIA appelle `estHostile(a.id,e)`
+  // pour sa garde de Centre Ville — et deux chaînes d'identifiant ont toutes
+  // les deux `.owner === undefined`, ce qui les rendrait amies entre elles.
+  if(a.owner!==undefined&&a.owner===b.owner) return false;
   const fa=fac(a), fb=fac(b);
   if(!fa||!fb||fa===fb) return false;
   if(fa.hostileATous||fb.hostileATous) return true;

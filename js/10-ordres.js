@@ -72,7 +72,12 @@ function journalOrdres(){ return _journalOrdres; }
 // Helpers de validation
 function _unitesDe(cmd){
   if(!cmd.ids||!cmd.ids.length) return [];
-  return G.units.filter(u=>cmd.ids.includes(u.id)&&u.owner===cmd.f&&u.hp>0);
+  // Ensemble plutot que includes() : la resolution reste un BALAYAGE de
+  // G.units — c'est un choix, voir la note juste dessous — mais le test
+  // d'appartenance passe de O(ids) a O(1). Un ordre de deplacement sur 200
+  // unites selectionnees valait 200 x 900 comparaisons a chaque clic droit.
+  const vises=new Set(cmd.ids);
+  return G.units.filter(u=>vises.has(u.id)&&u.owner===cmd.f&&u.hp>0);
 }
 // Resolution PAR BALAYAGE, volontairement : IU/IB ne sont reconstruits qu'une
 // fois par image (rebuildIndex), or un ordre peut arriver a tout moment — y

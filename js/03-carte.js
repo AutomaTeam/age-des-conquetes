@@ -570,6 +570,28 @@ function nightFactor(){ return Math.max(0,Math.sin(G.dayPhase*Math.PI*2-Math.PI/
 // vraiment, pas seulement à l'écran — un raid nocturne peut approcher plus
 // près avant d'être repéré.
 const VISION_NIGHT_MULT = 0.75;
+// Cases actuellement à 2, par camp — HORS de l'objet faction, qui part sur le
+// réseau et dans la sauvegarde : y coller un tableau typé de 100 000 entrées
+// gonflerait chaque instantané. `ref` garde l'identité du calque auquel la
+// liste correspond ; dès qu'il change, la liste ne vaut plus rien.
+const _fogVus=new Map();
+// Disque de cases pré-calculé, par rayon. reveal() testait dx²+dy² > r² sur
+// chacune des (2r+1)² cases du CARRÉ englobant — 121 tests pour n'en retenir
+// que 81 au rayon 5 — et ce pour CHAQUE unité et CHAQUE bâtiment, cinq fois
+// par seconde. Les rayons possibles se comptent sur les doigts d'une main
+// (vision d'unité, de tour, de Centre Ville, réduits par la nuit) : une table
+// par rayon suffit, remplie une fois. L'ORDRE des décalages est celui de
+// l'ancienne double boucle, dy puis dx — le calque obtenu est le même case
+// pour case.
+const _disques=new Map();
+function disqueOffsets(rad){
+  let d=_disques.get(rad);
+  if(d) return d;
+  const l=[];
+  for(let dy=-rad;dy<=rad;dy++) for(let dx=-rad;dx<=rad;dx++) if(dx*dx+dy*dy<=rad*rad) l.push(dx,dy);
+  d=Int32Array.from(l); _disques.set(rad,d);
+  return d;
+}
 function revealFog(){
   G.fogVer=(G.fogVer||0)+1; // invalide le fond de mini-carte (voir dessinerFondMinimap)
   const visMult=1-(1-VISION_NIGHT_MULT)*nightFactor();
@@ -581,20 +603,40 @@ function revealFog(){
     if(RESEAU.actif&&RESEAU.role==='client'&&f.id!==G.me) continue;
     const fog=f.fog;
     if(!fog||!fog.length) continue;
+    // Décroît visible -> exploré, PAR LA LISTE des cases éclairées au tour
+    // précédent. Le balayage complet coûtait COLS×ROWS tests cinq fois par
+    // seconde — 102 400 sur une grande carte, et par camp humain — pour n'en
+    // éteindre en pratique que quelques milliers. La liste se dédoublonne
+    // toute seule : une case n'y entre que la première fois qu'elle passe à 2.
+    let vu=_fogVus.get(f.id);
+    if(!vu||vu.ref!==fog||vu.liste.length!==COLS*ROWS){
+      // Calque qui ne vient pas d'ici (chargement de sauvegarde, nouvelle
+      // partie, changement de taille de carte) : sa liste n'existe pas, et
+      // des cases y sont peut-être déjà à 2. Un balayage complet, une seule
+      // fois, remet les deux en accord.
+      for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) if(fog[y][x]===2) fog[y][x]=1;
+      vu={ref:fog, liste:new Int32Array(COLS*ROWS), n:0};
+      _fogVus.set(f.id,vu);
+    } else {
+      const l=vu.liste;
+      for(let k=0;k<vu.n;k++){ const c=l[k]; const y=(c/COLS)|0; if(fog[y][c-y*COLS]===2) fog[y][c-y*COLS]=1; }
+      vu.n=0;
+    }
+    const liste=vu.liste;
+    let nvu=0;
     const reveal=(tx,ty,rad)=>{
-      for(let dy=-rad;dy<=rad;dy++) for(let dx=-rad;dx<=rad;dx++){
-        if(dx*dx+dy*dy>rad*rad) continue;
-        const x=tx+dx, y=ty+dy;
-        if(x>=0&&y>=0&&x<COLS&&y<ROWS) fog[y][x]=2; // visible
+      const d=disqueOffsets(rad);
+      for(let i=0;i<d.length;i+=2){
+        const x=tx+d[i], y=ty+d[i+1];
+        if(x>=0&&y>=0&&x<COLS&&y<ROWS&&fog[y][x]!==2){ fog[y][x]=2; liste[nvu++]=y*COLS+x; } // visible
       }
     };
-    // Décroît visible -> exploré
-    for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) if(fog[y][x]===2) fog[y][x]=1;
     for(const u of G.units) if(u.owner===f.id) reveal((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0, Math.max(2,Math.round((u.type===UT.ARC||u.type===UT.XBOW?7:5)*visMult)));
     for(const b of G.buildings) if(b.owner===f.id){
       const rad=b.type===BT.TOWER||b.type===BT.CASTLE?10:b.type===BT.TC?9:b.type===BT.OUTPOST?8:6;
       reveal((b.tx+b.w/2)|0,(b.ty+b.h/2)|0,Math.max(3,Math.round(rad*visMult)));
     }
+    vu.n=nvu;
   }
 }
 

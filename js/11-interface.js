@@ -1601,7 +1601,6 @@ function updateSpriteRebuild(dt){
 // Source de vérité unique : TILE. Aucune échelle parallèle qui puisse dériver.
 const TILE_MIN=Math.round(BASE_TILE*0.45);
 const TILE_MAX=Math.round(BASE_TILE*1.7);
-function zoomScaleNow(){ return TILE/BASE_TILE; }
 
 // ── BARREAUX D'ECHELLE DES SPRITES ──────────────────────────
 // L'atlas n'est plus regenere pour le TILE exact mais pour le barreau le plus

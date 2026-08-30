@@ -6,6 +6,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>⚔️ Âge des Conquêtes</title>
+<!-- La feuille de style des polices est servie par googleapis.com, mais les
+     fichiers de police eux-mêmes viennent de gstatic.com : sans ces deux
+     preconnect, le navigateur n'ouvre la seconde connexion (DNS + TLS)
+     qu'APRÈS avoir lu la feuille, et le texte reste en police de repli le
+     temps de l'aller-retour. Dégradation propre hors ligne ou en file:// :
+     un preconnect qui échoue ne coûte rien et le jeu tourne sans ces
+     polices. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
 <style>
 :root {

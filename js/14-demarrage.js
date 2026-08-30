@@ -46,10 +46,15 @@ function loop(ts){
   _uiRefreshCd-=dt;
   if(_uiRefreshCd<=0){
     _uiRefreshCd=0.5;
-    if(G.sel.length===1&&!G.buildings.find(b=>b.id===G.sel[0]&&b.constructing)) refreshUI();
+    if(G.sel.length===1){ const b=bldById(G.sel[0]); if(!(b&&b.constructing)) refreshUI(); }
   }
   if(G.sel.length===1){
-    const e=G.units.find(u=>u.id===G.sel[0])||G.buildings.find(b=>b.id===G.sel[0]);
+    // Par l'INDEX, pas par un balayage : ces deux lignes tournaient à chaque
+    // image et parcouraient tout G.units (jusqu'à 900 entrées) pour retrouver
+    // une entité dont la table id -> entité donne l'adresse directe. Elle est
+    // reconstruite à chaque pas de simulation par rebuildGrid, aussi bien chez
+    // l'hôte (update) que chez le client (updateVisuel).
+    const e=unitById(G.sel[0])||bldById(G.sel[0]);
     if(e) updateSelInfo(e);
   }
   requestAnimationFrame(loop);

@@ -51,10 +51,12 @@ préservent.
 node tests/run.js
 ```
 
-67 tests, 13 groupes, ~32 s, sans dépendance ni build — comme le jeu. Ils
+83 tests, 15 groupes, ~35 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
-ordres côté hôte, l'économie, les montees d'âge et la fin de partie. Voir
+ordres côté hôte, l'économie, les montees d'âge, la fin de partie, et des
+invariants de CHARGE (budget de balayage du voisinage, passe de séparation
+qui survit à une population qui grossit). Voir
 [`tests/README.md`](tests/README.md).
 
 ## Modes de jeu

@@ -175,12 +175,19 @@ function updateUnits(dt){
     // repos, voir le cas 'idle'/UT.MONK d'updatePlayerUnit) plutôt qu'une
     // copie : un seul comportement à maintenir pour les deux camps.
     if(fu&&(fu.genre==='humain'||(fu.genre==='ia'&&u.type===UT.MONK))) updatePlayerUnit(u,dt);
-    else if(estIA(u)&&u.type===UT.VIL) updateAIVillager(u,dt);
+    else if(fu&&fu.genre==='ia'&&u.type===UT.VIL) updateAIVillager(u,dt);
     if(u.moving) u.animT+=dt; // anim de marche uniquement en mouvement
   }
-  // Mort
-  const dead=G.units.filter(u=>u.hp<=0);
-  for(const u of dead){
+  // Mort. On regarde d'abord s'il y a QUELQUE CHOSE à faire : le chemin
+  // d'avant allouait DEUX tableaux de la taille de G.units à chaque image —
+  // jusqu'à 900 entrées, trente fois par seconde — pour un événement qui
+  // n'arrive pas la plupart des images. Le corps de la boucle ne touche pas
+  // à G.units (voir la liste de ce qu'il modifie), on peut donc la parcourir
+  // directement au lieu d'en prendre une copie.
+  let unMort=false;
+  for(let i=0;i<G.units.length;i++) if(G.units[i].hp<=0){ unMort=true; break; }
+  if(unMort) for(const u of G.units){
+    if(u.hp>0) continue;
     G.sel=G.sel.filter(id=>id!==u.id);
     // u.homeNode pointe déjà vers l'UNIQUE nœud dont ce villageois peut être
     // le récolteur (voir doGather) : un balayage de TOUS les gisements de la
@@ -196,7 +203,13 @@ function updateUnits(dt){
     spawnParts(u.x,u.y,couleurMinimap(u,true),8);
     G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge'}); // silhouette qui bascule au sol et s'estompe, plutôt qu'une disparition instantanée
     sfx('death');
-    const fm=fac(u); if(fm) fm.pop--;
+    // Les pillards ne tiennent PAS de compte de population : spawnWave pousse
+    // ses assaillants dans G.units sans passer par spawnUnit, donc sans le
+    // `pop++` correspondant. Décrémenter quand même à leur mort faisait
+    // dériver leur compteur vers les négatifs — invisible à l'écran, mais le
+    // champ part sur le réseau, et un compteur qui bouge sans arrêt fait
+    // réexpédier la faction à chaque delta (voir le différentiel d.fac).
+    const fm=fac(u); if(fm&&fm.genre!=='neutre') fm.pop--;
     if(estLocal(u)){ moi().stats.lost++; }
     else {
       // Le kill est crédité à la faction qui a porté le coup fatal.
@@ -214,7 +227,7 @@ function updateUnits(dt){
       }
     }
   }
-  G.units=G.units.filter(u=>u.hp>0);
+  if(unMort) G.units=G.units.filter(u=>u.hp>0);
 }
 
 function updatePlayerUnit(u,dt){
@@ -366,7 +379,14 @@ function sepRayon(u){ const d=UDEF[u.type]; return (d&&d.siege)?SEP_R_SIEGE:SEP_
 // population, chacune de ses cellules contient des dizaines d'unités et le
 // balayage 3×3 redeviendrait quadratique. Listes chaînées sur tableaux
 // typés : aucune allocation une fois la première image passée.
-let   _sepHead = new Int32Array(COLS*ROWS);
+let   _sepHead = new Int32Array(COLS*ROWS).fill(-1);
+// Liste des cellules RÉELLEMENT occupées. Sans elle, la passe balayait les
+// COLS*ROWS cellules à chaque image — 102 400 sur une grande carte pour n'en
+// trouver que quelques centaines de peuplées — et remettait tout `_sepHead`
+// à -1 par-dessus, soit 400 Ko de mémoire réécrits pour rien 30 fois par
+// seconde. On ne visite et on ne nettoie plus que les cellules semées.
+let   _sepCells = new Int32Array(0);
+let   _sepNC = 0;
 let   _sepNext = new Int32Array(0);
 let   _sepPX = new Float32Array(0), _sepPY = new Float32Array(0);
 let   _sepX  = new Float32Array(0), _sepY  = new Float32Array(0), _sepRad = new Float32Array(0);
@@ -407,8 +427,20 @@ function separerUnites(dt){
     const cap=N+64;
     _sepNext=new Int32Array(cap); _sepPX=new Float32Array(cap); _sepPY=new Float32Array(cap);
     _sepX=new Float32Array(cap); _sepY=new Float32Array(cap); _sepRad=new Float32Array(cap);
+    _sepCells=new Int32Array(cap);
+    // La liste des cellules de l'image précédente part avec l'ancien tableau :
+    // sans ce fill(), les têtes qu'elle désignait resteraient telles quelles
+    // et la première image d'après suivrait des chaînages PÉRIMÉS — on l'a
+    // vérifié en s'y prenant mal, la boucle `i=_sepNext[i]` boucle alors sans
+    // fin et l'onglet se fige. Rare (croissance de la population seulement),
+    // donc le coût du fill() global ne compte pas ici.
+    _sepHead.fill(-1); _sepNC=0;
   }
-  _sepHead.fill(-1);
+  // Nettoyage par la LISTE de l'image précédente, pas par un fill() global.
+  // Le faire en tête plutôt qu'en queue rend la passe insensible à une sortie
+  // anticipée : `_sepHead` et `_sepCells` ne peuvent pas se désaccorder.
+  for(let k=0;k<_sepNC;k++) _sepHead[_sepCells[k]]=-1;
+  _sepNC=0;
   // Semis. Position et rayon sont recopiés dans des tableaux typés : la
   // boucle intérieure tourne des dizaines de milliers de fois par pas, et y
   // déréférencer l'objet unité (puis UDEF[u.type]) coûtait plus cher que le
@@ -422,15 +454,21 @@ function separerUnites(dt){
     if(tx<0||ty<0||tx>=COLS||ty>=ROWS) continue;   // hors carte : jamais semé, donc jamais poussé
     _sepX[i]=u.x; _sepY[i]=u.y; _sepRad[i]=sepRayon(u);
     const c=ty*COLS+tx;
+    if(_sepHead[c]===-1) _sepCells[_sepNC++]=c;
     _sepNext[i]=_sepHead[c]; _sepHead[c]=i;
   }
+  // Ordre CROISSANT de cellule, comme le balayage complet d'avant. Les
+  // poussées s'additionnent en virgule flottante : garder l'ordre de
+  // sommation garde le résultat bit pour bit identique — un tri de quelques
+  // centaines d'entiers coûte bien moins que les 102 400 cellules évitées.
+  const cells=_sepCells.subarray(0,_sepNC); cells.sort();
   // Accumulation. La poussée est calculée pour TOUT LE MONDE (y compris les
   // unités ancrées) puis appliquée seulement aux unités libres : le calcul
   // reste additif et indépendant de l'ordre du tableau — donc déterministe,
   // ce qu'exige la simulation partagée hôte/client (voir construireDelta).
-  for(let c=0,nc=COLS*ROWS;c<nc;c++){
+  for(let k=0;k<_sepNC;k++){
+    const c=cells[k];
     let i=_sepHead[c];
-    if(i===-1) continue;
     const cx=c%COLS, cy=(c/COLS)|0;
     for(;i!==-1;i=_sepNext[i]){
       const xi=_sepX[i], yi=_sepY[i], ri=_sepRad[i];
@@ -486,7 +524,9 @@ PF.hn=0; PF.run=0;
 // sans quoi la première image écrirait hors des bornes de l'ancienne
 // carte. Appelée aussi ci-dessous, pour la taille par défaut.
 function redimensionnerBuffersCarte(){
-  if(_sepHead.length!==COLS*ROWS) _sepHead=new Int32Array(COLS*ROWS);
+  // fill(-1) obligatoire : un Int32Array neuf est rempli de 0, et 0 est
+  // l'indice d'une unité valide — chaque cellule pointerait sur G.units[0].
+  if(_sepHead.length!==COLS*ROWS){ _sepHead=new Int32Array(COLS*ROWS).fill(-1); _sepNC=0; }
   if(PF.n===COLS*ROWS) return;
   PF.n=COLS*ROWS;
   PF.g=new Float32Array(PF.n); PF.f=new Float32Array(PF.n);
@@ -1116,12 +1156,25 @@ function updateBuildings(dt){
       if(b.atkCd<=0){
         const e=prochainHostileToute(b.x,b.y,range,b);
         if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:b.owner},e); }
+        // Rien en vue : on repose le minuteur quand même. Sans ça, une tour
+        // sans cible rebalayait à CHAQUE image — et prochainHostileToute
+        // coûte une requête de grille PLUS un parcours complet de G.buildings.
+        // Les points d'intérêt en posent une par camp dès la genèse : en
+        // Survie, huit tours de garde à l'arrêt suffisaient à doubler le
+        // budget de balayage de toute la partie. Même cadence que le
+        // reciblage des unités (4/s), décalée par l'id plutôt que par un
+        // tirage — inutile d'ajouter un appel à Math.random par tour et par
+        // image dans une simulation partagée.
+        else b.atkCd=0.2+(b.id*0.618034%1)*0.12;
       }
     }
   }
-  // Destruction
-  const dest=G.buildings.filter(b=>b.hp<=0);
-  for(const b of dest){
+  // Destruction — même raisonnement que pour la mort des unités : pas de
+  // tableau intermédiaire tant que rien n'est tombé.
+  let unRase=false;
+  for(let i=0;i<G.buildings.length;i++) if(G.buildings[i].hp<=0){ unRase=true; break; }
+  if(unRase) for(const b of G.buildings){
+    if(b.hp>0) continue;
     G.sel=G.sel.filter(id=>id!==b.id);
     for(let dy=0;dy<b.h;dy++) for(let dx=0;dx<b.w;dx++) G.bmap[b.ty+dy][b.tx+dx]=0;
     spawnParts(b.x,b.y,'#e74c3c',14);
@@ -1142,7 +1195,7 @@ function updateBuildings(dt){
     else if(fk&&fk.id===G.me) notify(`💥 ${BDEF[b.type].nom} ennemie détruite !`,'#2ecc71');
     updatePopCap();
   }
-  G.buildings=G.buildings.filter(b=>b.hp>0);
+  if(unRase) G.buildings=G.buildings.filter(b=>b.hp>0);
 }
 // Plafond de bonus d'archers garnis : 5 par Tour, 8 par Château (plus grande
 // capacité d'accueil).
@@ -1269,23 +1322,34 @@ function nearPlayerBuildingWithin(x,y,r,src){
 
 function updateEnemyAI(dt){
   for(const u of G.units){
-    if(fac(u)&&fac(u).genre==='humain') continue; // assaillants : IA et pillards
+    // Une seule lecture de la faction pour les deux gardes : `fac()` est
+    // l'appel le plus fréquent de toute la simulation (plusieurs milliers par
+    // image), il ne doit pas être payé trois fois par unité et par image.
+    const fu=fac(u);
+    if(fu&&fu.genre==='humain') continue; // assaillants : IA et pillards
     // Les villageois de l'IA de Conquête vivent sur la machine à états du
     // joueur (récolte, dépôt, chantier — voir updateAIVillager) : les faire
     // aussi passer par la boucle de combat les enverrait charger l'ennemi
     // au lieu de travailler. Le Moine de l'IA (voir updateUnits) vit
     // maintenant sur ce même automate — même exclusion, pour la même raison.
-    if(estIA(u)&&(u.type===UT.VIL||u.type===UT.MONK)) continue;
+    if(fu&&fu.genre==='ia'&&(u.type===UT.VIL||u.type===UT.MONK)) continue;
     u.atkCd=Math.max(0,u.atkCd-dt);
     // Reciblage 4×/s au lieu de 60×/s : le déplacement reste fluide, mais on
     // ne rebalaie plus tout le voisinage à chaque image (c'était 70% du CPU).
     u.aiCd=(u.aiCd||0)-dt;
     let tgt=null;
-    if(u.aiCd>0&&u.target!=null){
+    if(u.target!=null){
       tgt=unitById(u.target)||bldById(u.target);
       if(tgt&&(tgt.hp<=0||!estHostile(u,tgt))) tgt=null;
     }
-    if(!tgt){
+    // Le balayage ne repart QUE sur le minuteur, ou tout de suite si la cible
+    // vient de tomber. La garde d'avant était `u.aiCd>0 && u.target!=null` :
+    // une unité qui ne trouvait RIEN gardait `target=null` et rebalayait donc
+    // à CHAQUE image, minuteur ou pas — exactement le cas d'une garde de point
+    // d'intérêt au repos, et il y en a 60 sur 63 unités en début de Survie.
+    // Mesuré : 570 balayages de grille par image au lieu des ~65 que la
+    // cadence de 4/s prévoyait.
+    if(u.aiCd<=0||(!tgt&&u.target!=null)){
       u.aiCd=0.25+Math.random()*0.15;                     // désynchronise les ennemis
       if(u.camp){
         // Garde de point d'intérêt : ne réagit qu'aux intrus dans SA zone
@@ -1296,8 +1360,7 @@ function updateEnemyAI(dt){
           ||nearPlayerBuildingWithin(u.campX,u.campY,GUARD_AGGRO_RADIUS,u);
       } else {
         // Stratégie : villageois proche (cible molle) > unité militaire proche > bâtiment prioritaire
-        tgt=nearestBy(u.x,u.y,u.rng*4,e=>e.type===UT.VIL&&e.hp>0&&estHostile(u,e)) // chasse les villageois
-          ||prochainHostileUnite(u.x,u.y,u.rng*3,u)      // sinon militaire proche
+        tgt=cibleAssaillant(u)                           // villageois, sinon militaire
           ||nearPlayerBuildingSmart(u.x,u.y,u);          // sinon bâtiment intelligent
       }
       u.target=tgt?tgt.id:null;
@@ -1348,6 +1411,28 @@ function updateEnemyAI(dt){
   }
 }
 
+// Cible d'un assaillant, en UN SEUL parcours du voisinage.
+//
+// La version d'avant enchaînait deux recherches : le villageois le plus
+// proche dans `rng*4`, sinon l'hostile le plus proche dans `rng*3`. Deux
+// appels à `nearestBy` donc deux parcours de la grille spatiale — jusqu'à
+// 11×11 cellules chacun — pour une seule réponse. Le second rayon étant
+// INCLUS dans le premier, une passe unique suffit : on retient le villageois
+// le plus proche d'un côté, l'hostile le plus proche sous `rng*3` de
+// l'autre, et on rend le premier s'il existe. Résultat identique, moitié
+// moins de cellules visitées et de tests d'hostilité.
+function cibleAssaillant(u){
+  const rv=u.rng*4, rm=u.rng*3;
+  let vil=null,dv=rv*rv, mil=null,dm=rm*rm;
+  forNearby(u.x,u.y,rv,e=>{
+    if(e.hp<=0||!estHostile(u,e)) return;
+    const dx=e.x-u.x,dy=e.y-u.y,d2=dx*dx+dy*dy;
+    if(e.type===UT.VIL&&d2<dv){dv=d2;vil=e;}
+    if(d2<dm){dm=d2;mil=e;}
+  });
+  return vil||mil;
+}
+
 // Ciblage bâtiment intelligent : préfère éco (villageois-producteurs) puis TC
 function nearPlayerBuildingSmart(x,y,src){
   const prio={[BT.MILL]:3,[BT.FARM]:3,[BT.LUMBER]:3,[BT.MINE]:3,[BT.MARKET]:2,
@@ -1389,24 +1474,11 @@ function prochainHostileToute(x,y,r,src){
   }
   return best;
 }
-// Allié (même camp) du type demandé — sert à l'IA et aux gardes.
-function prochainAllieType(x,y,r,type,src){
-  return nearestBy(x,y,r,u=>u.owner===(src&&src.owner)&&u.type===type);
-}
-
-// Enveloppes historiques, liées à la faction LOCALE : conservées pour le code
-// d'interface (survol, mini-carte, anneaux de sélection) qui raisonne
-// toujours du point de vue du joueur qui regarde.
-function nearPlayerUnitType(x,y,r,type){
-  return nearestBy(x,y,r,u=>estLocal(u)&&u.type===type);
-}
-function nearEnemy(x,y,r){
-  return nearestBy(x,y,r,u=>u.hp>0&&estHostile(moi()&&{owner:G.me},u));
-}
-function nearEnemyAll(x,y,r){ return nearEnemy(x,y,r); }
-function nearPlayerUnit(x,y,r){
-  return nearestBy(x,y,r,u=>estLocal(u)&&u.hp>0);
-}
+// Cinq enveloppes de `nearestBy` liées à la faction LOCALE vivaient ici —
+// prochainAllieType, nearPlayerUnitType, nearEnemy, nearEnemyAll,
+// nearPlayerUnit. Elles dataient du temps où le ciblage était binaire
+// (joueur contre « ennemi ») ; depuis le passage aux équipes, plus une seule
+// n'était appelée. Le code d'interface passe par estSel/estLocal directement.
 
 // Couleur d'un camp sur la mini-carte (unités légèrement plus claires).
 const COUL_FACTION={ bleu:['#3498db','#5dade2'], vert:['#27ae60','#52d68a'],

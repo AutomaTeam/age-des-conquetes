@@ -152,9 +152,6 @@ function drawSelBox(){
   ctx.fillRect(x,y,w,h); ctx.strokeRect(x,y,w,h);
 }
 
-const GCOLS={ [RT.TREE]:['#2d6b22','#356128','#3a5c28'], [RT.STONE]:['#888','#aaa'],
-              [RT.GOLD]:['#d4a017','#f0c040'], [RT.BERRY]:['#2d6b22','#c0392b'] };
-
 // Monde -> écran. Les coordonnées monde sont en unités BASE_TILE (fixes,
 // indépendantes du zoom) ; c'est ICI, et seulement ici, qu'on applique
 // l'échelle de zoom. G.cam reste exprimée en pixels écran zoomés (tout le
@@ -1188,9 +1185,11 @@ function drawSelRings(){
     ctx.fillStyle='rgba(241,196,15,'+(t*0.8).toFixed(2)+')';
     ctx.beginPath(); ctx.arc(sx,sy,1.6,0,Math.PI*2); ctx.fill();
   }
-  // Point de ralliement du bâtiment sélectionné
+  // Point de ralliement du bâtiment sélectionné — par l'index id -> entité,
+  // reconstruit à chaque pas (rebuildGrid) : un balayage de G.buildings à
+  // chaque image pour une réponse que la table donne directement.
   if(G.sel.length===1){
-    const b=G.buildings.find(b=>b.id===G.sel[0]);
+    const b=bldById(G.sel[0]);
     if(b&&b.rally){
       const{x:sx,y:sy}=ws(b.rally.x,b.rally.y);
       const{x:bx,y:by}=ws(b.x,b.y);

@@ -1464,6 +1464,67 @@ groupe('delta', () => {
   });
 });
 
+// ════════════════════════════════════════════════════════════
+// Invariants de CHARGE. Ils ne vérifient pas un résultat mais un COÛT : un
+// budget de balayages, une passe qui se termine. Ce sont les seuls défauts de
+// ce jeu qui ne se voient pas du tout en petite partie et qui rendent une
+// grosse partie injouable — donc exactement ceux qu'un test doit garder.
+groupe('charge', () => {
+  test('les gardes de camp ne rebalaient pas le voisinage à chaque image', () => {
+    // Le reciblage d'updateEnemyAI est censé tourner 4×/s et par unité. Sa
+    // garde d'origine (`aiCd>0 && target!=null`) ne tenait QUE pour une unité
+    // ayant déjà une cible : celle qui n'en trouve aucune gardait
+    // `target=null` et rebalayait donc la grille à CHAQUE image. Or une partie
+    // de Survie démarre avec une cinquantaine de gardes de point d'intérêt sur
+    // une cinquantaine d'unités — presque toutes, donc — et toutes au repos :
+    // le budget de balayage explosait dès l'écran-titre passé.
+    const j = partie(charger(), { graine: 4242, mode: 'survival', pas: 30 });
+    const gardes = j.G.units.filter((u) => u.camp).length;
+    ok(gardes >= 20, `pas assez de gardes de camp pour mesurer (${gardes})`);
+    let scans = 0;
+    const orig = j.__sandbox.nearestBy;
+    j.__sandbox.nearestBy = function (...a) { scans++; return orig.apply(this, a); };
+    const images = 60;
+    for (let k = 0; k < images; k++) j.update(j.SIM_DT);
+    j.__sandbox.nearestBy = orig;
+    // Cadence voulue : ~4 balayages par seconde et par unité, soit 0,13 par
+    // image. Le plafond laisse 70 % de marge ; la version d'avant en faisait
+    // UN PAR IMAGE et par garde, soit huit fois trop. Le budget couvre aussi
+    // les TOURS de garde des points d'intérêt, qui rebalayaient elles aussi à
+    // chaque image faute de reposer leur minuteur quand elles ne voient rien
+    // (voir updateBuildings) — à elles seules elles doublaient le total.
+    const plafond = Math.round(gardes * images * 0.2);
+    ok(scans < plafond, `${scans} balayages pour ${gardes} gardes sur ${images} images (plafond ${plafond})`);
+  });
+
+  test('separerUnites survit à une population qui grossit', () => {
+    // Les tampons de la grille de séparation sont réalloués dès que la
+    // population dépasse leur capacité, et la LISTE des cellules occupées doit
+    // repartir de zéro avec eux. Si elle survit à un tableau de têtes neuf, le
+    // chaînage suivi à l'image suivante est périmé et la boucle qui le parcourt
+    // ne se termine PLUS : l'onglet se fige sans la moindre erreur. Une
+    // régression ici bloque donc ce fichier au lieu de l'échouer — c'est le
+    // symptôme lui-même, et il vaut mieux ça que de ne pas le voir du tout.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 5 });
+    const B = j.BASE_TILE;
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const poser = (n, dtx) => {
+      for (let i = 0; i < n; i++) j.G.units.push(j.mkUnit(j.UT.MIL, (tc.tx + dtx) * B, (tc.ty + 6) * B, j.G.me));
+      j.rebuildIndex(); j.rebuildGrid();
+    };
+    poser(40, 6);                    // 40 unités au MÊME pixel
+    j.separerUnites(j.SIM_DT);
+    poser(500, 10);                  // franchit la capacité des tampons
+    for (let k = 0; k < 20; k++) j.separerUnites(j.SIM_DT);
+    for (const u of j.G.units) ok(Number.isFinite(u.x) && Number.isFinite(u.y), 'position non finie après séparation');
+    // Le tas de départ s'est réellement défait : l'amas posé sur un seul pixel
+    // s'étale maintenant sur plus d'une tuile.
+    const tas = j.G.units.filter((u) => u.type === j.UT.MIL && Math.abs(u.y - (tc.ty + 6) * B) < 6 * B);
+    const largeur = Math.max(...tas.map((u) => u.x)) - Math.min(...tas.map((u) => u.x));
+    ok(largeur > B, `l'amas ne s'est pas étalé (${largeur.toFixed(1)} px)`);
+  });
+});
+
 // ── rapport ────────────────────────────────────────────────
 const cible = process.argv[2];
 const vus = cible ? resultats.filter((r) => r.groupe === cible) : resultats;

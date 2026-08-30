@@ -515,7 +515,6 @@ function appliquerTailleCarte(n){
   if(typeof redimensionnerBuffersCarte==='function') redimensionnerBuffersCarte();
   if(typeof invalidateTerrainChunks==='function') invalidateTerrainChunks();
 }
-function tailleCfg(){ return TAILLES[selectedTaille]||TAILLES.normale; }
 function pickTaille(key){
   if(!TAILLES[key]) return;
   selectedTaille=key;
@@ -860,15 +859,6 @@ const AGE_BONUS = [
   { bldHp:1.30, gather:1.20, unitHp:1.15, milAtk:1.16, housePop:7, popCap:300 },
   { bldHp:1.45, gather:1.30, unitHp:1.22, milAtk:1.25, housePop:8, popCap:300 },
 ];
-
-// Icônes bâtiments
-const BICO = {
-  [BT.TC]:'🏰',[BT.HOUSE]:'🏠',[BT.LUMBER]:'🪵',[BT.MINE]:'⛏️',
-  [BT.FARM]:'🌾',[BT.MILL]:'💨',[BT.MARKET]:'🏪',[BT.FORGE]:'⚒️',
-  [BT.BARRACKS]:'⚔️',[BT.STABLE]:'🐴',[BT.MONASTERY]:'⛪',[BT.UNIV]:'🎓',
-  [BT.TOWER]:'🗼',[BT.CASTLE]:'🏯',[BT.WALL]:'🪵',
-  [BT.SIEGE]:'🛠️',[BT.OUTPOST]:'🚩',[BT.GATE]:'🚪',[BT.HLM]:'🏢',[BT.WONDER]:'🏛️',[BT.DOCK]:'⛵',
-};
 
 // Même emoji que le bouton de formation correspondant (voir drawBuildAct) —
 // centralisé ici pour que la file d'attente (drawBuildAct) affiche la bonne

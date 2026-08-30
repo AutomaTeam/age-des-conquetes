@@ -379,7 +379,7 @@ function terrainChunk(ccx,ccy){
   }
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
     if(G.tiles[y][x]===T_WATER) continue;
-    drawShore(g,x,y,bX(x),bY(y));
+    drawShore(g,x,y,bX(x),bY(y),bX(x+1)-bX(x),bY(y+1)-bY(y));
   }
   const ch={c,oxDev,oyDev,used:_frameId};
   _tchunks.set(key,ch);
@@ -450,7 +450,7 @@ function drawMap(){
       ctx.restore();
       for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
         if(G.tiles[y][x]===T_WATER) continue;
-        drawShore(ctx,x,y,BX[x-sx],BY[y-sy]);
+        drawShore(ctx,x,y,BX[x-sx],BY[y-sy],BX[x-sx+1]-BX[x-sx],BY[y-sy+1]-BY[y-sy]);
       }
     }
   }
@@ -515,29 +515,130 @@ function drawMap(){
 // Le contexte est passé en paramètre : la rive est peinte une fois pour
 // toutes dans le pavé de terrain (voir terrainChunk), pas dans le canvas
 // principal.
-function drawShore(g,x,y,px2,py2){
+// Feston de rive, continu d'une case à l'autre.
+//
+// Indexé sur une position MONDE en quarts de case : l'échantillon partagé par
+// deux cases voisines a donc EXACTEMENT la même valeur, et l'ondulation se
+// raccorde au lieu de faire une marche à chaque limite de case. Le décalage
+// par côté (`cote`) évite que le bord nord et le bord sud d'une même berge
+// ondulent à l'identique.
+function bruitRive(i){
+  let h=(i*2654435761)|0; h=(h^(h>>>13))*1274126177|0; h=(h^(h>>>16))|0;
+  return ((h>>>8)&0xffff)/0xffff;
+}
+const RIVE_ONDUL=4;   // ondulations par case
+// Profondeur de la bande à la fraction u de la case, interpolée en COSINUS
+// entre les valeurs de contrôle : la pente est nulle aux nœuds, donc le
+// raccord d'une case à l'autre est lisse et non anguleux.
+function profondeurRive(iBase,u,b){
+  const f=u*RIVE_ONDUL, j=Math.floor(f), t=f-j;
+  const a=bruitRive(iBase+j), c=bruitRive(iBase+j+1);
+  const m=(1-Math.cos(t*Math.PI))/2;
+  return b*(0.45+0.85*(a+(c-a)*m));
+}
+
+// ── LISÉRÉ DE RIVE ────────────────────────────────────────
+// La rive était faite de rectangles en APLAT : deux bords parfaitement
+// droits et parallèles, à largeur constante, le tout dans une couleur unie —
+// ça se lisait comme un margelle de piscine, et c'était le dessin le plus
+// faible du jeu au zoom maximum. Pire : `SPR.terrain.sand`, une vraie texture
+// de sable (dégradé, grain, galets, bois flotté) était générée à CHAQUE
+// reconstruction d'atlas et n'était lue nulle part.
+//
+// Ici :
+//  • le sable est la TEXTURE, détourée par la forme de la bande (clip) —
+//    la planche générée sert enfin à quelque chose ;
+//  • le bord côté terre ONDULE, avec un feston continu d'une case à l'autre
+//    (voir bruitRive) : la largeur n'est plus constante, la berge n'est plus
+//    un ruban ;
+//  • l'écume reste au contact de l'eau, qui est droite — c'est la limite de
+//    case, et elle ne peut pas bouger sans déformer la case d'eau — mais son
+//    épaisseur ondule elle aussi, sur un décalage différent de celui du sable
+//    pour ne pas dessiner deux fois la même vague.
+//
+// Le contexte est passé en paramètre : la rive est peinte une fois pour
+// toutes dans le pavé de terrain (voir terrainChunk), pas dans le canvas
+// principal — tout ce travail ne coûte donc rien par image.
+function drawShore(g,x,y,px2,py2,dw,dh){
   const isW=(xx,yy)=> xx>=0&&yy>=0&&xx<COLS&&yy<ROWS&&G.tiles[yy][xx]===T_WATER;
   const n=isW(x,y-1), sO=isW(x,y+1), o=isW(x-1,y), e=isW(x+1,y);
   const no=isW(x-1,y-1), ne=isW(x+1,y-1), so=isW(x-1,y+1), se=isW(x+1,y+1);
   // Sortie immédiate sur les cases d'intérieur des terres, soit l'écrasante
   // majorité : rien à peindre là où il n'y a aucune rive.
   if(!n&&!sO&&!o&&!e&&!no&&!ne&&!so&&!se) return;
-  const t=TILE, b=Math.max(3,t*0.18);
-  let hs=(x*1597334677+y*2654435761)|0; hs=(hs^(hs>>14))|0;
-  const jitter=(((hs>>3)&3)-1.5)*0.14;                  // −0.21 … +0.21
-  const foam=Math.max(1,b*(0.34+jitter));
-  const SAND='#c9ab72', FOAM='#f0e4b8';
-  // 1) coins : uniquement les encoches réelles (diagonale mouillée, côtés secs)
-  g.fillStyle=SAND;
-  if(no&&!o&&!n) g.fillRect(px2,py2,b,b);
-  if(ne&&!e&&!n) g.fillRect(px2+t-b,py2,b,b);
-  if(so&&!o&&!sO) g.fillRect(px2,py2+t-b,b,b);
-  if(se&&!e&&!sO) g.fillRect(px2+t-b,py2+t-b,b,b);
-  // 2) bandes de sable humide, puis écume au contact direct de l'eau
-  if(n){ g.fillStyle=SAND; g.fillRect(px2,py2,t,b); g.fillStyle=FOAM; g.fillRect(px2,py2,t,foam); }
-  if(sO){ g.fillStyle=SAND; g.fillRect(px2,py2+t-b,t,b); g.fillStyle=FOAM; g.fillRect(px2,py2+t-foam,t,foam); }
-  if(o){ g.fillStyle=SAND; g.fillRect(px2,py2,b,t); g.fillStyle=FOAM; g.fillRect(px2,py2,foam,t); }
-  if(e){ g.fillStyle=SAND; g.fillRect(px2+t-b,py2,b,t); g.fillStyle=FOAM; g.fillRect(px2+t-foam,py2,foam,t); }
+  dw=dw||TILE; dh=dh||TILE;
+  const b=Math.max(3,TILE*0.20);
+  const X0=px2, Y0=py2, X1=px2+dw, Y1=py2+dh;
+  const PAS=16;                        // segments par côté pour lisser le feston
+  const DEC={n:0, s:100003, o:200003, e:300007};   // décalages de hachage par côté
+
+  // 1) forme de la bande de sable : un seul chemin pour toute la case, pour
+  //    ne détourer et ne peindre la texture qu'une fois.
+  const forme=new Path2D();
+  if(n){ forme.moveTo(X0,Y0); forme.lineTo(X1,Y0);
+    for(let i=PAS;i>=0;i--){ const u=i/PAS;
+      forme.lineTo(X0+u*dw, Y0+profondeurRive(x*RIVE_ONDUL+DEC.n,u,b)); }
+    forme.closePath(); }
+  if(sO){ forme.moveTo(X0,Y1); forme.lineTo(X1,Y1);
+    for(let i=PAS;i>=0;i--){ const u=i/PAS;
+      forme.lineTo(X0+u*dw, Y1-profondeurRive(x*RIVE_ONDUL+DEC.s,u,b)); }
+    forme.closePath(); }
+  if(o){ forme.moveTo(X0,Y0); forme.lineTo(X0,Y1);
+    for(let i=PAS;i>=0;i--){ const u=i/PAS;
+      forme.lineTo(X0+profondeurRive(y*RIVE_ONDUL+DEC.o,u,b), Y0+u*dh); }
+    forme.closePath(); }
+  if(e){ forme.moveTo(X1,Y0); forme.lineTo(X1,Y1);
+    for(let i=PAS;i>=0;i--){ const u=i/PAS;
+      forme.lineTo(X1-profondeurRive(y*RIVE_ONDUL+DEC.e,u,b), Y0+u*dh); }
+    forme.closePath(); }
+  // Coins. Deux cas, et il faut les DEUX :
+  //  • l'encoche : la diagonale est mouillée mais les deux côtés sont secs —
+  //    un peu de sable comble le creux.
+  //  • le VIRAGE : deux côtés voisins sont mouillés. Leurs deux bandes se
+  //    rejoignaient à angle droit en laissant un carré d'herbe pointer dans
+  //    le sable, bien visible à chaque coude de berge. Le disque comble ce
+  //    carré et arrondit le virage, ce que fait aussi une vraie plage.
+  // Arrondis dans les deux cas : un carré de sable posé dans un angle se voit.
+  const coin=(cx2,cy2)=>{ forme.moveTo(cx2+b,cy2); forme.arc(cx2,cy2,b,0,Math.PI*2); };
+  if(no&&!o&&!n) coin(X0,Y0);
+  if(ne&&!e&&!n) coin(X1,Y0);
+  if(so&&!o&&!sO) coin(X0,Y1);
+  if(se&&!e&&!sO) coin(X1,Y1);
+  if(n&&o) coin(X0,Y0);
+  if(n&&e) coin(X1,Y0);
+  if(sO&&o) coin(X0,Y1);
+  if(sO&&e) coin(X1,Y1);
+
+  // 2) la texture de sable, détourée par cette forme
+  const sable=SPR.terrain&&SPR.terrain.sand;
+  g.save();
+  g.clip(forme);
+  if(sable) g.drawImage(sable.c,X0,Y0,dw,dh);
+  else { g.fillStyle='#c9ab72'; g.fillRect(X0,Y0,dw,dh); }
+  g.restore();
+
+  // 3) écume au contact direct de l'eau. Épaisseur ondulée, sur un décalage
+  //    de hachage distinct : sinon la crête d'écume suivrait exactement le
+  //    feston du sable et les deux se liraient comme un seul trait.
+  g.fillStyle='#f0e4b8';
+  const ecume=(horizontal,fixe,vers,iBase)=>{
+    const ep=u=>Math.max(1,profondeurRive(iBase,u,b)*0.42);
+    g.beginPath();
+    if(horizontal){
+      g.moveTo(X0,fixe);
+      for(let i=0;i<=PAS;i++){ const u=i/PAS; g.lineTo(X0+u*dw,fixe+vers*ep(u)); }
+      g.lineTo(X1,fixe);
+    } else {
+      g.moveTo(fixe,Y0);
+      for(let i=0;i<=PAS;i++){ const u=i/PAS; g.lineTo(fixe+vers*ep(u),Y0+u*dh); }
+      g.lineTo(fixe,Y1);
+    }
+    g.closePath(); g.fill();
+  };
+  if(n)  ecume(true, Y0, 1, x*RIVE_ONDUL+DEC.n+51);
+  if(sO) ecume(true, Y1,-1, x*RIVE_ONDUL+DEC.s+51);
+  if(o)  ecume(false,X0, 1, y*RIVE_ONDUL+DEC.o+51);
+  if(e)  ecume(false,X1,-1, y*RIVE_ONDUL+DEC.e+51);
 }
 
 function drawNodes(){

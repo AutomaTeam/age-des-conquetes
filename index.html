@@ -130,7 +130,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   background:linear-gradient(0deg,rgba(20,12,0,.97),rgba(20,12,0,.0));
 }
 #selinfo {
-  display:none;padding:5px 40px 3px 10px;position:relative;
+  display:none;padding:5px 54px 3px 10px;position:relative;
   border-top:1px solid rgba(212,160,23,.4);background:rgba(20,12,0,.92);
 }
 #seltitle { font-family:'Cinzel',serif;color:var(--gold-l);font-size:13px;margin-bottom:3px; }
@@ -182,7 +182,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   #seltitle, #hprow, #seldesc, #actbar {
     width:100%;max-width:920px;margin-left:auto;margin-right:auto;
   }
-  #selinfo { padding-left:14px;padding-right:46px; }
+  #selinfo { padding-left:14px;padding-right:58px; }
 }
 
 /* ── BUTTONS ── */
@@ -222,12 +222,15 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 #deselbtn {
   position:absolute;top:5px;right:6px;z-index:149;
   display:none;align-items:center;justify-content:center;
-  min-width:30px;height:30px;padding:0 8px;border-radius:16px;
+  /* 44px : la cible tactile minimale (Apple HIG / Material) — les 30px
+     d'origine se touchaient à peine du pouce, coincés dans le coin du
+     panneau contre le bord de l'écran. */
+  min-width:44px;height:44px;padding:0 10px;border-radius:22px;
   background:rgba(30,22,6,.94);border:2px solid var(--gold-d);color:var(--gold-l);
-  font-family:'Cinzel',serif;font-size:12px;font-weight:700;cursor:pointer;gap:4px;
+  font-family:'Cinzel',serif;font-size:13px;font-weight:700;cursor:pointer;gap:4px;
   box-shadow:0 2px 8px rgba(0,0,0,.6);
 }
-#deselbtn .x { font-size:14px;line-height:1; }
+#deselbtn .x { font-size:18px;line-height:1; }
 
 /* ── ZOOM BTN ── */
 #sidebtn {

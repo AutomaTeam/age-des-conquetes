@@ -575,7 +575,7 @@ function appliquerDelta(m){
     for(const id of m.rm){
       const u=unitById(id); if(!u) continue;
       morts.add(id);
-      G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge'});
+      G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge',civ:civKeyOf(u.owner)});
       spawnParts(u.x,u.y,couleurMinimap(u,true),8);
     }
     if(morts.size){

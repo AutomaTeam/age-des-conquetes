@@ -201,7 +201,7 @@ function updateUnits(dt){
       if(n&&n.gatherers.length) n.gatherers=n.gatherers.filter(id=>id!==u.id);
     }
     spawnParts(u.x,u.y,couleurMinimap(u,true),8);
-    G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge'}); // silhouette qui bascule au sol et s'estompe, plutôt qu'une disparition instantanée
+    G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge',civ:civKeyOf(u.owner)}); // silhouette qui bascule au sol et s'estompe, plutôt qu'une disparition instantanée
     sfx('death');
     // Les pillards ne tiennent PAS de compte de population : spawnWave pousse
     // ses assaillants dans G.units sans passer par spawnUnit, donc sans le

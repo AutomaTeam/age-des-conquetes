@@ -928,6 +928,27 @@ function drawHeroAuras(){
   }
 }
 
+// Sprite d'une unité dans la variante de SA civilisation quand ce type en a
+// une (voir UNIT_CIV_SPRITE_FILES) ; sinon la planche commune aux quatre
+// camps, exactement comme avant. Même lookup que le civ-aware de
+// drawBuildings, à un détail près qui compte : la table est interrogée AVANT
+// civKeyOf. drawUnits passe ici pour chaque unité visible à chaque image —
+// jusqu'à plusieurs centaines — alors qu'un seul type y a une entrée. Faire
+// le fac() d'abord, ce serait le payer pour tout le monde afin de servir au
+// plus quatre héros.
+function sprUniteCiv(type,civ,suf,teinte){
+  if(civ&&civ!=='francs'&&UNIT_CIV_SPRITE_FILES[type]&&UNIT_CIV_SPRITE_FILES[type][civ]){
+    const s=sprTeinte('unitCiv',type+'_'+civ+suf,teinte);
+    if(s) return s;
+  }
+  return sprTeinte('unit',type+suf,teinte);
+}
+function sprUnite(type,owner,suf,teinte){
+  return UNIT_CIV_SPRITE_FILES[type]
+    ? sprUniteCiv(type,civKeyOf(owner),suf,teinte)
+    : sprTeinte('unit',type+suf,teinte);
+}
+
 function drawUnits(){
   // Écrémage AVANT le tri : en fin de partie l'immense majorité des unités
   // est hors écran ou sous le brouillard, et les trier toutes pour n'en
@@ -949,7 +970,7 @@ function drawUnits(){
   for(const u of _drawOrder){
     const{x:sx,y:sy}=ws(u.x,u.y);
     const teinteU=(fac(u)||{}).teinte||'rouge';
-    const spr0=sprTeinte('unit',u.type,teinteU);
+    const spr0=sprUnite(u.type,u.owner,'',teinteU);
     const S=(spr0?spr0.S:TILE*0.85)*(TILE/(SPR.refT||TILE));
     // bobbing en mouvement
     const bob=u.moving?Math.abs(Math.sin(u.animT*9))*2.5:0;
@@ -958,8 +979,8 @@ function drawUnits(){
     let spr=spr0;
     if(u.moving){
       const cyc=Math.sin(u.animT*9);
-      if(cyc>0.2&&SPR.unit[u.type+'_W1']) spr=sprTeinte('unit',u.type+'_W1',teinteU);
-      else if(cyc<-0.2&&SPR.unit[u.type+'_W2']) spr=sprTeinte('unit',u.type+'_W2',teinteU);
+      if(cyc>0.2&&SPR.unit[u.type+'_W1']) spr=sprUnite(u.type,u.owner,'_W1',teinteU);
+      else if(cyc<-0.2&&SPR.unit[u.type+'_W2']) spr=sprUnite(u.type,u.owner,'_W2',teinteU);
     }
     // pichenette d'attaque : bref déplacement vers la cible juste après le
     // coup (atkCd revient à son maximum à l'impact), qui s'estompe vite —
@@ -1130,7 +1151,9 @@ function drawDeathFx(){
   for(const d of G.deathfx){
     // Teinte du camp d'origine : sans elle, un assaillant ennemi mourait en
     // reprenant les couleurs du joueur le temps de sa chute.
-    const spr=d.teinte?sprTeinte('unit',d.type,d.teinte):SPR.unit[d.type];
+    // La civilisation est figée dans l'enregistrement au moment de la mort :
+    // le camp peut avoir disparu de G.factions le temps de la chute.
+    const spr=d.teinte?sprUniteCiv(d.type,d.civ,'',d.teinte):SPR.unit[d.type];
     if(!spr) continue;
     const{x:sx,y:sy}=ws(d.x,d.y);
     const S=spr.S*(TILE/(SPR.refT||TILE));

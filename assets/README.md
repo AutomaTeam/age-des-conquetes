@@ -75,12 +75,21 @@ Une seule image par type suffit par défaut : elle sert aussi à toutes les
 variantes du bâtiment (habillages d'âge, niveaux de tour, portail ouvert).
 Inutile donc de produire `caserne_age2.webp` ou `tour_niveau3.webp`.
 
-Exception : un bâtiment listé dans `BLD_AGE_SPRITE_FILES` (index.html) prend
-une illustration **dédiée par palier d'âge** plutôt que de réutiliser la forme
-de base. Convention de nommage : `<nom>_age1.webp` (Féodal), `_age2.webp`
+Exception : un bâtiment listé dans `BLD_AGE_SPRITE_FILES` (js/05-sprites.js)
+prend une illustration **dédiée par palier d'âge** plutôt que de réutiliser la
+forme de base. Convention de nommage : `<nom>_age1.webp` (Féodal), `_age2.webp`
 (Châteaux), `_age3.webp` (Impérial) — l'Âge Sombre reste le fichier de base
-sans suffixe. Actuellement seul `centre_ville` en bénéficie
-(`centre_ville_age1/2/3.webp`).
+sans suffixe. En bénéficient : `centre_ville` (`centre_ville_age1/2/3.webp`,
+4 civs × 4 âges), et depuis le 2026-09-01, **Caserne** et **Mur**
+(`caserne_age1/2/3.webp`, `mur_age1/2/3.webp` — style Francs uniquement, voir
+plus bas « Progression visuelle par âge »).
+
+Même mécanisme côté NIVEAU plutôt qu'âge : un bâtiment listé dans
+`BLD_LEVEL_SPRITE_FILES` prend une illustration dédiée par palier
+d'amélioration payante (`_L2`/`_L3`), sur le même contrat mais une table à
+part — ce sont deux familles de clés différentes (montée en âge automatique
+contre achat ponctuel). Seule la **Tour Défensive** en bénéficie
+(`tour_l2.webp` = Tour de Garde, `tour_l3.webp` = Donjon).
 
 Un bâtiment listé dans `BLD_CIV_SPRITE_FILES` (js/05-sprites.js) prend en plus
 une illustration **dédiée par civilisation**. Convention : `<nom>_<civ>.webp`,
@@ -178,6 +187,39 @@ Couverture actuelle :
   planche sert l'état FERMÉ. Repris avec les deux vantaux clos.
   Un camp mongol complet ne partage plus AUCUNE silhouette avec un bourg
   franc — les 19 bâtiments partagés sont désormais 21 sur 21.
+
+## Progression visuelle par âge (2026-09-01)
+
+Avant cette passe, seul le Centre Ville changeait vraiment d'aspect en
+montant en âge — Caserne, Mur et Tour gardaient la même illustration à tous
+leurs paliers (voir `BLD_AGE_SPRITE_FILES`/`BLD_LEVEL_SPRITE_FILES` plus
+haut). Portée choisie : **style Francs uniquement**, 8 planches — les 3
+autres civs gardent leur planche unique par bâtiment (chaîne, tous âges),
+pas de régression, juste pas de progression pour elles.
+
+- `caserne_age1/2/3.webp` — de la simple bâtisse à colombages (base, déjà
+  existante) à un corps de garde à colombages sur rez-de-chaussée de pierre
+  (Féodal), puis un fort de pierre grise crénelé à tourelle d'angle
+  (Châteaux), puis une grande caserne fortifiée à deux tours crénelées et
+  grands étendards (Impérial) — écho direct de `chateau.webp`, la Caserne
+  Impériale a l'air d'un petit château.
+- `mur_age1/2/3.webp` — de la palissade de bois (base) à un mur de pierre
+  brute bas renforcé de poutres (Féodal), puis un mur de pierre pleine et
+  crénelé (Châteaux), puis un mur épais cerclé de bandes de fer avec bannière
+  (Impérial). **Même contrainte de composition que les planches civ du Mur**
+  (voir plus haut) : créneaux/pointes dans le haut, corps continu dans le
+  bas — `murSuite` (js/06-rendu.js) recoupe la source à 53 % de hauteur pour
+  raccorder les tronçons verticaux, quel que soit l'âge de la planche.
+  Vérifié en jeu : un tronçon de 3 cases reste un mur continu aux 4 âges,
+  aucune « échelle » de créneaux répétés.
+- `tour_l2.webp`/`tour_l3.webp` — la Tour de Guet en bois (base) devient Tour
+  de Garde (base de pierre + poste de guet en bois renforcé, niveau 2), puis
+  Donjon (tour entièrement en pierre, toit conique, girouette dorée,
+  niveau 3). Table à part de `BLD_AGE_SPRITE_FILES` : ces variantes de clé
+  (`_L2`/`_L3`) viennent d'une **amélioration payante** dans le panneau de la
+  Tour, pas de la montée en âge automatique — `BLD_LEVEL_SPRITE_FILES` et son
+  propre bloc dans `upgradeBuildingSprites` (regex `_L(\d)` au lieu de
+  `_A(\d)`), même contrat sinon.
 
 Une **unité** listée dans `UNIT_CIV_SPRITE_FILES` (js/05-sprites.js) prend elle
 aussi une illustration dédiée par civilisation — même contrat que les

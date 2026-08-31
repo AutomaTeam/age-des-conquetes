@@ -775,6 +775,23 @@ const BLD_SPRITE_FILES={ [BT.HOUSE]:'maison', [BT.FARM]:'ferme', [BT.BARRACKS]:'
 // tous les âges (voir upgradeBuildingSprites).
 const BLD_AGE_SPRITE_FILES={
   [BT.TC]: { 1:'centre_ville_age1', 2:'centre_ville_age2', 3:'centre_ville_age3' },
+  // Caserne et Mur sont les deux AUTRES bâtiments à porter des habillages
+  // d'âge (`_A1..3`, voir lvlSuffix dans drawBuildings) — jusqu'ici la même
+  // planche de base servait aux quatre âges, seul le Centre Ville changeait
+  // vraiment d'aspect en montant en âge. Style Francs uniquement (voir
+  // assets/README.md) : les 3 autres civs gardent leur planche unique de
+  // BLD_CIV_SPRITE_FILES, en forme chaîne, à tous les âges.
+  [BT.BARRACKS]: { 1:'caserne_age1', 2:'caserne_age2', 3:'caserne_age3' },
+  [BT.WALL]:     { 1:'mur_age1',     2:'mur_age2',     3:'mur_age3' },
+};
+
+// Illustrations DÉDIÉES par NIVEAU (2 = Tour de Garde, 3 = Donjon), même
+// contrat que BLD_AGE_SPRITE_FILES ci-dessus mais pour la Tour : ses
+// variantes de clé sont `_L2`/`_L3` (amélioration payante), pas `_A1..3`
+// (montée en âge automatique) — deux familles de clés différentes, donc
+// deux tables plutôt qu'une seule indexée par un numéro ambigu.
+const BLD_LEVEL_SPRITE_FILES={
+  [BT.TOWER]: { 2:'tour_l2', 3:'tour_l3' },
 };
 
 // Illustrations DÉDIÉES par CIVILISATION (en plus de l'âge ci-dessus) : pour
@@ -1026,12 +1043,15 @@ function upgradeBuildingSprites(){
       // DÉCLENCHEMENT, pas de la RÉSOLUTION), ce recouvrement écrasait
       // après coup l'illustration dédiée déjà appliquée.
       const agesDedies=BLD_AGE_SPRITE_FILES[type]||{};
+      const niveauxDedies=BLD_LEVEL_SPRITE_FILES[type]||{};
       for(const cle in SPR.bld){
         if(cle!==type&&!cle.startsWith(prefixe)) continue;
         const m=SPR.bld[cle];
         if(!m||m.c.width!==W||m.c.height!==H) continue;
         const mAge=cle.match(/^.+_A(\d)(_E)?$/);
         if(mAge&&agesDedies[mAge[1]]) continue;
+        const mLvl=cle.match(/^.+_L(\d)(_E)?$/);
+        if(mLvl&&niveauxDedies[mLvl[1]]) continue;
         const estE=cle.endsWith('_E');
         const estOuvert=cle.startsWith(type+'_OPEN');
         SPR.bld[cle]=Object.assign({},m,
@@ -1046,6 +1066,23 @@ function upgradeBuildingSprites(){
     if(ageFiles) for(const age in ageFiles){
       withIllustration('assets/batiments/'+ageFiles[age]+ASSET_EXT,TRIM_W_BLD,(url)=>{
         const cle=type+'_A'+age, cleE=cle+'_E';
+        const meta=SPR.bld[cle]; if(!meta) return;
+        const W=meta.c.width, H=meta.c.height;
+        const fitted=fitBuildingImage(url,W,H); if(!fitted) return;
+        SPR.bld[cle]=Object.assign({},meta,fitted);
+        const metaE=SPR.bld[cleE];
+        if(metaE) SPR.bld[cleE]=Object.assign({},metaE,tintEnemyBuilding(fitted,W,H));
+      });
+    }
+    // Même mécanisme, pour les illustrations dédiées par NIVEAU de la Tour
+    // (voir BLD_LEVEL_SPRITE_FILES) — copié plutôt que factorisé avec la
+    // boucle des âges ci-dessus : les deux ne partagent que la forme, pas la
+    // clé (`_L` contre `_A`), et les dupliquer coûte moins que le
+    // paramétrer proprement pour un seul type concerné aujourd'hui.
+    const levelFiles=BLD_LEVEL_SPRITE_FILES[type];
+    if(levelFiles) for(const lvl in levelFiles){
+      withIllustration('assets/batiments/'+levelFiles[lvl]+ASSET_EXT,TRIM_W_BLD,(url)=>{
+        const cle=type+'_L'+lvl, cleE=cle+'_E';
         const meta=SPR.bld[cle]; if(!meta) return;
         const W=meta.c.width, H=meta.c.height;
         const fitted=fitBuildingImage(url,W,H); if(!fitted) return;

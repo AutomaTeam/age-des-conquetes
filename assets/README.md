@@ -55,8 +55,8 @@ procédural existant (aucune régression).
 ## État : couverture complète
 
 Toutes les catégories prévues sont fournies — 4 icônes de ressources, 21
-bâtiments (+ 70 variantes par civilisation — 19 des 21 types du jeu, tout
-sauf Mur et Portail), 21 unités (+ 3 variantes de
+bâtiments (+ 76 variantes par civilisation — **les 21 types du jeu**, Mur et
+Portail compris), 21 unités (+ 3 variantes de
 Héros par civilisation), 6 gisements de carte, 2 animaux, 2 objets uniques.
 `effets/` reste volontairement vide : particules et projectiles sont trop
 brefs à l'écran pour qu'une illustration s'y voie.
@@ -154,8 +154,30 @@ Couverture actuelle :
   les plus courants après la Maison et la Ferme. Chez les Mongols les trois
   deviennent des installations de campement (auvent de feutre, tente de
   commerce, forge de campagne) plutôt que des maçonneries — cohérent avec leur
-  Centre Ville et leur Château, déjà des structures de feutre et de bois. Un
-  camp mongol complet ne partage plus AUCUNE silhouette avec un bourg franc.
+  Centre Ville et leur Château, déjà des structures de feutre et de bois.
+- `mur` — 3 fichiers, malgré ses habillages d'ÂGE (`_A1.._A3`) — même forme
+  chaîne que la Caserne et la Tour. Crénelage pierre/brique (Byzantins),
+  muraille de pierre grise à corbeaux de bois (Chinois), talus de terre battue
+  surmonté de pieux liés de corde (Mongols) — ce dernier réutilise le bois
+  mais change la MAJORITÉ du corps du mur (terre plutôt que rondins), pour ne
+  pas se confondre avec la palissade franque. Le point délicat, propre au Mur :
+  son rendu recoupe la source à 53 % de hauteur pour raccorder les tronçons
+  verticaux (`murSuite` dans `drawBuildings`, voir js/06-rendu.js) — toute
+  planche civ doit garder crénelage/pointes dans le haut et un corps continu
+  dans le bas pour que ce raccord reste invisible. Vérifié en jeu sur un
+  tronçon de 4 cases : aucune « échelle », le bandeau de brique byzantin se
+  répète même en coursière convaincante.
+- `portail` — 3 fichiers, sur le même contrat que le Mur (`_OPEN` au lieu des
+  âges — voir plus haut « Combien de planches ça coûte »). Porte en arc de
+  brique aux vantaux cloutés de fer (Byzantins), arc de pierre grise aux
+  vantaux laqués rouge et clous de laiton (Chinois), porte de bois liée de
+  corde entre deux talus à pieux (Mongols). Piège rencontré sur un premier
+  candidat chinois : un vantail entrouvert laissait voir le fond blanc à
+  travers l'arche, et le flood fill — qui ne connaît que la couleur —
+  détourait ce « fond visible » comme un vrai passage ouvert alors que la
+  planche sert l'état FERMÉ. Repris avec les deux vantaux clos.
+  Un camp mongol complet ne partage plus AUCUNE silhouette avec un bourg
+  franc — les 19 bâtiments partagés sont désormais 21 sur 21.
 
 Une **unité** listée dans `UNIT_CIV_SPRITE_FILES` (js/05-sprites.js) prend elle
 aussi une illustration dédiée par civilisation — même contrat que les

@@ -935,6 +935,23 @@ const BLD_CIV_SPRITE_FILES={
     chinois:   'merveille_chinois',
     mongols:   'merveille_mongols',
   },
+  // Mur et Portail étaient les deux DERNIERS types communs aux 4 civs.
+  // Chaîne obligatoire : le Mur porte des habillages d'âge (`_A1.._A3`,
+  // comme TC/Caserne) et le Portail son état `_OPEN` (rendu translucide par
+  // upgradeCivBuildingSprites lui-même, exactement comme pour la planche
+  // franque de base — voir upgradeBuildingSprites) ; une civ qui n'aurait que
+  // la forme de base verrait son mur retomber sur la palissade franque dès le
+  // premier passage d'âge.
+  [BT.WALL]: {
+    byzantins: 'mur_byzantins',   // crénelage pierre crème + bandeau de brique, cohérent avec leur Château
+    chinois:   'mur_chinois',     // muraille de pierre grise crénelée, corbeaux de bois sombre
+    mongols:   'mur_mongols',     // talus de terre battue surmonté de pieux, étendard en queue de cheval
+  },
+  [BT.GATE]: {
+    byzantins: 'portail_byzantins', // porte en arc de brique, vantaux de bois cloutés de fer
+    chinois:   'portail_chinois',   // arc de pierre grise, vantaux laqués rouge à clous de laiton
+    mongols:   'portail_mongols',   // porte de bois liée de corde entre deux talus de terre à pieux
+  },
 };
 
 // Détoure le fond (même flood fill que les icônes, voir stripBgTrimmed),

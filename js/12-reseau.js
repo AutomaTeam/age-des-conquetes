@@ -52,7 +52,13 @@ window.transportLocal=transportLocal;
 // v2 : la SALUT porte la taille de carte (champ `taille`). Un client v1 ne
 // la lirait pas et générerait un monde 240×240 face à un hôte qui en a
 // choisi un autre — tout diverge dès la première image, donc incompatible.
-const PROTO_VERSION = 2;
+// v3 : le masque d'unité gagne M_ATK et M_XP, et la ligne de bâtiment deux
+// cases (`autoTrain`, `rally`). Les bits du masque se lisent EN ORDRE (chaque
+// `if` consomme une case du tableau) : un client v2 ne connaît pas les deux
+// nouveaux, ne les dépile pas, et tout ce qui suit dans SA lecture tombe à
+// côté. Un écart de version doit donc refuser la connexion, pas la
+// dégrader — d'où le bump.
+const PROTO_VERSION = 3;
 const DELTA_HZ      = 10;
 const DELTA_PERIODE = 1/DELTA_HZ;
 const SEUIL_POS     = 1;    // unites-monde : en deca, on ne renvoie pas la position
@@ -146,17 +152,25 @@ async function decoderMessageBinaire(buf){
 // On ne transmet que ce qui ne se rededuit pas : la carte vient de la graine
 // (P4), les projectiles sont peu nombreux, et la mort d'une unite se lit dans
 // la liste des retraits.
+// `a` (atk), `e` (xp) et `r` (rang) voyagent EXPLICITEMENT, au meme titre que
+// `m` (maxHp). deserialiserUnite reconstruit l'unite par mkUnit, qui recalcule
+// l'atk depuis les recherches et l'age que le CLIENT connait du proprietaire :
+// pour une unite adverse il n'en connait souvent rien, et il n'a de toute
+// facon aucun moyen de deviner une promotion de veterance (voir awardKillXP).
 function serialiserUnite(u){
   return {i:u.id, t:u.type, o:u.owner,
           x:Math.round(u.x), y:Math.round(u.y),
           h:u.hp, m:u.maxHp, s:u.state, g:u.target||null,
           d:+(u.dir||0).toFixed(2), v:u.inv||0, w:u.invT||null,
-          c:u.camp||null, k:u.stance||null};
+          c:u.camp||null, k:u.stance||null,
+          a:u.atk, e:u.xp||0, r:u.rank||0};
 }
 function deserialiserUnite(d){
   const u=mkUnit(d.t, d.x, d.y, d.o);
   u.id=d.i; u.hp=d.h; u.maxHp=d.m; u.state=d.s; u.target=d.g;
   u.dir=d.d; u.inv=d.v; u.invT=d.w; u.camp=d.c; u.stance=d.k;
+  if(d.a!=null) u.atk=d.a;
+  u.xp=d.e||0; u.rank=d.r||0;
   u._netX=d.x; u._netY=d.y;
   return u;
 }
@@ -277,7 +291,20 @@ function construireSnap(){
 // le maxHp des unites DEJA sur la carte. Sans ce bit, le client gardait le
 // maxHp du jour de leur creation : barres de vie faussees, « PV : 130/100 »
 // dans le panneau. Les batiments transmettaient deja le leur (e[8]).
-const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32, M_MAXHP=64;
+//
+// M_ATK et M_XP ferment le MEME trou pour les trois autres champs
+// retro-calcules par l'hote, oublies quand M_MAXHP a ete ajoute :
+//   • `atk`  — releve par les MEMES deux chemins que maxHp (la boucle de
+//     montee d'age, et awardKillXP). Affiche tel quel dans le panneau de
+//     selection (« ATK: 13 ») : sans ce bit il y restait fige a vie.
+//   • `xp` et `rank` — la veterance (awardKillXP). Le rang se voit a l'ecran
+//     (insigne sous l'unite) et dans le panneau (« 🎖️ Veteran (3 victoires) ») ;
+//     sans eux, aucune unite n'etait JAMAIS promue chez le client.
+// Les deux voyagent, plutot que de recalculer rank=veterancyRank(xp) cote
+// client : c'est la meme regle que pour `constructing` — un champ que l'hote
+// decide ne se redevine pas chez le destinataire.
+const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32, M_MAXHP=64,
+      M_ATK=128, M_XP=256;
 
 // Brouillard d'une faction ARBITRAIRE (pas forcement la locale, contrairement
 // a fogTileAt/G.fog) : sert a filtrer ce que l'hote envoie a l'adversaire.
@@ -294,6 +321,13 @@ function fogTileDe(faction,tx,ty){
 function visiblePour(dest,x,y){
   if(!dest) return true; // pas de destinataire identifie (ex. avant P7) : ne rien filtrer
   return fogTileDe(dest,(x/BASE_TILE)|0,(y/BASE_TILE)|0)===2;
+}
+
+// Signature compacte du point de ralliement, pour la comparaison au tour
+// precedent. Arrondie comme ce qui part sur le fil : sinon un rally place a
+// 12,0001 se croirait different de celui deja envoye a chaque image.
+function cleRalliement(b){
+  return b.rally?(Math.round(b.rally.x)+','+Math.round(b.rally.y)):'';
 }
 
 function construireDelta(){
@@ -313,7 +347,8 @@ function construireDelta(){
     const cle='u'+u.id, av=RESEAU.dernier.get(cle);
     if(!av){                                   // nouvelle unite : complete
       (d.newU||(d.newU=[])).push(serialiserUnite(u));
-      RESEAU.dernier.set(cle,{x:u.x,y:u.y,h:u.hp,mh:u.maxHp,s:u.state,g:u.target,d:u.dir});
+      RESEAU.dernier.set(cle,{x:u.x,y:u.y,h:u.hp,mh:u.maxHp,s:u.state,g:u.target,d:u.dir,
+                             a:u.atk,e:u.xp||0,rk:u.rank||0});
       continue;
     }
     let masque=0; const ch=[];
@@ -324,6 +359,11 @@ function construireDelta(){
     if((u.target||null)!==(av.g||null)){ masque|=M_CIBLE; ch.push(u.target||null); av.g=u.target; }
     if(Math.abs((u.dir||0)-(av.d||0))>0.25){ masque|=M_DIR; ch.push(+(u.dir||0).toFixed(2)); av.d=u.dir; }
     if(u.maxHp!==av.mh){ masque|=M_MAXHP; ch.push(u.maxHp); av.mh=u.maxHp; }
+    if(u.atk!==av.a){ masque|=M_ATK; ch.push(u.atk); av.a=u.atk; }
+    // xp et rang bougent ENSEMBLE (awardKillXP) : un seul bit pour les deux.
+    if((u.xp||0)!==av.e||(u.rank||0)!==av.rk){
+      masque|=M_XP; ch.push(u.xp||0,u.rank||0); av.e=u.xp||0; av.rk=u.rank||0;
+    }
     if(masque) d.u.push([u.id,masque].concat(ch));
   }
   for(const id of RESEAU.connusU) if(!vus.has(id)){ d.rm.push(id); RESEAU.dernier.delete('u'+id); }
@@ -343,20 +383,25 @@ function construireDelta(){
     const av=RESEAU.dernier.get(cle);
     if(!av){
       (d.newB||(d.newB=[])).push(serialiserBatiment(b));
-      RESEAU.dernier.set(cle,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing});
+      RESEAU.dernier.set(cle,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing,
+                             a:!!b.autoTrain,ry:cleRalliement(b)});
       continue;
     }
     const q=JSON.stringify(b.trainQ);
+    const ry=cleRalliement(b);
     // `constructing` et `maxHp` voyagent EXPLICITEMENT. Les deduire cote
     // client (progress>=1) etait un piege : le dernier pas de chantier fait
     // moins que le seuil de progression, aucun delta n'etait emis, et le
     // batiment restait "en travaux" a jamais chez le client.
     if(b.hp!==av.h||b.maxHp!==av.mh||Math.abs(b.progress-av.p)>0.004||q!==av.q
-       ||b.foodLeft!==av.f||b.level!==av.l||b.open!==av.g||(!!b.constructing)!==av.c){
+       ||b.foodLeft!==av.f||b.level!==av.l||b.open!==av.g||(!!b.constructing)!==av.c
+       ||(!!b.autoTrain)!==av.a||ry!==av.ry){
       d.b.push([b.id,b.hp,+b.progress.toFixed(3),b.trainQ,b.foodLeft,b.level,
-                b.open?1:0,b.constructing?1:0,b.maxHp]);
+                b.open?1:0,b.constructing?1:0,b.maxHp,
+                b.autoTrain?1:0,b.rally?[Math.round(b.rally.x),Math.round(b.rally.y)]:null]);
       av.h=b.hp; av.mh=b.maxHp; av.p=b.progress; av.q=q;
       av.f=b.foodLeft; av.l=b.level; av.g=b.open; av.c=!!b.constructing;
+      av.a=!!b.autoTrain; av.ry=ry;
     }
   }
   for(const id of RESEAU.connusB) if(!vusB.has(id)){ d.rmb.push(id); RESEAU.dernier.delete('b'+id); }
@@ -494,6 +539,8 @@ function appliquerDelta(m){
     if(masque&M_CIBLE) u.target=e[k++];
     if(masque&M_DIR)   u.dir=e[k++];
     if(masque&M_MAXHP) u.maxHp=e[k++];
+    if(masque&M_ATK)   u.atk=e[k++];
+    if(masque&M_XP)    { u.xp=e[k++]; u.rank=e[k++]; }
   }
   for(const e of (m.b||[])){
     const b=bldById(e[0]); if(!b) continue;
@@ -502,6 +549,13 @@ function appliquerDelta(m){
     b.level=e[5]; b.open=!!e[6];
     b.constructing=!!e[7];        // autoritaire : jamais deduit
     if(e[8]!=null) b.maxHp=e[8];
+    // `autoTrain` et `rally` ne sont poses que par applyCommand, donc par
+    // l'HOTE. Sans eux ici, le client gardait un autoTrain eteint a vie : son
+    // bouton affichait « Auto OFF » en permanence et renvoyait donc toujours
+    // actif:true — il pouvait allumer la production continue, jamais
+    // l'eteindre. Et son drapeau de ralliement ne s'affichait jamais.
+    if(e[9]!=null) b.autoTrain=!!e[9];
+    if(e[10]!==undefined) b.rally=e[10]?{x:e[10][0],y:e[10][1]}:null;
     if(b.hp<avHp) b.hitFlash=0.15;
     // Un portail qui s'ouvre ou se ferme change la grille de blocage : sans
     // ca le pathfinding local du client diverge de celui de l'hote.

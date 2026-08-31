@@ -1,11 +1,13 @@
-// Charge le jeu (index.html) dans un contexte Node isolé et rend ses
-// symboles accessibles aux tests.
+// Charge le jeu dans un contexte Node isolé et rend ses symboles
+// accessibles aux tests.
 //
-// Pourquoi ça marche sans build : le jeu est un unique <script> classique,
-// sans import ni dépendance. On extrait ce bloc, on l'évalue dans un `vm`
-// muni des bouchons DOM, et on lui ajoute une ligne d'export — les `const`
-// de premier niveau d'un script `vm` restent dans SA portée lexicale et ne
-// remontent pas au contexte, il faut donc les publier explicitement.
+// Pourquoi ça marche sans build : le jeu est une suite de <script> CLASSIQUES
+// (pas de modules ES), sans import ni dépendance. On lit leur liste et leur
+// ORDRE dans index.html, on évalue chaque fichier séparément dans un `vm`
+// muni des bouchons DOM — comme le ferait le navigateur, portée globale
+// commune comprise — puis on ajoute une ligne d'export. Les `const` de
+// premier niveau d'un script `vm` restent dans SA portée lexicale et ne
+// remontent pas au contexte : il faut donc les publier explicitement.
 //
 // Le second bloc <script type="module"> (Firebase) est délibérément ignoré :
 // il ne publie que window.MP, et tout le jeu l'appelle derrière des gardes
@@ -44,6 +46,7 @@ const EXPORTS = [
   'MERVEILLE_WIN_TIME', 'canAfford', 'spend', 'resPool', 'updatePopCap',
   'aiNextBuild', 'AI_TRAINERS', 'trainTime', 'possedeBatiment', 'appliquerDemolition',
   'tryAutoReseed', 'hasAdjacentWater', 'updateUneIA', 'aiVilTarget', 'updateVisuel',
+  'awardKillXP', 'veterancyRank', 'RANK_THRESHOLDS',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

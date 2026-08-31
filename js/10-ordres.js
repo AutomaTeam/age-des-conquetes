@@ -64,10 +64,16 @@ function emettreOrdre(cmd,predire){
 }
 
 // Journal d'ordres : ordres + graine = rejeu complet d'une partie. Sert
-// surtout à déboguer une désynchronisation réseau (P6).
+// surtout à déboguer une désynchronisation réseau (P6). Il s'active depuis la
+// console — `demarrerJournal()` puis `journalOrdres()` — et reste éteint tant
+// qu'on ne l'a pas demandé (emettreOrdre ne paie qu'un test de nullité).
+// Exposé sur `window` : sans ça, rien ne pouvait l'allumer, `_journalOrdres`
+// restait null à vie et l'outil était mort-né.
 let _journalOrdres=null;
-function demarrerJournal(){ _journalOrdres=[]; }
+function demarrerJournal(){ _journalOrdres=[]; return 'journal d\'ordres démarré'; }
 function journalOrdres(){ return _journalOrdres; }
+window.demarrerJournal=demarrerJournal;
+window.journalOrdres=journalOrdres;
 
 // Helpers de validation
 function _unitesDe(cmd){

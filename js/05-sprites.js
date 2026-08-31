@@ -35,7 +35,6 @@ function gameH(){ return H-54-(document.getElementById('botpanel').offsetHeight|
 // référence est la seule bascule qu'une image de rendu ne peut pas surprendre
 // à moitié faite. Rien d'autre dans le fichier ne réaffecte SPR.
 let SPR={ terrain:{}, tree:[], stone:[], gold:[], berry:[], bld:{}, bldCiv:{}, unit:{} };
-const PIXEL=4; // résolution interne du pixel art (px logiques par "gros pixel")
 const SS=3;    // supersampling : sprites générés en 3×, dessinés réduits (lissés) => rendu fin
 
 // ── RÉSOLUTIONS DE TRAVAIL DU DÉTOURAGE ────────────────────────

@@ -6,7 +6,7 @@ node tests/run.js
 
 Un groupe seul : `node tests/run.js reseau`.
 
-**83 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
+**88 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -29,10 +29,12 @@ qui **ne se voit pas** :
 - **`delta`** — le flux différentiel hôte → client, la partie la plus
   fragile du jeu. Une paire hôte/client réellement reliée (même graine,
   SNAP puis deltas) doit CONVERGER, y compris sous le feu : 80 unités qui se
-  battent et qui meurent. Couvre aussi le bit `M_MAXHP` (invariant n°6 :
-  un `maxHp` relevé rétroactivement doit voyager), le filtrage par
-  brouillard (une fuite d'information = triche) et le différentiel `d.fac`
-  (invariant n°2).
+  battent et qui meurent. Couvre aussi l'invariant n°6 — tout champ que
+  l'HÔTE décide ou recalcule doit voyager, jamais se redeviner chez le
+  client : les bits `M_MAXHP`, `M_ATK` et `M_XP` côté unité (`maxHp` et
+  `atk` à la montée d'âge, `xp`/`rank`/`atk` à la promotion de vétérance),
+  et `autoTrain`/`rally` côté bâtiment. Plus le filtrage par brouillard (une
+  fuite d'information = triche) et le différentiel `d.fac` (invariant n°2).
 - **`reseau`** — la sérialisation hôte → client. Une divergence n'apparaît
   qu'en partie en ligne, chez l'invité, et souvent plusieurs minutes après
   la cause. C'est le groupe le plus rentable : il a trouvé dès sa première

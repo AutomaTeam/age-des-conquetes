@@ -1364,6 +1364,106 @@ groupe('delta', () => {
     egal(client.G.units.find((x) => x.id === u.id).maxHp, u.maxHp, 'maxHp non propagé (bit M_MAXHP manquant ?)');
   });
 
+  test('M_ATK : un atk relevé RÉTROACTIVEMENT arrive lui aussi chez le client', () => {
+    // Jumeau exact du test précédent. La montée d'âge recalcule maxHp ET atk
+    // des unités déjà en jeu (voir la boucle AGE_BONUS dans montéeDÂge) :
+    // maxHp avait son bit, atk n'en avait pas, et le panneau de sélection du
+    // client affichait donc l'ATK du jour de la création jusqu'à la fin de la
+    // partie.
+    const { hote, client, pousser } = paireEnLigne();
+    const f = hote.G.factions[hote.FAC.P1];
+    const tc = hote.G.buildings.find((b) => b.type === hote.BT.TC && b.owner === hote.FAC.P1);
+    const u = hote.mkUnit(hote.UT.MIL, tc.x, tc.y, hote.FAC.P1);
+    hote.G.units.push(u); hote.rebuildIndex();
+    pousser();
+    const avant = client.G.units.find((x) => x.id === u.id);
+    ok(!!avant, 'l\'unité neuve n\'est pas parvenue au client');
+    egal(avant.atk, u.atk, 'atk initial déjà divergent');
+    riche(hote, hote.FAC.P1);
+    ok(ordreDe(hote, hote.FAC.P1, 'AGE', {}).ok, 'montée d\'âge refusée');
+    for (let k = 0; k < 30 * 90; k++) { hote.update(hote.SIM_DT); if (f.age >= 1) break; }
+    egal(f.age, 1, 'âge non atteint');
+    ok(u.atk > avant.atk, 'l\'atk de l\'hôte n\'a pas bougé : le test ne prouverait rien');
+    pousser();
+    egal(client.G.units.find((x) => x.id === u.id).atk, u.atk, 'atk non propagé (bit M_ATK manquant ?)');
+  });
+
+  test('vétérance : xp, rang et atk d\'une unité promue arrivent chez le client', () => {
+    // awardKillXP relève xp, rank, maxHp ET atk d'une unité DÉJÀ en jeu. Le
+    // rang est visible à l'écran (insigne sous l'unité) et dans le panneau
+    // (« 🎖️ Vétéran (3 victoires) ») : sans ces champs sur le fil, le client
+    // ne voyait jamais promu ce que l'hôte considérait comme vétéran.
+    const { hote, client, pousser } = paireEnLigne();
+    const tc = hote.G.buildings.find((b) => b.type === hote.BT.TC && b.owner === hote.FAC.P1);
+    const u = hote.mkUnit(hote.UT.MIL, tc.x, tc.y, hote.FAC.P1);
+    hote.G.units.push(u); hote.rebuildIndex();
+    pousser();
+    egal(client.G.units.find((x) => x.id === u.id).rank, 0, 'rang initial non nul');
+    // Assez de victoires pour franchir le premier palier (Vétéran, 3 kills).
+    const seuil = hote.RANK_THRESHOLDS[0].kills;
+    for (let k = 0; k < seuil; k++) hote.awardKillXP(u.id);
+    egal(u.rank, 1, 'l\'hôte n\'a pas promu l\'unité : le test ne prouverait rien');
+    pousser();
+    const c = client.G.units.find((x) => x.id === u.id);
+    egal(c.rank, u.rank, 'rang non propagé');
+    egal(c.xp, u.xp, 'xp non propagé');
+    egal(c.atk, u.atk, 'atk de vétérance non propagé');
+    egal(c.maxHp, u.maxHp, 'maxHp de vétérance non propagé');
+  });
+
+  test('vétérance : une unité DÉCOUVERTE déjà promue arrive avec son rang', () => {
+    // Chemin distinct du précédent : ici l'unité est promue AVANT que le
+    // client ne la voie, elle passe donc par serialiserUnite (newU) et non
+    // par le masque de bits. Les deux chemins doivent dire la même chose.
+    const { hote, client, pousser } = paireEnLigne();
+    const tc = hote.G.buildings.find((b) => b.type === hote.BT.TC && b.owner === hote.FAC.P1);
+    const u = hote.mkUnit(hote.UT.MIL, tc.x, tc.y, hote.FAC.P1);
+    hote.G.units.push(u); hote.rebuildIndex();
+    for (let k = 0; k < hote.RANK_THRESHOLDS[0].kills; k++) hote.awardKillXP(u.id);
+    egal(u.rank, 1, 'l\'hôte n\'a pas promu l\'unité');
+    pousser();                                   // première découverte : newU
+    const c = client.G.units.find((x) => x.id === u.id);
+    ok(!!c, 'l\'unité promue n\'est pas parvenue au client');
+    egal(c.rank, u.rank, 'rang absent de serialiserUnite');
+    egal(c.xp, u.xp, 'xp absent de serialiserUnite');
+    egal(c.atk, u.atk, 'atk absent de serialiserUnite');
+  });
+
+  test('autoTrain voyage : le client peut RÉÉTEINDRE sa production continue', () => {
+    // Même famille que M_ATK, côté bâtiment. `autoTrain` n'est décidé que par
+    // applyCommand, donc par l'HÔTE. Sans lui sur le fil, le `b.autoTrain` du
+    // client restait false à vie : le bouton affichait « Auto OFF » en
+    // permanence et renvoyait donc toujours `actif:true` — l'invité pouvait
+    // allumer la production continue, jamais l'éteindre.
+    const { hote, client, pousser } = paireEnLigne();
+    const tc = hote.G.buildings.find((b) => b.type === hote.BT.TC && b.owner === hote.FAC.P1);
+    pousser();
+    egal(client.G.buildings.find((x) => x.id === tc.id).autoTrain, false, 'autoTrain initial non éteint');
+    ok(ordreDe(hote, hote.FAC.P1, 'AUTO_FORMATION', { bId: tc.id, actif: true }).ok, 'ordre refusé');
+    egal(tc.autoTrain, true, 'l\'hôte n\'a pas allumé : le test ne prouverait rien');
+    pousser();
+    egal(client.G.buildings.find((x) => x.id === tc.id).autoTrain, true, 'autoTrain non propagé');
+    ok(ordreDe(hote, hote.FAC.P1, 'AUTO_FORMATION', { bId: tc.id, actif: false }).ok, 'ordre d\'extinction refusé');
+    pousser();
+    egal(client.G.buildings.find((x) => x.id === tc.id).autoTrain, false, 'extinction non propagée');
+  });
+
+  test('le point de ralliement voyage', () => {
+    // `rally` est posé par ORD.RALLIEMENT chez l'hôte, et dessiné à l'écran
+    // (drapeau). Le client ne voyait jamais le sien.
+    const { hote, client, pousser } = paireEnLigne();
+    const tc = hote.G.buildings.find((b) => b.type === hote.BT.TC && b.owner === hote.FAC.P1);
+    pousser();
+    egal(client.G.buildings.find((x) => x.id === tc.id).rally, null, 'ralliement initial non nul');
+    const cx = tc.x + 200, cy = tc.y + 150;
+    ok(ordreDe(hote, hote.FAC.P1, 'RALLIEMENT', { bId: tc.id, x: cx, y: cy }).ok, 'ordre refusé');
+    pousser();
+    const r = client.G.buildings.find((x) => x.id === tc.id).rally;
+    ok(!!r, 'ralliement non propagé');
+    egal(Math.round(r.x), Math.round(cx), 'ralliement : x divergent');
+    egal(Math.round(r.y), Math.round(cy), 'ralliement : y divergent');
+  });
+
   test('constructing et progress voyagent : un chantier achevé ne reste pas en travaux', () => {
     // Le commentaire de construireDelta documente ce piège : déduire
     // `constructing` de `progress>=1` côté client laissait le bâtiment en

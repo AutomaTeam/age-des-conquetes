@@ -835,9 +835,15 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .clarow .clanom { font-family:'Crimson Text',serif;font-size:13px;color:var(--parch2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .clarow .claval { font-family:'Cinzel',serif;font-size:13px;color:var(--gold-l);flex-shrink:0; }
 
-/* ── TUTORIEL PAS À PAS (première partie) ── */
+/* ── TUTORIEL PAS À PAS (première partie) ──
+   bottom EN FONCTION de --botH, pas un 150px figé : l'étape « posez une
+   Maison » ouvre le mode construction juste en dessous, avec ✓/✕/📌 flottant
+   à bottom:calc(var(--botH) + 8px) — un panneau à distance fixe du bas de
+   l'écran finissait pile par-dessus ces trois boutons, invisibles pour le
+   joueur au moment précis où le tutoriel lui demande de s'en servir. Ancré
+   sur --botH comme eux, il reste au-dessus quelle que soit sa valeur future. */
 #tutopanel {
-  position:fixed;left:50%;bottom:150px;transform:translateX(-50%);
+  position:fixed;left:50%;bottom:calc(var(--botH) + 60px);transform:translateX(-50%);
   z-index:150;display:none;flex-direction:column;gap:7px;align-items:center;
   background:linear-gradient(180deg,rgba(42,22,0,.97),rgba(20,12,0,.97));
   border:1.5px solid var(--gold-d);border-radius:12px;

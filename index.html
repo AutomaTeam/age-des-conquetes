@@ -738,8 +738,12 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .aitem.got .adesc { color:var(--parch2); }
 
 /* Bandeau de succès débloqué en cours de partie */
+/* top:64px recouvrait la barre de vague (54-76px) ET la barre d'âge
+   (80-104px) — un succès qui tombe en pleine Survie/Conquête masquait le
+   compte de vagues en cours pendant 4s. Même seuil que #notif (voir plus
+   bas) : sous l'une, sous l'autre, systématiquement. */
 #achpop {
-  position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:260;
+  position:fixed;top:calc(var(--topH) + 64px);left:50%;transform:translateX(-50%);z-index:260;
   display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;
 }
 .achtoast {

@@ -96,17 +96,24 @@ function gestureMove(pts){
     }
   }
 
-  // Sinon : un doigt = déplacement de la carte, toujours
+  // Sinon : un doigt = déplacement de la carte — SAUF en mode construction,
+  // où le doigt fait glisser l'aperçu à la place (voir plus bas). Faire
+  // bouger le monde SOUS l'aperçu pendant qu'on essaie de le viser était
+  // exactement la confusion décrite ("on sait pas trop où ça tombe") : le
+  // pincement à deux doigts reste disponible pour recadrer la vue pendant
+  // la pose (voir plus haut, avant ce bloc).
   if(Math.abs(dx)>5||Math.abs(dy)>5){
     isDrag=true;
-    const now=Date.now(), dtm=Math.max(10,now-lastMoveT);
-    const prevX=G.cam.x, prevY=G.cam.y;
-    G.cam.x=dCX-dx; G.cam.y=dCY-dy;
-    clampCam();
-    // vitesse instantanée (delta de cette image seulement), bornée
-    velX=clampVel((prevX-G.cam.x)/dtm*16);
-    velY=clampVel((prevY-G.cam.y)/dtm*16);
-    lastMoveT=now;
+    if(G.mode!=='build'){
+      const now=Date.now(), dtm=Math.max(10,now-lastMoveT);
+      const prevX=G.cam.x, prevY=G.cam.y;
+      G.cam.x=dCX-dx; G.cam.y=dCY-dy;
+      clampCam();
+      // vitesse instantanée (delta de cette image seulement), bornée
+      velX=clampVel((prevX-G.cam.x)/dtm*16);
+      velY=clampVel((prevY-G.cam.y)/dtm*16);
+      lastMoveT=now;
+    }
   }
   if(G.mode==='build'){
     const {x:wx,y:wy}=sw(p.x,p.y);
@@ -159,7 +166,14 @@ const toPts=(tl)=>Array.from(tl).map(t=>({x:t.clientX,y:t.clientY}));
 // un appui long tactile désélectionnerait par erreur au lieu de lancer le
 // rectangle de sélection (double-tap maintenu).
 let _lastTouchAt=0;
-canvas.addEventListener('touchstart',e=>{ _lastTouchAt=Date.now(); e.preventDefault(); gestureStart(toPts(e.touches));},{passive:false});
+// À la souris, le survol montre l'aperçu de construction AVANT le clic (voir
+// le mousemove plus bas) : cliquer confirme donc ce qu'on a déjà vu. Au
+// doigt, rien ne montre l'aperçu avant le premier contact — poser au premier
+// tap revenait à construire un bâtiment qu'on n'avait jamais vu ("on sait pas
+// trop où ça tombe"). Ce drapeau distingue les deux pour handleTap (voir plus
+// bas) : tactile positionne seulement, la confirmation passe par ✓.
+let _touchDriven=false;
+canvas.addEventListener('touchstart',e=>{ _lastTouchAt=Date.now(); _touchDriven=true; e.preventDefault(); gestureStart(toPts(e.touches));},{passive:false});
 canvas.addEventListener('touchmove', e=>{e.preventDefault(); gestureMove(toPts(e.touches));},{passive:false});
 canvas.addEventListener('touchend',  e=>{e.preventDefault();
   const ch=e.changedTouches[0];
@@ -183,7 +197,7 @@ function resetMouseGesture(){
 }
 canvas.addEventListener('mousedown',e=>{
   if(e.button!==0) return; // seul le clic gauche pilote le geste (le droit gère la désélection, voir contextmenu)
-  mouseDown=true;
+  mouseDown=true; _touchDriven=false;
   gestureStart([{x:e.clientX,y:e.clientY}]);
 });
 canvas.addEventListener('mousemove',e=>{
@@ -578,9 +592,25 @@ function handleTap(sx,sy){
 
   // Mode construction
   if(G.mode==='build'){
+    // Souris : le survol (mousemove ci-dessus) a déjà montré l'aperçu avant
+    // ce clic — le confirmer directement ne surprend personne.
+    // Tactile : ce tap est la PREMIÈRE fois que ce point de la carte est
+    // visé (pas de survol) ; il ne fait donc que positionner l'aperçu, sauf
+    // s'il retombe sur la case déjà visée — retoucher deux fois le même
+    // endroit vaut alors confirmation, sans obliger à viser le bouton ✓.
+    if(!_touchDriven){
+      updateGhost(tx,ty);
+      if(G.ghost&&G.ghost.valid) confirmBuild(G.ghost.tx,G.ghost.ty);
+      else notify('Placement impossible !','#e74c3c');
+      return;
+    }
+    const prev=G.ghost;
+    const dejaVise=prev&&prev.tx===tx&&prev.ty===ty;
     updateGhost(tx,ty);
-    if(G.ghost&&G.ghost.valid) confirmBuild(G.ghost.tx,G.ghost.ty);
-    else notify('Placement impossible !','#e74c3c');
+    if(dejaVise){
+      if(G.ghost.valid) confirmBuild(tx,ty);
+      else notify('Emplacement invalide','#e74c3c');
+    }
     return;
   }
 
@@ -817,6 +847,15 @@ function updateGhost(tx,ty){
   if(valid) for(let dy=0;dy<d.h&&valid;dy++) for(let dx=0;dx<d.w&&valid;dx++) if(G.bmap[ty+dy][tx+dx]!==0) valid=false;
   if(valid&&G.buildType===BT.DOCK&&!hasAdjacentWater(tx,ty,d.w,d.h)) valid=false;
   G.ghost={tx,ty,valid};
+  syncBuildConfirmBtn(); // point de passage unique : tout appelant profite du bouton ✓ à jour
+}
+// Reflète G.ghost sur le bouton ✓ (voir index.html) : visible dès qu'un
+// aperçu existe, « prêt » (vert) seulement s'il est posable ici.
+function syncBuildConfirmBtn(){
+  const el=document.getElementById('bconfirm'); if(!el) return;
+  const show=G.mode==='build'&&!!G.ghost;
+  el.style.display=show?'flex':'none';
+  el.classList.toggle('ready',show&&G.ghost.valid);
 }
 
 function confirmBuild(tx,ty){
@@ -834,16 +873,28 @@ function confirmBuild(tx,ty){
 }
 
 function enterBuild(type){
-  G.mode='build'; G.buildType=type; G.ghost=null;
+  G.mode='build'; G.buildType=type;
+  // Aperçu affiché DÈS l'entrée en mode construction, au centre de l'écran :
+  // au doigt, rien ne le montrait avant le premier contact — poser au tout
+  // premier tap revenait à construire un bâtiment qu'on n'avait jamais vu.
+  const S=TILE/BASE_TILE;
+  const cwx=(G.cam.x+W/2)/S, cwy=(G.cam.y+gameH()/2)/S;
+  updateGhost(cwx/BASE_TILE|0, cwy/BASE_TILE|0);
   document.getElementById('bcancel').style.display='flex';
-  notify(`Tapez pour placer : ${BDEF[type].nom}`,'#3498db');
+  notify(`Positionnez : ${BDEF[type].nom} — ✓ pour valider`,'#3498db');
   refreshUI();
 }
 
 function exitBuild(){
   G.mode='select'; G.buildType=null; G.ghost=null;
   document.getElementById('bcancel').style.display='none';
+  document.getElementById('bconfirm').style.display='none';
   refreshUI();
 }
 
 document.getElementById('bcancel').addEventListener('click',()=>{ if(G.mode==='route') exitRoute(); else exitBuild(); });
+document.getElementById('bconfirm').addEventListener('click',()=>{
+  if(G.mode!=='build'||!G.ghost) return;
+  if(G.ghost.valid) confirmBuild(G.ghost.tx,G.ghost.ty);
+  else { notify('Emplacement invalide','#e74c3c'); buzz(8); }
+});

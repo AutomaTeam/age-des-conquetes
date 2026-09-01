@@ -349,6 +349,41 @@ groupe('combat', () => {
     ok(ram > mil * 4, `le Bélier doit surclasser le Milicien sur un bâtiment : ${ram} vs ${mil}`);
   });
 
+  test('une unité en garnison est intouchable : ni ciblée, ni blessée', () => {
+    // Trouvé en cherchant d'autres subtilités du même genre que la garnison :
+    // drawUnits (rendu) et handleTap (sélection) traitent déjà une unité
+    // garnie comme invisible/inaffectable, mais AUCUN des chemins de ciblage
+    // automatique de la simulation ne l'excluait — un assaillant pouvait la
+    // trouver et l'abattre une par une, sans jamais toucher au bâtiment
+    // censé la protéger. Ce test verrouille les deux fonctions de ciblage ET
+    // le résultat en jeu (PV inchangés après du combat simulé).
+    const j = partie(charger(), { graine: 4242 });
+    const mk = j.__sandbox.mkFaction;
+    j.G.factions.tA = mk('tA', { genre: 'neutre', equipe: 91, hostileATous: true, civ: 'francs', nom: 'Défenseur' });
+    j.G.factions.tB = mk('tB', { genre: 'neutre', equipe: 92, hostileATous: true, civ: 'francs', nom: 'Assaillant' });
+    j.G.units.length = 0;
+    const tc = j.mkBuilding(j.BT.TC, 60, 60, 'tA');
+    tc.constructing = false; tc.progress = 1;
+    j.placeBuilding(tc);
+
+    const abrite = j.mkUnit(j.UT.VIL, tc.x, tc.y, 'tA');
+    abrite.state = 'garrison'; abrite.target = tc.id;
+    j.G.units.push(abrite);
+    // À portée immédiate : si le ciblage voyait cette unité, ce serait
+    // forcément elle, la plus proche possible (même position que le CV).
+    const assaillant = j.mkUnit(j.UT.MIL, tc.x, tc.y, 'tB');
+    j.G.units.push(assaillant);
+    j.rebuildIndex();
+
+    egal(j.cibleAssaillant(assaillant), null, 'cibleAssaillant trouve une unité en garnison');
+    egal(j.prochainHostileUnite(tc.x, tc.y, 999, assaillant), null, 'prochainHostileUnite trouve une unité en garnison');
+
+    const hpAvant = abrite.hp;
+    for (let k = 0; k < 300; k++) j.update(j.SIM_DT);
+    egal(abrite.hp, hpAvant, 'l\'unité en garnison a perdu des PV alors que son bâtiment tient toujours');
+    ok(assaillant.target !== abrite.id, 'l\'assaillant a fini par verrouiller l\'unité en garnison comme cible');
+  });
+
   test('un bâtiment abîmé fume, un bâtiment sain jamais', () => {
     // L'état de dégât lui-même (lavis de suie sur le sprite) est du rendu et
     // n'est délibérément pas testé ici (voir l'en-tête du fichier). La fumée,

@@ -1155,7 +1155,12 @@ function doBuild(u,dt){
 
 function doAttack(u,dt){
   const tgt=unitById(u.target)||bldById(u.target);
-  if(!tgt||tgt.hp<=0){
+  // Une cible qui vient de rentrer en garnison compte comme abattue pour cet
+  // assaillant : elle est devenue invisible et hors d'atteinte (voir
+  // prochainHostileUnite/cibleAssaillant, qui l'excluent déjà des NOUVEAUX
+  // ciblages) — sans ce test, un combat déjà engagé continuait un instant
+  // contre une unité qui n'est plus sur le terrain.
+  if(!tgt||tgt.hp<=0||tgt.state==='garrison'){
     u.target=null;
     // cible abattue : on reprend la marche d'attaque là où elle s'était arrêtée
     if(u.amove){ u.destX=u.amove.x; u.destY=u.amove.y; u.state='amove'; return; }
@@ -1447,6 +1452,17 @@ function updateEnemyAI(dt){
     // au lieu de travailler. Le Moine de l'IA (voir updateUnits) vit
     // maintenant sur ce même automate — même exclusion, pour la même raison.
     if(fu&&fu.genre==='ia'&&(u.type===UT.VIL||u.type===UT.MONK)) continue;
+    // Une unité en garnison ne doit RIEN faire de sa propre initiative — ni
+    // se rendormir en garde (elle n'a pas de camp), ni surtout redevenir un
+    // combattant actif : à défaut de ce garde-fou explicite, une unité
+    // garnie qui garde encore un `target` pointant vers SON PROPRE bâtiment
+    // (non-hostile, donc invalidé) déclenchait un balayage `cibleAssaillant`
+    // DEPUIS sa position, la faisant basculer en 'attack' — et donc
+    // réapparaître, hors du bâtiment censé la cacher. Aujourd'hui seuls des
+    // villageois d'IA entrent en garnison (déjà exclus juste au-dessus par
+    // leur type), mais rien n'empêcherait une unité neutre ou une future
+    // garnison militaire de rejouer exactement ce scénario sans ce filtre.
+    if(u.state==='garrison') continue;
     u.atkCd=Math.max(0,u.atkCd-dt);
     // Reciblage 4×/s au lieu de 60×/s : le déplacement reste fluide, mais on
     // ne rebalaie plus tout le voisinage à chaque image (c'était 70% du CPU).
@@ -1454,7 +1470,12 @@ function updateEnemyAI(dt){
     let tgt=null;
     if(u.target!=null){
       tgt=unitById(u.target)||bldById(u.target);
-      if(tgt&&(tgt.hp<=0||!estHostile(u,tgt))) tgt=null;
+      // La cible qui vient de rentrer en garnison N'EST PLUS valide, même en
+      // attendant le prochain balayage périodique (u.aiCd) : sans ce test,
+      // un assaillant déjà engagé continuait de la viser un court instant
+      // après qu'elle a disparu du jeu, dans le seul créneau que cibleAssaillant/
+      // prochainHostileUnite ne couvrent pas (voir ces deux fonctions).
+      if(tgt&&(tgt.hp<=0||tgt.state==='garrison'||!estHostile(u,tgt))) tgt=null;
     }
     // Le balayage ne repart QUE sur le minuteur, ou tout de suite si la cible
     // vient de tomber. La garde d'avant était `u.aiCd>0 && u.target!=null` :
@@ -1470,7 +1491,7 @@ function updateEnemyAI(dt){
         // de garde, jamais à un bâtiment repéré à l'autre bout de la carte
         // comme un pillard de vague — le camp doit rester dormant tant
         // qu'on ne vient pas l'attaquer.
-        tgt=nearestBy(u.campX,u.campY,GUARD_AGGRO_RADIUS,e=>e.hp>0&&estHostile(u,e))
+        tgt=nearestBy(u.campX,u.campY,GUARD_AGGRO_RADIUS,e=>e.hp>0&&e.state!=='garrison'&&estHostile(u,e))
           ||nearPlayerBuildingWithin(u.campX,u.campY,GUARD_AGGRO_RADIUS,u);
       } else {
         // Stratégie : villageois proche (cible molle) > unité militaire proche > bâtiment prioritaire
@@ -1539,7 +1560,10 @@ function cibleAssaillant(u){
   const rv=u.rng*4, rm=u.rng*3;
   let vil=null,dv=rv*rv, mil=null,dm=rm*rm;
   forNearby(u.x,u.y,rv,e=>{
-    if(e.hp<=0||!estHostile(u,e)) return;
+    // À l'abri : invisible et inaffectable au clic (voir prochainHostileUnite) —
+    // sans cette exclusion, un pillard trouvait et abattait les villageois
+    // garnis un par un sans jamais toucher au bâtiment qui les protège.
+    if(e.hp<=0||e.state==='garrison'||!estHostile(u,e)) return;
     const dx=e.x-u.x,dy=e.y-u.y,d2=dx*dx+dy*dy;
     if(e.type===UT.VIL&&d2<dv){dv=d2;vil=e;}
     if(d2<dm){dm=d2;mil=e;}
@@ -1573,8 +1597,15 @@ function nearPlayerBuildingSmart(x,y,src){
 // Le ciblage était binaire (joueur contre 'enemy'). Il passe par estHostile(),
 // qui connaît les équipes : indispensable dès qu'un troisième camp existe.
 // `src` est l'entité qui cherche une cible (on lit son owner).
+// `state!=='garrison'` EXCLUT les unités à l'abri : elles sont invisibles
+// (drawUnits, js/06-rendu.js) et inaffectables au clic (handleTap,
+// js/09-entree.js), mais restent sinon des `G.units` normales, PV compris —
+// sans ce filtre, un balayage automatique les trouvait et les abattait une à
+// une, hors champ, sans jamais toucher au bâtiment qui est censé les
+// protéger. Voir aussi cibleAssaillant, qui garde le même filtre pour la
+// même raison côté ciblage ennemi.
 function prochainHostileUnite(x,y,r,src){
-  return nearestBy(x,y,r,u=>u.hp>0&&estHostile(src,u));
+  return nearestBy(x,y,r,u=>u.hp>0&&u.state!=='garrison'&&estHostile(src,u));
 }
 // Unités ET bâtiments hostiles (les tours prennent aussi les bâtiments).
 function prochainHostileToute(x,y,r,src){
@@ -1666,6 +1697,10 @@ function updateProjs(dt){
         // ne pouvait pas exprimer.
         const prof={atk:p.atk,type:p.srcType};
         for(const u of G.units){
+          // Un boulet qui rase la case d'un bâtiment garni ne doit fracasser
+          // QUE le bâtiment, pas les occupants invisibles placés à son x,y
+          // (voir prochainHostileUnite plus bas pour la même exclusion côté ciblage).
+          if(u.state==='garrison') continue;
           if(estHostile(p,u)&&Math.hypot(u.x-p.tx,u.y-p.ty)<splash){ dealDmg(u,degatsContre(prof,u),p); if(u.hp<=0) awardKillXP(p.shooterId); }
         }
         for(const b of G.buildings){
@@ -1677,7 +1712,11 @@ function updateProjs(dt){
         }
       } else {
         const t=unitById(p.targetId)||bldById(p.targetId);
-        if(t&&t.hp>0){ dealDmg(t,degatsContre({atk:p.atk,type:p.srcType},t),p); if(t.hp<=0) awardKillXP(p.shooterId); }
+        // Un trait résout sa cible par ID à l'arrivée, pas par position (voir
+        // shootProj) : si la cible s'est mise à l'abri PENDANT le vol, ce
+        // même test loupait le fait qu'elle n'est plus sur le terrain, et le
+        // trait la touchait quand même en garnison.
+        if(t&&t.hp>0&&t.state!=='garrison'){ dealDmg(t,degatsContre({atk:p.atk,type:p.srcType},t),p); if(t.hp<=0) awardKillXP(p.shooterId); }
       }
       p.life=0;
     } else {

@@ -47,6 +47,7 @@ const EXPORTS = [
   'aiNextBuild', 'AI_TRAINERS', 'trainTime', 'possedeBatiment', 'appliquerDemolition',
   'tryAutoReseed', 'hasAdjacentWater', 'updateUneIA', 'aiVilTarget', 'updateVisuel',
   'awardKillXP', 'veterancyRank', 'RANK_THRESHOLDS',
+  'cibleAssaillant', 'prochainHostileUnite', 'prochainHostileToute', 'updateEnemyAI',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

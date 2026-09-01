@@ -1006,6 +1006,45 @@ groupe('ordres', () => {
     egal(f.res.food, avant - cout, 'coût de montée d\'âge incorrect');
     egal(ordreDe(j, j.G.me, 'AGE', {}).ok, false, 'deuxième montée d\'âge mise en file');
   });
+
+  test('un villageois réaffecté quitte proprement son ancien poste', () => {
+    // BUG trouvé à l'audit : quitter une ferme ou un gisement par un ORDRE
+    // (au lieu de la sortie naturelle de doFarm/doGather — gisement épuisé,
+    // inventaire plein) ne retirait jamais l'unité de `farmers`/`gatherers`.
+    // Symptômes réels : effectif affiché faux sur une ferme, points de
+    // récolteurs qui tournent pour toujours autour d'un arbre déjà quitté.
+    // quitterPoste() (js/07-simulation.js) centralise ce nettoyage ; ce test
+    // verrouille deux chemins représentatifs (récolte→garnison,
+    // ferme→déplacement), pas les neuf ordres qui l'appellent désormais.
+    const j = partie(charger(), { graine: 4242 });
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC);
+    j.G.units.length = 0;
+
+    // Récolte → garnison : le gisement doit se vider.
+    const arbre = j.G.nodes.find((n) => n.type === j.RT.TREE && n.amt > 0);
+    ok(!!arbre, 'aucun arbre sur la carte');
+    const bucheron = j.mkUnit(j.UT.VIL, arbre.x, arbre.y, j.G.me);
+    j.G.units.push(bucheron);
+    ok(ordreDe(j, j.G.me, 'RECOLTE', { ids: [bucheron.id], nodeId: arbre.id }).ok, 'récolte refusée');
+    for (let k = 0; k < 30; k++) j.update(j.SIM_DT);
+    ok(arbre.gatherers.includes(bucheron.id), 'le bûcheron ne rejoint jamais son arbre');
+    ok(ordreDe(j, j.G.me, 'GARNIR', { ids: [bucheron.id], bId: tc.id }).ok, 'garnison refusée');
+    egal(arbre.gatherers.includes(bucheron.id), false, 'le bûcheron reste fantôme sur son ancien arbre après garnison');
+    egal(bucheron.homeNode, null, 'homeNode pas nettoyé après garnison');
+
+    // Ferme → déplacement : la ferme doit se vider.
+    const ferme = j.mkBuilding(j.BT.FARM, tc.tx + 3, tc.ty, j.G.me);
+    ferme.constructing = false; ferme.progress = 1;
+    j.placeBuilding(ferme);
+    const fermier = j.mkUnit(j.UT.VIL, ferme.x, ferme.y, j.G.me);
+    j.G.units.push(fermier);
+    ok(ordreDe(j, j.G.me, 'FERME', { ids: [fermier.id], bId: ferme.id }).ok, 'affectation à la ferme refusée');
+    for (let k = 0; k < 30; k++) j.update(j.SIM_DT);
+    ok(ferme.farmers.includes(fermier.id), 'le fermier ne rejoint jamais son champ');
+    ok(ordreDe(j, j.G.me, 'DEPL', { ids: [fermier.id], x: ferme.x + 500, y: ferme.y }).ok, 'déplacement refusé');
+    egal(ferme.farmers.includes(fermier.id), false, 'le fermier reste fantôme sur son ancienne ferme après déplacement');
+    egal(fermier.homeFarm, null, 'homeFarm pas nettoyé après déplacement');
+  });
 });
 
 // ════════════════════════════════════════════════════════════

@@ -210,7 +210,7 @@ function aiBuild(type,nearX,nearY,a){
       if(pi!==qi) return pi-qi;
       return Math.hypot(p.x-b.x,p.y-b.y)-Math.hypot(q.x-b.x,q.y-b.y);
     });
-  for(const v of vils.slice(0,2)){ v.state='build'; v.buildTarget=b.id; v.target=null; }
+  for(const v of vils.slice(0,2)){ quitterPoste(v); v.state='build'; v.buildTarget=b.id; v.target=null; }
   return true;
 }
 
@@ -332,7 +332,8 @@ function aiRebalance(vils,a){
   if(!worst||!over||worst===over||overV<worstV*1.6) return;
   const cand=vils.find(u=>u.state==='gather'&&aiVilRes(u)===over);
   if(!cand) return;
-  cand.inv=0; cand.invT=null; cand.homeNode=null; cand.homeFarm=null;
+  cand.inv=0; cand.invT=null;
+  quitterPoste(cand); // sans ça, le gisement quitté garde un point de récolteur fantôme — ce rééquilibrage tourne toute la partie
   cand.target=null; cand.state='idle'; cand.scanCd=0; // aiAssignVillager le replacera
 }
 function aiAssignVillager(u,a){
@@ -757,7 +758,7 @@ function updateUneIA(dt,a){
     for(const s of sites){
       if(G.units.some(u=>u.owner===a.id&&u.state==='build'&&u.buildTarget===s.id)) continue;
       const v=vils.find(u=>u.state!=='build');
-      if(v){ v.state='build'; v.buildTarget=s.id; v.target=null; }
+      if(v){ quitterPoste(v); v.state='build'; v.buildTarget=s.id; v.target=null; }
     }
   }
 

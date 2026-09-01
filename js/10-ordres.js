@@ -151,6 +151,7 @@ function applyCommand(cmd){
     // doivent pas répartir les unités différemment autour du même point.
     const fmt=formation(cmd.x,cmd.y,us.length);
     us.forEach((u,i)=>{
+      quitterPoste(u); // voir 07-simulation.js : sans ça, un récolteur/fermier déplacé laisse un fantôme derrière lui
       u.destX=fmt[i].x; u.destY=fmt[i].y; u.state='moving';
       u.target=null; u.pendingAction=null; u.amove=null;
       u.anchorX=fmt[i].x; u.anchorY=fmt[i].y;   // point de garde des postures
@@ -177,13 +178,13 @@ function applyCommand(cmd){
                                       :G.units.find(x=>x.id===cmd.cible);
     if(!cible||cible.hp<=0) return KO('cible');
     if(!estHostile({owner:cmd.f},cible)) return KO('cible'); // on n'attaque pas les siens
-    us.forEach(u=>{u.state='attack';u.target=cible.id;});
+    us.forEach(u=>{quitterPoste(u);u.state='attack';u.target=cible.id;});
     return OK({n:us.length});
   }
 
   case ORD.STOP: {
     const us=_unitesDe(cmd); if(!us.length) return KO('aucune');
-    us.forEach(u=>{u.state='idle';u.target=null;u.amove=null;});
+    us.forEach(u=>{quitterPoste(u);u.state='idle';u.target=null;u.amove=null;});
     return OK({n:us.length});
   }
 
@@ -209,6 +210,7 @@ function applyCommand(cmd){
     if(!vils.length) return KO('aucune');
     const b=_bldDe(cmd); if(!b||b.type!==BT.FARM||b.constructing) return KO('cible');
     for(const v of vils){
+      quitterPoste(v); // sans ça, passer d'une AUTRE ferme (ou d'un gisement) à celle-ci y laissait un fermier fantôme
       if(v.invT!=='farm') v.inv=0;
       v.state='farm'; v.target=b.id; v.homeFarm=b.id; v.invT='farm';
     }
@@ -219,7 +221,7 @@ function applyCommand(cmd){
     const vils=_unitesDe(cmd).filter(u=>u.type===UT.VIL);
     if(!vils.length) return KO('aucune');
     const b=_bldDe(cmd); if(!b||!b.constructing) return KO('cible');
-    for(const v of vils){ v.state='build'; v.buildTarget=b.id; }
+    for(const v of vils){ quitterPoste(v); v.state='build'; v.buildTarget=b.id; }
     return OK({n:vils.length});
   }
 
@@ -227,7 +229,7 @@ function applyCommand(cmd){
     const vils=_unitesDe(cmd).filter(u=>u.type===UT.VIL);
     if(!vils.length) return KO('aucune');
     const b=_bldDe(cmd); if(!b||b.constructing||b.hp>=b.maxHp) return KO('cible');
-    for(const v of vils){ v.state='repair'; v.target=b.id; }
+    for(const v of vils){ quitterPoste(v); v.state='repair'; v.target=b.id; }
     return OK({n:vils.length});
   }
 
@@ -250,7 +252,7 @@ function applyCommand(cmd){
     b.constructing=true; b.progress=0;
     placeBuilding(b);
     const vils=G.units.filter(u=>u.owner===cmd.f&&u.type===UT.VIL&&(cmd.batisseurs||[]).includes(u.id));
-    vils.forEach(v=>{ v.state='build'; v.buildTarget=b.id; });
+    vils.forEach(v=>{ quitterPoste(v); v.state='build'; v.buildTarget=b.id; });
     return OK({b, nom:d.nom});
   }
 
@@ -368,8 +370,9 @@ function applyCommand(cmd){
     if(room<=0) return KO('plein');
     const admis=us.slice(0,room);
     for(const u of admis){
+      quitterPoste(u); // gatherers/farmers restaient fantômes ici — homeNode n'était même pas nettoyé
       u.state='garrison'; u.target=b.id; u.x=b.x; u.y=b.y;
-      u.moving=false; u.path=null; u.buildTarget=null; u.homeFarm=null; u.inv=0; u.invT=null;
+      u.moving=false; u.path=null; u.buildTarget=null; u.inv=0; u.invT=null;
     }
     if(admis.length) f.stats.garrisonUses+=admis.length;
     return OK({n:admis.length, refuses:us.length-admis.length});
@@ -400,7 +403,8 @@ function applyCommand(cmd){
     if(!relic||!relicFree(relic)) return KO('cible');
     const u=monks[0];
     relic.carrier=u.id;
-    u.state='relic'; u.target=relic.id; u.homeFarm=null; u.inv=0; u.invT=null; u.moving=false; u.relicHeld=false;
+    quitterPoste(u);
+    u.state='relic'; u.target=relic.id; u.inv=0; u.invT=null; u.moving=false; u.relicHeld=false;
     return OK({});
   }
 
@@ -426,7 +430,7 @@ function applyCommand(cmd){
     const us=_unitesDe(cmd); if(!us.length) return KO('aucune');
     const w=(G.wildlife||[]).find(x=>x.id===cmd.wildlifeId);
     if(!w||w.hp<=0) return KO('cible');
-    for(const u of us){ u.state='hunt'; u.target=w.id; u.homeNode=null; u.moving=false; }
+    for(const u of us){ quitterPoste(u); u.state='hunt'; u.target=w.id; u.moving=false; }
     return OK({n:us.length});
   }
 

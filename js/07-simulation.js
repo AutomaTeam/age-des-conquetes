@@ -189,17 +189,15 @@ function updateUnits(dt){
   if(unMort) for(const u of G.units){
     if(u.hp>0) continue;
     G.sel=G.sel.filter(id=>id!==u.id);
-    // u.homeNode pointe déjà vers l'UNIQUE nœud dont ce villageois peut être
-    // le récolteur (voir doGather) : un balayage de TOUS les gisements de la
-    // carte (des centaines, jamais retirés du tableau) pour chaque mort
-    // était pur gâchis — le vrai responsable des gros pics observés en
-    // pleine bataille, bien plus que la garnison des tours corrigée
-    // au-dessus. Un combattant qui n'a jamais récolté a homeNode=null et ne
-    // coûte plus rien du tout ici.
-    if(u.homeNode!=null){
-      const n=nodeById(u.homeNode);
-      if(n&&n.gatherers.length) n.gatherers=n.gatherers.filter(id=>id!==u.id);
-    }
+    // u.homeNode/u.homeFarm pointent déjà vers l'UNIQUE gisement/ferme dont ce
+    // villageois peut être le travailleur (voir doGather/doFarm) : un
+    // balayage de TOUS les gisements de la carte (des centaines, jamais
+    // retirés du tableau) pour chaque mort était pur gâchis — le vrai
+    // responsable des gros pics observés en pleine bataille, bien plus que la
+    // garnison des tours corrigée au-dessus. Un combattant qui n'a jamais
+    // récolté ni cultivé a les deux à null et ne coûte plus rien du tout ici
+    // (voir quitterPoste, qui centralise ce nettoyage avec les ordres).
+    quitterPoste(u);
     spawnParts(u.x,u.y,couleurMinimap(u,true),8);
     G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge',civ:civKeyOf(u.owner)}); // silhouette qui bascule au sol et s'estompe, plutôt qu'une disparition instantanée
     sfx('death');
@@ -782,6 +780,31 @@ function doGather(u,dt){
   }
 }
 
+// Retire une unité de tout poste de récolte/ferme qu'elle occupait, AVANT
+// de la réaffecter à autre chose (déplacement, attaque, chantier,
+// réparation, garnison, relique, chasse…). doFarm/doGather se nettoient
+// déjà correctement eux-mêmes sur leurs propres sorties naturelles (gisement
+// épuisé, inventaire plein) — ce qui manquait, c'est CE point de passage
+// pour toute réaffectation décidée par un ORDRE, qui changeait `u.state`
+// sans jamais repasser par là. Sans lui, `n.gatherers`/`f.farmers`
+// accumulaient des identifiants fantômes pour toujours (points de récolteurs
+// qui tournent autour d'un arbre déjà quitté, effectif affiché faux sur une
+// ferme) — bien plus visible depuis que le bouton 🔔 peut vider récolteurs
+// et fermiers d'un coup vers la garnison. Coût nul pour une unité qui n'a
+// jamais récolté : homeNode/homeFarm valent déjà null.
+function quitterPoste(u){
+  if(u.homeNode!=null){
+    const n=nodeById(u.homeNode);
+    if(n&&n.gatherers.length) n.gatherers=n.gatherers.filter(id=>id!==u.id);
+    u.homeNode=null;
+  }
+  if(u.homeFarm!=null){
+    const f=bldById(u.homeFarm);
+    if(f&&f.farmers&&f.farmers.length) f.farmers=f.farmers.filter(id=>id!==u.id);
+    u.homeFarm=null;
+  }
+}
+
 // Récolte sur une ferme (modèle Age of Empires 2 : le villageois travaille le champ)
 function doFarm(u,dt){
   let f=bldById(u.target); if(f&&f.type!==BT.FARM) f=null;
@@ -949,8 +972,10 @@ function assignGatherers(vils,anchorNode){
   const single=ordered.length===1;
   for(const v of ordered){
     const nd=single?anchorNode:(bestNodeFor(v,type,anchorNode,load)||anchorNode);
-    // retirer le villageois de son ancien nœud
-    for(const old of G.nodes) if(old.gatherers.length) old.gatherers=old.gatherers.filter(id=>id!==v.id);
+    // retirer le villageois de son ancien nœud (ou de sa ferme, s'il en
+    // avait une) — quitterPoste vise directement homeNode/homeFarm au lieu
+    // de balayer TOUS les gisements de la carte pour chacun.
+    quitterPoste(v);
     if(v.invT!==type){ v.inv=0; v.invT=null; } // ne perdre l'inventaire que si on change de ressource
     v.state='gather'; v.target=nd.id; v.homeNode=nd.id;
     load[nd.id]=(load[nd.id]||0)+1;

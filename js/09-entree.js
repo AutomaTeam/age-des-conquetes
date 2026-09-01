@@ -586,9 +586,17 @@ function handleTap(sx,sy){
       // Château) à pleine santé ou non => les mettre à l'abri dedans.
       // Placé APRÈS la réparation : un villageois envoyé sur un bâtiment
       // endommagé continue de le réparer plutôt que de s'y enfermer.
+      // Villageois EXCLUS pour le Centre Ville spécifiquement : un clic sur
+      // le CV avec un villageois sélectionné les enfermait par accident dès
+      // que le bâtiment était à pleine santé. Ils ont désormais leur propre
+      // geste dédié — le bouton 🔔 (toggleVillageoisAbri, js/11-interface.js)
+      // qui en rentre/ressort la totalité d'un coup. La Tour et le Château,
+      // eux, gardent l'ancien geste : y planquer un villageois isolé pendant
+      // un raid reste un cas d'usage réel, et rien ne le remplace.
       const gcap=BDEF[tBuilding.type].garrisonCap;
       if(gcap&&!tBuilding.constructing){
-        const gArmy=G.units.filter(u=>estSel(u.id)&&u.state!=='garrison'&&u.type!==UT.TREB&&u.type!==UT.RAM);
+        const gArmy=G.units.filter(u=>estSel(u.id)&&u.state!=='garrison'&&u.type!==UT.TREB&&u.type!==UT.RAM
+          &&!(tBuilding.type===BT.TC&&u.type===UT.VIL));
         if(gArmy.length>0){
           const r=emettreOrdre(ordre(ORD.GARNIR,{ids:gArmy.map(u=>u.id), bId:tBuilding.id}));
           if(r.ok){

@@ -519,6 +519,7 @@ async function loadGame(key=SAVE_KEY){
     setSpeed(1);
     applyDifficultyBadge();
     syncAutoRepairBtn();
+    syncShelterBtn();
     refreshUI();
     requestAnimationFrame(loop);
     const d=new Date(data.ts);

@@ -121,15 +121,23 @@ function drawCampUpgrade(bar,b,ico,resLabel){
 
 // Bloc commun aux trois bâtiments garnissables (Centre Ville, Tour, Château) :
 // effectif actuel / capacité, et un bouton pour tout faire ressortir.
-// L'ENTRÉE en garnison ne passe pas par un bouton : elle se fait en
-// sélectionnant des unités puis en tapant le bâtiment (voir handleTap),
-// exactement comme l'affectation à une ferme ou à un chantier.
+// L'ENTRÉE en garnison ne passe pas par un bouton (sauf pour les villageois
+// du Centre Ville, voir ci-dessous) : elle se fait en sélectionnant des
+// unités puis en tapant le bâtiment (voir handleTap), exactement comme
+// l'affectation à une ferme ou à un chantier.
 function drawGarrisonInfo(bar,b){
   const cap=BDEF[b.type].garrisonCap; if(!cap) return;
   const n=G.units.filter(u=>u.state==='garrison'&&u.target===b.id).length;
   const info=document.createElement('div');
   info.style.cssText='color:#9fc9e8;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
-  info.textContent=`🏰 Garnison : ${n}/${cap}`+(n===0?' — sélectionnez des unités puis tapez ce bâtiment':'');
+  // Le CV n'accepte plus les villageois par simple clic (voir handleTap,
+  // js/09-entree.js) : l'indication renvoie vers le bouton 🔔 dédié plutôt
+  // que vers un geste qui ne marche plus pour eux. La Tour et le Château,
+  // eux, gardent l'ancien geste tel quel.
+  const astuce=b.type===BT.TC
+    ? ' — 🔔 pour les villageois, ou sélectionnez d’autres unités puis tapez ce bâtiment'
+    : ' — sélectionnez des unités puis tapez ce bâtiment';
+  info.textContent=`🏰 Garnison : ${n}/${cap}`+(n===0?astuce:'');
   bar.appendChild(info);
   if(n>0) mkBtn(bar,'🚪','Sortir\nla garnison',()=>degarrirTous(b));
 }
@@ -138,6 +146,7 @@ function degarrirTous(b){
   if(!r.ok) return;
   notify(`🚪 ${r.n} unité(s) sortie(s) de garnison`,'#3498db'); buzz(6);
   refreshUI();
+  if(b.type===BT.TC) syncShelterBtn();
 }
 
 // Bloc Marché : route commerciale active, ou bouton pour en lancer une.
@@ -882,6 +891,62 @@ window.toggleAutoRepair=toggleAutoRepair;
 function syncAutoRepairBtn(){
   const el=document.getElementById('zrepair');
   if(el) el.classList.toggle('active', !!G.autoRepair);
+}
+
+// ── VILLAGEOIS À L'ABRI (cloche) ──────────────────────────────
+// Un seul bouton, aucune sélection préalable : rentre TOUS les villageois du
+// joueur dans son/ses Centre(s) Ville, ou les fait tous ressortir — bascule
+// sur l'état ACTUEL (des villageois déjà dedans ? on vide ; sinon on
+// remplit) plutôt que deux boutons séparés. C'est le geste d'urgence qui
+// remplace le clic villageois+CV retiré de handleTap (voir 09-entree.js) :
+// il ne doit pas exiger de sélectionner qui que ce soit sous le feu.
+function toggleVillageoisAbri(){
+  const tcs=G.buildings.filter(b=>estLocal(b)&&b.type===BT.TC&&!b.constructing);
+  if(!tcs.length){ notify('Aucun Centre Ville','#e67e22'); return; }
+  const dedans=G.units.filter(u=>u.state==='garrison'&&u.type===UT.VIL&&tcs.some(b=>b.id===u.target));
+  if(dedans.length>0){
+    let n=0;
+    for(const b of tcs){
+      const r=emettreOrdre(ordre(ORD.DEGARNIR,{bId:b.id}));
+      if(r.ok) n+=r.n;
+    }
+    notify(`🔔 ${n} villageois sorti(s) du Centre Ville`,'#3498db'); buzz(8);
+    syncShelterBtn(); return;
+  }
+  const vils=G.units.filter(u=>estLocal(u)&&u.type===UT.VIL&&u.state!=='garrison');
+  if(!vils.length){ notify('Aucun villageois à mettre à l’abri','#e67e22'); return; }
+  // Chaque villageois rejoint le CV le plus proche ENCORE DISPONIBLE : avec
+  // plusieurs Centres Ville, ils se répartissent par proximité plutôt que
+  // de tous viser le premier trouvé et laisser les autres vides.
+  const restant=new Map(tcs.map(b=>[b.id, BDEF[b.type].garrisonCap-G.units.filter(u=>u.state==='garrison'&&u.target===b.id).length]));
+  const parCV=new Map();
+  for(const v of vils){
+    let best=null,bd=Infinity;
+    for(const b of tcs){
+      if((restant.get(b.id)||0)<=0) continue;
+      const d=Math.hypot(b.x-v.x,b.y-v.y);
+      if(d<bd){bd=d;best=b;}
+    }
+    if(!best) continue; // toutes les garnisons visées sont déjà pleines
+    restant.set(best.id,restant.get(best.id)-1);
+    if(!parCV.has(best.id)) parCV.set(best.id,[]);
+    parCV.get(best.id).push(v.id);
+  }
+  let n=0,refuses=0;
+  for(const[bId,ids] of parCV){
+    const r=emettreOrdre(ordre(ORD.GARNIR,{ids,bId}));
+    if(r.ok){ n+=r.n; refuses+=r.refuses||0; }
+  }
+  if(n===0){ notify('🏰 Garnison pleine !','#e74c3c'); return; }
+  notify(refuses>0?`🔔 ${n} villageois à l’abri (garnison pleine, ${refuses} dehors)`:`🔔 ${n} villageois à l’abri`,'#3498db');
+  buzz(8);
+  syncShelterBtn();
+}
+window.toggleVillageoisAbri=toggleVillageoisAbri;
+function syncShelterBtn(){
+  const el=document.getElementById('zshelter');
+  if(!el) return;
+  el.classList.toggle('active', G.units.some(u=>u.state==='garrison'&&u.type===UT.VIL&&estLocal(u)));
 }
 
 // Trouve le bâtiment du joueur endommagé le plus proche (hors chantier en

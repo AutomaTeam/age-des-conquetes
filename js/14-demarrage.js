@@ -219,6 +219,7 @@ function startGame(){
   revealFog();
   applyDifficultyBadge();
   syncAutoRepairBtn(); // repart toujours désactivé (voir initState) — resynchronise le bouton après une partie précédente
+  syncShelterBtn(); // idem : aucun villageois en garnison au démarrage, sauf reprise d'une sauvegarde
   refreshUI();
   requestAnimationFrame(loop);
 

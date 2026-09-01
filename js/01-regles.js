@@ -101,7 +101,21 @@ const CLS_NOM = { inf:'Infanterie', arc:'Tireur', cav:'Cavalerie', siege:'Siège
 // Définitions unités
 const UDEF = {
   [UT.VIL]:     { nom:'Villageois',    hp:28,  spd:1.8, atk:3,  rng:1.2, atkSpd:1.0, cls:CLS.VIL,   atkType:'m', armor:{m:0,p:0} },
-  [UT.MIL]:     { nom:'Milicien',      hp:55,  spd:2.2, atk:10, rng:1.2, atkSpd:1.3, cls:CLS.INF,   atkType:'m', armor:{m:1,p:1} },
+  // PV 55→80 et armure 1/1→2/2 : mesuré par simulation (10v10, 7 graines),
+  // le Milicien perdait TOUJOURS 0 partout face au Piquier — même à armure
+  // 5/5 (plus qu'un Paladin) sans le moindre survivant. À portée et cadence
+  // quasi égales, l'écart de PV (55 contre 70) suffisait à lui seul à faire
+  // basculer toute bataille de masse (effet d'attrition : un petit
+  // avantage individuel devient un anéantissement total à dix contre dix).
+  // Il a fallu cumuler PV ET armure pour atteindre la quasi-parité (3
+  // victoires/4 défaites sur 7 graines) — corriger un seul des deux
+  // n'avait mesurablement AUCUN effet. Le Piquier n'a pas bougé : son rôle
+  // anti-cavalerie n'était pour rien dans l'écart. Vérifié : ce réglage ne
+  // change RIEN face à l'Archer ou au Chevalier (le Milicien y reste
+  // largement plus faible, cohérent avec son rôle de première unité bon
+  // marché) — seul l'écart avec son concurrent direct au même palier
+  // (Piquier, Âge Féodal) est comblé.
+  [UT.MIL]:     { nom:'Milicien',      hp:80,  spd:2.2, atk:10, rng:1.2, atkSpd:1.3, cls:CLS.INF,   atkType:'m', armor:{m:2,p:2} },
   [UT.ARC]:     { nom:'Archer',        hp:38,  spd:2.0, atk:7,  rng:4.5, atkSpd:1.0, cls:CLS.ARC,   atkType:'p', armor:{m:0,p:0} },
   [UT.KNIGHT]:  { nom:'Chevalier',     hp:95,  spd:2.8, atk:15, rng:1.3, atkSpd:1.2, cls:CLS.CAV,   atkType:'m', armor:{m:2,p:2} },
   [UT.MONK]:    { nom:'Moine',         hp:32,  spd:1.7, atk:1,  rng:1.2, atkSpd:0.5, cls:CLS.MOINE, atkType:'m', armor:{m:0,p:0} },

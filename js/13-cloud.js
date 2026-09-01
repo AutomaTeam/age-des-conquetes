@@ -510,12 +510,14 @@ async function loadGame(key=SAVE_KEY){
         if(G.bmap[b.ty+dy]) G.bmap[b.ty+dy][b.tx+dx]=mark;
     }
     G.projs=[]; G.parts=[]; G.ftexts=[]; G.sel=[]; G.deathfx=[]; G.shake={mag:0};
-    G.mode='select'; G.buildType=null; G.ghost=null;
+    G.mode='select'; G.buildType=null; G.ghost=null; G.wallLine=null;
     // Un chargement en pleine pose de bâtiment laissait ✕/✓ affichés pour de
     // bon (rien ne les cache jamais côté chargement) — G.mode repasse à
     // 'select' juste au-dessus, l'affichage doit suivre.
     const bc=document.getElementById('bcancel'); if(bc) bc.style.display='none';
     const bk=document.getElementById('bconfirm'); if(bk) bk.style.display='none';
+    const bp=document.getElementById('bpin'); if(bp) bp.style.display='none';
+    _wallAnchor=null; _wallLinePending=false;
     G.speed=1; G.rateAcc={food:0,wood:0,stone:0,gold:0}; G.rateShow={food:0,wood:0,stone:0,gold:0}; G.rateTimer=0;
     G.nid=Math.max(...[...G.units,...G.buildings,...G.nodes].map(e=>e.id||0),0)+1;
     G.lastTime=null;

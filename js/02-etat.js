@@ -174,7 +174,7 @@ function initState() {
     cam:{ x:0, y:0 },
     sel:[],
     mode:'select',
-    buildType:null, ghost:null, routeFrom:null,
+    buildType:null, ghost:null, wallLine:null, routeFrom:null,
     buildTab:0, // 0=Économie 1=Militaire 2=Défense 3=Amélioration
     wave:0, waveTimer:FIRST_WAVE_DELAY*diff.waveDelayMult, waveActive:false,
     paused:false,

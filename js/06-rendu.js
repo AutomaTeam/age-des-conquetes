@@ -32,7 +32,7 @@ function render(){
   drawMap(); drawNodes(); drawRelics(); drawWildlife(); drawBuildings(); drawCaravans(); drawDeathFx(); drawHeroAuras(); drawUnits();
   drawHoverRing();
   drawProjs(); drawParts(); drawFTexts(); drawSelRings();
-  if(G.mode==='build'&&G.ghost) drawGhost();
+  if(G.mode==='build'&&(G.ghost||(G.wallLine&&G.wallLine.length))) drawGhost();
   drawFog();
   drawNightTint();
   drawNightGlow();
@@ -1263,7 +1263,22 @@ function drawHoverRing(){
   }
 }
 
+// Ligne de Mur (glissé) : une case à la fois, coloriage simple sans le
+// sprite complet par case (une ligne de plusieurs dizaines de cases n'a pas
+// besoin de dessiner autant de fois le mur réel — le contour vert/rouge dit
+// déjà tout ce qu'il faut) ; pas de tirets qui défilent non plus, ce serait
+// une animation par case répétée pour rien sur toute la ligne.
+function drawWallLineGhost(){
+  for(const cell of G.wallLine){
+    const sx=Math.round(cell.tx*TILE-G.cam.x), sy=Math.round(cell.ty*TILE-G.cam.y+54);
+    const col=cell.valid?'#2ecc71':'#e74c3c';
+    ctx.globalAlpha=.35; ctx.fillStyle=col; ctx.fillRect(sx,sy,TILE,TILE); ctx.globalAlpha=1;
+    ctx.strokeStyle=col; ctx.lineWidth=1.5;
+    ctx.strokeRect(sx,sy,TILE,TILE);
+  }
+}
 function drawGhost(){
+  if(G.buildType===BT.WALL&&G.wallLine&&G.wallLine.length){ drawWallLineGhost(); return; }
   const g=G.ghost, d=BDEF[G.buildType];
   const sx=Math.round(g.tx*TILE-G.cam.x), sy=Math.round(g.ty*TILE-G.cam.y+54);
   const pw=d.w*TILE, ph=d.h*TILE;

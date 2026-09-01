@@ -16,6 +16,13 @@ let lastTapT=0,lastTapX=0,lastTapY=0;
 let boxSelecting=false;
 let pinching=false, pinchD0=0, pinchT0=0, pinchMX=0, pinchMY=0;
 let dblHold=false, dblHoldMoved=false;
+// Glissé de mur (voir gestureStart/updateBuildPreview/computeWallLine plus
+// bas) : _wallAnchor est le point de départ de la ligne en cours, réancré à
+// CHAQUE nouvelle prise (doigt posé/clic enfoncé) ; _wallLinePending dit si
+// une ligne tracée par glissé attend encore une confirmation explicite
+// (✓ ou retap) — tant que c'est le cas, le survol souris ne doit pas
+// l'écraser par un simple aperçu d'une case (voir le mousemove plus bas).
+let _wallAnchor=null, _wallLinePending=false;
 let velX=0, velY=0, lastMoveT=0;
 let glideX=0, glideY=0;
 let noGlideUntil=0;              // pas d'inertie juste après un pincement
@@ -62,6 +69,15 @@ function gestureStart(pts){
   boxSelecting=false; dblHoldMoved=false;
   // second appui rapide au même endroit et maintenu => rectangle de sélection
   dblHold=(tST-lastTapT<320 && Math.hypot(p.x-lastTapX,p.y-lastTapY)<36);
+  // Nouvelle prise en mode Mur : ancre une ligne fraîche à CE point — voir
+  // updateBuildPreview. Un geste qui démarre efface aussi la ligne en attente
+  // de confirmation d'un geste précédent (voir _wallLinePending) : on est en
+  // train d'en tracer une autre, celle d'avant n'a plus lieu d'être gelée.
+  if(G.mode==='build'&&G.buildType===BT.WALL){
+    const {x:wx,y:wy}=sw(p.x,p.y);
+    _wallAnchor={tx:wx/BASE_TILE|0, ty:wy/BASE_TILE|0};
+    _wallLinePending=false;
+  }
 }
 
 // ── DÉPLACEMENT ──
@@ -117,7 +133,7 @@ function gestureMove(pts){
   }
   if(G.mode==='build'){
     const {x:wx,y:wy}=sw(p.x,p.y);
-    updateGhost(wx/BASE_TILE|0, wy/BASE_TILE|0);
+    updateBuildPreview(wx/BASE_TILE|0, wy/BASE_TILE|0);
   }
 }
 
@@ -146,6 +162,11 @@ function gestureEnd(pts,ended){
       glideX=clampVel(velX); glideY=clampVel(velY);
     } else { glideX=glideY=0; }
     velX=velY=0;
+    // Un glissé en mode Mur vient de tracer une ligne : elle reste affichée
+    // telle quelle (voir updateBuildPreview/gestureMove) au lieu d'être
+    // aussitôt écrasée par le prochain survol souris (voir le mousemove plus
+    // bas) — elle attend maintenant ✓, ou un tap/clic qui la remplace.
+    if(G.mode==='build'&&G.buildType===BT.WALL) _wallLinePending=true;
     return;
   }
   if(!ended) return;
@@ -203,9 +224,12 @@ canvas.addEventListener('mousedown',e=>{
 canvas.addEventListener('mousemove',e=>{
   // Aperçu de placement en mode construction : suit le curseur même sans
   // bouton enfoncé (le tactile ne peut pas faire ça, faute de survol).
-  if(G.mode==='build'){
+  // Sauf _wallLinePending : une ligne de mur tracée au clic-glisser reste
+  // affichée telle quelle en attendant confirmation, un survol qui passe par
+  // là ensuite ne doit pas la remplacer par un aperçu d'une seule case.
+  if(G.mode==='build'&&!_wallLinePending){
     const {x:wx,y:wy}=sw(e.clientX,e.clientY);
-    updateGhost(wx/BASE_TILE|0, wy/BASE_TILE|0);
+    updateBuildPreview(wx/BASE_TILE|0, wy/BASE_TILE|0);
   }
   if(mouseDown) gestureMove([{x:e.clientX,y:e.clientY}]);
   // Survol (souris uniquement, pas de doigt enfoncé) : met en évidence la
@@ -592,16 +616,35 @@ function handleTap(sx,sy){
 
   // Mode construction
   if(G.mode==='build'){
+    const isWall=G.buildType===BT.WALL;
     // Souris : le survol (mousemove ci-dessus) a déjà montré l'aperçu avant
-    // ce clic — le confirmer directement ne surprend personne.
+    // ce clic — le confirmer directement ne surprend personne. Un vrai
+    // glissé (ligne de mur tracée à la souris) n'atteint jamais ce point :
+    // isDrag l'a déjà intercepté plus haut dans gestureEnd.
+    if(!_touchDriven){
+      updateBuildPreview(tx,ty);
+      if(isWall){
+        if(G.wallLine&&G.wallLine.some(c=>c.valid)) confirmWallLine();
+        else notify('Placement impossible !','#e74c3c');
+      } else {
+        if(G.ghost&&G.ghost.valid) confirmBuild(G.ghost.tx,G.ghost.ty);
+        else notify('Placement impossible !','#e74c3c');
+      }
+      return;
+    }
     // Tactile : ce tap est la PREMIÈRE fois que ce point de la carte est
     // visé (pas de survol) ; il ne fait donc que positionner l'aperçu, sauf
-    // s'il retombe sur la case déjà visée — retoucher deux fois le même
-    // endroit vaut alors confirmation, sans obliger à viser le bouton ✓.
-    if(!_touchDriven){
-      updateGhost(tx,ty);
-      if(G.ghost&&G.ghost.valid) confirmBuild(G.ghost.tx,G.ghost.ty);
-      else notify('Placement impossible !','#e74c3c');
+    // s'il retombe sur la case (ou la ligne d'une seule case) déjà visée —
+    // retoucher deux fois le même endroit vaut alors confirmation, sans
+    // obliger à viser le bouton ✓.
+    if(isWall){
+      const prev=G.wallLine&&G.wallLine.length===1?G.wallLine[0]:null;
+      const dejaVise=prev&&prev.tx===tx&&prev.ty===ty;
+      updateBuildPreview(tx,ty); // gestureStart a déjà réancré _wallAnchor sur CE tap
+      if(dejaVise){
+        if(G.wallLine.some(c=>c.valid)) confirmWallLine();
+        else notify('Emplacement invalide','#e74c3c');
+      }
       return;
     }
     const prev=G.ghost;
@@ -840,6 +883,42 @@ function hasAdjacentWater(tx,ty,w,h){
   }
   return false;
 }
+// Trace une ligne de cases entre deux points de grille (Bresenham : gère la
+// diagonale, pas seulement horizontale/verticale) — sert au glissé de Mur.
+// Plafonnée : un glissé en diagonale sur toute la carte enverrait sinon des
+// centaines d'ORD.BATIR d'un coup au réseau pour une seule confirmation.
+const WALL_LINE_MAX=80;
+function computeWallLine(x0,y0,x1,y1){
+  const pts=[];
+  const dx=Math.abs(x1-x0), dy=-Math.abs(y1-y0);
+  const sx=x0<x1?1:-1, sy=y0<y1?1:-1;
+  let err=dx+dy, x=x0, y=y0;
+  while(true){
+    pts.push({tx:x, ty:y, valid:x>=0&&y>=0&&x<COLS&&y<ROWS&&G.bmap[y][x]===0});
+    if((x===x1&&y===y1)||pts.length>=WALL_LINE_MAX) break;
+    const e2=2*err;
+    if(e2>=dy){ err+=dy; x+=sx; }
+    if(e2<=dx){ err+=dx; y+=sy; }
+  }
+  return pts;
+}
+// Point de passage unique pour rafraîchir l'aperçu de pose, quel que soit le
+// geste (survol souris, glissé, tap) : le Mur trace une LIGNE depuis la
+// dernière ancre (_wallAnchor, voir gestureStart) jusqu'à ce point ; tout le
+// reste garde le simple aperçu à une case (updateGhost). Sans ancre encore
+// posée (avant le premier geste, voir enterBuild), la ligne dégénère en une
+// seule case — exactement comme l'aperçu des autres bâtiments.
+function updateBuildPreview(tx,ty){
+  if(G.buildType===BT.WALL){
+    const a=_wallAnchor||{tx,ty};
+    G.ghost=null;
+    G.wallLine=computeWallLine(a.tx,a.ty,tx,ty);
+    syncBuildConfirmBtn();
+  } else {
+    G.wallLine=null;
+    updateGhost(tx,ty);
+  }
+}
 function updateGhost(tx,ty){
   if(!G.buildType) return;
   const d=BDEF[G.buildType];
@@ -849,14 +928,23 @@ function updateGhost(tx,ty){
   G.ghost={tx,ty,valid};
   syncBuildConfirmBtn(); // point de passage unique : tout appelant profite du bouton ✓ à jour
 }
-// Reflète G.ghost sur le bouton ✓ (voir index.html) : visible dès qu'un
-// aperçu existe, « prêt » (vert) seulement s'il est posable ici.
+// Reflète G.ghost (ou G.wallLine en mode Mur) sur le bouton ✓ (voir
+// index.html) : visible dès qu'un aperçu existe, « prêt » (vert) seulement
+// s'il y a au moins une case posable.
 function syncBuildConfirmBtn(){
   const el=document.getElementById('bconfirm'); if(!el) return;
-  const show=G.mode==='build'&&!!G.ghost;
+  const isWall=G.buildType===BT.WALL;
+  const show=G.mode==='build'&&(isWall?!!(G.wallLine&&G.wallLine.length):!!G.ghost);
   el.style.display=show?'flex':'none';
-  el.classList.toggle('ready',show&&G.ghost.valid);
+  const ready=show&&(isWall?G.wallLine.some(c=>c.valid):G.ghost.valid);
+  el.classList.toggle('ready',ready);
 }
+
+// 📌 « rester en pose » : préférence PERSISTANTE (pas un état de partie —
+// donc rien dans G, jamais sérialisée) qui survit à chaque construction et
+// même à un ✕. Poser 4 Maisons d'affilée obligeait sinon à retourner dans
+// l'onglet Économie et à retaper Maison à chaque fois — pénible au doigt.
+let _buildPin=false;
 
 function confirmBuild(tx,ty){
   const type=G.buildType, d=BDEF[type];
@@ -868,33 +956,92 @@ function confirmBuild(tx,ty){
     else notify('Placement impossible !','#e74c3c');
     return;
   }
-  exitBuild();
   notify(`Construction de ${r.nom} lancée !`,'#3498db');
+  if(_buildPin){
+    // Le même type reste choisi : l'aperçu se décale d'une case pour ne pas
+    // retomber pile sur ce qu'on vient de poser (systématiquement invalide).
+    updateGhost(tx+d.w,ty);
+    refreshUI();
+    return;
+  }
+  exitBuild();
+}
+
+// Confirme toute la ligne tracée par un glissé de Mur (voir
+// computeWallLine) : un ORD.BATIR par case VALIDE, les cases occupées de la
+// ligne sont silencieusement sautées (un rocher ou un buisson au milieu du
+// tracé ne doit pas faire échouer tout le reste). S'arrête dès qu'un manque
+// de ressources apparaît : le coût ne fait qu'augmenter plus loin sur la
+// ligne, continuer à essayer ne ferait que spammer des ordres voués à
+// échouer (côté hôte/solo — côté client réseau, chaque ORD.BATIR répond de
+// toute façon en prédiction optimiste, voir emettreOrdre : le résultat réel
+// arrive plus tard, la boucle ne s'arrête donc que sur le cas hôte/solo).
+function confirmWallLine(){
+  const line=G.wallLine||[];
+  const batisseurs=G.units.filter(u=>estSel(u.id)&&estLocal(u)&&u.type===UT.VIL).map(u=>u.id);
+  let ok=0, total=0, dernier=null;
+  for(const cell of line){
+    if(!cell.valid) continue;
+    total++;
+    const r=emettreOrdre(ordre(ORD.BATIR,{type:BT.WALL, tx:cell.tx, ty:cell.ty, batisseurs}));
+    if(r.ok){ ok++; dernier=cell; }
+    else if(r.raison==='ressources') break;
+  }
+  if(ok===0){ notify(total?'Ressources insuffisantes !':'Placement impossible !','#e74c3c'); return; }
+  notify(ok<total
+    ? `🧱 ${ok}/${total} sections de palissade posées (ressources insuffisantes pour le reste)`
+    : `🧱 ${ok} section${ok>1?'s':''} de palissade posée${ok>1?'s':''} !`,'#3498db');
+  if(_buildPin){
+    _wallAnchor=null; _wallLinePending=false; // prochaine ligne : geste neuf
+    updateBuildPreview(dernier.tx+1, dernier.ty);
+    refreshUI();
+    return;
+  }
+  exitBuild();
 }
 
 function enterBuild(type){
   G.mode='build'; G.buildType=type;
+  _wallAnchor=null; _wallLinePending=false; // geste neuf, jamais l'ancre d'un type précédent
   // Aperçu affiché DÈS l'entrée en mode construction, au centre de l'écran :
   // au doigt, rien ne le montrait avant le premier contact — poser au tout
   // premier tap revenait à construire un bâtiment qu'on n'avait jamais vu.
   const S=TILE/BASE_TILE;
   const cwx=(G.cam.x+W/2)/S, cwy=(G.cam.y+gameH()/2)/S;
-  updateGhost(cwx/BASE_TILE|0, cwy/BASE_TILE|0);
+  updateBuildPreview(cwx/BASE_TILE|0, cwy/BASE_TILE|0);
   document.getElementById('bcancel').style.display='flex';
-  notify(`Positionnez : ${BDEF[type].nom} — ✓ pour valider`,'#3498db');
+  const pinEl=document.getElementById('bpin');
+  pinEl.style.display='flex'; pinEl.classList.toggle('active',_buildPin);
+  notify(type===BT.WALL
+    ? 'Glissez pour tracer une ligne, ou touchez pour une seule case — ✓ pour valider'
+    : `Positionnez : ${BDEF[type].nom} — ✓ pour valider`,'#3498db');
   refreshUI();
 }
 
 function exitBuild(){
-  G.mode='select'; G.buildType=null; G.ghost=null;
+  G.mode='select'; G.buildType=null; G.ghost=null; G.wallLine=null;
+  _wallAnchor=null; _wallLinePending=false;
   document.getElementById('bcancel').style.display='none';
   document.getElementById('bconfirm').style.display='none';
+  document.getElementById('bpin').style.display='none';
   refreshUI();
 }
 
 document.getElementById('bcancel').addEventListener('click',()=>{ if(G.mode==='route') exitRoute(); else exitBuild(); });
 document.getElementById('bconfirm').addEventListener('click',()=>{
-  if(G.mode!=='build'||!G.ghost) return;
+  if(G.mode!=='build') return;
+  if(G.buildType===BT.WALL){
+    if(G.wallLine&&G.wallLine.some(c=>c.valid)) confirmWallLine();
+    else { notify('Emplacement invalide','#e74c3c'); buzz(8); }
+    return;
+  }
+  if(!G.ghost) return;
   if(G.ghost.valid) confirmBuild(G.ghost.tx,G.ghost.ty);
   else { notify('Emplacement invalide','#e74c3c'); buzz(8); }
+});
+document.getElementById('bpin').addEventListener('click',()=>{
+  _buildPin=!_buildPin;
+  document.getElementById('bpin').classList.toggle('active',_buildPin);
+  notify(_buildPin?'📌 Reste en pose après chaque construction':'Pose unique','#95a5a6');
+  buzz(6);
 });

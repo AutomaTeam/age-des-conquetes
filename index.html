@@ -22,7 +22,7 @@
   --bg:   #140c00; --bg2:  #2a1600; --bg3: #3d2204;
   --parch: #e8d5a0; --parch2: #c8a96e;
   --red:  #8b1a1a; --green: #2d6b22; --blue: #2980b9;
-  --topH: 54px; --botH: 130px;
+  --topH: 54px; --botH: 160px;
 }
 * { margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none; }
 html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-action:none; }
@@ -248,16 +248,60 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   background:rgba(46,204,113,.20);border-color:#2ecc71;color:#2ecc71;
 }
 
-/* ── NOTIFICATIONS ── */
+/* ── GROUPES DE CONTRÔLE (1-9) ──
+   Ctrl+1..9 (assigner) / 1..9 (rappeler) n'avaient aucun équivalent tactile :
+   un joueur mobile ne pouvait tout simplement pas s'en servir. Rangée
+   compacte au-dessus du panneau de sélection — dans #botpanel comme
+   #selinfo/#actbar, donc jamais en position fixe à calculer contre un
+   contenu de hauteur variable (voir le commentaire de #deselbtn).
+   Chaque case reste sobre et vide tant qu'aucun groupe n'y est rangé
+   (opacité réduite, comme #idlebtn-inner.zero) : la rangée ne crie pas sa
+   présence pour rien, mais reste là pour qui cherche à toucher. */
+#groupbar {
+  display:flex;justify-content:center;gap:4px;padding:4px 8px 0;flex-wrap:wrap;
+}
+.gbtn {
+  position:relative;width:26px;height:26px;border-radius:6px;
+  background:rgba(20,12,0,.88);border:1.5px solid var(--gold-d);color:var(--gold-l);
+  font-family:'Cinzel',serif;font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  opacity:.35;transition:opacity .15s,background .15s,border-color .15s;
+  -webkit-tap-highlight-color:transparent;
+}
+.gbtn.filled { opacity:1; }
+.gbtn.held { background:rgba(46,204,113,.24);border-color:#2ecc71; } /* appui maintenu → assignation en cours */
+.gbtn .gcnt {
+  position:absolute;bottom:-3px;right:-3px;min-width:13px;height:13px;padding:0 2px;
+  border-radius:7px;background:var(--gold-d);color:#140c00;font-size:8px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;line-height:1;
+}
+@media (min-width:760px) { #groupbar { max-width:920px;margin:0 auto; } }
+
+/* ── NOTIFICATIONS ──
+   Décalée sous #agebar (top+26px, ~24px de haut) plutôt que juste sous la
+   topbar : les deux étant centrées horizontalement, un toast qui démarrait à
+   +32px recouvrait le bouton de montée d'âge pile pendant une attaque —
+   exactement le moment où ce bouton doit rester cliquable. `max-height` +
+   `overflow:hidden` borne aussi la pile : une rafale de notifications (siège,
+   plusieurs bâtiments perdus d'un coup) ne s'étire plus indéfiniment par-
+   dessus la carte, elle est plafonnée côté JS (voir notify()) et le
+   débordement, s'il subsiste un instant, reste simplement invisible plutôt
+   que de recouvrir le jeu. */
 #notif {
-  position:fixed;top:calc(var(--topH) + 32px);left:50%;transform:translateX(-50%);
+  position:fixed;top:calc(var(--topH) + 64px);left:50%;transform:translateX(-50%);
   z-index:200;pointer-events:none;
   display:flex;flex-direction:column;align-items:center;gap:4px;width:260px;
+  max-height:150px;overflow:hidden;
 }
 .nmsg {
   background:rgba(20,12,0,.94);border:1px solid var(--gold-d);border-radius:20px;
   font-family:'Cinzel',serif;font-size:11px;padding:4px 14px;text-align:center;
   animation:nfade 2.8s forwards;white-space:nowrap;
+  /* #notif est pointer-events:none (pour ne jamais bloquer un clic sur la
+     carte derrière un toast) ; chaque toast le réactive pour lui, ce qui
+     permet à l'alerte d'attaque (voir alertAttack) d'être réellement
+     cliquable — elle le promettait ("toucher pour voir") sans l'être. */
+  pointer-events:auto;
 }
 .nmsg.wide { white-space:normal;max-width:252px;border-radius:12px;line-height:1.5;padding:6px 14px; }
 @keyframes nfade { 0%{opacity:0;transform:translateY(6px)} 12%{opacity:1;transform:none} 75%{opacity:1} 100%{opacity:0;transform:translateY(-8px)} }
@@ -1074,6 +1118,11 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 <!-- ── BOTTOM PANEL ── -->
 <div id="botpanel">
+  <!-- ── GROUPES DE CONTRÔLE ── équivalent tactile de Ctrl+1..9 / 1..9 :
+       toucher bref = rappeler (deux touches rapprochées recentrent, comme au
+       clavier) ; appui maintenu avec une sélection active = assigner. Rempli
+       par syncGroupBar() (js/11-interface.js), jamais réécrit à la main ici. -->
+  <div id="groupbar"></div>
   <div id="selinfo">
     <div id="seltitle">-</div>
     <div id="hprow"><div id="hpbar"><div id="hpfill"></div></div><span id="hptxt" style="font-size:10px;color:#888;white-space:nowrap;"></span></div>

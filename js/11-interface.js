@@ -88,6 +88,11 @@ function updateHUD(){
   // Barre d'âge
   updateAgeBar();
   updateBandeauAdverse();
+  // Groupes de contrôle : un groupe peut fondre en plein combat sans qu'on
+  // l'ait rappelé entretemps (voir syncGroupBar) — le tenir à jour à chaque
+  // image coûte 9 petits filtres, négligeable à côté du reste de cette
+  // fonction (voir le commentaire d'en-tête sur le coût du DOM par différence).
+  syncGroupBar();
 }
 
 // Panneau commun aux trois bâtiments de ressource améliorables (Camp
@@ -684,12 +689,39 @@ function updateSelInfo(e){
     const units=G.units.filter(u=>estSel(u.id));
     if(units.length>1){
       si.style.display='block';
-      if(hpr) hpr.style.display='none';
+      document.getElementById('seltitle').textContent=units.length+' unités sélectionnées';
+      // Jauge de PV AGRÉGÉE (total actuel / total max de tout le groupe) —
+      // avant, la jauge disparaissait purement et simplement dès la 2e unité
+      // sélectionnée, aucun moyen de voir d'un coup d'œil si l'armée tenait
+      // encore debout ou fondait déjà.
+      if(hpr){
+        hpr.style.display='';
+        let hp=0,maxHp=0; for(const u of units){ hp+=u.hp; maxHp+=u.maxHp; }
+        const r=maxHp>0?hp/maxHp:0;
+        document.getElementById('hpfill').style.width=(r*100)+'%';
+        document.getElementById('hpfill').style.background=r>.6?'#2ecc71':r>.3?'#f39c12':'#e74c3c';
+        document.getElementById('hptxt').textContent=`${hp|0}/${maxHp|0} (total)`;
+      }
       const counts={};
       for(const u of units) counts[u.type]=(counts[u.type]||0)+1;
-      document.getElementById('seltitle').textContent=units.length+' unités sélectionnées';
-      document.getElementById('seldesc').textContent=
-        Object.entries(counts).map(([t,c])=>UDEF[t].nom+' ×'+c).join(' · ');
+      // Chaque type est un chip cliquable : touche « Chevalier ×5 » pour ne
+      // garder que les chevaliers dans une armée mixte, sans devoir la
+      // reconstituer à la main au lasso.
+      const sd=document.getElementById('seldesc');
+      sd.textContent=''; sd.title='';
+      Object.entries(counts).forEach(([t,c],i)=>{
+        if(i>0) sd.appendChild(document.createTextNode(' · '));
+        const chip=document.createElement('span');
+        chip.textContent=UDEF[t].nom+' ×'+c;
+        chip.style.cssText='cursor:pointer;text-decoration:underline dotted;';
+        chip.title='Ne garder que : '+UDEF[t].nom;
+        chip.addEventListener('click',ev=>{
+          ev.stopPropagation();
+          G.sel=units.filter(u=>u.type===t).map(u=>u.id);
+          refreshUI(); buzz(6);
+        });
+        sd.appendChild(chip);
+      });
       return;
     }
     si.style.display='none'; return;
@@ -980,6 +1012,7 @@ function alertAttack(x,y){
   _lastAlert=t;
   buzz([12,60,12]); sfx('alert');
   const c=document.getElementById('notif');
+  while(c.children.length>=NOTIF_MAX) c.removeChild(c.children[0]);
   const el=document.createElement('div');
   el.className='nmsg'; el.style.color='#e74c3c'; el.style.borderColor='#e74c3c';
   el.style.cursor='pointer';
@@ -996,9 +1029,16 @@ function alertAttack(x,y){
 function buzz(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
 
 
+// Plafond de toasts simultanés : une rafale (siège qui rase plusieurs
+// bâtiments d'un coup, chacun avec son propre notify()) ne doit pas empiler
+// une colonne sans fin par-dessus la carte — on ne garde que les plus
+// récents, les autres disparaissent immédiatement plutôt que d'attendre
+// leur tour derrière le plafond CSS de #notif (voir index.html).
+const NOTIF_MAX=5;
 function notify(msg,col='#f1c40f',wide=false){
   if(col==='#e74c3c') sfx('error');
   const c=document.getElementById('notif');
+  while(c.children.length>=NOTIF_MAX) c.removeChild(c.children[0]);
   const el=document.createElement('div');
   el.className='nmsg'+(wide?' wide':''); el.style.color=col; el.style.borderColor=col;
   el.textContent=msg; c.appendChild(el);
@@ -1714,11 +1754,20 @@ document.getElementById('zhome').addEventListener('click',()=>{
   buzz(8);
 });
 document.getElementById('zarmy').addEventListener('click',()=>{
-  const army=G.units.filter(u=>estLocal(u)&&u.type!==UT.VIL);
+  // state!=='garrison' : sans ce filtre, les défenseurs planqués dans une
+  // Tour/un Château/le Centre Ville étaient aspirés dans la sélection (donc
+  // comptés, invisibles, dans "N unités sélectionnées"), et un Stop/une
+  // marche d'attaque lancée dessus les éjectait de la garnison en douce —
+  // en contournant ORD.DEGARNIR et la reprise d'activité qui va avec.
+  const army=G.units.filter(u=>estLocal(u)&&u.type!==UT.VIL&&u.state!=='garrison');
   if(!army.length){ notify('Aucune unité militaire','#e67e22'); return; }
   G.sel=army.map(u=>u.id); G.mode='select'; buzz(10);
   notify(`${army.length} unité${army.length>1?'s':''} sélectionnée${army.length>1?'s':''}`,'#e74c3c');
   refreshUI();
+  // Centre la caméra comme zhome/le badge villageois inactif : sélectionner
+  // une armée hors écran sans jamais la montrer laissait le joueur à l'aveugle.
+  let sx=0,sy=0; for(const u of army){ sx+=u.x; sy+=u.y; }
+  camCenterOn(sx/army.length, sy/army.length);
 });
 document.getElementById('deselbtn').addEventListener('click',()=>{
   clearSelection();
@@ -1727,15 +1776,32 @@ document.getElementById('deselbtn').addEventListener('click',()=>{
 // Pas de boutons +/− dans le HUD : le zoom se fait à la molette ou au
 // pincement, directement via applyZoomToTile (voir plus haut).
 
-// Minimap navigation
-document.getElementById('minimap').addEventListener('click',e=>{
+// Minimap navigation — un simple `click` forçait à taper case par case pour
+// suivre un combat qui se déplace ; on glisse maintenant en continu, souris
+// ou doigt, exactement comme sur la carte principale.
+function minimapGoTo(clientX,clientY){
   const r=document.getElementById('minimap').getBoundingClientRect();
   // r.width / r.height, et non 88 en dur : la mini-carte est plus grande sur
   // écran large (voir @media), et un diviseur figé y aurait décalé la
   // navigation d'autant.
-  const mx=(e.clientX-r.left)/r.width, my=(e.clientY-r.top)/r.height;
+  const mx=(clientX-r.left)/r.width, my=(clientY-r.top)/r.height;
   camCenterOn(mx*COLS*BASE_TILE,my*ROWS*BASE_TILE);
-});
+}
+(function(){
+  const mmEl=document.getElementById('minimap');
+  let dragging=false;
+  mmEl.addEventListener('mousedown',e=>{ dragging=true; minimapGoTo(e.clientX,e.clientY); });
+  window.addEventListener('mousemove',e=>{ if(dragging) minimapGoTo(e.clientX,e.clientY); });
+  window.addEventListener('mouseup',()=>{ dragging=false; });
+  mmEl.addEventListener('touchstart',e=>{ e.preventDefault(); dragging=true;
+    const t=e.touches[0]; if(t) minimapGoTo(t.clientX,t.clientY);
+  },{passive:false});
+  mmEl.addEventListener('touchmove',e=>{ if(!dragging) return; e.preventDefault();
+    const t=e.touches[0]; if(t) minimapGoTo(t.clientX,t.clientY);
+  },{passive:false});
+  mmEl.addEventListener('touchend',()=>{ dragging=false; });
+  mmEl.addEventListener('touchcancel',()=>{ dragging=false; });
+})();
 
 // ── PAUSE ─────────────────────────────────────────────────
 function openPause(){

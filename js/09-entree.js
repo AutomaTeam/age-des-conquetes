@@ -368,6 +368,7 @@ function assignerGroupe(n){
   if(!ids.length) return;
   G.groupes[n]=ids;
   notify(`Groupe ${n} : ${ids.length} unité(s) assignée(s)`,'#3498db');
+  syncGroupBar();
 }
 function rappelerGroupe(n){
   const ids=(G.groupes[n]||[]).filter(id=>{ const u=unitById(id); return u&&estLocal(u)&&u.state!=='garrison'; });
@@ -377,7 +378,7 @@ function rappelerGroupe(n){
   const recentrer=_dernierGroupeTouche===n&&(maintenant-_dernierGroupeAppui)<400;
   _dernierGroupeTouche=n; _dernierGroupeAppui=maintenant;
   G.sel=ids.slice(); G.mode='select';
-  refreshUI();
+  refreshUI(); syncGroupBar();
   if(recentrer){ const u=unitById(ids[0]); if(u) camCenterOn(u.x,u.y); }
   notify(`Groupe ${n} sélectionné (${ids.length})`,'#f0c040');
 }
@@ -391,6 +392,74 @@ window.addEventListener('keydown',e=>{
   if(e.ctrlKey||e.metaKey){ assignerGroupe(n); e.preventDefault(); }
   else { rappelerGroupe(n); }
 });
+
+// ── GROUPES DE CONTRÔLE — barre tactile ──────────────────────
+// Ctrl+1..9/1..9 ci-dessus n'ont toujours eu qu'un gestionnaire clavier :
+// un joueur au doigt ne pouvait ni créer ni rappeler un groupe, alors que le
+// reste du HUD soigne le tactile (cibles 44px, vibrations, panneau
+// repliable...). Une rangée de 9 cases dans #botpanel comble l'écart, sans
+// dupliquer la logique : elle appelle exactement assignerGroupe/rappelerGroupe.
+// Toucher bref = rappeler (retoucher vite deux fois recentre, comme au
+// clavier — même fonction, même fenêtre de 400 ms). Appui maintenu avec une
+// sélection active = assigner ; sans sélection, l'appui maintenu ne fait rien
+// (juste un petit buzz, pour dire "il n'y a rien à mettre ici").
+const GROUP_HOLD_MS=500;
+function construireGroupBar(){
+  const bar=document.getElementById('groupbar');
+  if(!bar||bar.children.length) return; // déjà construite
+  for(let n=1;n<=9;n++){
+    const el=document.createElement('div');
+    el.className='gbtn'; el.id='gbtn'+n; el.title='Groupe '+n;
+    el.textContent=n;
+    const cnt=document.createElement('span');
+    cnt.className='gcnt'; cnt.id='gcnt'+n; cnt.style.display='none';
+    el.appendChild(cnt);
+    let timer=null, longFired=false;
+    const start=()=>{
+      longFired=false; el.classList.add('held');
+      timer=setTimeout(()=>{
+        longFired=true; el.classList.remove('held');
+        if(G.units.some(u=>estSel(u.id)&&estLocal(u))){ assignerGroupe(n); buzz([10,30,10]); }
+        else buzz(6);
+        syncGroupBar();
+      },GROUP_HOLD_MS);
+    };
+    const stop=recall=>{
+      clearTimeout(timer); el.classList.remove('held');
+      if(recall&&!longFired) rappelerGroupe(n);
+    };
+    el.addEventListener('mousedown',e=>{ if(e.button!==0) return; start(); });
+    el.addEventListener('mouseup',()=>stop(true));
+    el.addEventListener('mouseleave',()=>stop(false));
+    el.addEventListener('touchstart',e=>{ e.preventDefault(); start(); },{passive:false});
+    el.addEventListener('touchend',e=>{ e.preventDefault(); stop(true); },{passive:false});
+    el.addEventListener('touchcancel',()=>stop(false));
+    bar.appendChild(el);
+  }
+}
+// Reflète l'état de G.groupes sur les 9 cases — appelée après assignation/
+// rappel, et à chaque image depuis updateHUD (voir 11-interface.js) pour que
+// le compte suive un groupe qui fond au combat sans qu'on l'ait rappelé.
+// Écriture par différence (comme setTxt/setCls, voir 11-interface.js) : à
+// 60 im/s, ne toucher le DOM que si l'effectif d'une case a changé — pas de
+// classList.toggle/textContent à vide sur les 9 cases à chaque image.
+// classList.toggle('filled',…) seul (jamais une réécriture de className
+// complet) : la case peut porter 'held' pendant un appui maintenu, que cette
+// fonction ne doit surtout pas effacer en repassant derrière.
+const _groupBarCache=new Array(10).fill(-1);
+function syncGroupBar(){
+  for(let n=1;n<=9;n++){
+    const ids=(G.groupes&&G.groupes[n])||[];
+    const vivants=ids.filter(id=>{ const u=unitById(id); return u&&estLocal(u)&&u.state!=='garrison'; }).length;
+    if(_groupBarCache[n]===vivants) continue;
+    _groupBarCache[n]=vivants;
+    const el=document.getElementById('gbtn'+n); if(!el) continue;
+    el.classList.toggle('filled',vivants>0);
+    const cnt=document.getElementById('gcnt'+n);
+    if(cnt){ cnt.textContent=vivants>9?'9+':String(vivants); cnt.style.display=vivants>0?'flex':'none'; }
+  }
+}
+construireGroupBar();
 
 // Point d'entrée commun Échap / clic droit : annule d'abord le mode en cours
 // (construction, marche d'attaque), sinon désélectionne.

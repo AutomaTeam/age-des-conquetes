@@ -211,7 +211,10 @@ function applyCommand(cmd){
     const b=_bldDe(cmd); if(!b||b.type!==BT.FARM||b.constructing) return KO('cible');
     for(const v of vils){
       quitterPoste(v); // sans ça, passer d'une AUTRE ferme (ou d'un gisement) à celle-ci y laissait un fermier fantôme
-      if(v.invT!=='farm') v.inv=0;
+      // Un bûcheron à moitié chargé, réaffecté à une ferme, jetait son bois
+      // en route : la nourriture qu'on lui demande de produire n'a rien à
+      // voir avec ce qu'il portait déjà.
+      if(v.invT!=='farm'){ crediterInventaire(v); v.inv=0; }
       v.state='farm'; v.target=b.id; v.homeFarm=b.id; v.invT='farm';
     }
     return OK({n:vils.length, vide:b.foodLeft<=0});
@@ -372,16 +375,11 @@ function applyCommand(cmd){
     for(const u of admis){
       u.avantGarnison=posteActuel(u); // pour ORD.DEGARNIR : AVANT quitterPoste, qui efface state/target
       quitterPoste(u); // gatherers/farmers restaient fantômes ici — homeNode n'était même pas nettoyé
-      // Un villageois en chemin vers le dépôt (state='return') portait déjà
-      // sa charge : la lui faire perdre en s'abritant serait puni pour avoir
-      // bien travaillé. Même geste que doReturn (js/07-simulation.js), sans
-      // le trajet — « sain et sauf » vaut aussi pour la récolte du jour.
-      const rk=RES_KEY_OF_INVT[u.invT];
-      if(rk&&u.inv>0){
-        const pool=resPool(u.owner);
-        if(pool) pool[rk]+=u.inv;
-        const fg=fac(u.owner); if(fg) fg.stats.gathered[rk]+=u.inv;
-      }
+      // Un villageois en chemin vers le dépôt (ou juste en cours de charge)
+      // portait déjà quelque chose : le lui faire perdre en s'abritant
+      // serait puni pour avoir bien travaillé — « sain et sauf » vaut aussi
+      // pour la récolte du jour (voir crediterInventaire).
+      crediterInventaire(u);
       u.state='garrison'; u.target=b.id; u.x=b.x; u.y=b.y;
       u.moving=false; u.path=null; u.buildTarget=null; u.inv=0; u.invT=null;
     }

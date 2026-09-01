@@ -1089,6 +1089,33 @@ groupe('ordres', () => {
     egal(j.resPool(j.G.me).stone, avant + 7, 'la pierre portée a disparu au lieu d\'être créditée');
     egal(porteur.inv, 0, 'inv pas remis à zéro après dépôt');
   });
+
+  test('RECOLTE/FERME : changer de ressource en pleine charge crédite l\'ancienne', () => {
+    // Même famille que le test GARNIR ci-dessus : n'importe quelle
+    // réaffectation qui change le TYPE de ressource portée (pas seulement la
+    // garnison) jetait l'inventaire en cours. RECOLTE est la réaffectation la
+    // plus fréquente du jeu — c'était donc la fuite la plus probable de toutes.
+    const j = partie(charger(), { graine: 4242 });
+    const bois = j.G.nodes.find((n) => n.type === j.RT.TREE && n.amt > 0);
+    const or = j.G.nodes.find((n) => n.type === j.RT.GOLD && n.amt > 0);
+    ok(!!bois && !!or, 'arbre ou gisement d\'or introuvable');
+
+    const bucheron = j.mkUnit(j.UT.VIL, bois.x, bois.y, j.G.me);
+    bucheron.inv = 4; bucheron.invT = j.RT.TREE; bucheron.state = 'gather'; bucheron.target = bois.id; bucheron.homeNode = bois.id;
+    j.G.units.push(bucheron); j.rebuildIndex();
+    const boisAvant = j.resPool(j.G.me).wood;
+    ok(ordreDe(j, j.G.me, 'RECOLTE', { ids: [bucheron.id], nodeId: or.id }).ok, 'récolte refusée');
+    egal(j.resPool(j.G.me).wood, boisAvant + 4, 'le bois porté a disparu en changeant de ressource');
+
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC);
+    const ferme = batir(j, j.BT.FARM, tc.tx + 3, tc.ty);
+    const mineur = j.mkUnit(j.UT.VIL, ferme.x, ferme.y, j.G.me);
+    mineur.inv = 5; mineur.invT = j.RT.GOLD; mineur.state = 'gather';
+    j.G.units.push(mineur); j.rebuildIndex();
+    const orAvant = j.resPool(j.G.me).gold;
+    ok(ordreDe(j, j.G.me, 'FERME', { ids: [mineur.id], bId: ferme.id }).ok, 'affectation à la ferme refusée');
+    egal(j.resPool(j.G.me).gold, orAvant + 5, 'l\'or porté a disparu en passant à la ferme');
+  });
 });
 
 // ════════════════════════════════════════════════════════════

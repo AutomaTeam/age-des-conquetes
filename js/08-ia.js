@@ -332,6 +332,7 @@ function aiRebalance(vils,a){
   if(!worst||!over||worst===over||overV<worstV*1.6) return;
   const cand=vils.find(u=>u.state==='gather'&&aiVilRes(u)===over);
   if(!cand) return;
+  crediterInventaire(cand); // sa charge en cours n'a rien à voir avec ce rééquilibrage, pas de raison de la perdre
   cand.inv=0; cand.invT=null;
   quitterPoste(cand); // sans ça, le gisement quitté garde un point de récolteur fantôme — ce rééquilibrage tourne toute la partie
   cand.target=null; cand.state='idle'; cand.scanCd=0; // aiAssignVillager le replacera
@@ -860,10 +861,20 @@ function updateUneIA(dt,a){
       const cap=BDEF[BT.TC].garrisonCap||0;
       const curGarr=G.units.filter(u=>u.owner===a.id&&u.state==='garrison'&&u.target===tc.id).length;
       const idleVils=vils.filter(v=>v.state==='idle').slice(0,Math.max(0,cap-curGarr));
-      for(const v of idleVils){ v.state='garrison'; v.target=tc.id; v.x=tc.x; v.y=tc.y; v.moving=false; }
+      // Sans effet aujourd'hui (un villageois idle n'a ni poste ni charge en
+      // cours, voir doGather/doFarm) mais garde ce chemin aligné sur
+      // ORD.GARNIR (js/10-ordres.js) — si ce filtre s'élargit un jour à des
+      // villageois occupés, les mêmes fantômes/pertes qu'il a fallu corriger
+      // côté joueur reviendraient ici, sans le moindre signal.
+      for(const v of idleVils){
+        v.avantGarnison=posteActuel(v);
+        quitterPoste(v);
+        crediterInventaire(v);
+        v.state='garrison'; v.target=tc.id; v.x=tc.x; v.y=tc.y; v.moving=false; v.inv=0; v.invT=null;
+      }
       if(idleVils.length) a.stats.garrisonUses+=idleVils.length;
     } else {
-      for(const v of vils) if(v.state==='garrison'&&v.target===tc.id){ v.state='idle'; v.target=null; }
+      for(const v of vils) if(v.state==='garrison'&&v.target===tc.id){ v.state='idle'; v.target=null; reprendrePoste(v); }
     }
   }
 

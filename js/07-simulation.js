@@ -805,6 +805,26 @@ function quitterPoste(u){
   }
 }
 
+// Verse dans la caisse une charge PAS ENCORE déposée, silencieusement (pas
+// de texte flottant ni de son : cette fonction sert aux réaffectations qui
+// arrachent un villageois à sa récolte en cours, pas à une vraie livraison
+// au dépôt — doReturn/doPecher gardent leur propre version avec le retour
+// visuel). Ne remet PAS `inv`/`invT` à zéro : à l'appelant de le faire une
+// fois la nouvelle affectation décidée, comme il le faisait déjà.
+// Sans ce geste, réaffecter un villageois EN COURS DE CHARGE (changer de
+// ressource en pleine récolte, passer à une ferme, ou l'envoyer à l'abri)
+// jetait silencieusement ce qu'il portait déjà — le cas le plus visible
+// étant justement le changement de ressource via ORD.RECOLTE, le
+// réaffectation la plus fréquente du jeu.
+function crediterInventaire(u){
+  if(!(u.inv>0)) return;
+  const rk=RES_KEY_OF_INVT[u.invT];
+  if(!rk) return;
+  const pool=resPool(u.owner);
+  if(pool) pool[rk]+=u.inv;
+  const fg=fac(u.owner); if(fg) fg.stats.gathered[rk]+=u.inv;
+}
+
 // Photographie l'activité EN COURS d'un villageois, pour la lui rendre à sa
 // sortie de garnison (voir ORD.GARNIR/DEGARNIR) — sans elle, un fermier mis
 // à l'abri par le bouton 🔔 en ressortait les mains vides, idle, alors que
@@ -1023,7 +1043,11 @@ function assignGatherers(vils,anchorNode){
     // avait une) — quitterPoste vise directement homeNode/homeFarm au lieu
     // de balayer TOUS les gisements de la carte pour chacun.
     quitterPoste(v);
-    if(v.invT!==type){ v.inv=0; v.invT=null; } // ne perdre l'inventaire que si on change de ressource
+    // Changer de ressource en pleine charge (bois → or, par exemple) versait
+    // l'inventaire en cours à la poubelle — la réaffectation la plus
+    // fréquente du jeu (RECOLTE) jetait donc discrètement du bois ou de la
+    // pierre à chaque fois qu'un joueur redirigeait un villageois chargé.
+    if(v.invT!==type){ crediterInventaire(v); v.inv=0; v.invT=null; }
     v.state='gather'; v.target=nd.id; v.homeNode=nd.id;
     load[nd.id]=(load[nd.id]||0)+1;
     used.add(nd.id); placed++;

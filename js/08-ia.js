@@ -556,7 +556,7 @@ function majPhaseAssaut(dt,a,army){
   const tc=bldById(a.tcId);
   if(tc&&(a.scanDef=(a.scanDef||0)-dt)<=0){
     a.scanDef=0.5;
-    const menace=nearestBy(tc.x,tc.y,AI_DEFENSE_RAYON,e=>e.hp>0&&estHostile(a.id,e));
+    const menace=nearestBy(tc.x,tc.y,AI_DEFENSE_RAYON,e=>e.hp>0&&e.state!=='garrison'&&estHostile(a.id,e));
     if(menace) a.defenseJusqua=G.gameTime+AI_DEFENSE_DUREE;
   }
   if(a.defenseJusqua>G.gameTime){
@@ -856,7 +856,7 @@ function updateUneIA(dt,a){
   // ── Garnison défensive ── un ennemi rôde près de la base : les villageois
   // inactifs se mettent à l'abri ; ils ressortent une fois la menace passée.
   if(tc){
-    const threat=nearestBy(tc.x,tc.y,GUARD_AGGRO_RADIUS,e=>e.hp>0&&estHostile(a.id,e));
+    const threat=nearestBy(tc.x,tc.y,GUARD_AGGRO_RADIUS,e=>e.hp>0&&e.state!=='garrison'&&estHostile(a.id,e));
     if(threat){
       const cap=BDEF[BT.TC].garrisonCap||0;
       const curGarr=G.units.filter(u=>u.owner===a.id&&u.state==='garrison'&&u.target===tc.id).length;

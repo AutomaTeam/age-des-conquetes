@@ -805,6 +805,53 @@ function quitterPoste(u){
   }
 }
 
+// Photographie l'activité EN COURS d'un villageois, pour la lui rendre à sa
+// sortie de garnison (voir ORD.GARNIR/DEGARNIR) — sans elle, un fermier mis
+// à l'abri par le bouton 🔔 en ressortait les mains vides, idle, alors que
+// son champ n'a pas bougé. Appelée AVANT quitterPoste : c'est le seul
+// moment où `u.state`/`u.target`/`u.buildTarget` disent encore ce que
+// l'unité était en train de faire.
+function posteActuel(u){
+  switch(u.state){
+    case 'gather': return {type:'gather', id:u.target};
+    case 'farm':   return {type:'farm',   id:u.target};
+    case 'build':  return {type:'build',  id:u.buildTarget};
+    case 'repair': return {type:'repair', id:u.target};
+    // Retour au dépôt avec une charge : doReturn (voir plus bas) sait déjà
+    // reprendre la SOURCE d'origine une fois la ressource déposée — on
+    // mémorise donc cette source-là, pas l'état 'return' lui-même.
+    case 'return':
+      if(u.invT==='farm') return u.homeFarm!=null?{type:'farm', id:u.homeFarm}:null;
+      return u.homeNode!=null?{type:'gather', id:u.homeNode}:null;
+    default: return null;
+  }
+}
+
+// Tente de restaurer l'activité mémorisée par posteActuel — best-effort :
+// si la cible a disparu ou n'a plus lieu d'être entre-temps (gisement
+// épuisé, ferme démolie, chantier achevé pendant l'absence, bâtiment déjà
+// réparé), l'unité reste simplement idle, exactement comme avant ce
+// correctif. Ne fait rien pour une unité qui n'avait rien mémorisé —
+// coût nul pour la garnison militaire, qui n'utilise pas ce champ.
+function reprendrePoste(u){
+  const p=u.avantGarnison; u.avantGarnison=null;
+  if(!p) return false;
+  if(p.type==='gather'){
+    const n=nodeById(p.id);
+    if(n&&n.amt>0){ u.state='gather'; u.target=n.id; u.homeNode=n.id; return true; }
+  } else if(p.type==='farm'){
+    const f=bldById(p.id);
+    if(f&&f.type===BT.FARM&&!f.constructing){ u.state='farm'; u.target=f.id; u.homeFarm=f.id; u.invT='farm'; return true; }
+  } else if(p.type==='build'){
+    const b=bldById(p.id);
+    if(b&&b.constructing){ u.state='build'; u.buildTarget=b.id; return true; }
+  } else if(p.type==='repair'){
+    const b=bldById(p.id);
+    if(b&&!b.constructing&&b.hp<b.maxHp){ u.state='repair'; u.target=b.id; return true; }
+  }
+  return false;
+}
+
 // Récolte sur une ferme (modèle Age of Empires 2 : le villageois travaille le champ)
 function doFarm(u,dt){
   let f=bldById(u.target); if(f&&f.type!==BT.FARM) f=null;

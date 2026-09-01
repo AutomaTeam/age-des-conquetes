@@ -370,6 +370,7 @@ function applyCommand(cmd){
     if(room<=0) return KO('plein');
     const admis=us.slice(0,room);
     for(const u of admis){
+      u.avantGarnison=posteActuel(u); // pour ORD.DEGARNIR : AVANT quitterPoste, qui efface state/target
       quitterPoste(u); // gatherers/farmers restaient fantômes ici — homeNode n'était même pas nettoyé
       u.state='garrison'; u.target=b.id; u.x=b.x; u.y=b.y;
       u.moving=false; u.path=null; u.buildTarget=null; u.inv=0; u.invT=null;
@@ -473,6 +474,7 @@ function applyCommand(cmd){
       const r=bldContact(b,0.6);
       u.x=b.x+Math.cos(ang)*r; u.y=b.y+Math.sin(ang)*r;
       u.state='idle'; u.target=null;
+      reprendrePoste(u); // reprend récolte/ferme/chantier/réparation si la cible mémorisée tient toujours, sinon reste idle
     });
     return OK({n:sortants.length});
   }
@@ -546,7 +548,11 @@ function appliquerDemolition(b,owner){
   }
   // les villageois qui y travaillaient repassent inactifs — et la garnison
   // est éjectée saine et sauve (démolition volontaire, pas une perte au combat).
-  for(const u of G.units) if(u.target===b.id&&['repair','farm','build','garrison'].includes(u.state)){ u.state='idle'; u.target=null; }
+  for(const u of G.units) if(u.target===b.id&&['repair','farm','build','garrison'].includes(u.state)){
+    const enGarnison=u.state==='garrison';
+    u.state='idle'; u.target=null;
+    if(enGarnison) reprendrePoste(u); // une Tour/un Château démoli(e) ne doit pas voler leur activité aux occupants
+  }
   G.buildings=G.buildings.filter(x=>x.id!==b.id);
   G.sel=G.sel.filter(id=>id!==b.id);
   updatePopCap();

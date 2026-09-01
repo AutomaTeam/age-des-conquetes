@@ -81,6 +81,7 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
     pendingAction:null,
     animT:(G.nid*2.399)%6.283, dir:0, moving:false, // dérivé de l'id : déterministe, et un champ d'aléa en moins dans l'état
     homeNode:null, // mémoire du dernier nœud récolté
+    avantGarnison:null, // activité à reprendre en sortant de garnison (voir ORD.GARNIR/DEGARNIR)
     heroNom:heroDef&&heroDef.nom, heroIco:heroDef&&heroDef.ico,
     xp:0, rank:0, // vétérance — voir awardKillXP
   };

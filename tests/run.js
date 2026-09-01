@@ -1045,6 +1045,38 @@ groupe('ordres', () => {
     egal(ferme.farmers.includes(fermier.id), false, 'le fermier reste fantôme sur son ancienne ferme après déplacement');
     egal(fermier.homeFarm, null, 'homeFarm pas nettoyé après déplacement');
   });
+
+  test('DEGARNIR : reprend l\'activité d\'avant garnison, ou reste idle si elle a disparu', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC);
+    j.G.units.length = 0;
+
+    // Ferme toujours là à la sortie → le fermier y retourne.
+    const ferme = batir(j, j.BT.FARM, tc.tx + 3, tc.ty);
+    const fermier = j.mkUnit(j.UT.VIL, ferme.x, ferme.y, j.G.me);
+    j.G.units.push(fermier); j.rebuildIndex();
+    ok(ordreDe(j, j.G.me, 'FERME', { ids: [fermier.id], bId: ferme.id }).ok, 'affectation à la ferme refusée');
+    for (let k = 0; k < 30; k++) j.update(j.SIM_DT);
+    egal(fermier.state, 'farm', 'le fermier ne rejoint jamais son champ');
+    ok(ordreDe(j, j.G.me, 'GARNIR', { ids: [fermier.id], bId: tc.id }).ok, 'garnison refusée');
+    egalJSON(fermier.avantGarnison, { type: 'farm', id: ferme.id }, 'activité pas mémorisée à l\'entrée en garnison');
+    ok(ordreDe(j, j.G.me, 'DEGARNIR', { bId: tc.id }).ok, 'sortie de garnison refusée');
+    egal(fermier.state, 'farm', 'le fermier ne reprend pas sa ferme en sortant de garnison');
+    egal(fermier.target, ferme.id, 'le fermier ne vise plus SA ferme en sortant de garnison');
+    egal(fermier.avantGarnison, null, 'la mémoire d\'activité doit être consommée après usage');
+
+    // Gisement épuisé PENDANT l'absence → repli sur idle, pas de plantage.
+    const arbre = j.G.nodes.find((n) => n.type === j.RT.TREE && n.amt > 0);
+    const bucheron = j.mkUnit(j.UT.VIL, arbre.x, arbre.y, j.G.me);
+    j.G.units.push(bucheron); j.rebuildIndex();
+    ok(ordreDe(j, j.G.me, 'RECOLTE', { ids: [bucheron.id], nodeId: arbre.id }).ok, 'récolte refusée');
+    for (let k = 0; k < 30; k++) j.update(j.SIM_DT);
+    egal(bucheron.state, 'gather', 'le bûcheron ne rejoint jamais son arbre');
+    ok(ordreDe(j, j.G.me, 'GARNIR', { ids: [bucheron.id], bId: tc.id }).ok, 'garnison refusée');
+    arbre.amt = 0; // épuisé pendant que le bûcheron est à l'abri
+    ok(ordreDe(j, j.G.me, 'DEGARNIR', { ids: [bucheron.id], bId: tc.id }).ok, 'sortie de garnison refusée');
+    egal(bucheron.state, 'idle', 'un gisement épuisé entre-temps ne doit pas être repris');
+  });
 });
 
 // ════════════════════════════════════════════════════════════

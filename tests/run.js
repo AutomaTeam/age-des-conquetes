@@ -1077,6 +1077,18 @@ groupe('ordres', () => {
     ok(ordreDe(j, j.G.me, 'DEGARNIR', { ids: [bucheron.id], bId: tc.id }).ok, 'sortie de garnison refusée');
     egal(bucheron.state, 'idle', 'un gisement épuisé entre-temps ne doit pas être repris');
   });
+
+  test('GARNIR : la charge en cours de dépôt est créditée, pas perdue', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC);
+    const porteur = j.mkUnit(j.UT.VIL, tc.x, tc.y, j.G.me);
+    porteur.inv = 7; porteur.invT = j.RT.STONE; porteur.state = 'return';
+    j.G.units.push(porteur); j.rebuildIndex();
+    const avant = j.resPool(j.G.me).stone;
+    ok(ordreDe(j, j.G.me, 'GARNIR', { ids: [porteur.id], bId: tc.id }).ok, 'garnison refusée');
+    egal(j.resPool(j.G.me).stone, avant + 7, 'la pierre portée a disparu au lieu d\'être créditée');
+    egal(porteur.inv, 0, 'inv pas remis à zéro après dépôt');
+  });
 });
 
 // ════════════════════════════════════════════════════════════

@@ -1057,8 +1057,7 @@ function doReturn(u,dt){
   const dc=bldContact(b);
   if(d>dc){ const ap=bldApproach(u,b,0.45); u.destX=ap.x; u.destY=ap.y; moveTo(u,dt,true); return; }
   // Dépose
-  const rm={[RT.TREE]:'wood',[RT.STONE]:'stone',[RT.GOLD]:'gold',[RT.BERRY]:'food',[RT.MEAT]:'food',farm:'food'};
-  const rk=rm[u.invT];
+  const rk=RES_KEY_OF_INVT[u.invT];
   if(rk){
     const pool=resPool(u.owner);
     if(pool) pool[rk]+=u.inv;

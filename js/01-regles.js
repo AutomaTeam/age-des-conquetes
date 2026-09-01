@@ -33,6 +33,14 @@ const T_GRASS = 0, T_WATER = 1, T_SAND = 2;
 // Types ressources nœuds
 const RT = { TREE:'T', STONE:'S', GOLD:'G', BERRY:'B', MEAT:'VD', FISH:'PO' };
 
+// Ressource de la caisse (wood/stone/gold/food) que porte un villageois selon
+// `u.invT` — soit un type de nœud (RT.*), soit 'farm'. Table UNIQUE : partagée
+// entre le dépôt normal (doReturn, js/07-simulation.js) et le dépôt immédiat
+// à l'entrée en garnison (ORD.GARNIR, js/10-ordres.js), pour ne pas la
+// dupliquer et risquer qu'elle diverge — même raison que CAV_TYPES
+// (js/04-entites.js), déjà factorisée pour ne pas être réécrite deux fois.
+const RES_KEY_OF_INVT = {[RT.TREE]:'wood',[RT.STONE]:'stone',[RT.GOLD]:'gold',[RT.BERRY]:'food',[RT.MEAT]:'food',farm:'food'};
+
 // Types bâtiments
 const BT = { TC:'TC', HOUSE:'HO', LUMBER:'LU', MINE:'MI', FARM:'FA',
              FORGE:'FO', BARRACKS:'BA', TOWER:'TW',

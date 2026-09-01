@@ -1108,6 +1108,25 @@ function updateBuildings(dt){
   const garnisons=garnisonsArcheres();
   for(const b of G.buildings){
     if(!b.active||b.constructing) continue;
+    // Fumée d'un bâtiment abîmé — même geste que la poussière de chantier
+    // (doBuild, plus bas), mais grise plutôt que claire et déclenchée par
+    // les PV au lieu de la progression. Purement cosmétique (G.parts ne
+    // voyage jamais sur le réseau, voir 12-reseau.js) : comme la poussière
+    // de chantier, elle ne s'affiche donc que côté HÔTE, updateBuildings
+    // n'étant appelé que par update(). Le lavis de suie du sprite, lui,
+    // vient de b.hp/maxHp déjà synchronisés et s'affiche bien des deux côtés
+    // (voir damagedSprite, drawBuildings).
+    if(b.maxHp){
+      const hpFrac=b.hp/b.maxHp;
+      if(hpFrac<0.66){
+        const taux=hpFrac<0.33?3:1.2;
+        if(Math.random()<dt*taux){
+          G.parts.push({x:b.x+(Math.random()-.5)*b.w*BASE_TILE*.5, y:b.y-b.h*BASE_TILE*0.3,
+            vx:(Math.random()-.5)*6, vy:-18-Math.random()*12,
+            col:'rgba(55,50,46,.7)', r:2+Math.random()*2.5, life:1.3});
+        }
+      }
+    }
     // Réensemencement des fermes et production continue : concernent
     // TOUTE faction humaine (pas seulement G.me), sans quoi elles ne se
     // déclenchent jamais pour le camp du client distant en multijoueur en

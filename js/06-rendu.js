@@ -698,8 +698,16 @@ function drawBuildings(){
     // sinon repli sur le sprite générique, exactement comme avant.
     const civ=civKeyOf(b.owner);
     const civDispo=civ!=='francs'&&BLD_CIV_SPRITE_FILES[b.type]&&BLD_CIV_SPRITE_FILES[b.type][civ];
-    const spr=(civDispo&&sprTeinte('bldCiv',b.type+'_'+civ+lvlSuffix+suf,teinte))
+    const sprSain=(civDispo&&sprTeinte('bldCiv',b.type+'_'+civ+lvlSuffix+suf,teinte))
              ||sprTeinte('bld',b.type+lvlSuffix+suf,teinte)||sprTeinte('bld',b.type+suf,teinte);
+    // État de dégât : un bâtiment abîmé doit se lire d'un coup d'œil, pas
+    // seulement via sa jauge de PV qui disparaît dès qu'il est désélectionné
+    // (voir damagedSprite, js/05-sprites.js). Deux paliers, jamais pour un
+    // bâtiment plein PV — le cas de très loin le plus fréquent — d'où le
+    // court-circuit à dmgStage 0 qui renvoie sprSain sans la moindre copie.
+    const hpFrac=b.maxHp?b.hp/b.maxHp:1;
+    const dmgStage=hpFrac<0.33?2:hpFrac<0.66?1:0;
+    const spr=dmgStage?damagedSprite(sprSain,dmgStage):sprSain;
     const k=TILE/(SPR.refT||TILE); // facteur si zoom en cours (sprites pas encore régénérés)
     // Ombre portée au pied du bâtiment — dessinée AVANT le sprite pour ne
     // jamais mordre dessus, et débordant un peu sur la droite (source de

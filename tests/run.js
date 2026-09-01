@@ -348,6 +348,39 @@ groupe('combat', () => {
     const mil = j.degatsDe(j.mkUnit(j.UT.MIL, 0, 0, j.G.me), tc);
     ok(ram > mil * 4, `le Bélier doit surclasser le Milicien sur un bâtiment : ${ram} vs ${mil}`);
   });
+
+  test('un bâtiment abîmé fume, un bâtiment sain jamais', () => {
+    // L'état de dégât lui-même (lavis de suie sur le sprite) est du rendu et
+    // n'est délibérément pas testé ici (voir l'en-tête du fichier). La fumée,
+    // elle, mute G.parts pendant update() : c'est de la simulation, donc
+    // testable. Math.random() décide QUAND une particule naît (comme la
+    // poussière de chantier) — 300 pas à 30 Hz, soit 10 s simulées, rendent
+    // un résultat nul à peu près impossible (≈10 % de chance par pas au
+    // palier le plus grave) sans figer de graine dédiée à ce seul geste
+    // cosmétique.
+    // G.units vidé après startGame() : en Conquête l'IA et la faune tournent
+    // déjà, et un raid ou une chasse qui égratigne un bâtiment DANS la
+    // fenêtre du test rendait le premier essai (bâtiment sain) flaky — vu en
+    // pratique (2-3 particules « fantômes » sur un run sur trois). Sans
+    // unité, aucun combat n'est possible : seul le hp qu'on fixe nous-mêmes
+    // peut faire varier le résultat.
+    const j = partie(charger(), { graine: 4242 });
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC);
+    j.G.units.length = 0;
+    const sain = j.mkBuilding(j.BT.BARRACKS, tc.tx + 5, tc.ty, j.G.me);
+    sain.constructing = false; sain.progress = 1;
+    j.placeBuilding(sain);
+    j.G.parts.length = 0;
+    for (let k = 0; k < 300; k++) j.update(j.SIM_DT);
+    ok(j.G.parts.length === 0, `un bâtiment à PV pleins ne doit jamais fumer : ${j.G.parts.length} particule(s)`);
+
+    const ruine = j.mkBuilding(j.BT.BARRACKS, tc.tx + 5, tc.ty + 3, j.G.me);
+    ruine.constructing = false; ruine.progress = 1; ruine.hp = Math.round(ruine.maxHp * 0.2);
+    j.placeBuilding(ruine);
+    j.G.parts.length = 0;
+    for (let k = 0; k < 300; k++) j.update(j.SIM_DT);
+    ok(j.G.parts.length > 0, 'un bâtiment à 20% PV doit dégager de la fumée sur 10 s simulées');
+  });
 });
 
 // ════════════════════════════════════════════════════════════

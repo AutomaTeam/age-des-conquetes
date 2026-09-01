@@ -1009,6 +1009,50 @@ function tintEnemyBuilding(base,W,H){
   return{c,cx};
 }
 
+// Traits de lézarde à coordonnées FIXES (fraction de largeur/hauteur), pour
+// le palier de dégât le plus grave — un bâtiment ruiné donné a donc toujours
+// le même motif plutôt qu'un bruit recalculé, ce qui évite de porter une
+// graine par bâtiment jusqu'ici pour un simple habillage cosmétique.
+const CRACK_PATTERN=[
+  [0.30,0.12,0.42,0.55],[0.42,0.55,0.34,0.86],
+  [0.64,0.22,0.56,0.58],[0.56,0.58,0.70,0.90],
+  [0.18,0.48,0.28,0.80],
+];
+
+// État de DÉGÂT d'un bâtiment : lavis de suie en surimpression (même
+// technique que tintEnemyBuilding — source-atop, contraint à la silhouette
+// déjà détourée), plus quelques lézardes au palier le plus grave. Indexé sur
+// la RÉFÉRENCE du canvas de base (`spr.c`) dans un WeakMap plutôt qu'une clé
+// de chaîne : régénéré automatiquement quand buildBuildings()/
+// upgradeBuildingSprites() reconstruisent les sprites au changement de
+// zoom (nouveaux canvases, donc nouvelles clés) — pas de purge à écrire, le
+// GC fait le ménage des anciennes entrées de lui-même.
+// `stage` : 0 = intact (retourne `spr` tel quel, sans copie), 1 = abîmé
+// (33-66 % PV), 2 = en ruine (< 33 % PV) — voir l'appelant dans drawBuildings.
+const DMG_CACHE=new WeakMap();
+function damagedSprite(spr,stage){
+  if(!spr||stage<=0) return spr;
+  let arr=DMG_CACHE.get(spr.c);
+  if(!arr){ arr=[]; DMG_CACHE.set(spr.c,arr); }
+  if(arr[stage]) return arr[stage];
+  const W=spr.c.width,H=spr.c.height;
+  const{c,cx}=offCanvas(W,H);
+  cx.drawImage(spr.c,0,0);
+  cx.globalCompositeOperation='source-atop';
+  cx.fillStyle=stage===1?'rgba(35,28,22,.28)':'rgba(20,15,12,.5)';
+  cx.fillRect(0,0,W,H);
+  if(stage===2){
+    cx.strokeStyle='rgba(10,8,6,.55)'; cx.lineWidth=Math.max(1,W*0.012);
+    for(const[fx,fy,tx2,ty2] of CRACK_PATTERN){
+      cx.beginPath(); cx.moveTo(W*fx,H*fy); cx.lineTo(W*tx2,H*ty2); cx.stroke();
+    }
+  }
+  cx.globalCompositeOperation='source-over';
+  const out=Object.assign({},spr,{c,cx});
+  arr[stage]=out;
+  return out;
+}
+
 // buildBuildings(T) — et donc SPR.bld — est régénéré à chaque changement de
 // zoom : la surcouche illustrée doit être réappliquée après chaque
 // reconstruction, sans quoi le sprite procédural reprendrait le dessus. Le

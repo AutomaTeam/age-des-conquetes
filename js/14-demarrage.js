@@ -287,6 +287,21 @@ window.addEventListener('resize',()=>{ resizeCanvas(); });
 const BENCH={
   GRAINE:20260902, CARTE:'plaines',
   SURCOUT_IMAGE:2.4,     // voir la note sur l'estimation d'images/s, plus bas
+  // CHAUFFE ADAPTATIVE. Un nombre de séries d'échauffement FIXE ne peut pas
+  // convenir à tous les moteurs : chacun compile par paliers à son rythme.
+  // Mesuré, séries successives du même relevé —
+  //   Chrome/Windows : simulation 0,51 → 0,50 → 0,50   (déjà chaud)
+  //   Safari/iPhone  : simulation 0,18 → 0,13 → 0,11   (-39 %, encore en train
+  //                    de monter en puissance)  et rendu 2,50 → 1,62 → 1,53
+  // Une seule série jetée suffisait donc à V8 mais pas à JavaScriptCore, et
+  // le relevé iPhone mesurait un moteur à moitié optimisé — d'où 64 %
+  // d'« écart entre séries » qui n'était pas du bruit mais une PENTE.
+  // On répète donc l'échauffement jusqu'à ce que deux séries consécutives se
+  // tiennent à STABLE près, avec un plafond.
+  // Le rendu se chauffe jusqu'à stabilisation (il ne fait pas avancer la
+  // partie, donc c'est gratuit) ; la simulation, elle, a un compte FIXE —
+  // voir la note à l'endroit où elle est chauffée.
+  CHAUFFE_MAX:6, STABLE:0.08, CHAUFFE_SERIES_SIM:3,
   // L'atlas pèse le moins : c'est aussi, de loin, la mesure la plus bruitée
   // (allocation de ~250 canvas d'un coup, donc à la merci d'une collecte
   // mémoire — écart mesuré de 24 à 34 ms pour le même travail), et la moins
@@ -347,7 +362,7 @@ const BENCH_PROFILS={
     // Réétalonné à 800 pas : la mesure y est aussi plus SERRÉE sur la machine
     // étalon (0,48-0,51 ms contre 0,44-0,62 à 150 pas), la quantification du
     // chronomètre pesant moins sur un intervalle plus long.
-    REF:{atlas:32, sim:0.50, rendu:1.70},
+    REF:{atlas:32, sim:0.49, rendu:1.68},
     PALIERS:[
       {min:1400,nom:'Forge de guerre',ico:'🔥',txt:'Tout à fond : grande carte, 4 camps, zoom libre. La machine n’est pas la limite.'},
       {min:900, nom:'Solide',         ico:'⚔️',txt:'Confortable partout. Grande carte et mode 2 rivaux sans réserve.'},
@@ -362,7 +377,11 @@ const BENCH_PROFILS={
     TAILLE:'grande', UNITES:3000, BATAILLE:true, BATIMENTS:60, RAYON:13,
     // Beaucoup moins d'itérations : à ce niveau un seul pas coûte des
     // millisecondes, et le banc doit rester sous la dizaine de secondes.
-    PAS_SIM:40, IMAGES:30, CHAUFFE_SIM:16, CHAUFFE_RENDU:8,
+    // IMAGES ramené de 30 à 15 : à ~40 ms par image, une série dure encore
+    // 0,6 s, très au-dessus de la résolution du chronomètre, et l'épreuve
+    // repasse sous la quinzaine de secondes — l'échauffement du rendu, devenu
+    // adaptatif, peut demander jusqu'à six séries.
+    PAS_SIM:40, IMAGES:15, CHAUFFE_SIM:16, CHAUFFE_RENDU:8,
     ESSAIS_ATLAS:3, ESSAIS_SIM:2, ESSAIS_RENDU:2,   // l'atlas est le plus bruité : 3 essais
     // Références RELEVÉES sur la machine étalon pour CETTE épreuve — pas
     // question de réutiliser celles de l'épreuve normale : à 3 000 unités le
@@ -379,7 +398,13 @@ const BENCH_PROFILS={
     // une série jetée, les pavés sont en cache et le coût réel, stable, est
     // de ~12 ms. Leçon : un temps de référence se relève APRÈS avoir figé le
     // protocole de chauffe, jamais avant.
-    REF:{atlas:33, sim:32.7, rendu:12.2},
+    // Réétalonné après le passage à 3 séries d'échauffement de simulation :
+    // 120 pas de plus avant la mesure, donc les deux armées sont pleinement
+    // au contact (2047 unités à l'écran contre 1978), et le rendu passe de
+    // 12 à ~39 ms. C'est le pire cas visé, et il est reproductible — mais il
+    // confirme la règle : sur cette épreuve, tout changement du nombre de pas
+    // impose de réétalonner les trois nombres.
+    REF:{atlas:42, sim:34, rendu:39},
     // Les libellés ne promettent PAS que tout va bien : à 3 000 unités au
     // contact, même la machine étalon dépasse le budget temps réel (34 ms par
     // pas pour 33 disponibles). C'est le propre d'un test de rupture, et le
@@ -605,19 +630,39 @@ async function lancerBenchmark(profilNom){
     // cinq fois plus rapide, un estimateur qui choisissait la tranche la plus
     // creuse. La moyenne sur toute la tranche mesurée décrit un travail
     // identique sur chaque appareil, sans favoriser aucune phase.
-    let totMs=0, totPas=0;
-    for(let e=0;e<=P.ESSAIS_SIM;e++){
+    // Une série = P.PAS_SIM pas, chronométrée en quatre blocs pour que la
+    // barre de progression avance et que l'onglet respire.
+    const serieSim=async(txt,frac)=>{
       let tot=0;
       for(let bloc=0;bloc<4;bloc++){
-        benchProgres(0.42+(e*4+bloc)*0.03,`Simulation de ${sx} unités${P.BATAILLE?' en bataille':''}…`);
+        benchProgres(frac,txt);
         const t=performance.now();
         for(let k=0;k<P.PAS_SIM/4;k++) update(SIM_DT);
         tot+=performance.now()-t;
         await benchSouffler();
       }
-      if(e===0) continue;                       // échauffement, non retenu
-      res.series.sim.push(tot/P.PAS_SIM);
-      totMs+=tot; totPas+=P.PAS_SIM;
+      return tot/P.PAS_SIM;
+    };
+    // Échauffement de la simulation : nombre de séries FIXE, et surtout PAS
+    // adaptatif. Essayé, et il a fallu le retirer : les pas d'échauffement
+    // font avancer la partie, donc un nombre de séries qui dépend de la
+    // vitesse de la machine donne à chaque appareil une scène DIFFÉRENTE au
+    // moment de mesurer le rendu. Mesuré sur l'épreuve extrême, où les deux
+    // armées se rapprochent vite : le rendu passait de 12 à 40 ms selon le
+    // nombre de séries d'échauffement — on n'aurait plus comparé les
+    // machines mais des scènes. Le compte est donc identique partout, et
+    // relevé à 3 (plutôt qu'une seule série) pour laisser aux moteurs qui
+    // compilent lentement le temps d'atteindre leur régime : Safari perdait
+    // encore 39 % entre la première et la troisième série là où V8 était
+    // déjà plat. Le rendu, lui, peut se chauffer autant qu'il veut (voir
+    // plus bas) : il ne fait pas avancer la partie.
+    res.chauffeSim=BENCH.CHAUFFE_SERIES_SIM;
+    for(let e=0;e<res.chauffeSim;e++) await serieSim('Échauffement…',0.40+e*0.02);
+    let totMs=0, totPas=0;
+    for(let e=0;e<P.ESSAIS_SIM;e++){
+      const d=await serieSim(`Simulation de ${sx} unités${P.BATAILLE?' en bataille':''}…`,0.50+e*0.03);
+      res.series.sim.push(d);
+      totMs+=d*P.PAS_SIM; totPas+=P.PAS_SIM;
     }
     res.sim=totMs/Math.max(1,totPas);
     res.vivants=G.units.length;
@@ -632,13 +677,27 @@ async function lancerBenchmark(profilNom){
     { const etats={}; for(const u of G.units) etats[u.state]=(etats[u.state]||0)+1; res.etats=etats; }
     for(let k=0;k<P.CHAUFFE_RENDU;k++) render();       // chauffe, NON mesurée
     await benchSouffler();
-    for(let e=0;e<=P.ESSAIS_RENDU;e++){         // e=0 : échauffement, non retenu
-      benchProgres(0.78+e*0.05,'Rendu…');
+    const serieRendu=async(txt,frac)=>{
+      benchProgres(frac,txt);
       const t=performance.now();
       for(let k=0;k<P.IMAGES;k++) render();
       const d=(performance.now()-t)/P.IMAGES;
       await benchSouffler();
-      if(e===0) continue;
+      return d;
+    };
+    // Échauffement adaptatif, comme pour la simulation — et ici il est
+    // entièrement GRATUIT en fidélité : render() ne fait qu'afficher, il ne
+    // fait pas avancer la partie. On peut donc chauffer autant que le moteur
+    // le demande sans changer d'un iota le travail mesuré ensuite.
+    let precR=null;
+    for(res.chauffeRendu=0;res.chauffeRendu<BENCH.CHAUFFE_MAX;){
+      const d=await serieRendu('Échauffement du rendu…',0.72+res.chauffeRendu*0.012);
+      res.chauffeRendu++;
+      if(precR!=null&&Math.abs(d-precR)<=precR*BENCH.STABLE) break;
+      precR=d;
+    }
+    for(let e=0;e<P.ESSAIS_RENDU;e++){
+      const d=await serieRendu('Rendu…',0.80+e*0.04);
       res.series.rendu.push(d);
       res.rendu=(res.rendu==null)?d:Math.min(res.rendu,d);
     }
@@ -811,7 +870,8 @@ function afficherResultatBenchmark(res,P,profilNom){
     +det('Dessinées à l’écran',`${res.aLEcran} (le reste est hors cadre)`)
     +det('Bâtiments',res.batiments)
     +(etats?det('États',etats):'')
-    +det('Mesure',`meilleur de ${P.ESSAIS_SIM} séries · ${P.PAS_SIM} pas · ${P.IMAGES} images`)
+    +det('Mesure',`${P.PAS_SIM} pas ×${P.ESSAIS_SIM} · ${P.IMAGES} images ×${P.ESSAIS_RENDU}`)
+    +det('Échauffement',`${res.chauffeSim} séries de simulation, ${res.chauffeRendu} de rendu`)
     +`<div class="benchblocT">Les séries retenues (ms)</div>`
     +det('Sprites',serie(res.series.atlas))
     +det('Simulation',serie(res.series.sim))
@@ -835,6 +895,7 @@ function afficherResultatBenchmark(res,P,profilNom){
     // faute de les avoir sous les yeux.
     `Séries — sprites ${serie(res.series.atlas)} | simulation ${serie(res.series.sim)} | rendu ${serie(res.series.rendu)}`,
     `Protocole ${P.PAS_SIM} pas x ${P.ESSAIS_SIM} · ${P.IMAGES} images x ${P.ESSAIS_RENDU} · simulation en moyenne, sprites et rendu au meilleur`,
+    `Échauffement jusqu'à stabilisation : ${res.chauffeSim} séries de simulation, ${res.chauffeRendu} de rendu (plafond ${BENCH.CHAUFFE_MAX})`,
   ].join('\n');
 
   document.getElementById('benchcorps').innerHTML=

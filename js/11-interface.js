@@ -68,16 +68,112 @@ function setCls(id,v){
   _hudCache.set(k,v);
   const el=document.getElementById(id); if(el) el.className=v;
 }
+// Bascule UNE classe sans toucher aux autres — setCls écrase `className` en
+// entier, ce qui effacerait par exemple le .insuff que trainUnit pose sur la
+// même case pendant sa demi-seconde de clignotement. Même cache par
+// différence que le reste du HUD : rien ne touche au DOM tant que l'état ne
+// change pas.
+function setFlag(id,cls,on){
+  const k='f:'+id+':'+cls;
+  if(_hudCache.get(k)===on) return;
+  _hudCache.set(k,on);
+  const el=document.getElementById(id); if(el) el.classList.toggle(cls,on);
+}
+
+// ═══ FORMAT COMPACT DES RESSOURCES (petits écrans) ═════════════════
+// La barre du haut réserve deux zones intouchables — le bouton pause à gauche,
+// le badge villageois inactifs à droite (voir .tb-spacer dans index.html) — et
+// tout le reste doit tenir ENTRE les deux. Les tailles de police y ont été
+// resserrées jusqu'à faire tenir le pire cas réaliste sur un écran de 375px :
+// 4 chiffres par ressource, débits affichés, 300/300 de population. Il reste
+// alors 4px de jeu. Un CINQUIÈME chiffre par ressource redonne ~14px de
+// débordement et la population repasse sous le badge.
+//
+// On abrège donc à partir de 10 000, et seulement là : sur un écran plus large
+// comme en deçà du seuil, le compte exact reste affiché chiffre pour chiffre.
+//
+// Arrondi VERS LE BAS, jamais vers le haut : qui lit « 12k » doit être sûr
+// d'avoir AU MOINS ça. Afficher 13k avec 12 999 en caisse mentirait
+// exactement dans le sens qui compte au moment de payer.
+//
+// La précision perdue ne coûte aucune décision : le bâtiment le plus cher du
+// jeu (Merveille) vaut 800 bois / 800 pierre / 400 or. Passé 10 000 de stock,
+// savoir si on a 12 300 ou 12 400 ne change plus aucun choix — et le compte
+// exact reste disponible dans l'infobulle de la case (voir majRessource).
+const RES_ABREGE_MIN=10000;
+const _mqCompact=(typeof window!=='undefined'&&typeof window.matchMedia==='function')
+  ? window.matchMedia('(max-width:440px)') : null;
+let _resCompact=!!(_mqCompact&&_mqCompact.matches);
+// Relu à chaque rafraîchissement du HUD, et NON sur le seul événement `change`
+// de la media-query : cet événement ne se déclenche pas dans tous les
+// contextes (mesuré : un viewport redimensionné par émulation ne l'émet pas,
+// alors même que le CSS, lui, se réévalue). Le drapeau restait alors figé sur
+// l'état du chargement et la barre gardait ses stocks abrégés sur un écran
+// large. Une lecture de propriété par image est gratuite à côté du reste de
+// updateHUD, et elle ne peut pas se désynchroniser.
+function majSeuilCompact(){ if(_mqCompact) _resCompact=_mqCompact.matches; }
+
+// Renvoie un NOMBRE quand il n'y a rien à abréger, et non une chaîne : c'est
+// le cas de très loin le plus fréquent, appelé 4 fois par image, et le cache de
+// setTxt compare alors deux nombres sans qu'aucune chaîne soit allouée.
+function fmtRes(v){
+  v=v|0;
+  if(!_resCompact||v<RES_ABREGE_MIN) return v;
+  if(v>=1000000) return (Math.floor(v/100000)/10).toString().replace('.',',')+'M';
+  return Math.floor(v/1000)+'k';
+}
+
+// Débit par seconde affiché sous chaque ressource. G.rateShow est arrondi au
+// dixième (voir 07-simulation.js), ce qui donnait des chaînes de CINQ
+// caractères comme « +48.7 » : à elles seules, sur un écran de 375px, elles
+// repoussaient la population sous le badge des villageois inactifs, et ce
+// avec des stocks parfaitement ordinaires à 4 chiffres — c'était le vrai
+// point de rupture de la barre, pas la taille des stocks.
+//
+// Une décimale sous 10, un entier au-dessus : à +0,6/s elle dit qu'on récolte
+// VRAIMENT (afficher « +0 » ferait croire à l'arrêt, c'est là que le dixième
+// compte), à +48/s elle n'apprend plus rien et coûte un caractère. Quatre
+// caractères au maximum dans tous les cas.
+//
+// Et une virgule, pas un point : toute l'interface est en français.
+function fmtTaux(v){
+  if(!(v>0)) return '';
+  if(v>=9.95) return '+'+Math.round(v);
+  const s=v.toFixed(1);
+  return '+'+(s.slice(-2)==='.0' ? s.slice(0,-2) : s.replace('.',','));
+}
+
+// Affiche le stock (abrégé si besoin) et garde le compte EXACT dans
+// l'infobulle de la case : abréger doit rendre le chiffre discret, jamais
+// inatteignable.
+function majRessource(idVal,idCase,nom,v){
+  v=v|0;
+  setTxt(idVal,fmtRes(v));
+  // Signature -1 tant qu'on n'abrège pas : l'infobulle vaut alors le simple
+  // nom de la ressource, écrit une seule fois pour toute la partie. Dès qu'on
+  // abrège, elle suit la valeur — et repasse au nom seul si l'écran
+  // s'élargit, puisque la signature redevient -1.
+  const k='t:'+idVal, sig=(_resCompact&&v>=RES_ABREGE_MIN)?v:-1;
+  if(_hudCache.get(k)===sig) return;
+  _hudCache.set(k,sig);
+  const el=document.getElementById(idCase);
+  if(el) el.setAttribute('title', sig<0 ? nom : nom+' : '+v);
+}
 
 function updateHUD(){
-  setTxt('vfood',G.res.food|0);
-  setTxt('vwood',G.res.wood|0);
-  setTxt('vstone',G.res.stone|0);
-  setTxt('vgold',G.res.gold|0);
+  majSeuilCompact();
+  majRessource('vfood','ri-food','Nourriture',G.res.food);
+  majRessource('vwood','ri-wood','Bois',G.res.wood);
+  majRessource('vstone','ri-stone','Pierre',G.res.stone);
+  majRessource('vgold','ri-gold','Or',G.res.gold);
   setTxt('vpop',G.pop);
   setTxt('vmaxpop',G.maxPop);
+  // Plafond atteint : la case passe à l'orange. Le joueur le découvrait
+  // jusqu'ici en échouant à former une unité — l'information était déjà
+  // à l'écran ("5 / 5"), simplement muette.
+  setFlag('ri-pop','full',G.pop>=G.maxPop);
   // Taux par seconde
-  const setRate=(id,v)=>setTxt(id,v>0?`+${v}`:'');
+  const setRate=(id,v)=>setTxt(id,fmtTaux(v));
   setRate('rfood',G.rateShow.food); setRate('rwood',G.rateShow.wood);
   setRate('rstone',G.rateShow.stone); setRate('rgold',G.rateShow.gold);
   // Badge villageois inactifs — compté sans allouer de tableau intermédiaire

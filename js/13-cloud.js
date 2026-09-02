@@ -45,11 +45,28 @@ window.googleAuthClick=googleAuthClick;
 
 function refreshGoogleUI(){
   const show=mpDispo();
-  for(const id of ['gauthbtn','gauthbtn-title']){
-    const b=document.getElementById(id);
-    if(!b) continue;
+  const qui=gAuth.email||gAuth.nom||'Connecté';
+  // Le bouton du MENU PAUSE est un .pmenu-btn pleine largeur : il peut porter
+  // l'adresse complète en texte plat.
+  const b=document.getElementById('gauthbtn');
+  if(b){
     b.style.display=show?'flex':'none';
-    b.textContent=gAuth.signedIn?`☁️ ${gAuth.email||gAuth.nom||'Connecté'} · Déconnexion`:'☁️ Connexion Google';
+    b.textContent=gAuth.signedIn?`☁️ ${qui} · Déconnexion`:'☁️ Connexion Google';
+  }
+  // Celui de l'ÉCRAN-TITRE est un .utilbtn de 84 px, dont la mise en page
+  // repose sur deux éléments : .uico (l'icône, 19 px) et .ulabel (le libellé,
+  // 10 px). Y écrire du texte plat effaçait ces deux éléments : le bouton
+  // repassait à la taille de police héritée, débordait sur deux lignes et
+  // devenait plus large et plus haut que ses quatre voisins. On reconstruit
+  // donc la même structure, avec un libellé COURT (une adresse mail n'entre
+  // pas dans 84 px) — l'identité complète part dans l'infobulle.
+  const t=document.getElementById('gauthbtn-title');
+  if(t){
+    t.style.display=show?'flex':'none';
+    t.title=gAuth.signedIn?`Connecté : ${qui} — toucher pour se déconnecter`:'Connexion Google';
+    const ico=t.querySelector('.uico'), lbl=t.querySelector('.ulabel');
+    if(ico) ico.textContent=gAuth.signedIn?'✅':'☁️';
+    if(lbl) lbl.textContent=gAuth.signedIn?'Déconnexion':'Google';
   }
 }
 
@@ -599,7 +616,7 @@ loadProfile().then(refreshAchCount); // storageLoad() : instantané tant que non
   const useAuto=(!man)||(auto&&auto.ts>man.ts);
   const d=useAuto?auto:man;
   btn.style.display='block';
-  btn.innerHTML=(useAuto?'⏱️ Reprendre (auto)':'📂 Reprendre la sauvegarde')+
+  btn.innerHTML=(useAuto?'⏱️ Reprendre (auto)':'📂 Reprendre la partie')+
     `<div style="font-size:11px;opacity:.75;font-weight:400;margin-top:2px;">${saveLabel(d)}</div>`;
   btn.onclick=()=>loadGame(useAuto?AUTO_KEY:SAVE_KEY);
 })();

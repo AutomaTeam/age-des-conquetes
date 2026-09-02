@@ -45,8 +45,13 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 #topbar {
   position:fixed;top:0;left:0;right:0;z-index:100;
   height:var(--topH);padding-top:env(safe-area-inset-top,0px);
-  background:linear-gradient(180deg,rgba(20,12,0,.98),rgba(20,12,0,.88));
+  background:linear-gradient(180deg,rgba(46,28,4,.98),rgba(20,12,0,.9));
   border-bottom:2px solid var(--gold);
+  /* Un filet clair en haut + une ombre portee en bas : la barre se pose SUR
+     la carte au lieu d'etre un rectangle noir decoupe dedans. Deux ombres
+     statiques, aucune repeinture par image — sans effet sur le budget de
+     rendu. */
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 3px 14px rgba(0,0,0,.55);
   display:flex;align-items:center;justify-content:space-around;padding:0 6px;
   padding-top:env(safe-area-inset-top,0px);
 }
@@ -55,19 +60,69 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
    étroit, ce qui replacerait le bouton pause / le badge inactifs par-
    dessus les ressources qu'ils sont censés éviter. */
 .tb-spacer { flex-shrink:0; }
+/* Largeurs DANS la feuille et non en attribut `style` : elles doivent pouvoir
+   se resserrer avec le reste de la barre sur un ecran etroit (voir les deux
+   paliers plus bas), ce qu'un style en ligne interdit sans !important.
+   Elles reservent exactement de quoi ne rien recouvrir : 32px de bouton
+   pause a gauche (place a left:8px), ~50px de badge villageois a droite
+   (place a right:6px). */
+#topbar > .tb-spacer:first-child { width:44px; }
+#topbar > .tb-spacer:last-child  { width:56px; }
 .ri { display:flex;align-items:center;gap:3px;font-family:'Cinzel',serif;font-size:13px;border-radius:6px;padding:1px 3px; }
 .ri .ico { font-size:15px; }
 .ri .val { color:var(--gold-l);font-weight:600;min-width:30px;text-align:right; }
-.pi { display:flex;align-items:center;gap:3px;font-family:'Cinzel',serif;font-size:12px;color:#999;border-radius:6px;padding:1px 3px; }
-/* Petits écrans (téléphones bas de gamme/anciens, ≤360px) : la barre du
-   haut doit encore tenir entre les deux espaceurs réservés (bouton pause à
-   gauche, badge villageois inactifs à droite) sans que rien ne chevauche.
-   On resserre juste les ressources ; les espaceurs, eux, ne bougent pas. */
-@media (max-width:360px) {
-  .ri, .pi { gap:1px;padding:1px 2px; }
+.pi { display:flex;align-items:center;gap:3px;font-family:'Cinzel',serif;font-size:12px;color:#8a7a5a;border-radius:6px;padding:1px 3px; }
+/* La population est une ressource comme les autres du point de vue du joueur
+   (elle plafonne, elle se lit en un coup d'oeil) : ses chiffres se lisaient
+   pourtant en gris uni pendant que les quatre autres doraient les leurs.
+   Meme traitement, en un demi-ton plus sobre — c'est une limite, pas un
+   stock. Le « / » et le maximum restent en retrait. */
+#vpop { color:var(--parch);font-weight:600; }
+#ri-pop.full #vpop { color:#e8823a; }   /* plafond atteint : plus rien ne sortira */
+/* Écrans de téléphone : la barre du haut doit tenir ENTRE les deux espaceurs
+   réservés (bouton pause à gauche, badge villageois inactifs à droite) sans
+   que rien ne chevauche. Le seuil unique de 360px ne couvrait que les
+   appareils anciens : à 375px (iPhone SE/12 mini/13 mini) les quatre
+   ressources à taille pleine + la population réclamaient 377px — l'espaceur
+   de droite débordait de 8px et le « /5 » de la population passait SOUS le
+   badge des villageois inactifs (position fixe, right:6px). Et ce calcul
+   était fait rate vide : dès que les débits (« +12 ») s'affichent en cours de
+   partie, le débordement s'aggrave. Deux paliers plutôt qu'un : un
+   resserrement modéré qui laisse la place aux débits sur tout téléphone
+   moderne, puis le resserrement d'origine (débits masqués) sous 360px.
+   Les espaceurs, eux, ne bougent jamais — ce sont eux qui garantissent que
+   pause et badge n'ont rien à recouvrir. */
+@media (max-width:440px) {
+  .ri, .pi { gap:0;padding:1px 0; }
   .ri { font-size:11px; }
+  /* Les icones de ressource sont des <img> de 15px, dont la taille est posee
+     en ATTRIBUT par applyStaticIcons (05-sprites.js) : une regle `font-size`
+     ne les touche pas, elle ne vaut que pour l'emoji de repli tant que les
+     planches ne sont pas chargees. Il faut donc viser l'image elle-meme —
+     une largeur CSS l'emporte sur l'attribut sans !important. 13px, comme
+     l'icone de population juste a cote, et 12px de gagnes sur la rangee. */
   .ri .ico { font-size:13px; }
-  .ri .val { min-width:22px; }
+  .ri .ico img { width:13px;height:13px; }
+  /* La largeur mini du nombre ne sert qu'a empecher les colonnes de danser
+     quand on passe de 9 a 10 : sur un telephone, c'est un luxe qu'on paie en
+     debordement. Le contenu suffit. */
+  .ri .val { min-width:0; }
+  .ri .rate { font-size:7.5px;margin-left:0; }
+  .pi { font-size:10px; }
+  /* Espaceurs : c'est leur largeur SEULE qui garantit le degagement, et la
+     marge disponible vaut exactement `espaceur - largeur de l'element
+     protege` une fois la barre pleine. Retrecir le badge ou le bouton pause
+     n'apporte donc rien : #topbar est en `space-around`, l'espace libere
+     repart aussitot en ecarts entre les cases et repousse la population vers
+     le badge. Le seul vrai levier est la largeur du CONTENU, d'ou le format
+     compact des stocks et des debits (voir fmtRes/fmtTaux, 11-interface.js).
+     Le badge fait ~50px, le bouton pause s'arrete a 40px : 50 et 36 laissent
+     de quoi ne jamais se toucher. */
+  #topbar > .tb-spacer:first-child { width:36px; }
+  #topbar > .tb-spacer:last-child  { width:50px; }
+}
+@media (max-width:360px) {
+  .ri { font-size:11px; }
   .ri .rate { display:none; }
   .pi { font-size:10px; }
 }
@@ -118,8 +173,15 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 #minimap {
   position:fixed;top:calc(var(--topH) + 28px);right:8px;z-index:99;
   width:88px;height:88px;
-  border:2px solid var(--gold-d);border-radius:4px;overflow:hidden;
-  box-shadow:0 0 12px rgba(0,0,0,.6);
+  /* Cadre en deux temps (bordure sombre + halo dore en `outline` peint par
+     box-shadow) plutot qu'un unique trait brun : la mini-carte etait un
+     rectangle noir pose sur du noir, sans contour lisible des que le terrain
+     autour d'elle etait sombre. */
+  border:2px solid #6b5410;border-radius:5px;overflow:hidden;
+  box-shadow:
+    0 0 0 1px rgba(212,160,23,.35),
+    inset 0 0 10px rgba(0,0,0,.9),
+    0 4px 16px rgba(0,0,0,.7);
 }
 #mm { width:100%;height:100%; }
 
@@ -130,11 +192,22 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   background:linear-gradient(0deg,rgba(20,12,0,.97),rgba(20,12,0,.0));
 }
 #selinfo {
-  display:none;padding:5px 54px 3px 10px;position:relative;
-  border-top:1px solid rgba(212,160,23,.4);background:rgba(20,12,0,.92);
+  display:none;padding:5px 54px 4px 10px;position:relative;
+  /* Filet dore + reflet interne : le panneau se pose sur la carte comme la
+     barre du haut, au lieu d'etre un aplat noir que rien ne delimite. */
+  border-top:1px solid rgba(212,160,23,.45);
+  background:linear-gradient(180deg,rgba(38,23,3,.94),rgba(20,12,0,.94));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
 }
-#seltitle { font-family:'Cinzel',serif;color:var(--gold-l);font-size:13px;margin-bottom:3px; }
+#seltitle {
+  font-family:'Cinzel',serif;color:var(--gold-l);font-size:14px;margin-bottom:4px;
+  letter-spacing:.03em;text-shadow:0 1px 3px rgba(0,0,0,.8);
+}
 #hprow { display:flex;align-items:center;gap:6px;margin-bottom:2px; }
+/* La jauge prend toute la largeur restante — tenable sur un telephone, ou
+   « tout » fait 360px. Voir la media-query grand ecran plus bas, qui la
+   borne : une barre de vie de 900px pour un villageois de 28 PV se lisait
+   comme un trait de surligneur en travers de l'ecran, pas comme une jauge. */
 /* Jauge de PV : creusée dans le panneau (ombre interne) et remplie d'un
    dégradé surmonté d'un filet clair, plutôt qu'un aplat vert de 5 px de haut
    qui traversait tout l'écran comme un trait de surligneur. */
@@ -148,10 +221,18 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   background:linear-gradient(180deg,#5ee08c,#2ecc71 55%,#1f9d55);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.35);
 }
-#seldesc { font-size:11px;color:#999;font-family:'Crimson Text',serif; }
+#seldesc { font-size:11.5px;color:#a89878;font-family:'Crimson Text',serif;line-height:1.4; }
 #actbar {
   padding:6px 8px 8px;
-  display:flex;flex-wrap:wrap;gap:5px;justify-content:center;min-height:72px;align-items:center;
+  display:flex;flex-wrap:wrap;gap:5px;justify-content:center;min-height:72px;
+  /* `stretch` et non `center` : les libelles n'ont pas tous la meme longueur
+     (« Maison » tient sur une ligne, « Immeuble HLM » sur deux, et le cout de
+     certains batiments demande deux ressources donc deux lignes). Centrees,
+     ces cartes de hauteurs differentes donnaient une rangee en dents de scie
+     ou un seul batiment depassait ses voisins. Etirees, chaque rangee est
+     d'une seule hauteur — celle de son element le plus haut — et les
+     boutons redeviennent une grille. */
+  align-items:stretch;align-content:center;
 }
 
 /* ── MISE EN PAGE LARGE (ordinateur / tablette) ──
@@ -182,7 +263,16 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   #seltitle, #hprow, #seldesc, #actbar {
     width:100%;max-width:920px;margin-left:auto;margin-right:auto;
   }
-  #selinfo { padding-left:14px;padding-right:58px; }
+  /* Une jauge n'a pas besoin de 900px pour dire « a moitie pleine », et une
+     barre aussi longue perd toute lisibilite : l'oeil ne sait plus rapporter
+     le remplissage a la longueur totale. On la borne, le compteur chiffre
+     (#hptxt) vient se ranger juste apres au lieu de partir se coller au bord
+     droit de l'ecran, a un metre de la barre qu'il legende. */
+  #hpbar { max-width:420px;flex:1 1 auto; }
+  /* Du coup la reserve de 58px n'a plus a etre prise sur le conteneur pleine
+     largeur, mais A L'INTERIEUR de la colonne, la ou la croix se trouve. */
+  #selinfo { padding-left:14px;padding-right:14px; }
+  #seltitle, #seldesc { padding-right:52px; }
 }
 
 /* ── BUTTONS ── */
@@ -191,7 +281,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   border:1.5px solid var(--gold-d);border-radius:8px;
   color:var(--parch);font-family:'Cinzel',serif;font-size:10px;
   padding:5px 7px;cursor:pointer;
-  display:flex;flex-direction:column;align-items:center;gap:1px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   min-width:56px;max-width:70px;line-height:1.2;
   transition:background .1s,transform .1s;
 }
@@ -260,6 +350,17 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   box-shadow:0 2px 8px rgba(0,0,0,.6);
 }
 #deselbtn .x { font-size:18px;line-height:1; }
+/* La croix de deselection etait ancree au bord DROIT DE L'ECRAN pendant que
+   tout le contenu du panneau est ramene dans une colonne de 920px centree
+   (voir la media-query plus haut) : sur un ecran de 1280px elle flottait
+   175px a droite du panneau qu'elle ferme. On l'aligne sur le bord droit de
+   cette colonne — et le max() la ramene a 6px du bord des que l'ecran est
+   plus etroit que la colonne, donc le comportement mobile ne bouge pas.
+   Cette regle DOIT venir apres le bloc #deselbtn ci-dessus : a specificite
+   egale, c'est la derniere declaration qui gagne, media-query ou pas. */
+@media (min-width:760px) {
+  #deselbtn { right:max(6px, calc(50% - 466px)); }
+}
 
 /* ── ZOOM BTN ── */
 #sidebtn {
@@ -441,10 +542,27 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .bigbtn {
   position:relative;overflow:hidden;
   background:linear-gradient(180deg,var(--gold),var(--gold-d));color:var(--bg);
-  font-family:'Cinzel',serif;font-size:16px;font-weight:700;
-  border:none;border-radius:12px;padding:14px 38px;cursor:pointer;
+  font-family:'Cinzel',serif;font-size:16px;font-weight:700;line-height:1.3;
+  /* 38px de marge horizontale sur un bouton qui fait DEJA toute la largeur
+     de sa colonne : elles ne servaient qu'a retrecir la ligne de texte de
+     76px. Sur un telephone de 375px, la colonne fait 274px et il ne restait
+     que 198px pour un libelle qui en demande 211 — le grand appel a l'action
+     de l'ecran-titre se cassait donc sur deux lignes, tout comme
+     « Reprendre la partie en ligne » et les deux boutons de decision de
+     l'hote. La hauteur, elle, ne bouge pas. */
+  /* `transparent` et non `none` : trois variantes (.loadbtn, .rejoinbtn,
+     .friendbtn) ajoutent un liseret de 1,5px. Sans reserve dans le gabarit
+     de base, elles etaient 3px plus hautes et 3px plus etroites que le CTA
+     dore juste a cote — deux boutons empiles cote a cote qui ne tombaient
+     pas exactement sur la meme grille. */
+  border:1.5px solid transparent;border-radius:12px;padding:14px 20px;cursor:pointer;
   box-shadow:0 4px 20px rgba(212,160,23,.4),inset 0 1px 0 rgba(255,255,255,.35);
-  width:100%;max-width:290px;
+  /* 320px, comme .cfgsummary juste au-dessus : a 290px, le resume de reglages
+     etait PLUS LARGE que le bouton principal qu'il precede — la colonne
+     s'elargissait puis se retrecissait sur son element le plus important. Et
+     « Commencer la partie » ne tenait pas en 290px de Cinzel 16px gras : le
+     grand appel a l'action de l'ecran-titre se cassait sur deux lignes. */
+  width:100%;max-width:320px;
   transition:transform .12s,box-shadow .12s;
   /* flex-shrink:0 impératif : #overlay est une colonne flex qui déborde
      largement dès que le bilan de fin de partie s'allonge (grilles de
@@ -479,14 +597,20 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   background:linear-gradient(180deg,#1e5a34,#0d2a18);color:#2ecc71;
   border:1.5px solid #2ecc71;box-shadow:0 4px 20px rgba(46,204,113,.25),inset 0 1px 0 rgba(255,255,255,.12);
 }
+/* Bleu, et non vert comme .loadbtn : les deux boutons « Reprendre » peuvent
+   apparaitre EN MEME TEMPS, empiles, et deux pastilles vertes identiques
+   n'apprenaient rien au joueur sur ce qui les distingue. Le bleu est deja la
+   couleur du jeu en ligne partout ailleurs (« Jouer avec un ami », badge
+   « En ligne » du mode coop) ; le vert reste celui de la sauvegarde locale
+   (menu pause : « Sauvegarder » / « Charger »). */
 .bigbtn.rejoinbtn {
-  background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;
-  border:1.5px solid #2ecc71;box-shadow:0 4px 20px rgba(46,204,113,.2),inset 0 1px 0 rgba(255,255,255,.1);
+  background:linear-gradient(180deg,#1c4a6a,#0d2a3a);color:#9fd0f5;
+  border:1.5px solid #2a6a9a;box-shadow:0 4px 20px rgba(52,152,219,.22),inset 0 1px 0 rgba(255,255,255,.1);
 }
 .lore {
   font-size:12.5px!important;color:#9a8a6a!important;font-style:normal;
   display:flex;align-items:center;gap:7px;text-align:left!important;
-  max-width:290px!important;line-height:1.5!important;
+  max-width:320px!important;line-height:1.5!important;
 }
 .lorebadge {
   flex-shrink:0;font-family:'Cinzel',serif;font-size:9px;font-weight:700;letter-spacing:.04em;
@@ -975,7 +1099,12 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 }
 
 /* ── HELP DOTS ── */
-.tip { color:#666;font-size:11px;font-family:'Crimson Text',serif;font-style:italic;text-align:center;padding:0 4px; }
+/* #666 sur un fond quasi noir, en italique de 11px : environ 3,3:1, sous le
+   minimum lisible (4,5:1). Ces lignes portent pourtant la seule explication
+   de chaque mode, difficulte, civilisation et carte de l'ecran-titre, et le
+   « Tapez une unite pour la selectionner » du premier ecran de jeu. Meme
+   parchemin sourd que le reste des textes secondaires (~6:1). */
+.tip { color:#9a8a6a;font-size:11.5px;font-family:'Crimson Text',serif;font-style:italic;text-align:center;padding:0 4px;line-height:1.45; }
 
 /* ── BOUTON PAUSE ── */
 #pausebtn {
@@ -1124,13 +1253,13 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 <!-- ── TOP BAR ── -->
 <div id="topbar">
-  <div class="tb-spacer" style="width:44px"></div><!-- espace réservé bouton pause (gauche) -->
+  <div class="tb-spacer"></div><!-- espace réservé bouton pause (gauche) — largeur en CSS -->
   <div class="ri" id="ri-food" title="Nourriture"><span class="ico" id="ico-food">🍖</span><span class="val" id="vfood">200</span><span class="rate" id="rfood"></span></div>
   <div class="ri" id="ri-wood" title="Bois"><span class="ico" id="ico-wood">🪵</span><span class="val" id="vwood">150</span><span class="rate" id="rwood"></span></div>
   <div class="ri" id="ri-stone" title="Pierre"><span class="ico" id="ico-stone">🪨</span><span class="val" id="vstone">0</span><span class="rate" id="rstone"></span></div>
   <div class="ri" id="ri-gold" title="Or"><span class="ico" id="ico-gold">💰</span><span class="val" id="vgold">0</span><span class="rate" id="rgold"></span></div>
   <div class="pi" id="ri-pop" title="Population"><span id="ico-pop">👥</span><span id="vpop">0</span>/<span id="vmaxpop">5</span></div>
-  <div class="tb-spacer" style="width:56px"></div><!-- espace réservé badge villageois inactifs (droite) -->
+  <div class="tb-spacer"></div><!-- espace réservé badge villageois inactifs (droite) — largeur en CSS -->
 </div>
 
 <!-- ── BADGE VILLAGEOIS INACTIFS ── -->
@@ -1285,8 +1414,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
          joueur qui n'a ni sauvegarde ni partie en ligne interrompue ne voit
          donc rien de plus qu'avant à cet endroit. Ordre : la partie en ligne
          d'abord (un ami peut attendre), la sauvegarde locale ensuite. -->
-    <button class="bigbtn rejoinbtn" id="mprejoinbtn" onclick="mpReprendrePartieEnLigne()" style="display:none;">🔌 Reprendre la partie en ligne</button>
-    <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la sauvegarde</button>
+    <button class="bigbtn rejoinbtn" id="mprejoinbtn" onclick="mpReprendrePartieEnLigne()" style="display:none;">🔌 Reprendre en ligne</button>
+    <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la partie</button>
 
     <!-- Groupe "Nouvelle partie" — configurer, puis lancer, seul ou avec un
          ami. Le mode/difficulté/civ choisis ici sont exactement ceux transmis

@@ -287,7 +287,13 @@ window.addEventListener('resize',()=>{ resizeCanvas(); });
 const BENCH={
   GRAINE:20260902, CARTE:'plaines',
   SURCOUT_IMAGE:2.4,     // voir la note sur l'estimation d'images/s, plus bas
-  POIDS:{atlas:0.2, sim:0.4, rendu:0.4},
+  // L'atlas pèse le moins : c'est aussi, de loin, la mesure la plus bruitée
+  // (allocation de ~250 canvas d'un coup, donc à la merci d'une collecte
+  // mémoire — écart mesuré de 24 à 34 ms pour le même travail), et la moins
+  // représentative du confort de jeu puisqu'on ne la paie qu'aux changements
+  // de zoom. Lui laisser 0,2 faisait basculer le RANG affiché d'un essai à
+  // l'autre alors que la machine, elle, n'avait pas changé.
+  POIDS:{atlas:0.15, sim:0.40, rendu:0.45},
 };
 // Deux épreuves. La normale répond à « le jeu tournera-t-il bien chez moi ? »,
 // l'extrême à « jusqu'où ma machine tient-elle ? » — et elles ne se mesurent
@@ -302,13 +308,29 @@ const BENCH_PROFILS={
   normal:{
     nom:'Épreuve normale', ico:'📊',
     intro:'Une partie de milieu de jeu, carte normale : ce que votre machine fera réellement la plupart du temps.',
-    TAILLE:'normale', UNITES:220, BATAILLE:false, BATIMENTS:0,
-    PAS_SIM:150, IMAGES:90, CHAUFFE_SIM:40, CHAUFFE_RENDU:8,
-    ESSAIS_ATLAS:3, ESSAIS_SIM:2, ESSAIS_RENDU:2,
+    // RAYON en tuiles : le disque dans lequel les unités sont semées. ~10
+    // tuiles = la largeur d'un écran au zoom normal, donc une bonne part de
+    // l'armée est réellement DESSINÉE — c'est ce qu'on paie en jeu.
+    TAILLE:'normale', UNITES:220, BATAILLE:false, BATIMENTS:22, RAYON:10,
+    // L'épreuve normale est rapide (~1 s) : on peut se payer plus d'essais,
+    // et le meilleur de N resserre d'autant la mesure.
+    // Chauffe généreuse : mesuré, un banc lancé APRÈS d'autres activités de la
+    // page (une partie jouée puis quittée) rendait 798 points là où les essais
+    // suivants donnaient 895 à 940 — code déoptimisé et mémoire à collecter.
+    // Toutes les séries de CE lancement étaient lentes, donc le meilleur-de-N
+    // n'y pouvait rien : seule une vraie chauffe en amont corrige.
+    PAS_SIM:150, IMAGES:90, CHAUFFE_SIM:120, CHAUFFE_RENDU:30,
+    ESSAIS_ATLAS:4, ESSAIS_SIM:3, ESSAIS_RENDU:3,
     // Temps de référence en ms, RELEVÉS APRÈS CHAUFFE sur la machine étalon
     // (Windows 11, Chrome, 24 cœurs, DPR 1,25) : 1000 points par poste =
     // cette machine. Seul étalonnage du banc.
-    REF:{atlas:36, sim:0.42, rendu:1.20},
+    // Étalonné dans les conditions RÉELLES d'usage — page ayant déjà fait
+    // tourner des parties —, pas sur un onglet fraîchement ouvert : mesuré,
+    // la même machine rend 0,47 ms sur page neuve et 0,60 après deux parties
+    // jouées. Étalonner sur le cas neuf plaçait la machine étalon à 889
+    // points, pile sur la frontière d'un rang, qui basculait alors d'un essai
+    // à l'autre. Sur ces valeurs-ci elle tombe à ~1000, au milieu de son rang.
+    REF:{atlas:31, sim:0.60, rendu:1.72},
     PALIERS:[
       {min:1400,nom:'Forge de guerre',ico:'🔥',txt:'Tout à fond : grande carte, 4 camps, zoom libre. La machine n’est pas la limite.'},
       {min:900, nom:'Solide',         ico:'⚔️',txt:'Confortable partout. Grande carte et mode 2 rivaux sans réserve.'},
@@ -320,21 +342,34 @@ const BENCH_PROFILS={
   extreme:{
     nom:'Épreuve extrême', ico:'🔥',
     intro:'Grande carte 320×320, <strong>3 000 unités en pleine bataille</strong> et 60 bâtiments. Bien au-delà d’une vraie partie : c’est un test de rupture, pas un objectif.',
-    TAILLE:'grande', UNITES:3000, BATAILLE:true, BATIMENTS:60,
+    TAILLE:'grande', UNITES:3000, BATAILLE:true, BATIMENTS:60, RAYON:13,
     // Beaucoup moins d'itérations : à ce niveau un seul pas coûte des
     // millisecondes, et le banc doit rester sous la dizaine de secondes.
-    PAS_SIM:40, IMAGES:30, CHAUFFE_SIM:8, CHAUFFE_RENDU:3,
-    ESSAIS_ATLAS:2, ESSAIS_SIM:2, ESSAIS_RENDU:2,
+    PAS_SIM:40, IMAGES:30, CHAUFFE_SIM:16, CHAUFFE_RENDU:8,
+    ESSAIS_ATLAS:3, ESSAIS_SIM:2, ESSAIS_RENDU:2,   // l'atlas est le plus bruité : 3 essais
     // Références RELEVÉES sur la machine étalon pour CETTE épreuve — pas
     // question de réutiliser celles de l'épreuve normale : à 3 000 unités le
     // coût par pas n'a plus rien à voir (0,42 ms contre ~9 ms).
-    REF:{atlas:40, sim:9.2, rendu:2.26},
+    // Étalonnage relevé une fois la mêlée VRAIMENT formée : les deux armées
+    // marchent l'une sur l'autre pendant la chauffe, donc au moment du
+    // chronomètre elles sont au contact, au centre de l'écran — le rendu passe
+    // de 11 à 41 ms parce qu'il dessine alors des milliers d'unités empilées
+    // au lieu d'une nuée dispersée. C'est le pire cas recherché, et il est
+    // reproductible (aléa semé) ; mais il dépend du nombre de pas joués avant
+    // la mesure : toucher à CHAUFFE_SIM impose de réétalonner ces trois
+    // nombres.
+    REF:{atlas:33, sim:32.7, rendu:41.5},
+    // Les libellés ne promettent PAS que tout va bien : à 3 000 unités au
+    // contact, même la machine étalon dépasse le budget temps réel (34 ms par
+    // pas pour 33 disponibles). C'est le propre d'un test de rupture, et le
+    // verdict temps réel affiché juste en dessous le dit sans détour — les
+    // textes doivent rester cohérents avec lui.
     PALIERS:[
-      {min:1400,nom:'Rien ne l’arrête',ico:'🔥',txt:'Cette machine encaisse une charge que le jeu ne produira jamais de lui-même.'},
-      {min:900, nom:'Taillée pour la guerre',ico:'⚔️',txt:'Tient une bataille massive sans faiblir. Aucune limite en jeu réel.'},
-      {min:550, nom:'Solide sous le feu',ico:'🛡️',txt:'Encaisse bien. Une très grosse fin de partie peut faire tousser un peu.'},
-      {min:300, nom:'Atteint ses limites',ico:'🪓',txt:'La charge extrême passe mal, mais une vraie partie (dix fois plus légère) reste confortable.'},
-      {min:0,   nom:'Dépassée',        ico:'🐌',txt:'Cette épreuve est hors de portée — ce qui est normal : visez l’épreuve normale pour juger votre machine.'},
+      {min:1400,nom:'Hors catégorie',ico:'🔥',txt:'Encaisse sans broncher une charge que le jeu ne produira jamais de lui-même.'},
+      {min:900, nom:'Taillée pour la guerre',ico:'⚔️',txt:'Parmi les meilleures sur cette épreuve. En partie réelle, dix fois plus légère, aucune limite.'},
+      {min:550, nom:'Solide sous le feu',ico:'🛡️',txt:'Bon comportement sur une charge démesurée. Aucune inquiétude pour une vraie partie.'},
+      {min:300, nom:'Atteint ses limites',ico:'🪓',txt:'La charge extrême passe mal — c’est attendu. Fiez-vous à l’épreuve normale pour juger le confort de jeu.'},
+      {min:0,   nom:'Dépassée',        ico:'🐌',txt:'Cette épreuve est hors de portée, ce qui ne présage rien d’une vraie partie : lancez l’épreuve normale.'},
     ],
   },
 };
@@ -366,6 +401,78 @@ function benchProgres(pct,txt){
   if(t) t.textContent=txt;
 }
 
+// ── ALÉA SEMÉ PENDANT TOUT LE BANC ────────────────────────
+// Sans ça le banc ne mesure pas deux fois la même chose : le ciblage, la
+// chasse et les particules tirent Math.random en pleine boucle, donc la
+// bataille se déroule autrement à chaque essai — effectif différent au moment
+// du chronomètre, donc coût différent. C'est exactement le piège déjà
+// rencontré sur les bancs hors navigateur, et c'est LE levier de stabilité :
+// on veut mesurer la MACHINE, pas le hasard de la partie.
+// Même générateur que le harnais de test (LCG), et surtout : on restaure
+// le vrai Math.random ensuite, sinon toute la session de jeu qui suit
+// tournerait sur une suite prévisible.
+let _randVrai=null;
+function benchSemer(graine){
+  if(!_randVrai) _randVrai=Math.random;
+  let s=(graine>>>0)||1;
+  Math.random=function(){ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
+}
+function benchRendreAleaVrai(){
+  if(_randVrai){ Math.random=_randVrai; _randVrai=null; }
+}
+
+// Construit une scène de VRAIE partie : une base bâtie, des villageois qui
+// récoltent pour de bon (via assignGatherers, le chemin du jeu) et une armée
+// groupée autour de la base. Sans ça le banc mesurait 220 unités qui marchent
+// en file indienne sur une carte vide — et, la spirale s'étant élargie lors de
+// l'ajout de l'épreuve extrême, la plupart tombaient même HORS DE L'ÉCRAN :
+// le rendu chronométré ne dessinait presque rien (0,36 ms au lieu de 1,20).
+function benchScene(P,tc,camps){
+  const nBat=P.BATIMENTS, TYPES=[BT.HOUSE,BT.FARM,BT.MILL,BT.LUMBER,BT.BARRACKS,BT.TOWER,BT.MINE,BT.STABLE];
+  for(let i=0;i<nBat;i++){
+    const a=i*2.399963, r=BASE_TILE*(6+(i%6)*3);
+    const bt=TYPES[i%TYPES.length], d=BDEF[bt];
+    const btx=Math.max(2,Math.min(COLS-1-d.w,(tc.tx+Math.cos(a)*r/BASE_TILE)|0));
+    const bty=Math.max(2,Math.min(ROWS-1-d.h,(tc.ty+Math.sin(a)*r/BASE_TILE)|0));
+    let libre=true;
+    for(let dy=0;dy<d.h&&libre;dy++) for(let dx=0;dx<d.w&&libre;dx++) if(G.bmap[bty+dy][btx+dx]!==0) libre=false;
+    if(!libre) continue;
+    const b=mkBuilding(bt,btx,bty,camps[i%camps.length]);
+    b.constructing=false; b.progress=1; placeBuilding(b);
+  }
+  // Unités GROUPÉES autour de la base (rayon ~10 tuiles) : c'est ce qu'on a
+  // réellement sous les yeux en jeu, et donc ce que le rendu doit payer.
+  const vils=[];
+  for(let i=0;i<P.UNITES;i++){
+    const camp=camps[i%camps.length];
+    const cote=(camps.length>1&&(i%2))?1:-1;
+    // Disque de Vogel (spirale dorée) : réparti sans amas ni file indienne.
+    const k=i/P.UNITES, a=i*2.399963, r=Math.sqrt(k)*BASE_TILE*P.RAYON;
+    const cx=tc.x+(P.BATAILLE?cote*BASE_TILE*11:0);
+    const x=Math.max(BASE_TILE,Math.min((COLS-1)*BASE_TILE,cx+Math.cos(a)*r));
+    const y=Math.max(BASE_TILE,Math.min((ROWS-1)*BASE_TILE,tc.y+Math.sin(a)*r));
+    const t=(i%4===0)?UT.VIL:(i%5===0)?UT.ARC:(i%11===0)?UT.KNIGHT:UT.MIL;
+    const u=mkUnit(t,x,y,camp);
+    if(P.BATAILLE){ u.state='moving'; u.destX=tc.x-cote*BASE_TILE*11; u.destY=tc.y; }
+    else { u.state='moving'; u.destX=tc.x; u.destY=tc.y; }
+    G.units.push(u);
+    if(t===UT.VIL&&camp===camps[0]) vils.push(u);
+  }
+  // Villageois RÉELLEMENT à la récolte : on passe par assignGatherers, la
+  // fonction du jeu, pour que homeNode/dropoff/state soient posés comme en
+  // partie — un villageois « en récolte » bricolé à la main ne ferait pas
+  // travailler doGather de la même façon.
+  const noeuds=G.nodes.filter(n=>n.amt>0)
+    .sort((a,b)=>Math.hypot(a.x-tc.x,a.y-tc.y)-Math.hypot(b.x-tc.x,b.y-tc.y)).slice(0,24);
+  if(noeuds.length&&vils.length){
+    const parNoeud=Math.max(1,Math.ceil(vils.length/noeuds.length));
+    for(let i=0;i<noeuds.length;i++){
+      const lot=vils.slice(i*parNoeud,(i+1)*parNoeud);
+      if(lot.length) assignGatherers(lot,noeuds[i]);
+    }
+  }
+}
+
 async function lancerBenchmark(profilNom){
   if(_benchEnCours) return;
   const P=BENCH_PROFILS[profilNom]||BENCH_PROFILS.normal;
@@ -380,7 +487,14 @@ async function lancerBenchmark(profilNom){
   const sauve={mode:selectedMode, carte:selectedCarte, taille:selectedTaille,
                civ:selectedCiv, diff:selectedDifficulty, graine:grainePartie, tile:TILE};
   const res={};
+  // Onglet mis en arrière-plan : le navigateur bride alors les minuteurs et le
+  // rendu. On ne peut pas l'empêcher, mais on peut le DÉTECTER et le dire,
+  // plutôt que d'afficher un mauvais score sans explication.
+  let masque=document.hidden;
+  const surVisibilite=()=>{ if(document.hidden) masque=true; };
+  document.addEventListener('visibilitychange',surVisibilite);
   try{
+    benchSemer(BENCH.GRAINE);   // voir benchSemer : la stabilité tient d'abord à ça
     selectedMode='survival'; selectedCarte=BENCH.CARTE;
     pickTaille(P.TAILLE); grainePartie=BENCH.GRAINE;
     resizeCanvas();
@@ -409,63 +523,32 @@ async function lancerBenchmark(profilNom){
     // que RALENTIR, jamais accélérer : le minimum est donc l'estimation
     // honnête de ce dont la machine est capable, et c'est ce que font les
     // bancs d'essai sérieux.
-    for(let e=0;e<P.ESSAIS_ATLAS;e++){
-      benchProgres(0.16+e*0.04,'Construction des sprites…');
+    for(let e=0;e<=P.ESSAIS_ATLAS;e++){         // e=0 : échauffement, non retenu
+      benchProgres(0.14+e*0.03,'Construction des sprites…');
       const t=performance.now();
       buildSprites(sprRungFor(BASE_TILE));
       const d=performance.now()-t;
-      res.atlas=(res.atlas==null)?d:Math.min(res.atlas,d);
       await benchSouffler();
+      if(e===0) continue;
+      res.atlas=(res.atlas==null)?d:Math.min(res.atlas,d);
     }
 
     // ── 2. Simulation ──
-    // On peuple avec des unités RÉPARTIES (le piège documenté : les entasser
-    // au même pixel donne un profil qui n'a rien à voir avec une partie).
-    benchProgres(0.3,'Mise en place des troupes…');
+    benchProgres(0.3,'Mise en place de la cité…');
     const dep=(G.departs&&G.departs.length)?G.departs:resoudreDeparts();
     const tc=mkBuilding(BT.TC,dep[0][0],dep[0][1],FAC.P1); placeBuilding(tc);
-    // Épreuve extrême : deux camps RÉELLEMENT hostiles, chacun avec sa base,
-    // qui vont se chercher et se battre. `hostileATous` + des équipes
-    // distinctes suffisent (même montage que les tests de combat) ; sans ça
-    // 1 600 unités se contenteraient de marcher côte à côte, et on mesurerait
-    // une promenade au lieu d'une bataille.
+    // Épreuve extrême : deux camps RÉELLEMENT hostiles qui vont se chercher et
+    // se battre. `hostileATous` + des équipes distinctes suffisent (même
+    // montage que les tests de combat) ; sans ça 3 000 unités se contenteraient
+    // de marcher côte à côte, et on mesurerait une promenade, pas une bataille.
     let camps=[FAC.P1];
     if(P.BATAILLE){
       G.factions.benchA=mkFaction('benchA',{genre:'neutre',equipe:81,hostileATous:true,civ:'francs',nom:'Rouge'});
       G.factions.benchB=mkFaction('benchB',{genre:'neutre',equipe:82,hostileATous:true,civ:'mongols',nom:'Bleu'});
       camps=['benchA','benchB'];
     }
-    // Bâtiments : ils font travailler updateBuildings (tours qui balaient le
-    // voisinage, production) et alourdissent le rendu.
-    for(let i=0;i<P.BATIMENTS;i++){
-      const a=i*2.399963, r=BASE_TILE*(14+(i%7)*6);
-      const bt=(i%4===0)?BT.TOWER:(i%4===1)?BT.HOUSE:(i%4===2)?BT.FARM:BT.BARRACKS;
-      const btx=Math.max(2,Math.min(COLS-6,(tc.tx+Math.cos(a)*r/BASE_TILE)|0));
-      const bty=Math.max(2,Math.min(ROWS-6,(tc.ty+Math.sin(a)*r/BASE_TILE)|0));
-      const d=BDEF[bt];
-      let libre=true;
-      for(let dy=0;dy<d.h&&libre;dy++) for(let dx=0;dx<d.w&&libre;dx++) if(G.bmap[bty+dy][btx+dx]!==0) libre=false;
-      if(!libre) continue;
-      const b=mkBuilding(bt,btx,bty,camps[i%camps.length]);
-      b.constructing=false; b.progress=1; placeBuilding(b);
-    }
-    let sx=0;
-    for(let i=0;i<P.UNITES;i++){
-      const camp=camps[i%camps.length];
-      // Deux nuées distinctes qui se font face, chacune en spirale : réparties
-      // (jamais empilées) mais assez proches pour que le contact ait lieu.
-      const cote=(i%camps.length)?1:-1;
-      const a=i*2.399963, r=(1+(i%22))*BASE_TILE*1.9;
-      const cx=tc.x+(P.BATAILLE?cote*BASE_TILE*22:0);
-      const x=Math.max(BASE_TILE,Math.min((COLS-1)*BASE_TILE,cx+Math.cos(a)*r));
-      const y=Math.max(BASE_TILE,Math.min((ROWS-1)*BASE_TILE,tc.y+Math.sin(a)*r));
-      const t=(i%5===0)?UT.ARC:(i%7===0)?UT.VIL:(i%11===0)?UT.KNIGHT:UT.MIL;
-      const u=mkUnit(t,x,y,camp);
-      // En bataille, chaque camp marche sur l'autre : le ciblage automatique
-      // (updateEnemyAI) fait le reste.
-      u.state='moving'; u.destX=tc.x-cote*BASE_TILE*22; u.destY=tc.y;
-      G.units.push(u); sx++;
-    }
+    benchScene(P,tc,camps);
+    const sx=G.units.length;
     rebuildIndex(); rebuildGrid();
     await benchSouffler();
     for(let k=0;k<P.CHAUFFE_SIM;k++) update(SIM_DT);   // chauffe, NON mesurée
@@ -473,15 +556,24 @@ async function lancerBenchmark(profilNom){
     // Même principe qu'au-dessus : plusieurs séries, on garde la meilleure.
     // Découpé en tranches avec une respiration : à 1 600 unités une série
     // entière d'un bloc fige l'onglet plusieurs secondes sans rien afficher.
-    for(let e=0;e<P.ESSAIS_SIM;e++){
+    // La série e=0 est une SÉRIE D'ÉCHAUFFEMENT : chronométrée mais jetée.
+    // Mesuré en enchaînant cinq bancs après deux parties jouées, les trois
+    // postes s'améliorent encore d'un banc à l'autre (atlas 35→28 ms, sim
+    // 0,67→0,60, rendu 1,90→1,67) : c'est la compilation par paliers de V8 qui
+    // continue de progresser sur plusieurs invocations COMPLÈTES, ce qu'une
+    // simple chauffe en amont ne rattrape pas. Sans cette série jetée, le tout
+    // premier résultat affiché était systématiquement ~12 % sous les suivants
+    // — donc un rang trop bas pour qui ne lance le test qu'une fois.
+    for(let e=0;e<=P.ESSAIS_SIM;e++){
       let tot=0;
       for(let bloc=0;bloc<4;bloc++){
-        benchProgres(0.42+(e*4+bloc)*0.035,`Simulation de ${sx} unités${P.BATAILLE?' en bataille':''}…`);
+        benchProgres(0.42+(e*4+bloc)*0.03,`Simulation de ${sx} unités${P.BATAILLE?' en bataille':''}…`);
         const t=performance.now();
         for(let k=0;k<P.PAS_SIM/4;k++) update(SIM_DT);
         tot+=performance.now()-t;
         await benchSouffler();
       }
+      if(e===0) continue;                       // échauffement, non retenu
       const d=tot/P.PAS_SIM;
       res.sim=(res.sim==null)?d:Math.min(res.sim,d);
     }
@@ -491,13 +583,14 @@ async function lancerBenchmark(profilNom){
     camCenterOn(tc.x,tc.y);
     for(let k=0;k<P.CHAUFFE_RENDU;k++) render();       // chauffe, NON mesurée
     await benchSouffler();
-    for(let e=0;e<P.ESSAIS_RENDU;e++){
-      benchProgres(0.78+e*0.08,'Rendu…');
+    for(let e=0;e<=P.ESSAIS_RENDU;e++){         // e=0 : échauffement, non retenu
+      benchProgres(0.78+e*0.05,'Rendu…');
       const t=performance.now();
       for(let k=0;k<P.IMAGES;k++) render();
       const d=(performance.now()-t)/P.IMAGES;
-      res.rendu=(res.rendu==null)?d:Math.min(res.rendu,d);
       await benchSouffler();
+      if(e===0) continue;
+      res.rendu=(res.rendu==null)?d:Math.min(res.rendu,d);
     }
     benchProgres(0.95,'Calcul du score…');
     await benchSouffler();
@@ -518,8 +611,13 @@ async function lancerBenchmark(profilNom){
     // laisser dans G.factions les ferait apparaître dans la partie suivante
     // (bandeau adverse, conditions de victoire, delta réseau).
     delete G.factions.benchA; delete G.factions.benchB;
+    // Le VRAI Math.random doit revenir : une partie jouée derrière un
+    // générateur semé rejouerait la même chose à l'infini.
+    benchRendreAleaVrai();
+    document.removeEventListener('visibilitychange',surVisibilite);
   }
   _benchEnCours=false;
+  res.masque=masque;
   afficherResultatBenchmark(res,P,profilNom);
 }
 window.lancerBenchmark=lancerBenchmark;
@@ -551,8 +649,13 @@ function afficherResultatBenchmark(res,P,profilNom){
   // La simulation tourne à 30 pas/s : au-delà de 33 ms par pas, la machine ne
   // tient plus le temps réel et le jeu ralentirait. C'est LE verdict d'une
   // épreuve de rupture, bien plus parlant qu'un score.
-  const tempsReel=res.sim<=33;
+  // TROIS états et non deux : la mesure a ±3 % de dispersion, et sur l'épreuve
+  // extrême la machine étalon tombe pile sur la limite (32,5 à 36 ms selon
+  // l'essai). Un verdict binaire y basculerait du vert au orange d'un essai à
+  // l'autre sans que rien n'ait changé — annoncer « à la limite » est à la
+  // fois plus honnête et plus stable qu'un couperet à 33,0 ms.
   const marge=Math.round(33/Math.max(0.01,res.sim)*10)/10;
+  const etatTR=(res.sim<=33/1.15)?'ok':(res.sim<=33*1.15)?'limite':'dep';
   document.getElementById('benchcorps').innerHTML=
     `<p class="benchsub"><strong>${P.ico} ${P.nom}</strong></p>`
     +`<div class="benchscore"><div class="bsico">${palier.ico}</div>`
@@ -565,9 +668,12 @@ function afficherResultatBenchmark(res,P,profilNom){
     +ligne('🖼️ Rendu',res.rendu.toFixed(2)+' ms',sc.r,'Une image complète : sol, bâtiments, unités, brouillard.')
     +`</div>`
     +`<p class="benchsub">≈ <strong>${fps} images/s</strong> estimées sous cette charge.<br>`
-    +(tempsReel
+    +(etatTR==='ok'
       ? `<span style="color:#7fc98a;">✅ Temps réel tenu — ${marge}× de marge sur le pas de simulation.</span>`
+      : etatTR==='limite'
+      ? `<span style="color:#e8c060;">➖ Pile à la limite du temps réel, sous CETTE charge seulement — une vraie partie est bien plus légère.</span>`
       : `<span style="color:#e08a5a;">⚠️ Au-delà du temps réel : sous CETTE charge le jeu ralentirait. Une vraie partie est bien plus légère.</span>`)
+    +(res.masque?`<br><span style="color:#e08a5a;">⚠️ L’onglet est passé en arrière-plan pendant la mesure : le navigateur l’a bridé, ce résultat est à refaire.</span>`:'')
     +`<br><span style="color:#8a7a5a;font-size:10.5px;">1000 points = machine de référence sur cette épreuve. ${nav}${mem} · écran ${Math.round(window.innerWidth)}×${Math.round(window.innerHeight)} @${(window.devicePixelRatio||1).toFixed(2)}×</span></p>`
     +`<button class="bigbtn" onclick="lancerBenchmark('${profilNom==='extreme'?'extreme':'normal'}')">↻ Refaire</button>`
     +(profilNom==='extreme'

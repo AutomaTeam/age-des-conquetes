@@ -635,13 +635,38 @@ function findPath(sx,sy,gx,gy){
   pts[pts.length-1]={x:gx,y:gy};                 // dernier point : la cible réelle
   return smoothPath(sx,sy,pts);
 }
-// null = pas tenté (cooldown ou budget), true/false = chemin trouvé ou non
+// Recul progressif après un échec. Une recherche qui ÉCHOUE est le cas le
+// plus cher de tout le pathfinding : elle épuise les 1200 cases du budget
+// (contre quelques dizaines pour un chemin trouvé) avant de conclure « pas de
+// chemin ». Or elle repartait avec le même délai de 0,6 s qu'un succès, donc
+// une unité réellement coincée relançait l'A* complet 100 fois par minute,
+// indéfiniment. Mesuré sur une partie jouée (Conquête 2 rivaux, grande carte,
+// t=31 min) : 3 257 recherches en 60 s, ZÉRO succès, distance médiane à la
+// cible 2 TUILES — 5,5 s de CPU brûlées pour rien, et un profil d'image en
+// dents de scie (médiane 1,5 ms, p90 11,6 ms).
+// Le délai double donc à chaque échec consécutif, plafonné à PF_CD_MAX : une
+// situation vraiment bloquée cesse de coûter, alors qu'un échec isolé (une
+// unité qui passait juste devant) est réessayé presque aussi vite qu'avant.
+const PF_CD_OK=0.6, PF_CD_MAX=5;
 function requestPath(u){
   if((u.pathCd||0)>0||_pfFrame>=PF_PER_FRAME) return null;
-  u.pathCd=0.6; _pfFrame++;
+  _pfFrame++;
+  // Un but qui a franchement bougé est une situation NEUVE : le compteur
+  // d'échecs de l'ancienne cible ne doit pas ralentir la première tentative
+  // vers celle-ci (sans quoi une unité longtemps coincée resterait apathique
+  // même après avoir reçu un ordre parfaitement praticable).
+  if(u.pathEchecs&&(!u.pathEchecBut
+      ||Math.hypot(u.pathEchecBut.x-u.destX,u.pathEchecBut.y-u.destY)>BASE_TILE*3)) u.pathEchecs=0;
   const p=findPath(u.x,u.y,u.destX,u.destY);
   u.path=(p&&p.length)?p:null;
   u.pathGoal=u.path?{x:u.destX,y:u.destY}:null;
+  if(u.path){
+    u.pathCd=PF_CD_OK; u.pathEchecs=0; u.pathEchecBut=null;
+  } else {
+    u.pathEchecs=(u.pathEchecs||0)+1;
+    u.pathEchecBut={x:u.destX,y:u.destY};
+    u.pathCd=Math.min(PF_CD_OK*Math.pow(2,u.pathEchecs),PF_CD_MAX); // 1,2 → 2,4 → 4,8 → 5 s
+  }
   return !!u.path;
 }
 // Avance vers (gx,gy) en suivant le chemin s'il y en a un. Renvoie true si bloqué.

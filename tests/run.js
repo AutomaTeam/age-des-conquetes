@@ -400,21 +400,34 @@ groupe('combat', () => {
     // unité, aucun combat n'est possible : seul le hp qu'on fixe nous-mêmes
     // peut faire varier le résultat.
     const j = partie(charger(), { graine: 4242 });
+    // ...mais « à peu près impossible » n'était pas « impossible » : ce test a
+    // bel et bien échoué deux fois sur une douzaine de passages, AVANT comme
+    // APRÈS le correctif de recul du pathfinding — donc sur son seul aléa.
+    // La cause n'est pas le tirage de NAISSANCE (≈10 % par pas, donc ~30
+    // particules attendues sur 300 pas) mais le fait de ne REGARDER qu'à la
+    // toute fin : une particule vit 1,3 s, il n'en restait donc que 1 à 4 en
+    // vol à l'instant du contrôle — et parfois zéro. On sème l'aléa (comme le
+    // groupe `combat`) ET on observe pendant toute la fenêtre plutôt qu'au
+    // seul dernier instant : un test intermittent est pire que pas de test,
+    // il apprend à ignorer les échecs.
+    j.semerAleatoire(4242);
     const tc = j.G.buildings.find((b) => b.type === j.BT.TC);
     j.G.units.length = 0;
     const sain = j.mkBuilding(j.BT.BARRACKS, tc.tx + 5, tc.ty, j.G.me);
     sain.constructing = false; sain.progress = 1;
     j.placeBuilding(sain);
     j.G.parts.length = 0;
-    for (let k = 0; k < 300; k++) j.update(j.SIM_DT);
-    ok(j.G.parts.length === 0, `un bâtiment à PV pleins ne doit jamais fumer : ${j.G.parts.length} particule(s)`);
+    let vuesSain = 0;
+    for (let k = 0; k < 300; k++) { j.update(j.SIM_DT); vuesSain = Math.max(vuesSain, j.G.parts.length); }
+    ok(vuesSain === 0, `un bâtiment à PV pleins ne doit jamais fumer : ${vuesSain} particule(s)`);
 
     const ruine = j.mkBuilding(j.BT.BARRACKS, tc.tx + 5, tc.ty + 3, j.G.me);
     ruine.constructing = false; ruine.progress = 1; ruine.hp = Math.round(ruine.maxHp * 0.2);
     j.placeBuilding(ruine);
     j.G.parts.length = 0;
-    for (let k = 0; k < 300; k++) j.update(j.SIM_DT);
-    ok(j.G.parts.length > 0, 'un bâtiment à 20% PV doit dégager de la fumée sur 10 s simulées');
+    let vuesRuine = 0;
+    for (let k = 0; k < 300; k++) { j.update(j.SIM_DT); vuesRuine = Math.max(vuesRuine, j.G.parts.length); }
+    ok(vuesRuine > 0, 'un bâtiment à 20% PV doit dégager de la fumée sur 10 s simulées');
   });
 });
 
@@ -1800,6 +1813,48 @@ groupe('charge', () => {
     const tas = j.G.units.filter((u) => u.type === j.UT.MIL && Math.abs(u.y - (tc.ty + 6) * B) < 6 * B);
     const largeur = Math.max(...tas.map((u) => u.x)) - Math.min(...tas.map((u) => u.x));
     ok(largeur > B, `l'amas ne s'est pas étalé (${largeur.toFixed(1)} px)`);
+  });
+
+  test('une recherche de chemin qui échoue RECULE au lieu de s\'acharner', () => {
+    // Une recherche qui ÉCHOUE épuise tout le budget A* (1200 cases) avant de
+    // conclure, là où un chemin trouvé n'en explore que quelques dizaines.
+    // Elle repartait pourtant avec le même délai qu'un succès (0,6 s), donc
+    // une unité réellement coincée relançait l'A* complet 100 fois par minute
+    // pour toujours. Mesuré sur une partie jouée : 3 257 recherches en 60 s,
+    // ZÉRO succès, cible à 2 tuiles de médiane — et un p90 d'image à 11,6 ms.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 5 });
+    const B = j.BASE_TILE;
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const u = j.mkUnit(j.UT.MIL, (tc.tx + 8) * B, (tc.ty + 8) * B, j.G.me);
+    j.G.units.push(u); j.rebuildIndex();
+
+    // But hors carte : aucun chemin ne peut exister, chaque essai échoue.
+    const viserLoin = () => { u.destX = -50 * B; u.destY = -50 * B; };
+    const delais = [];
+    for (let i = 0; i < 4; i++) {
+      // update() remet à zéro le budget de recherches par image : sans une
+      // image entre deux essais, tout appel au-delà du 3e sortirait aussitôt
+      // sans rien tenter, et le test ne mesurerait rien.
+      j.update(j.SIM_DT);
+      viserLoin(); u.pathCd = 0;
+      j.__sandbox.requestPath(u);
+      delais.push(u.pathCd);
+    }
+    for (let i = 1; i < delais.length; i++) {
+      ok(delais[i] > delais[i - 1] || delais[i] >= 5,
+        `le délai doit croître après un échec : ${delais.map((d) => d.toFixed(1)).join(' → ')}`);
+    }
+    ok(delais[delais.length - 1] >= 2,
+      `après 4 échecs le délai devrait dépasser 2 s, il vaut ${delais[delais.length - 1]}`);
+
+    // Soupape : un ordre NEUF ne doit pas hériter du recul de l'ancienne cible,
+    // sinon une unité longtemps coincée resterait apathique plusieurs secondes
+    // après avoir reçu une destination parfaitement praticable.
+    u.destX = (tc.tx + 12) * B; u.destY = (tc.ty + 8) * B;
+    j.update(j.SIM_DT); u.pathCd = 0;
+    j.__sandbox.requestPath(u);
+    ok((u.pathEchecs || 0) === 0 && u.pathCd <= 1,
+      `un ordre neuf doit repartir sans recul (compteur ${u.pathEchecs}, délai ${u.pathCd})`);
   });
 });
 

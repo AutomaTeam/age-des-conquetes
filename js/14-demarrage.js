@@ -486,7 +486,12 @@ async function lancerBenchmark(profilNom){
   // en impose d'autres pour être comparable, on les remet donc ensuite.
   const sauve={mode:selectedMode, carte:selectedCarte, taille:selectedTaille,
                civ:selectedCiv, diff:selectedDifficulty, graine:grainePartie, tile:TILE};
-  const res={};
+  // `series` garde TOUTES les valeurs retenues, pas seulement la meilleure :
+  // l'écart entre elles est ce qui dit si la mesure est fiable ou si la
+  // machine était occupée ailleurs. C'est une information que le joueur doit
+  // voir, pas quelque chose à cacher derrière un chiffre unique.
+  const res={series:{atlas:[],sim:[],rendu:[]}};
+  const tDebut=performance.now();
   // Onglet mis en arrière-plan : le navigateur bride alors les minuteurs et le
   // rendu. On ne peut pas l'empêcher, mais on peut le DÉTECTER et le dire,
   // plutôt que d'afficher un mauvais score sans explication.
@@ -530,6 +535,7 @@ async function lancerBenchmark(profilNom){
       const d=performance.now()-t;
       await benchSouffler();
       if(e===0) continue;
+      res.series.atlas.push(d);
       res.atlas=(res.atlas==null)?d:Math.min(res.atlas,d);
     }
 
@@ -549,6 +555,8 @@ async function lancerBenchmark(profilNom){
     }
     benchScene(P,tc,camps);
     const sx=G.units.length;
+    res.batiments=G.buildings.length;
+    res.unitesDepart=sx;
     rebuildIndex(); rebuildGrid();
     await benchSouffler();
     for(let k=0;k<P.CHAUFFE_SIM;k++) update(SIM_DT);   // chauffe, NON mesurée
@@ -575,12 +583,19 @@ async function lancerBenchmark(profilNom){
       }
       if(e===0) continue;                       // échauffement, non retenu
       const d=tot/P.PAS_SIM;
+      res.series.sim.push(d);
       res.sim=(res.sim==null)?d:Math.min(res.sim,d);
     }
     res.vivants=G.units.length;
 
     // ── 3. Rendu ──
     camCenterOn(tc.x,tc.y);
+    // Combien d'unités le rendu dessine-t-il RÉELLEMENT ? Tout ce qui sort du
+    // cadre est éliminé avant dessin, donc « 3 000 unités » ne dit rien du
+    // coût : c'est ce compte-là qui l'explique.
+    { let vus=0; for(const u of G.units){ const s=ws(u.x,u.y);
+        if(s.x>-40&&s.x<W+40&&s.y>14&&s.y<H+40) vus++; } res.aLEcran=vus; }
+    { const etats={}; for(const u of G.units) etats[u.state]=(etats[u.state]||0)+1; res.etats=etats; }
     for(let k=0;k<P.CHAUFFE_RENDU;k++) render();       // chauffe, NON mesurée
     await benchSouffler();
     for(let e=0;e<=P.ESSAIS_RENDU;e++){         // e=0 : échauffement, non retenu
@@ -590,6 +605,7 @@ async function lancerBenchmark(profilNom){
       const d=(performance.now()-t)/P.IMAGES;
       await benchSouffler();
       if(e===0) continue;
+      res.series.rendu.push(d);
       res.rendu=(res.rendu==null)?d:Math.min(res.rendu,d);
     }
     benchProgres(0.95,'Calcul du score…');
@@ -618,9 +634,64 @@ async function lancerBenchmark(profilNom){
   }
   _benchEnCours=false;
   res.masque=masque;
+  res.duree=performance.now()-tDebut;
   afficherResultatBenchmark(res,P,profilNom);
 }
 window.lancerBenchmark=lancerBenchmark;
+
+// ── SIGNALEMENT DE LA MACHINE ─────────────────────────────
+// Tout est lu sur place et affiché sur place : rien n'est envoyé nulle part.
+// Le nom de la puce graphique vient de WebGL — le jeu, lui, dessine en
+// canvas 2D, mais c'est le seul moyen d'identifier l'appareil, ce qui compte
+// justement pour comparer un téléphone à un autre.
+function benchGPU(){
+  try{
+    const c=document.createElement('canvas');
+    const gl=c.getContext('webgl')||c.getContext('experimental-webgl');
+    if(!gl) return null;
+    const d=gl.getExtension('WEBGL_debug_renderer_info');
+    let nom=d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+    if(!nom) return null;
+    nom=String(nom);
+    // Chrome/Windows renvoie « ANGLE (NVIDIA, NVIDIA GeForce RTX 4080 Laptop
+    // GPU (0x000027E0), Direct3D11 vs_5_0 ps_5_0, D3D11) » : trois segments
+    // après le vendeur, pas un seul. On jette les segments de PILOTE et
+    // l'identifiant matériel pour ne garder que le nom de la puce — sinon la
+    // troncature coupait en plein milieu (« …(0x000027E0) Dire »).
+    if(/^ANGLE \(/.test(nom)){
+      const parts=nom.replace(/^ANGLE \(/,'').replace(/\)$/,'')
+        .split(/,\s*/)
+        .filter(p=>p&&!/^(Direct3D|D3D|OpenGL|Vulkan|Metal|vs_|ps_)/i.test(p));
+      if(parts.length){
+        // parts[0] = vendeur, parts[1] = puce (souvent déjà préfixée du vendeur)
+        nom=(parts[1]&&parts[1].toLowerCase().startsWith(parts[0].toLowerCase()))?parts[1]
+           :(parts[1]?parts[0]+' '+parts[1]:parts[0]);
+      }
+    }
+    // Le pilote n'est PAS toujours dans son propre segment : Chrome rend
+    // « …Laptop GPU (0x000027E0) Direct3D11 vs_5_0 ps_5_0, D3D11 », tout collé
+    // au nom de la puce. Découper par virgules ne suffit donc pas — on coupe
+    // aussi net devant le premier marqueur de pilote ou d'identifiant.
+    nom=nom.split(/\s*\(0x|\s+Direct3D|\s+D3D\d|\s+OpenGL|\s+Vulkan|\s+Metal|\s+vs_|\s+ps_/i)[0];
+    return nom.replace(/\s*\((?:R|C|TM)\)/g,'').replace(/\s+/g,' ').trim().slice(0,52);
+  }catch(e){ return null; }
+}
+function benchNavigateur(){
+  const u=navigator.userAgent;
+  const nav=/Edg\//.test(u)?'Edge':/OPR\//.test(u)?'Opera':/Firefox\//.test(u)?'Firefox'
+    :/Chrome\//.test(u)?'Chrome':/Safari\//.test(u)?'Safari':'navigateur inconnu';
+  const os=/Android/.test(u)?'Android':/iPhone|iPad|iPod/.test(u)?'iOS'
+    :/Windows/.test(u)?'Windows':/Mac OS X/.test(u)?'macOS':/Linux/.test(u)?'Linux':'système inconnu';
+  return nav+' · '+os;
+}
+// Dispersion entre les séries retenues : c'est l'indicateur de CONFIANCE.
+// Un écart serré veut dire que la machine n'était occupée à rien d'autre ;
+// un écart large, que le résultat mérite d'être refait.
+function benchEcart(serie){
+  if(!serie||serie.length<2) return null;
+  const mn=Math.min(...serie), mx=Math.max(...serie);
+  return mn>0?(mx-mn)/mn*100:null;
+}
 
 // Score : rapport au temps de référence, borné, puis moyenne pondérée.
 // Plus haut = mieux. Le plafond de 3 évite qu'un poste très rapide (un atlas
@@ -656,6 +727,70 @@ function afficherResultatBenchmark(res,P,profilNom){
   // fois plus honnête et plus stable qu'un couperet à 33,0 ms.
   const marge=Math.round(33/Math.max(0.01,res.sim)*10)/10;
   const etatTR=(res.sim<=33/1.15)?'ok':(res.sim<=33*1.15)?'limite':'dep';
+
+  // ── Fiabilité de CE relevé ──
+  // L'écart entre les séries retenues dit si la machine était tranquille. On
+  // l'affiche plutôt que de le taire : un score pris pendant qu'un autre
+  // programme tournait ne vaut rien, et seul ce chiffre permet de s'en douter.
+  // L'ATLAS est délibérément EXCLU de cet indicateur : c'est la mesure la plus
+  // bruitée du banc (allocation de ~250 canvas, donc à la merci d'une collecte
+  // mémoire — écart relevé jusqu'à 109 % entre deux séries du même essai),
+  // alors que le meilleur-de-N l'absorbe déjà et qu'elle ne pèse que 15 % du
+  // score. L'inclure faisait crier au loup sur des relevés parfaitement sains,
+  // ce qui aurait appris au joueur à ignorer l'avertissement.
+  const ecarts=[benchEcart(res.series.sim),benchEcart(res.series.rendu)].filter(x=>x!=null);
+  const ecartMax=ecarts.length?Math.max(...ecarts):null;
+  // Seuils larges à dessein : même au repos, un chronomètre JavaScript sur
+  // trois séries donne couramment 10 à 25 % d'écart (collecte mémoire, autres
+  // onglets, fréquence du processeur qui varie). Des seuils serrés auraient
+  // affiché « dispersé » sur des relevés parfaitement bons.
+  const fiab=ecartMax==null?null
+    :ecartMax<15 ?{col:'#7fc98a',txt:`🎯 Relevé stable (écart entre séries : ${ecartMax.toFixed(0)} %).`}
+    :ecartMax<35?{col:'#e8c060',txt:`➖ Relevé un peu dispersé (${ecartMax.toFixed(0)} %) — refaire le test donnera un chiffre plus sûr.`}
+    :{col:'#e08a5a',txt:`⚠️ Relevé dispersé (${ecartMax.toFixed(0)} %) : quelque chose d’autre occupait la machine. À refaire, autres applications fermées.`};
+
+  // ── Détail complet ──
+  const gpu=benchGPU(), navOS=benchNavigateur();
+  const mo=(window.performance&&performance.memory)
+    ?Math.round(performance.memory.usedJSHeapSize/1048576)+' Mo utilisés':null;
+  const serie=a=>a.length?a.map(v=>v<10?v.toFixed(2):Math.round(v)).join(' · '):'—';
+  const etats=Object.entries(res.etats||{}).sort((a,b)=>b[1]-a[1])
+    .map(([k,v])=>`${({idle:'au repos',moving:'en marche',gather:'à la récolte',attack:'au combat',build:'au chantier',return:'au dépôt',farm:'aux champs',amove:'en assaut',heal:'en soin',garrison:'en garnison'})[k]||k} ${v}`).join(', ');
+  const det=(k,v)=>`<div class="benchinfo"><span>${k}</span><span>${v}</span></div>`;
+  const bloc=`<div class="benchbloc"><div class="benchblocT">La machine</div>`
+    +det('Navigateur',navOS)
+    +(gpu?det('Puce graphique',gpu):'')
+    +det('Processeur',(navigator.hardwareConcurrency||'?')+' cœurs logiques')
+    +(navigator.deviceMemory?det('Mémoire',navigator.deviceMemory+' Go'):'')
+    +(mo?det('Tas JavaScript',mo):'')
+    +det('Fenêtre',`${Math.round(window.innerWidth)}×${Math.round(window.innerHeight)} @${(window.devicePixelRatio||1).toFixed(2)}× (${Math.round(window.innerWidth*(window.devicePixelRatio||1))}×${Math.round(window.innerHeight*(window.devicePixelRatio||1))} px réels)`)
+    +det('Écran',`${screen.width}×${screen.height}`)
+    +`<div class="benchblocT">L’épreuve</div>`
+    +det('Carte',`${TAILLES[P.TAILLE].nom} — ${TAILLES[P.TAILLE].n}×${TAILLES[P.TAILLE].n}`)
+    +det('Unités',`${res.unitesDepart} au départ, ${res.vivants} au chronomètre`)
+    +det('Dessinées à l’écran',`${res.aLEcran} (le reste est hors cadre)`)
+    +det('Bâtiments',res.batiments)
+    +(etats?det('États',etats):'')
+    +det('Mesure',`meilleur de ${P.ESSAIS_SIM} séries · ${P.PAS_SIM} pas · ${P.IMAGES} images`)
+    +`<div class="benchblocT">Les séries retenues (ms)</div>`
+    +det('Sprites',serie(res.series.atlas))
+    +det('Simulation',serie(res.series.sim))
+    +det('Rendu',serie(res.series.rendu))
+    +det('Durée du test',(res.duree/1000).toFixed(1)+' s')
+    +`</div>`;
+
+  // Rapport en texte brut, pour comparer d'une machine à l'autre.
+  const texte=[
+    `Âge des Conquêtes — ${P.nom}`,
+    `${sc.points} points (${palier.nom})`,
+    `Sprites ${Math.round(res.atlas)} ms (${sc.a}) · Simulation ${res.sim.toFixed(2)} ms (${sc.s}) · Rendu ${res.rendu.toFixed(2)} ms (${sc.r})`,
+    `≈ ${fps} images/s · ${etatTR==='ok'?'temps réel tenu':etatTR==='limite'?'à la limite du temps réel':'au-delà du temps réel'}`,
+    `Carte ${TAILLES[P.TAILLE].n}×${TAILLES[P.TAILLE].n} · ${res.vivants} unités (${res.aLEcran} à l'écran) · ${res.batiments} bâtiments`,
+    `${navOS}${gpu?' · '+gpu:''} · ${navigator.hardwareConcurrency||'?'} cœurs${navigator.deviceMemory?' · '+navigator.deviceMemory+' Go':''}`,
+    `Fenêtre ${Math.round(window.innerWidth)}×${Math.round(window.innerHeight)} @${(window.devicePixelRatio||1).toFixed(2)}×`,
+    `Écart entre séries ${ecartMax==null?'—':ecartMax.toFixed(0)+' %'}${res.masque?' · ONGLET MASQUÉ, à refaire':''}`,
+  ].join('\n');
+
   document.getElementById('benchcorps').innerHTML=
     `<p class="benchsub"><strong>${P.ico} ${P.nom}</strong></p>`
     +`<div class="benchscore"><div class="bsico">${palier.ico}</div>`
@@ -674,12 +809,40 @@ function afficherResultatBenchmark(res,P,profilNom){
       ? `<span style="color:#e8c060;">➖ Pile à la limite du temps réel, sous CETTE charge seulement — une vraie partie est bien plus légère.</span>`
       : `<span style="color:#e08a5a;">⚠️ Au-delà du temps réel : sous CETTE charge le jeu ralentirait. Une vraie partie est bien plus légère.</span>`)
     +(res.masque?`<br><span style="color:#e08a5a;">⚠️ L’onglet est passé en arrière-plan pendant la mesure : le navigateur l’a bridé, ce résultat est à refaire.</span>`:'')
-    +`<br><span style="color:#8a7a5a;font-size:10.5px;">1000 points = machine de référence sur cette épreuve. ${nav}${mem} · écran ${Math.round(window.innerWidth)}×${Math.round(window.innerHeight)} @${(window.devicePixelRatio||1).toFixed(2)}×</span></p>`
+    +(fiab?`<br><span style="color:${fiab.col};">${fiab.txt}</span>`:'')
+    +`</p>`
+    +bloc
     +`<button class="bigbtn" onclick="lancerBenchmark('${profilNom==='extreme'?'extreme':'normal'}')">↻ Refaire</button>`
     +(profilNom==='extreme'
       ? `<button class="bigbtn" onclick="lancerBenchmark('normal')">📊 Épreuve normale</button>`
-      : `<button class="bigbtn benchextreme" onclick="lancerBenchmark('extreme')">🔥 Passer à l’épreuve extrême</button>`);
+      : `<button class="bigbtn benchextreme" onclick="lancerBenchmark('extreme')">🔥 Passer à l’épreuve extrême</button>`)
+    +`<button class="bigbtn" onclick="copierResultatBenchmark()">📋 Copier le rapport</button>`;
+  window.__benchTexte=texte;
 }
+
+// Le rapport en texte brut : c'est ce qui permet de COMPARER deux machines
+// pour de bon (se l'envoyer, le coller quelque part), plutôt que de comparer
+// deux chiffres sortis de leur contexte.
+function copierResultatBenchmark(){
+  const t=window.__benchTexte||'';
+  const fini=()=>notify('📋 Rapport copié','#2ecc71');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(fini,()=>benchCopieSecours(t));
+  } else benchCopieSecours(t);
+}
+// Repli pour les navigateurs (ou contextes non sécurisés) sans presse-papiers :
+// on sélectionne le texte dans un champ, l'utilisateur n'a plus qu'à copier.
+function benchCopieSecours(t){
+  try{
+    const z=document.createElement('textarea');
+    z.value=t; z.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;height:120px;z-index:900;';
+    document.body.appendChild(z); z.focus(); z.select();
+    const ok=document.execCommand&&document.execCommand('copy');
+    document.body.removeChild(z);
+    notify(ok?'📋 Rapport copié':'Sélectionnez puis copiez le texte','#f0c040');
+  }catch(e){ notify('Copie impossible sur ce navigateur','#e67e22'); }
+}
+window.copierResultatBenchmark=copierResultatBenchmark;
 
 // ── PREVENT SCROLL ────────────────────────────────────────
 // Empêche le rebond/pinch-zoom du navigateur PENDANT UNE PARTIE (glisser sur

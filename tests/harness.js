@@ -48,6 +48,11 @@ const EXPORTS = [
   'tryAutoReseed', 'hasAdjacentWater', 'updateUneIA', 'aiVilTarget', 'updateVisuel',
   'awardKillXP', 'veterancyRank', 'RANK_THRESHOLDS',
   'cibleAssaillant', 'prochainHostileUnite', 'prochainHostileToute', 'updateEnemyAI',
+  // Correctifs « l'IA joue aux mêmes règles » : chacun a son test de
+  // non-régression dans le groupe `ia`.
+  'cibleMerveille', 'nearPlayerBuildingSmart', 'majPhaseAssaut', 'aiMerveilleHostile',
+  'aiRepare', 'AI_REPAIR_MAX', 'aiUniteUnique', 'aiLogement', 'AI_HLM_DEFICIT',
+  'aiTroquer', 'aiCout', 'AI_BOAT_MAX', 'aiCount',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

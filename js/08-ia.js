@@ -77,6 +77,13 @@ const AI_TCOST = {
   [UT.RAM]:        { wood:180, gold:60 }, // idem : pas de reskin « pillard », c'est le Bélier du joueur
 };
 const AI_TTIME = { [UT.VIL]:20, [UT.ENEMI]:16, [UT.ENEMIA]:19, [UT.ENEMI_C]:26, [UT.ENEMI_G]:34, [UT.ENEMI_BOSS]:70 };
+// Coût d'une unité pour l'IA. Son roster reskinné a ses propres tarifs
+// (AI_TCOST), mais tout ce qu'elle emprunte TEL QUEL au roster du joueur — le
+// Moine, le Bélier, et désormais les unités uniques de civilisation — doit
+// coûter exactement ce qu'il coûte au joueur : sinon la même unité aurait deux
+// prix selon le camp qui la forme. Même principe que trainTime() juste
+// au-dessus, qui interroge déjà TTIME avant AI_TTIME.
+function aiCout(type){ return AI_TCOST[type]||TCOST[type]; }
 // Durée d'entraînement, quel que soit le camp : la file de formation partagée
 // (updateBuildings) sert les deux rosters.
 function trainTime(type){ return TTIME[type]!=null?TTIME[type]:(AI_TTIME[type]||20); }
@@ -97,10 +104,47 @@ const AI_TRAINERS = {
   // roster du joueur, comme le Moine : pas de reskin « pillard », il est
   // reconnaissable et sa fonction est lisible.
   [BT.SIEGE]:    [UT.RAM],
+  // La Barque est reprise telle quelle du roster du joueur, comme le Moine et
+  // le Bélier : elle ne combat pas (UDEF[UT.BOAT].naval), elle pêche. Sans
+  // Quai, l'IA n'avait accès à AUCUNE nourriture d'eau — sur le preset
+  // « Grands Lacs », où la pêche est censée être une économie à part entière,
+  // elle était donc réservée au joueur.
+  [BT.DOCK]:     [UT.BOAT],
 };
+// Au-delà d'une barque par banc à portée, chaque barque supplémentaire est une
+// place de population et 60 bois jetés — même raisonnement que le plafond de
+// Moines par relique.
+const AI_BOAT_MAX = 4;
 // Âge minimum requis pour chaque unité adverse (même logique de palier que
 // les déblocages du joueur).
 const AI_UNIT_AGE = { [UT.ENEMI_G]:2, [UT.ENEMI_BOSS]:3, [UT.RAM]:2 };
+
+// Unité unique de la civilisation d'un camp, si son Château peut déjà la
+// former — sinon null.
+//
+// L'IA reçoit bien une civilisation à sa création (voir initAI/civIA) mais ne
+// formait QUE le Héros à son Château : le Cataphractaire, le Cavalier-Archer
+// et l'Arbalétrier rapide n'existaient que du côté du joueur. Trois civs sur
+// quatre jouaient donc exactement comme des Francs, et l'asymétrie des
+// civilisations n'était qu'à moitié câblée.
+//
+// La règle (quelle civilisation, quel âge requis) est LUE dans PRODUCTION, la
+// source de vérité de l'hôte — celle qui autorise ou refuse déjà la même
+// unité au joueur. La recopier ici la ferait diverger au premier
+// rééquilibrage. Lecture au tour de jeu et NON au chargement : PRODUCTION vit
+// dans 10-ordres.js, chargé après ce fichier (voir l'ordre des <script> dans
+// index.html), il n'existe pas encore quand celui-ci s'évalue.
+function aiUniteUnique(a){
+  const uniq=(CIVS[a.civ]||{}).unique;
+  if(!uniq||typeof PRODUCTION==='undefined') return null;
+  for(const o of (PRODUCTION[BT.CASTLE]||[])){
+    if(o.u!==uniq) continue;
+    if(o.civ&&o.civ!==a.civ) return null;
+    if(o.age!=null&&a.age<o.age) return null;
+    return uniq;
+  }
+  return null;
+}
 
 // `reserve` = ressources mises de côté et intouchables pour cette dépense.
 // Sert à l'épargne de montée d'âge : sans elle, l'IA réinvestissait chaque
@@ -154,7 +198,11 @@ function aiCount(includeSites,a){
 // bases (initAI) en passe un SEMÉ, sans quoi deux joueurs partageant la même
 // graine n'obtiendraient pas les mêmes emplacements de départ. En cours de
 // partie (aiBuild), Math.random convient : seul l'hôte simule.
-function aiSpot(w,h,cx,cy,minR,maxR,rnd){
+// `filtre(tx,ty)` — contrainte de TERRAIN optionnelle, en plus du simple
+// « l'emprise est libre ». Un seul bâtiment en a besoin (le Quai, qui doit
+// toucher l'eau), mais la passer en paramètre plutôt que de dupliquer toute la
+// spirale de recherche évite d'avoir deux versions à tenir à jour.
+function aiSpot(w,h,cx,cy,minR,maxR,rnd,filtre){
   rnd=rnd||Math.random;
   for(let r=minR;r<=maxR;r++){
     // ordre angulaire tiré au hasard : deux bâtiments successifs ne
@@ -167,6 +215,7 @@ function aiSpot(w,h,cx,cy,minR,maxR,rnd){
       if(tx<1||ty<1||tx+w>=COLS-1||ty+h>=ROWS-1) continue;
       let ok=true;
       for(let dy=0;dy<h&&ok;dy++) for(let dx=0;dx<w&&ok;dx++) if(G.bmap[ty+dy][tx+dx]!==0) ok=false;
+      if(ok&&filtre&&!filtre(tx,ty)) ok=false;
       if(ok) return {tx,ty};
     }
   }
@@ -190,7 +239,15 @@ function aiBuild(type,nearX,nearY,a){
   const d=BDEF[type];
   if(!aiAfford(d.cost,null,a)) return false;
   const cx=Math.round((nearX!=null?nearX:a.baseX)/BASE_TILE), cy=Math.round((nearY!=null?nearY:a.baseY)/BASE_TILE);
-  const spot=aiSpot(d.w,d.h,cx,cy,3,16);
+  // Le Quai est le seul bâtiment à contrainte de terrain : il doit toucher
+  // l'eau, exactement comme côté joueur (voir le refus 'invalide' d'ORD.BATIR).
+  // Il cherche donc bien plus loin que les 16 tuiles habituelles — une rive
+  // n'est pas forcément au pied de la base. hasAdjacentWater vit dans
+  // 09-entree.js, chargé après ce fichier : la garde `typeof` couvre le cas où
+  // aiBuild serait appelé avant, jamais en jeu mais possible sous test.
+  const rive=(type===BT.DOCK&&typeof hasAdjacentWater==='function')
+    ? (tx,ty)=>hasAdjacentWater(tx,ty,d.w,d.h) : null;
+  const spot=aiSpot(d.w,d.h,cx,cy,3,rive?46:16,null,rive);
   if(!spot) return false;
   aiSpend(d.cost,a);
   const b=mkBuilding(type,spot.tx,spot.ty,a.id);
@@ -232,13 +289,62 @@ function aiAbortSite(b,a){
 // ressources, puis militariser et fortifier.
 // Marge de population que l'IA garde d'avance sur ses effectifs réels.
 const AI_POP_MARGE = 15;
+
+// Maison ou Immeuble ?
+//
+// L'IA ne bâtissait QUE des Maisons : 5 places pour 25 bois, soit cinquante-
+// neuf chantiers successifs pour atteindre les 300 du plafond — autant de
+// cycles de décision et de villageois immobilisés en chemin, là où un
+// Immeuble en apporte 25 d'un coup.
+//
+// L'Immeuble n'est PAS un remplacement pour autant : la Maison reste moins
+// chère au logement (5 bois la place, contre 6 bois + 4 pierre). C'est le bon
+// choix quand il manque beaucoup de places D'UN COUP et que la pierre dort —
+// et la pierre dort souvent chez l'IA, c'est sa ressource la moins pondérée
+// (voir AI_RES_WEIGHT : 0,15).
+const AI_HLM_DEFICIT = 12;   // places manquantes à partir desquelles l'Immeuble vaut le détour
+function aiLogement(a){
+  const manque=Math.min(AGE_BONUS[a.age].popCap,a.pop+AI_POP_MARGE)-a.maxPop;
+  if(manque>=AI_HLM_DEFICIT&&aiAfford(BDEF[BT.HLM].cost,null,a)) return {type:BT.HLM};
+  return {type:BT.HOUSE};
+}
+
+// ── TROC AU MARCHÉ ─────────────────────────────────────────
+// L'IA bâtissait des Marchés — pour les routes commerciales — sans JAMAIS
+// s'en servir pour échanger, quand le joueur convertit son surplus d'un clic.
+// Une IA à sec d'or avec trois mille bois dormants restait bloquée pour de
+// bon : ni Paladin, ni Trébuchet, ni montée d'âge.
+//
+// On ne troque que du VRAI surplus, et jamais pour combler un manque
+// marginal : le taux est volontairement mauvais (100 donnés pour 60 reçus,
+// voir TROCS) et échanger par réflexe brûlerait l'économie au lieu de la
+// débloquer. Le plancher, lui, empêche de vendre le stock dont on a besoin
+// tout de suite pour résoudre un manque à venir.
+const AI_TROC_SURPLUS  = 1.6;  // au-delà de 1,6× sa part visée, c'est du surplus
+const AI_TROC_MANQUE   = 0.55; // en deçà de 0,55× sa part, c'est un manque qui bloque
+const AI_TROC_PLANCHER = 400;  // stock en deçà duquel on ne vend plus rien
+function aiTroquer(a){
+  // TROCS vit dans 10-ordres.js, chargé après ce fichier : même prudence que
+  // pour PRODUCTION (voir aiUniteUnique).
+  if(typeof TROCS==='undefined') return;
+  if(!aiCount(true,a)[BT.MARKET]) return;      // pas de Marché debout, pas de troc
+  const ratios=aiResRatios(a);
+  for(const t of TROCS){
+    if(ratios[t.recoit]>=AI_TROC_MANQUE) continue;             // rien à débloquer de ce côté
+    if(ratios[t.donne]<AI_TROC_SURPLUS) continue;              // rien à donner
+    if((a.res[t.donne]||0)-t.qte<AI_TROC_PLANCHER) continue;   // ne pas se vider
+    a.res[t.donne]-=t.qte;
+    a.res[t.recoit]=(a.res[t.recoit]||0)+t.rend;
+    return;                                                    // un échange par passage, pas une rafale
+  }
+}
 function aiNextBuild(vilCount,a){
   const c=aiCount(true,a);
   const n=t=>c[t]||0;
   // Fermes « de croisière », visées une fois l'essentiel (Mine, Caserne)
   // acquis — voir plus bas pourquoi elles ne bloquent plus rien avant ça.
   const farmTarget=Math.min(8, 2 + Math.floor((vilCount||0)/5));
-  if(a.pop>=a.maxPop-2 && a.maxPop<AGE_BONUS[a.age].popCap) return {type:BT.HOUSE};
+  if(a.pop>=a.maxPop-2 && a.maxPop<AGE_BONUS[a.age].popCap) return aiLogement(a);
   if(!n(BT.LUMBER)){
     const t=aiNearestNode(RT.TREE,a.baseX,a.baseY,30,a);
     if(t) return {type:BT.LUMBER,x:t.x,y:t.y};
@@ -256,6 +362,11 @@ function aiNextBuild(vilCount,a){
     const t=aiNearestNode(RT.GOLD,a.baseX,a.baseY,44,a)||aiNearestNode(RT.STONE,a.baseX,a.baseY,44,a);
     if(t) return {type:BT.MINE,x:t.x,y:t.y};
   }
+  // Quai : décidé sur ce que l'IA VOIT (des bancs à portée de sa base), pas
+  // sur le type de carte. Sur une carte sèche la condition ne se déclenche
+  // jamais et l'IA n'y pense plus ; sur « Grands Lacs » elle s'installe sur
+  // l'eau comme le ferait un joueur.
+  if(!n(BT.DOCK)&&aiNearestNode(RT.FISH,a.baseX,a.baseY,40,a)) return {type:BT.DOCK};
   if(!n(BT.BARRACKS)) return {type:BT.BARRACKS};
   // Forge dès la défense minimale assurée : sans elle, l'IA n'a jamais accès
   // aux recherches (voir aiResearch) et prend un retard technologique que le
@@ -291,7 +402,7 @@ function aiNextBuild(vilCount,a){
   // (300), bâtir « tant qu'on n'y est pas » transformait l'IA en lotisseur :
   // elle engloutissait tout son bois en maisons vides, n'avait plus de quoi
   // monter d'âge ni produire une seule unité, et son armée restait figée.
-  if(a.maxPop<Math.min(AGE_BONUS[a.age].popCap,a.pop+AI_POP_MARGE)) return {type:BT.HOUSE};
+  if(a.maxPop<Math.min(AGE_BONUS[a.age].popCap,a.pop+AI_POP_MARGE)) return aiLogement(a);
   return null;
 }
 
@@ -355,6 +466,64 @@ function aiAssignVillager(u,a){
   if(nd){ u.state='gather'; u.target=nd.id; u.homeNode=nd.id; }
 }
 
+// ── RÉPARATION ─────────────────────────────────────────────
+// L'IA ne réparait RIEN. Le joueur, lui, a une bascule dédiée (🔧
+// réparation auto, voir toggleAutoRepair) qui remet ses villageois inactifs
+// sur ses murs et son Centre Ville entre deux assauts. En Conquête, où les
+// deux camps sont censés jouer aux mêmes règles, cela voulait dire que les
+// dégâts de siège étaient DÉFINITIFS d'un côté et effaçables de l'autre :
+// après trois assauts repoussés, le Centre Ville de l'IA restait à 40 % pour
+// le restant de la partie.
+//
+// L'effort est borné volontairement : au plus AI_REPAIR_MAX villageois à la
+// fois, et seulement pour des dégâts qui comptent (AI_REPAIR_SEUIL). Envoyer
+// toute la main-d'œuvre retaper une palissade éraiflée arrêterait l'économie
+// — exactement le travers que corrige déjà aiRebalance côté récolte.
+const AI_REPAIR_MAX = 3;       // villageois détournés simultanément
+const AI_REPAIR_SEUIL = 0.85;  // sous 85 % de PV, ça vaut le détour
+function aiRepare(vils,a){
+  // Un Centre Ville à 50 % passe avant une ferme à 20 % : on pondère le
+  // manque de PV par l'importance du bâtiment, comme le ciblage d'assaut
+  // pondère la distance par la priorité (voir nearPlayerBuildingSmart).
+  let best=null,bestScore=-Infinity;
+  for(const b of G.buildings){
+    if(b.owner!==a.id||b.constructing||b.hp>=b.maxHp) continue;
+    const ratio=b.hp/b.maxHp;
+    if(ratio>AI_REPAIR_SEUIL) continue;
+    const poids=b.type===BT.TC?3:(b.type===BT.TOWER||b.type===BT.CASTLE)?2:1;
+    const score=(1-ratio)*poids;
+    if(score>bestScore){ bestScore=score; best=b; }
+  }
+  if(!best) return;
+  // Les réparateurs DÉJÀ à l'œuvre comptent dans le plafond : sans ce
+  // décompte, chaque passage en ajoutait AI_REPAIR_MAX de plus et toute la
+  // main-d'œuvre finissait sur le chantier en quelques secondes.
+  let manque=AI_REPAIR_MAX;
+  for(const u of vils) if(u.state==='repair') manque--;
+  if(manque<=0) return;
+  // On détourne les PLUS PROCHES : un villageois pris à l'autre bout de la
+  // carte passerait l'essentiel du chantier en marche, et aurait lâché son
+  // gisement pour rien.
+  const libres=vils.filter(u=>u.state!=='repair'&&u.state!=='build')
+                   .sort((p,q)=>Math.hypot(p.x-best.x,p.y-best.y)-Math.hypot(q.x-best.x,q.y-best.y));
+  for(let i=0;i<manque&&i<libres.length;i++){
+    quitterPoste(libres[i]);
+    libres[i].state='repair'; libres[i].target=best.id;
+  }
+}
+
+// Barque de l'IA au repos : elle repart pêcher d'elle-même.
+//
+// Appelée depuis la branche 'idle' d'updatePlayerUnit, et UNIQUEMENT pour un
+// camp IA : côté joueur, une barque postée quelque part doit y rester, c'est
+// un ordre. L'IA, elle, n'a personne pour lui en redonner un quand son banc
+// s'épuise — sans cette relance, sa flottille de pêche s'arrêtait définiti-
+// vement au premier banc vidé.
+function aiAssignBoat(u){
+  const n=aiNearestNode(RT.FISH,u.x,u.y,60,fac(u));
+  if(n){ u.state='fish'; u.target=n.id; u.homeNode=n.id; }
+}
+
 // Villageois de l'IA : exactement la même machine à états que celle du
 // joueur, plus une relance quand il se retrouve sans rien à faire.
 function updateAIVillager(u,dt){
@@ -364,6 +533,10 @@ function updateAIVillager(u,dt){
     case 'farm':   doFarm(u,dt);   break;
     case 'return': doReturn(u,dt); break;
     case 'build':  doBuild(u,dt);  break;
+    // Sans ce cas, un villageois passé en 'repair' par aiRepare retombait
+    // dans `default` et se faisait réaffecter à un gisement à l'image
+    // suivante : la réparation n'aurait jamais commencé.
+    case 'repair': doRepair(u,dt); break;
     default:
       u.scanCd=(u.scanCd||0)-dt;
       if(u.scanCd<=0){ u.scanCd=0.4+Math.random()*0.4; aiAssignVillager(u,fac(u)); }
@@ -547,8 +720,52 @@ function aiCibleBase(a){
 function aiPoster(army,x,y){
   for(const u of army){ u.camp=u.owner; u.campX=x; u.campY=y; u.target=null; }
 }
+
+// Merveille adverse ACHEVÉE, s'il en existe une.
+//
+// Même prédicat que cibleMerveille (07-simulation.js), mais posé au niveau de
+// la FACTION, et c'est tout l'enjeu : une armée encore POSTÉE en garde (phase
+// de rassemblement ou de repli défensif) n'engage que les intrus de son rayon
+// et ne verra jamais une Merveille à l'autre bout de la carte. Le ciblage
+// individuel ne suffit donc pas — il faut que la machine à phases lâche
+// l'armée.
+function aiMerveilleHostile(a){
+  for(const b of G.buildings){
+    if(b.type===BT.WONDER&&!b.constructing&&b.hp>0&&estHostile(a.id,b)) return b;
+  }
+  return null;
+}
+
 function majPhaseAssaut(dt,a,army){
   const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+
+  // ── Urgence Merveille ── prioritaire sur TOUT, la défense comprise.
+  //
+  // Une Merveille adverse debout gagne la partie en MERVEILLE_WIN_TIME
+  // secondes (5 min). Face à ce sablier, attendre le quorum de rassemblement
+  // ou la fin du minuteur d'assaut, c'est perdre en regardant ; et se replier
+  // sur sa base parce qu'un éclaireur rôde, c'est perdre en beauté. C'est la
+  // seule situation où l'IA jette par-dessus bord sa machine à phases.
+  //
+  // Le commentaire de MERVEILLE_WIN_TIME annonçait « le temps pour
+  // l'adversaire de réagir » : voici la réaction. Sans elle, poser une
+  // Merveille dans un coin gagnait toute partie de Conquête.
+  const merv=aiMerveilleHostile(a);
+  if(merv){
+    if(a.phase!=='merveille'){
+      a.phase='merveille';
+      sfx('wave');
+      bigBanner('🏛️ RUÉE SUR LA MERVEILLE');
+      notify(`🏛️ ${a.nom} lance tout ce qu'il a sur la Merveille !`,'#e74c3c');
+    }
+    // On se contente de LIBÉRER ce qui est encore posté : le choix de la
+    // cible reste à updateEnemyAI (voir cibleMerveille), un seul endroit qui
+    // décide. Le test sur u.camp évite de réinitialiser à chaque image l'état
+    // d'une unité déjà en route ou au contact.
+    for(const u of army) if(u.camp!=null){ u.camp=null; u.target=null; u.state='idle'; }
+    return;
+  }
+  if(a.phase==='merveille') a.phase=null;   // Merveille tombée : on reprend le cours normal
 
   // ── Défense ── une menace près de la base rappelle l'armée, où qu'elle
   // soit. `defenseJusqua` donne l'hystérésis : sans elle, un seul éclaireur
@@ -678,6 +895,16 @@ function updateUneIA(dt,a){
   // déplacé toutes les 6 secondes au maximum.
   a.rebal=(a.rebal||0)-AI_THINK;
   if(a.rebal<=0){ a.rebal=6; aiRebalance(vils,a); }
+  // Réparation : même nature de décision que le rééquilibrage (déplacer de la
+  // main-d'œuvre), donc même genre de cadence — un peu plus prompte, parce
+  // qu'un bâtiment qui prend des coups, lui, n'attend pas.
+  a.repCd=(a.repCd||0)-AI_THINK;
+  if(a.repCd<=0){ a.repCd=4; aiRepare(vils,a); }
+  // Troc : la plus lente des trois décisions économiques. Un déséquilibre de
+  // caisse se corrige d'abord par la main-d'œuvre (aiRebalance) ; le Marché
+  // n'est là que pour les blocages que la récolte ne résout plus.
+  a.trocCd=(a.trocCd||0)-AI_THINK;
+  if(a.trocCd<=0){ a.trocCd=8; aiTroquer(a); }
 
   // Épargne de montée d'âge : dès que l'économie tient debout, le coût du
   // prochain âge devient intouchable pour la production militaire. L'IA
@@ -694,9 +921,18 @@ function updateUneIA(dt,a){
   // ── Production ──
   for(const b of G.buildings){
     if(b.owner!==a.id||b.constructing) continue;
-    const roster=AI_TRAINERS[b.type];
+    let roster=AI_TRAINERS[b.type];
     if(!roster||b.trainQ.length>=3) continue;
     if(a.pop>=a.maxPop) continue;
+    // Château : l'unité unique de la civilisation rejoint le roster dès que
+    // l'âge le permet (voir aiUniteUnique). `concat` et non un push : le
+    // tableau AI_TRAINERS est partagé par TOUS les camps, y compris les deux
+    // rivaux du mode « 2 rivaux » qui n'ont pas la même civilisation — le
+    // muter donnerait à l'un l'unité unique de l'autre, et définitivement.
+    if(b.type===BT.CASTLE){
+      const uniq=aiUniteUnique(a);
+      if(uniq) roster=roster.concat(uniq);
+    }
     if(b.type===BT.TC){
       // Villageois jusqu'à l'objectif d'économie, puis on garde la place
       // pour l'armée.
@@ -708,8 +944,8 @@ function updateUneIA(dt,a){
       // suivant, reste à l'Âge Sombre pour toujours, et son armée se fige
       // avec elle. Constaté en simulation : âge 0 et 6 unités au bout de
       // onze minutes, avec 1 500 bois dormants faute d'âge pour les dépenser.
-      if(!aiAfford(AI_TCOST[UT.VIL],saving,a)) continue;
-      aiSpend(AI_TCOST[UT.VIL],a);
+      if(!aiAfford(aiCout(UT.VIL),saving,a)) continue;
+      aiSpend(aiCout(UT.VIL),a);
       b.trainQ.push(UT.VIL);
       if(b.trainQ.length===1) b.trainTimer=trainTime(UT.VIL);
       continue;
@@ -722,11 +958,13 @@ function updateUneIA(dt,a){
     // Moine supplémentaire est une place de population et 45🍖+20💰 jetés.
     // Mesuré avant plafond : 16 Moines pour 5 reliques.
     const monks=G.units.filter(u=>u.owner===a.id&&u.type===UT.MONK).length;
-    const avail=roster.filter(t=>(AI_UNIT_AGE[t]||0)<=a.age&&aiAfford(AI_TCOST[t],saving,a)
-                                &&!(t===UT.MONK&&monks>=RELIC_COUNT));
+    const boats=G.units.filter(u=>u.owner===a.id&&u.type===UT.BOAT).length;
+    const avail=roster.filter(t=>(AI_UNIT_AGE[t]||0)<=a.age&&aiAfford(aiCout(t),saving,a)
+                                &&!(t===UT.MONK&&monks>=RELIC_COUNT)
+                                &&!(t===UT.BOAT&&boats>=AI_BOAT_MAX));
     if(!avail.length) continue;
     const type=avail[(Math.random()*avail.length)|0];
-    aiSpend(AI_TCOST[type],a);
+    aiSpend(aiCout(type),a);
     b.trainQ.push(type);
     if(b.trainQ.length===1) b.trainTimer=trainTime(type);
   }
@@ -933,7 +1171,11 @@ function refreshConquestBar(){
   // l'armée est prête et le délai écoulé (imminent), le délai court (compte
   // à rebours), ou l'adversaire n'a tout simplement pas encore les troupes.
   let etat;
-  if(army>=a.atkMin&&nextAtk<=0) etat='<span style="color:#e74c3c">assaut imminent</span>';
+  // La ruée sur la Merveille passe avant les trois autres : le joueur voit
+  // arriver TOUTE l'armée d'un coup, hors de tout cycle d'assaut, il doit
+  // pouvoir comprendre pourquoi sans deviner.
+  if(a.phase==='merveille')      etat='<span style="color:#e74c3c">ruée sur la Merveille</span>';
+  else if(army>=a.atkMin&&nextAtk<=0) etat='<span style="color:#e74c3c">assaut imminent</span>';
   else if(army>=a.atkMin)        etat=`assaut : ${nextAtk>60?`${m}m${String(s).padStart(2,'0')}`:nextAtk+'s'}`;
   else                           etat=`<span style="color:#9a8a6a">armée en formation</span>`;
   el.innerHTML=`🏴 Ennemi ${AGES[a.age].ico} &nbsp;|&nbsp; ⚔️ ${army} &nbsp;|&nbsp; ${etat}`;

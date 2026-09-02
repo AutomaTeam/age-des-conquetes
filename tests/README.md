@@ -6,7 +6,7 @@ node tests/run.js
 
 Un groupe seul : `node tests/run.js reseau`.
 
-**88 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
+**103 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 

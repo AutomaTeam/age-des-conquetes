@@ -1362,6 +1362,192 @@ groupe('ia', () => {
     ok(vus.has(j.BT.SIEGE), 'l\'Atelier de siège n\'apparaît jamais dans le plan de construction de l\'IA');
   });
 
+  // ══ « L'IA JOUE AUX MÊMES RÈGLES » ═══════════════════════════
+  // Le mode Conquête annonce un rival qui joue avec les mêmes règles que le
+  // joueur. Cinq écarts le démentaient, tous dans le même sens. Ces tests
+  // verrouillent chacun d'eux : aucun n'était attrapé par la suite d'avant.
+
+  test("la Merveille adverse passe avant toute autre cible de bâtiment", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    // Un assaillant de l'IA, une Ferme du joueur COLLÉE à lui, une Merveille
+    // du joueur à vingt tuiles. Avant le correctif, la Merveille valait 0,5 et
+    // la Ferme 3 : l'IA allait raser la grange pendant que le compte à rebours
+    // de victoire adverse tournait.
+    const bx = Math.round(a.baseX / j.BASE_TILE), by = Math.round(a.baseY / j.BASE_TILE);
+    const pf = caseLibre(j, bx + 2, by, 2, 2);
+    batir(j, j.BT.FARM, pf.tx, pf.ty, j.G.me);
+    const pw = caseLibre(j, bx + 20, by, 3, 3);
+    batir(j, j.BT.WONDER, pw.tx, pw.ty, j.G.me);
+    const src = j.mkUnit(j.UT.ENEMI, a.baseX, a.baseY, a.id);
+    j.rebuildIndex();
+    const cible = j.nearPlayerBuildingSmart(src.x, src.y, src);
+    egal(cible.type, j.BT.WONDER,
+      "l'IA vise " + j.BDEF[cible.type].nom + " au lieu de la Merveille, qui gagne la partie en 5 min");
+  });
+
+  test("la Merveille achevée prime, le CHANTIER de Merveille non", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    const bx = Math.round(a.baseX / j.BASE_TILE), by = Math.round(a.baseY / j.BASE_TILE);
+    const pw = caseLibre(j, bx + 20, by, 3, 3);
+    const w = j.mkBuilding(j.BT.WONDER, pw.tx, pw.ty, j.G.me);
+    w.constructing = true; w.progress = 0.5;
+    j.placeBuilding(w); j.rebuildIndex();
+    const src = j.mkUnit(j.UT.ENEMI, a.baseX, a.baseY, a.id);
+    j.rebuildIndex();
+    // Un chantier n'est pas encore un compte à rebours : l'urgence ne doit pas
+    // se déclencher, sinon toute Merveille posée servirait d'appât.
+    ok(!j.cibleMerveille(src), "un CHANTIER de Merveille déclenche déjà l'urgence : trop tôt");
+    w.constructing = false; w.progress = 1;
+    const m = j.cibleMerveille(src);
+    ok(!!m, "la Merveille achevée n'est pas repérée comme urgence");
+    egal(m.id, w.id, 'mauvaise Merveille repérée');
+    // Et elle est bien classée hostile : une Merveille à SOI ne doit rien
+    // déclencher du tout.
+    const sien = j.mkUnit(j.UT.VIL, a.baseX, a.baseY, j.G.me);
+    j.rebuildIndex();
+    ok(!j.cibleMerveille(sien), "le joueur se rue sur sa PROPRE Merveille");
+  });
+
+  test("une Merveille adverse fait lâcher le rassemblement à l'IA", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    const army = [];
+    for (let i = 0; i < 6; i++) army.push(j.mkUnit(j.UT.ENEMI, a.baseX, a.baseY, a.id));
+    j.rebuildIndex();
+    // Armée postée en rassemblement : dans cet état elle n'engage QUE les
+    // intrus de son rayon de garde et ne verrait jamais une Merveille à
+    // l'autre bout de la carte. C'est pourquoi le ciblage individuel ne suffit
+    // pas et que la machine à phases doit la lâcher.
+    // Point de ralliement VOLONTAIREMENT loin des unités, et objectif encore
+    // au-delà : sans ça le quorum est atteint d'emblée (tout le monde est déjà
+    // sur place) et l'IA lance son assaut — elle a raison, mais le test ne
+    // vérifie alors plus rien.
+    a.phase = 'rassemble'; a.phaseT = j.G.gameTime;
+    a.rallyX = a.baseX + j.BASE_TILE * 20; a.rallyY = a.baseY;
+    a.cibleX = a.baseX + j.BASE_TILE * 40; a.cibleY = a.baseY;
+    for (const u of army) { u.camp = a.id; u.campX = a.rallyX; u.campY = a.rallyY; }
+    j.majPhaseAssaut(0.5, a, army);
+    egal(a.phase, 'rassemble', "l'IA quitte son rassemblement sans raison");
+    const bx = Math.round(a.baseX / j.BASE_TILE), by = Math.round(a.baseY / j.BASE_TILE);
+    const pw = caseLibre(j, bx + 24, by + 6, 3, 3);
+    batir(j, j.BT.WONDER, pw.tx, pw.ty, j.G.me);
+    j.majPhaseAssaut(0.5, a, army);
+    egal(a.phase, 'merveille', "l'IA reste en rassemblement face à une Merveille achevée");
+    egal(army.filter((u) => u.camp != null).length, 0,
+      'des unités restent postées en garde alors que le sablier adverse tourne');
+  });
+
+  test("l'IA répare ses bâtiments, sans y jeter toute sa main-d'œuvre", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    const tc = j.bldById(a.tcId);
+    const vils = [];
+    for (let i = 0; i < 10; i++) vils.push(j.mkUnit(j.UT.VIL, a.baseX, a.baseY, a.id));
+    j.rebuildIndex();
+    j.aiRepare(vils, a);
+    egal(vils.filter((u) => u.state === 'repair').length, 0,
+      "l'IA détourne des villageois sur un bâtiment intact");
+    tc.hp = tc.maxHp * 0.4;
+    j.aiRepare(vils, a);
+    const n1 = vils.filter((u) => u.state === 'repair').length;
+    ok(n1 > 0, "l'IA ne répare pas son Centre Ville tombé à 40 % de PV");
+    ok(n1 <= j.AI_REPAIR_MAX, "l'IA a détourné " + n1 + " villageois, plafond " + j.AI_REPAIR_MAX);
+    // Rappels successifs : les déjà-affectés comptent dans le plafond, sinon
+    // toute la main-d'œuvre finit sur le chantier en quelques secondes.
+    for (let k = 0; k < 5; k++) j.aiRepare(vils, a);
+    const n2 = vils.filter((u) => u.state === 'repair').length;
+    ok(n2 <= j.AI_REPAIR_MAX, "après rappels, " + n2 + " réparateurs pour un plafond de " + j.AI_REPAIR_MAX);
+  });
+
+  test("l'IA forme l'unité unique de SA civilisation, et seulement la sienne", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    const attendu = { byzantins: j.UT.CATA, mongols: j.UT.CAVARC, chinois: j.UT.ARBRAP };
+    for (const civ of Object.keys(attendu)) {
+      a.civ = civ;
+      a.age = 1;
+      egal(j.aiUniteUnique(a), null, civ + " : l'unité unique sort avant l'Âge des Châteaux");
+      a.age = 2;
+      egal(j.aiUniteUnique(a), attendu[civ], civ + ' : mauvaise unité unique (ou aucune)');
+    }
+    a.civ = 'francs'; a.age = 3;
+    egal(j.aiUniteUnique(a), null, "les Francs reçoivent une unité unique qu'ils n'ont pas");
+    // Et son coût est celui du joueur, pas un tarif inventé pour l'IA.
+    egalJSON(j.aiCout(j.UT.CATA), j.TCOST[j.UT.CATA],
+      'le Cataphractaire ne coûte pas le même prix selon le camp qui le forme');
+  });
+
+  test("l'IA bâtit un Immeuble quand il manque beaucoup de places d'un coup", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    riche(j, a.id);
+    a.age = 1;
+    a.pop = 2; a.maxPop = 20;
+    egal(j.aiLogement(a).type, j.BT.HOUSE, "l'IA sort l'Immeuble pour deux places manquantes");
+    a.pop = 60; a.maxPop = 60;
+    egal(j.aiLogement(a).type, j.BT.HLM, "l'IA enchaîne encore les Maisons à soixante places manquantes");
+    // ...mais jamais à crédit : sans la pierre, on retombe sur la Maison.
+    a.res.stone = 0;
+    egal(j.aiLogement(a).type, j.BT.HOUSE, "l'IA vise un Immeuble qu'elle ne peut pas payer");
+  });
+
+  test("l'IA troque au Marché pour se débloquer, et seulement là", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    // Noyée sous le bois, à sec d'or : exactement le blocage que le Marché
+    // existe pour dénouer, et que l'IA subissait sans jamais s'en servir.
+    const surplus = () => { a.res.wood = 9000; a.res.food = 300; a.res.stone = 200; a.res.gold = 0; };
+    surplus();
+    j.aiTroquer(a);
+    egal(a.res.gold, 0, "l'IA troque sans Marché debout");
+    const bx = Math.round(a.baseX / j.BASE_TILE), by = Math.round(a.baseY / j.BASE_TILE);
+    const pm = caseLibre(j, bx + 3, by + 3, j.BDEF[j.BT.MARKET].w, j.BDEF[j.BT.MARKET].h);
+    batir(j, j.BT.MARKET, pm.tx, pm.ty, a.id);
+    surplus();
+    j.aiTroquer(a);
+    ok(a.res.gold > 0, "Marché debout, bois à 9000, or à 0 : l'IA ne troque toujours pas");
+    ok(a.res.wood < 9000, "l'IA reçoit de l'or sans rien donner en échange");
+    // Économie équilibrée : on ne brûle rien au mauvais taux.
+    a.res.wood = 1000; a.res.food = 1000; a.res.stone = 1000; a.res.gold = 1000;
+    const avant = JSON.stringify(a.res);
+    j.aiTroquer(a);
+    egal(JSON.stringify(a.res), avant, "l'IA troque alors que rien ne la bloque");
+  });
+
+  test("l'IA s'installe sur l'eau quand il y a du poisson à pêcher", () => {
+    const plan = (j, f) => {
+      const vus = new Set();
+      for (let i = 0; i < 40; i++) {
+        const b = j.aiNextBuild(30, f); if (!b) break; vus.add(b.type);
+        const p = caseLibre(j, Math.round(f.baseX / j.BASE_TILE), Math.round(f.baseY / j.BASE_TILE),
+          j.BDEF[b.type].w, j.BDEF[b.type].h);
+        if (!p) break;
+        batir(j, b.type, p.tx, p.ty, f.id);
+      }
+      return vus;
+    };
+    const j = partie(charger(), { graine: 4242 });
+    ok(!!j.AI_TRAINERS[j.BT.DOCK], 'le Quai ne produit rien dans le roster de l’IA');
+    ok(j.AI_TRAINERS[j.BT.DOCK].includes(j.UT.BOAT), 'le Quai de l’IA ne forme pas de Barque');
+    // Sans banc à portée, le Quai ne doit JAMAIS entrer au plan : sur une
+    // carte sèche ce serait cent bois jetés.
+    const a = j.G.factions.ia;
+    riche(j, a.id);
+    j.G.nodes = j.G.nodes.filter((n) => n.type !== j.RT.FISH);
+    j.rebuildIndex();
+    ok(!plan(j, a).has(j.BT.DOCK), "l'IA bâtit un Quai sur une carte sans poisson");
+    // Un banc à six tuiles de la base, et il entre au plan.
+    const j2 = partie(charger(), { graine: 4242 });
+    const a2 = j2.G.factions.ia;
+    riche(j2, a2.id);
+    j2.G.nodes.push({ id: j2.G.nid++, type: j2.RT.FISH, tx: 0, ty: 0,
+      x: a2.baseX + j2.BASE_TILE * 6, y: a2.baseY, amt: 500, max: 500, gatherers: [] });
+    j2.rebuildIndex();
+    ok(plan(j2, a2).has(j2.BT.DOCK), "un banc de poisson à six tuiles de la base, et l'IA n'y pense pas");
+  });
+
   test('l\'assaut passe par un rassemblement avant de partir', () => {
     const j = partie(charger(), { graine: 4242 });
     const a = j.G.factions.ia;

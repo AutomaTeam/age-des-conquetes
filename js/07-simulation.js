@@ -174,7 +174,12 @@ function updateUnits(dt){
     // (porter une relique — voir doRelic — ou soigner un allié blessé au
     // repos, voir le cas 'idle'/UT.MONK d'updatePlayerUnit) plutôt qu'une
     // copie : un seul comportement à maintenir pour les deux camps.
-    if(fu&&(fu.genre==='humain'||(fu.genre==='ia'&&u.type===UT.MONK))) updatePlayerUnit(u,dt);
+    // La Barque de l'IA rejoint le Moine sur cet automate, et pour la même
+    // raison : elle travaille (elle pêche), elle ne combat pas. La laisser
+    // dans la boucle d'assaut l'aurait envoyée charger l'ennemi à travers la
+    // terre ferme, avec le déplacement terrestre partagé — hors de son
+    // domaine, voir advanceNaval.
+    if(fu&&(fu.genre==='humain'||(fu.genre==='ia'&&(u.type===UT.MONK||u.type===UT.BOAT)))) updatePlayerUnit(u,dt);
     else if(fu&&fu.genre==='ia'&&u.type===UT.VIL) updateAIVillager(u,dt);
     if(u.moving) u.animT+=dt; // anim de marche uniquement en mouvement
   }
@@ -258,7 +263,11 @@ function updatePlayerUnit(u,dt){
             const b=nearestDamagedBuilding(u.x,u.y);
             if(b){ u.state='repair'; u.target=b.id; }
           }
-        } else if(u.type!==UT.VIL&&u.type!==UT.BOAT){
+        } else if(u.type===UT.BOAT){
+          // Voir aiAssignBoat : relance réservée à l'IA. Une barque du joueur
+          // laissée quelque part y reste — c'est un ordre, pas de l'oisiveté.
+          if(estIA(u)&&typeof aiAssignBoat==='function') aiAssignBoat(u);
+        } else if(u.type!==UT.VIL){
           // La Barque (sans combat en v1, voir UDEF[UT.BOAT].naval) ne
           // scanne jamais d'hostile : passer en 'attack' la ferait tenter
           // d'utiliser le déplacement terrestre partagé (doAttack/moveTo),
@@ -947,7 +956,11 @@ const REPAIR_RATE=14; // PV/s
 function doRepair(u,dt){
   const _b=bldById(u.target), b=(_b&&_b.owner===u.owner)?_b:null; // on ne bâtit/répare que chez soi
   if(!b||b.hp>=b.maxHp||b.constructing){
-    if(b&&b.hp>=b.maxHp) addFText(b.x,b.y-20,'Réparé !','#2ecc71');
+    // Retour réservé à SES propres bâtiments : depuis que l'IA répare elle
+    // aussi (voir aiRepare), un « Réparé ! » vert au-dessus du Centre Ville
+    // adverse se lisait comme une bonne nouvelle pour le joueur. Même
+    // principe que la fin de chantier dans doBuild.
+    if(b&&b.hp>=b.maxHp&&estLocal(b)) addFText(b.x,b.y-20,'Réparé !','#2ecc71');
     u.state='idle'; u.target=null; return;
   }
   const reach=bldContact(b,0.35);
@@ -1476,7 +1489,7 @@ function updateEnemyAI(dt){
     // aussi passer par la boucle de combat les enverrait charger l'ennemi
     // au lieu de travailler. Le Moine de l'IA (voir updateUnits) vit
     // maintenant sur ce même automate — même exclusion, pour la même raison.
-    if(fu&&fu.genre==='ia'&&(u.type===UT.VIL||u.type===UT.MONK)) continue;
+    if(fu&&fu.genre==='ia'&&(u.type===UT.VIL||u.type===UT.MONK||u.type===UT.BOAT)) continue;
     // Une unité en garnison ne doit RIEN faire de sa propre initiative — ni
     // se rendormir en garde (elle n'a pas de camp), ni surtout redevenir un
     // combattant actif : à défaut de ce garde-fou explicite, une unité
@@ -1519,8 +1532,12 @@ function updateEnemyAI(dt){
         tgt=nearestBy(u.campX,u.campY,GUARD_AGGRO_RADIUS,e=>e.hp>0&&e.state!=='garrison'&&estHostile(u,e))
           ||nearPlayerBuildingWithin(u.campX,u.campY,GUARD_AGGRO_RADIUS,u);
       } else {
-        // Stratégie : villageois proche (cible molle) > unité militaire proche > bâtiment prioritaire
-        tgt=cibleAssaillant(u)                           // villageois, sinon militaire
+        // Stratégie : Merveille adverse achevée > villageois proche (cible
+        // molle) > unité militaire proche > bâtiment prioritaire.
+        // La Merveille est en tête parce qu'elle n'est pas une cible parmi
+        // d'autres : c'est un compte à rebours de défaite (voir cibleMerveille).
+        tgt=cibleMerveille(u)                            // urgence absolue
+          ||cibleAssaillant(u)                           // villageois, sinon militaire
           ||nearPlayerBuildingSmart(u.x,u.y,u);          // sinon bâtiment intelligent
       }
       u.target=tgt?tgt.id:null;
@@ -1596,10 +1613,75 @@ function cibleAssaillant(u){
   return vil||mil;
 }
 
+// Merveille hostile ACHEVÉE la plus proche, s'il y en a une.
+//
+// C'est la seule cible qui passe avant un villageois à portée de main : une
+// Merveille debout gagne la partie en MERVEILLE_WIN_TIME secondes (voir
+// updateWonders / checkMerveilleVictory), donc courir après une cible molle
+// pendant que le sablier s'écoule, c'est perdre en beauté. Sans limite de
+// distance, pour la même raison : elle est à abattre où qu'elle soit.
+//
+// Ne concerne PAS les gardes de point d'intérêt, qui ont leur propre branche
+// bornée dans updateEnemyAI — un camp doit rester dormant tant qu'on ne vient
+// pas l'attaquer, Merveille ou pas.
+function cibleMerveille(src){
+  let best=null,bd=Infinity;
+  for(const b of G.buildings){
+    if(b.type!==BT.WONDER||b.constructing||b.hp<=0||!estHostile(src,b)) continue;
+    const dx=b.x-src.x,dy=b.y-src.y,d=dx*dx+dy*dy;
+    if(d<bd){ bd=d; best=b; }
+  }
+  return best;
+}
+
 // Ciblage bâtiment intelligent : préfère éco (villageois-producteurs) puis TC
 function nearPlayerBuildingSmart(x,y,src){
-  const prio={[BT.MILL]:3,[BT.FARM]:3,[BT.LUMBER]:3,[BT.MINE]:3,[BT.MARKET]:2,
-              [BT.HOUSE]:2,[BT.TC]:4,[BT.FORGE]:1,[BT.UNIV]:1};
+  // Tout ce qui ne figure PAS ici retombe à 0,5 (voir `prio[b.type]||0.5`) :
+  // la table doit donc être lue comme la liste complète de ce qui mérite mieux
+  // que le plancher, pas comme une liste d'exceptions.
+  //
+  // La Merveille y était ABSENTE : un chantier de Merveille, puis la Merveille
+  // achévée, valaient 0,5 — moins qu'une Maison (2), moins qu'une Ferme (3).
+  // L'IA allait raser une grange pendant que le compte à rebours de victoire
+  // adverse tournait. Elle passe au sommet, au-dessus même du Centre Ville.
+  // (Une fois ACHEVÉE, elle est de toute façon intercéptée plus tôt par
+  // cibleMerveille ; l'entrée ici vaut surtout pour le CHANTIER, qu'il vaut
+  // mieux abattre avant qu'il ne soit fini.)
+  //
+  // Les bâtiments de PRODUCTION MILITAIRE manquaient eux aussi : Caserne,
+  // Écurie, Atelier de Siège et Monastère tombaient à 0,5, soit moins qu'une
+  // Maison. Un raid préférait donc une cabane à la caserne qui produisait
+  // l'armée en train de le tuer.
+  //
+  // Tour et Château restent VOLONTAIREMENT au plancher : ce sont des points
+  // d'appui qui TIRENT (voir la passe de tir dans updateBuildings). Les
+  // désigner comme objectif enverrait l'armée se faire fusiller de face ; on
+  // les casse quand ils barrent la route, pas parce qu'on les a choisis.
+  // Le poids de la Merveille n'est pas « un cran au-dessus du Centre Ville »
+  // mais HORS CONCOURS, et c'est délibéré : le score vaut `prio*200 -
+  // distance`, où un point de priorité ne pèse que 200 unités-monde, soit
+  // cinq tuiles. Avec 5, une Ferme collée à l'assaillant (3×200 - 76 = 524)
+  // battait encore une Merveille à vingt tuiles (5×200 - 760 = 240) — le
+  // classement était bon, la distance le renversait quand même.
+  //
+  // 100×200 = 20 000, contre 17 200 pour la diagonale de la plus grande carte
+  // (320 tuiles × 38 px, voir TAILLES) plus 600 pour le meilleur rival
+  // possible à distance nulle : la Merveille l'emporte donc où qu'elle soit,
+  // sur n'importe quelle taille de carte. C'est le seul bâtiment pour lequel
+  // la distance ne doit pas décider — la laisser s'achever fait perdre la
+  // partie, traverser la carte pour elle est toujours le bon calcul.
+  //
+  // Cela ne détourne pas l'IA de sa défense pour autant : ce classement ne
+  // tranche qu'entre BÂTIMENTS, et les cibles molles (villageois, soldats)
+  // passent avant lui dans la chaîne de updateEnemyAI.
+  const prio={
+    [BT.WONDER]:100,                                                 // hors concours — voir ci-dessus
+    [BT.TC]:4,
+    [BT.MILL]:3,[BT.FARM]:3,[BT.LUMBER]:3,[BT.MINE]:3,               // l'économie qui nourrit l'armée
+    [BT.BARRACKS]:2.5,[BT.STABLE]:2.5,[BT.SIEGE]:2.5,[BT.MONASTERY]:2.5, // la production militaire
+    [BT.MARKET]:2,[BT.HOUSE]:2,[BT.HLM]:2,
+    [BT.FORGE]:1,[BT.UNIV]:1,[BT.DOCK]:1,
+  };
   let best=null,bestScore=-Infinity;
   for(const b of G.buildings){
     // Un mur n'est jamais une cible PRINCIPALE : c'est un obstacle passif.

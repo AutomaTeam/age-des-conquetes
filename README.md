@@ -51,7 +51,7 @@ préservent.
 node tests/run.js
 ```
 
-88 tests, 15 groupes, ~35 s, sans dépendance ni build — comme le jeu. Ils
+103 tests, 15 groupes, ~40 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, et des
@@ -127,6 +127,22 @@ partie ne pourrait pas se terminer).
 - Adversaires IA qui **continuent de croître toute la partie** : leur objectif
   d'économie monte avec le temps au lieu de plafonner après cinq minutes, ils
   enchaînent les montées d'âge et leurs assauts grossissent à chaque vague.
+- ...et qui jouent bien **aux mêmes règles que vous**. Cinq écarts le
+  démentaient encore, tous à leur désavantage, et tous fermés depuis :
+  - une **Merveille adverse achevée** est leur urgence absolue — elles
+    lâchent rassemblement et repli défensif pour s'y ruer. Elle valait
+    auparavant moins qu'une grange dans leur table de cibles, si bien qu'une
+    Merveille posée dans un coin gagnait toute partie de Conquête ;
+  - elles **réparent** leurs bâtiments (au plus trois villageois à la fois),
+    là où les dégâts de siège leur étaient définitifs quand les vôtres ne le
+    sont pas ;
+  - elles forment l'**unité unique de leur civilisation** à leur Château :
+    trois civs sur quatre jouaient jusque-là comme des Francs ;
+  - elles **troquent au Marché** pour dénouer un blocage de caisse, au lieu
+    de rester à sec d'or avec trois mille bois dormants ;
+  - elles bâtissent des **Immeubles** quand il manque beaucoup de places d'un
+    coup, et un **Quai** là où il y a du poisson à pêcher — la pêche n'est
+    plus une économie réservée au joueur sur « Grands Lacs ».
 
 Le sol est lui aussi procédural, et chaque type de carte a sa propre
 matière : huit variantes de texture (× quatre miroirs) peintes dans la

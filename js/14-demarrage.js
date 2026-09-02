@@ -319,7 +319,21 @@ const BENCH_PROFILS={
     // suivants donnaient 895 à 940 — code déoptimisé et mémoire à collecter.
     // Toutes les séries de CE lancement étaient lentes, donc le meilleur-de-N
     // n'y pouvait rien : seule une vraie chauffe en amont corrige.
-    PAS_SIM:150, IMAGES:90, CHAUFFE_SIM:120, CHAUFFE_RENDU:30,
+    // PAS_SIM monté de 150 à 800 à cause de la RÉSOLUTION DU CHRONOMÈTRE.
+    // Safari plafonne performance.now() à ~1 ms. À 150 pas, un appareil
+    // rapide (iPhone : 0,13 ms par pas) ne chronométrait que 4,9 ms par bloc,
+    // soit ±21 % d'erreur de quantification — et comme on retient le MEILLEUR
+    // des essais, cette erreur biaise systématiquement vers le BAS : la série
+    // retenue est celle qui a eu l'arrondi le plus favorable. Relevé remonté
+    // d'un iPhone : 0,13 ms par pas avec 150 % d'écart entre séries, un
+    // chiffre impossible — que l'indicateur de fiabilité a heureusement
+    // signalé. À 800 pas le même appareil chronomètre ~26 ms par bloc, où la
+    // quantification ne pèse plus que 4 %.
+    // Le nombre de pas reste FIXE, jamais ajusté à la vitesse de la machine :
+    // c'est la condition pour que deux appareils simulent exactement la même
+    // chose. L'épreuve extrême, elle, chronomètre déjà 87 ms par bloc sur ce
+    // même iPhone — rien à y changer.
+    PAS_SIM:800, IMAGES:90, CHAUFFE_SIM:120, CHAUFFE_RENDU:30,
     ESSAIS_ATLAS:4, ESSAIS_SIM:3, ESSAIS_RENDU:3,
     // Temps de référence en ms, RELEVÉS APRÈS CHAUFFE sur la machine étalon
     // (Windows 11, Chrome, 24 cœurs, DPR 1,25) : 1000 points par poste =
@@ -330,7 +344,10 @@ const BENCH_PROFILS={
     // jouées. Étalonner sur le cas neuf plaçait la machine étalon à 889
     // points, pile sur la frontière d'un rang, qui basculait alors d'un essai
     // à l'autre. Sur ces valeurs-ci elle tombe à ~1000, au milieu de son rang.
-    REF:{atlas:31, sim:0.60, rendu:1.72},
+    // Réétalonné à 800 pas : la mesure y est aussi plus SERRÉE sur la machine
+    // étalon (0,48-0,51 ms contre 0,44-0,62 à 150 pas), la quantification du
+    // chronomètre pesant moins sur un intervalle plus long.
+    REF:{atlas:30, sim:0.49, rendu:1.69},
     PALIERS:[
       {min:1400,nom:'Forge de guerre',ico:'🔥',txt:'Tout à fond : grande carte, 4 camps, zoom libre. La machine n’est pas la limite.'},
       {min:900, nom:'Solide',         ico:'⚔️',txt:'Confortable partout. Grande carte et mode 2 rivaux sans réserve.'},

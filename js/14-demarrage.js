@@ -347,7 +347,7 @@ const BENCH_PROFILS={
     // Réétalonné à 800 pas : la mesure y est aussi plus SERRÉE sur la machine
     // étalon (0,48-0,51 ms contre 0,44-0,62 à 150 pas), la quantification du
     // chronomètre pesant moins sur un intervalle plus long.
-    REF:{atlas:30, sim:0.49, rendu:1.69},
+    REF:{atlas:32, sim:0.50, rendu:1.70},
     PALIERS:[
       {min:1400,nom:'Forge de guerre',ico:'🔥',txt:'Tout à fond : grande carte, 4 camps, zoom libre. La machine n’est pas la limite.'},
       {min:900, nom:'Solide',         ico:'⚔️',txt:'Confortable partout. Grande carte et mode 2 rivaux sans réserve.'},
@@ -593,6 +593,19 @@ async function lancerBenchmark(profilNom){
     // simple chauffe en amont ne rattrape pas. Sans cette série jetée, le tout
     // premier résultat affiché était systématiquement ~12 % sous les suivants
     // — donc un rang trop bas pour qui ne lance le test qu'une fois.
+    // MOYENNE pour la simulation, et non le meilleur des essais — c'est une
+    // correction de fond. Les séries d'atlas et de rendu REFONT exactement le
+    // même travail : le bruit ne peut que les ralentir, donc le minimum y est
+    // la bonne estimation. Les séries de simulation, elles, ne se répètent
+    // PAS : chacune joue 800 pas de plus, donc une tranche de partie plus
+    // tardive, où les unités ont rejoint leur destination et coûtent moins.
+    // Prendre le minimum revenait à retenir la phase la plus calme, la moins
+    // représentative — et à en faire le score. C'est ce qui produisait le
+    // « 0,10 ms avec 65 % d'écart » remonté d'un iPhone : pas une machine
+    // cinq fois plus rapide, un estimateur qui choisissait la tranche la plus
+    // creuse. La moyenne sur toute la tranche mesurée décrit un travail
+    // identique sur chaque appareil, sans favoriser aucune phase.
+    let totMs=0, totPas=0;
     for(let e=0;e<=P.ESSAIS_SIM;e++){
       let tot=0;
       for(let bloc=0;bloc<4;bloc++){
@@ -603,10 +616,10 @@ async function lancerBenchmark(profilNom){
         await benchSouffler();
       }
       if(e===0) continue;                       // échauffement, non retenu
-      const d=tot/P.PAS_SIM;
-      res.series.sim.push(d);
-      res.sim=(res.sim==null)?d:Math.min(res.sim,d);
+      res.series.sim.push(tot/P.PAS_SIM);
+      totMs+=tot; totPas+=P.PAS_SIM;
     }
+    res.sim=totMs/Math.max(1,totPas);
     res.vivants=G.units.length;
 
     // ── 3. Rendu ──
@@ -816,6 +829,12 @@ function afficherResultatBenchmark(res,P,profilNom){
     `${navOS}${gpu?' · '+gpu:''} · ${navigator.hardwareConcurrency||'?'} cœurs${navigator.deviceMemory?' · '+navigator.deviceMemory+' Go':''}`,
     `Fenêtre ${Math.round(window.innerWidth)}×${Math.round(window.innerHeight)} @${(window.devicePixelRatio||1).toFixed(2)}×`,
     `Écart entre séries ${ecartMax==null?'—':ecartMax.toFixed(0)+' %'}${res.masque?' · ONGLET MASQUÉ, à refaire':''}`,
+    // Les séries brutes voyagent avec le rapport : sans elles, un relevé
+    // aberrant remonté d'un autre appareil n'est pas diagnosticable — il a
+    // fallu deux allers-retours pour comprendre le « 0,10 ms » d'un iPhone
+    // faute de les avoir sous les yeux.
+    `Séries — sprites ${serie(res.series.atlas)} | simulation ${serie(res.series.sim)} | rendu ${serie(res.series.rendu)}`,
+    `Protocole ${P.PAS_SIM} pas x ${P.ESSAIS_SIM} · ${P.IMAGES} images x ${P.ESSAIS_RENDU} · simulation en moyenne, sprites et rendu au meilleur`,
   ].join('\n');
 
   document.getElementById('benchcorps').innerHTML=

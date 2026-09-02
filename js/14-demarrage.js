@@ -352,13 +352,17 @@ const BENCH_PROFILS={
     // coût par pas n'a plus rien à voir (0,42 ms contre ~9 ms).
     // Étalonnage relevé une fois la mêlée VRAIMENT formée : les deux armées
     // marchent l'une sur l'autre pendant la chauffe, donc au moment du
-    // chronomètre elles sont au contact, au centre de l'écran — le rendu passe
-    // de 11 à 41 ms parce qu'il dessine alors des milliers d'unités empilées
-    // au lieu d'une nuée dispersée. C'est le pire cas recherché, et il est
-    // reproductible (aléa semé) ; mais il dépend du nombre de pas joués avant
-    // la mesure : toucher à CHAUFFE_SIM impose de réétalonner ces trois
-    // nombres.
-    REF:{atlas:33, sim:32.7, rendu:41.5},
+    // chronomètre elles sont au contact, au centre de l'écran. Il dépend du
+    // nombre de pas joués avant la mesure : toucher à CHAUFFE_SIM impose de
+    // réétalonner ces trois nombres.
+    // rendu : 41,5 était FAUX, et un iPhone l'a révélé en rendant un score
+    // saturé (3000/3000). Ces 41,5 ms avaient été relevées quand la série
+    // mesurée construisait encore les pavés de terrain, la caméra venant de
+    // se déplacer ; depuis que la chauffe du rendu est passée à 8 images plus
+    // une série jetée, les pavés sont en cache et le coût réel, stable, est
+    // de ~12 ms. Leçon : un temps de référence se relève APRÈS avoir figé le
+    // protocole de chauffe, jamais avant.
+    REF:{atlas:33, sim:32.7, rendu:12.2},
     // Les libellés ne promettent PAS que tout va bien : à 3 000 unités au
     // contact, même la machine étalon dépasse le budget temps réel (34 ms par
     // pas pour 33 disponibles). C'est le propre d'un test de rupture, et le
@@ -694,10 +698,16 @@ function benchEcart(serie){
 }
 
 // Score : rapport au temps de référence, borné, puis moyenne pondérée.
-// Plus haut = mieux. Le plafond de 3 évite qu'un poste très rapide (un atlas
-// mis en cache par le navigateur, par exemple) n'écrase les deux autres.
+// Plus haut = mieux.
+// Le plafond était à 3, et un iPhone l'a fait sauter : deux de ses trois
+// postes sont sortis à 3000 pile, donc un score qui ne mesurait plus rien —
+// une machine deux fois plus rapide aurait affiché le même total. Un banc
+// qui sature ne classe plus personne. À 6, il ne reste qu'un garde-fou
+// contre une valeur aberrante (un poste mesuré à ~0 ms), pas une limite que
+// du matériel réel puisse atteindre.
+const BENCH_PLAFOND=6;
 function benchScore(res,P){
-  const part=(ref,vu)=>Math.max(0.05,Math.min(3,ref/Math.max(0.0001,vu)));
+  const part=(ref,vu)=>Math.max(0.05,Math.min(BENCH_PLAFOND,ref/Math.max(0.0001,vu)));
   const a=part(P.REF.atlas,res.atlas), s=part(P.REF.sim,res.sim), r=part(P.REF.rendu,res.rendu);
   const g=a*BENCH.POIDS.atlas+s*BENCH.POIDS.sim+r*BENCH.POIDS.rendu;
   return {points:Math.round(g*1000), a:Math.round(a*1000), s:Math.round(s*1000), r:Math.round(r*1000)};

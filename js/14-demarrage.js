@@ -267,6 +267,225 @@ document.getElementById('idlebtn-inner').addEventListener('click',()=>{
 
 window.addEventListener('resize',()=>{ resizeCanvas(); });
 
+// ══════════════════════════════════════════════════════════
+//  BANC D'ESSAI (écran-titre)
+// ══════════════════════════════════════════════════════════
+// Mesure la machine sur le VRAI moteur, pas sur une boucle de calcul
+// synthétique : les trois postes chronométrés sont exactement ceux qui
+// coûtent en jeu (mesuré, voir les invariants de performance) —
+//   1. l'ATLAS de sprites, l'opération la plus lourde du jeu (elle se rejoue
+//      à chaque changement de zoom) ;
+//   2. la SIMULATION, qui porte le pathfinding, le ciblage et la séparation
+//      des unités — le poste qui grossit avec la population ;
+//   3. le RENDU d'une image complète.
+// Un score synthétique n'aurait rien dit d'utile : une machine peut être
+// bonne en calcul pur et mauvaise en canvas 2D, et c'est le canvas qui
+// décide ici.
+//
+// La charge est IDENTIQUE partout (graine, taille de carte, effectifs et
+// nombre d'itérations figés) : deux machines comparent bien la même chose.
+const BENCH={
+  GRAINE:20260902, TAILLE:'normale', CARTE:'plaines',
+  UNITES:220,            // effectif réaliste de milieu/fin de partie
+  PAS_SIM:150, IMAGES:90,
+  CHAUFFE_SIM:40, CHAUFFE_RENDU:8,   // voir la note sur la chauffe, plus bas
+  // Temps de référence en ms, RELEVÉS APRÈS CHAUFFE sur la machine étalon
+  // (Windows 11, Chrome, 24 cœurs, DPR 1,25) : un score de 1000 par poste =
+  // cette machine. Ces trois nombres sont le seul étalonnage du banc.
+  REF:{atlas:36, sim:0.42, rendu:1.20},
+  // Surcoût par image qui n'est PAS dans render() : composition du navigateur,
+  // HUD, rAF. Mesuré en jeu réel sur la machine étalon (image à 4,2 ms pour
+  // 1,31 ms de rendu et 0,49 ms de simulation) — sans lui, l'estimation
+  // d'images/s annonçait 622 là où le jeu en affichait 238.
+  SURCOUT_IMAGE:2.4,
+  // Poids : le rendu et la simulation pèsent le plus lourd (ils tournent à
+  // chaque image), l'atlas ne se paie qu'aux changements de zoom.
+  POIDS:{atlas:0.2, sim:0.4, rendu:0.4},
+};
+const BENCH_PALIERS=[
+  {min:1400, nom:'Forge de guerre',  ico:'🔥', txt:'Tout à fond : grande carte, 4 camps, zoom libre. La machine n’est pas la limite.'},
+  {min:900,  nom:'Solide',           ico:'⚔️', txt:'Confortable partout. Grande carte et mode 2 rivaux sans réserve.'},
+  {min:550,  nom:'Correct',          ico:'🛡️', txt:'À l’aise en carte normale. La grande carte reste jouable, avec quelques à-coups en fin de partie.'},
+  {min:300,  nom:'Juste ce qu’il faut',ico:'🪓',txt:'Préférez les cartes petite ou moyenne, et évitez le mode 2 rivaux en grande carte.'},
+  {min:0,    nom:'Terrain difficile',ico:'🐌', txt:'Carte petite conseillée, vitesse ×1. Fermer les autres onglets aide beaucoup.'},
+];
+
+let _benchEnCours=false;
+function ouvrirBenchmark(){
+  document.getElementById('benchpanel').style.display='flex';
+  const c=document.getElementById('benchcorps');
+  c.innerHTML='<p class="benchsub">Le banc rejoue les trois opérations qui coûtent réellement en jeu — construction des sprites, simulation, rendu — sur une charge identique pour toutes les machines.<br><br>Comptez une quinzaine de secondes, sans changer d’onglet : un onglet en arrière-plan est délibérément ralenti par le navigateur et fausserait la mesure.</p>'
+    +'<button class="bigbtn sheen" id="benchgo" onclick="lancerBenchmark()">▶️ Lancer le test</button>';
+}
+function fermerBenchmark(){
+  if(_benchEnCours) return;                    // jamais au milieu d'une mesure
+  document.getElementById('benchpanel').style.display='none';
+}
+window.ouvrirBenchmark=ouvrirBenchmark; window.fermerBenchmark=fermerBenchmark;
+
+// Rend la main au navigateur entre deux phases : sans ça tout le banc
+// s'exécute dans une seule tâche, la barre de progression ne se peint jamais
+// et l'onglet paraît figé.
+const benchSouffler=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));
+
+function benchProgres(pct,txt){
+  const b=document.getElementById('benchbarre'), t=document.getElementById('benchetat');
+  if(b) b.style.width=Math.round(pct*100)+'%';
+  if(t) t.textContent=txt;
+}
+
+async function lancerBenchmark(){
+  if(_benchEnCours) return;
+  _benchEnCours=true;
+  const c=document.getElementById('benchcorps');
+  c.innerHTML='<div class="benchjauge"><div id="benchbarre"></div></div>'
+    +'<p class="benchsub" id="benchetat">Préparation…</p>';
+
+  // L'écran-titre a ses propres choix (mode, carte, taille, graine) : le banc
+  // en impose d'autres pour être comparable, on les remet donc ensuite.
+  const sauve={mode:selectedMode, carte:selectedCarte, taille:selectedTaille,
+               civ:selectedCiv, diff:selectedDifficulty, graine:grainePartie, tile:TILE};
+  const res={};
+  try{
+    selectedMode='survival'; selectedCarte=BENCH.CARTE;
+    pickTaille(BENCH.TAILLE); grainePartie=BENCH.GRAINE;
+    resizeCanvas();
+    await benchSouffler();
+
+    // ── 1. Carte + atlas de sprites ──
+    // CHAUFFE OBLIGATOIRE, et c'est le piège principal de ce banc : mesuré,
+    // le tout premier atlas coûte 317 ms et les suivants 35 ms — un rapport
+    // de NEUF. Le premier paie le décodage des planches illustrées et leur
+    // détourage, qui sont ensuite mis en cache (voir TRIM_CACHE/BLD_IMG_CACHE
+    // dans 05-sprites.js). Chronométrer le premier donnerait donc un score
+    // qui dépend surtout de « est-ce la première fois que vous cliquez ? ».
+    // On mesure le régime ÉTABLI, celui qu'on paie réellement à chaque zoom
+    // pendant une partie. Même raison pour la simulation et le rendu : V8 a
+    // besoin de quelques tours avant de compiler pour de bon.
+    benchProgres(0.05,'Génération de la carte…');
+    initState(); genMap();
+    await benchSouffler();
+    benchProgres(0.12,'Préparation des sprites…');
+    buildSprites(sprRungFor(BASE_TILE));           // chauffe, NON mesurée
+    await benchSouffler();
+    // MEILLEUR de trois, et pas la moyenne : reconstruire l'atlas alloue
+    // ~250 canvas d'un coup, donc un passage tombe parfois en pleine collecte
+    // mémoire. Mesuré sur quatre essais d'affilée : 30, 64, 56 puis 79 ms pour
+    // le même travail — de quoi faire varier le rang affiché. Le bruit ne peut
+    // que RALENTIR, jamais accélérer : le minimum est donc l'estimation
+    // honnête de ce dont la machine est capable, et c'est ce que font les
+    // bancs d'essai sérieux.
+    for(let e=0;e<3;e++){
+      benchProgres(0.16+e*0.04,'Construction des sprites…');
+      const t=performance.now();
+      buildSprites(sprRungFor(BASE_TILE));
+      const d=performance.now()-t;
+      res.atlas=(res.atlas==null)?d:Math.min(res.atlas,d);
+      await benchSouffler();
+    }
+
+    // ── 2. Simulation ──
+    // On peuple avec des unités RÉPARTIES (le piège documenté : les entasser
+    // au même pixel donne un profil qui n'a rien à voir avec une partie).
+    benchProgres(0.3,'Mise en place des troupes…');
+    const dep=(G.departs&&G.departs.length)?G.departs:resoudreDeparts();
+    const tc=mkBuilding(BT.TC,dep[0][0],dep[0][1],FAC.P1); placeBuilding(tc);
+    let sx=0;
+    for(let i=0;i<BENCH.UNITES;i++){
+      const a=i*2.399963, r=(1+(i%9))*BASE_TILE*2.2;   // spirale : réparties, pas empilées
+      const x=Math.max(BASE_TILE,Math.min((COLS-1)*BASE_TILE,tc.x+Math.cos(a)*r));
+      const y=Math.max(BASE_TILE,Math.min((ROWS-1)*BASE_TILE,tc.y+Math.sin(a)*r));
+      const t=(i%5===0)?UT.ARC:(i%7===0)?UT.VIL:UT.MIL;
+      const u=mkUnit(t,x,y,FAC.P1);
+      u.state='moving'; u.destX=tc.x; u.destY=tc.y;     // tout le monde en mouvement
+      G.units.push(u); sx++;
+    }
+    rebuildIndex(); rebuildGrid();
+    await benchSouffler();
+    for(let k=0;k<BENCH.CHAUFFE_SIM;k++) update(SIM_DT);   // chauffe, NON mesurée
+    await benchSouffler();
+    // Même principe qu'au-dessus : deux séries, on garde la meilleure.
+    for(let e=0;e<2;e++){
+      benchProgres(0.5+e*0.08,`Simulation de ${sx} unités…`);
+      const t=performance.now();
+      for(let k=0;k<BENCH.PAS_SIM;k++) update(SIM_DT);
+      const d=(performance.now()-t)/BENCH.PAS_SIM;
+      res.sim=(res.sim==null)?d:Math.min(res.sim,d);
+      await benchSouffler();
+    }
+
+    // ── 3. Rendu ──
+    camCenterOn(tc.x,tc.y);
+    for(let k=0;k<BENCH.CHAUFFE_RENDU;k++) render();       // chauffe, NON mesurée
+    await benchSouffler();
+    for(let e=0;e<2;e++){
+      benchProgres(0.72+e*0.1,'Rendu…');
+      const t=performance.now();
+      for(let k=0;k<BENCH.IMAGES;k++) render();
+      const d=(performance.now()-t)/BENCH.IMAGES;
+      res.rendu=(res.rendu==null)?d:Math.min(res.rendu,d);
+      await benchSouffler();
+    }
+    benchProgres(0.95,'Calcul du score…');
+    await benchSouffler();
+  } catch(e){
+    _benchEnCours=false;
+    c.innerHTML='<p class="benchsub">Le test n’a pas pu aller au bout ('+(e&&e.message?e.message:'erreur')+').</p>'
+      +'<button class="bigbtn" onclick="ouvrirBenchmark()">Réessayer</button>';
+    return;
+  } finally {
+    // Remise en état : le banc a écrasé G, la carte et les sprites. On rend
+    // l'écran-titre exactement comme on l'a trouvé, sinon « Commencer la
+    // partie » repartirait sur la carte du banc.
+    selectedMode=sauve.mode; selectedCarte=sauve.carte; pickTaille(sauve.taille);
+    selectedCiv=sauve.civ; selectedDifficulty=sauve.diff; grainePartie=sauve.graine;
+    TILE=sauve.tile;
+    G.running=false; G.units.length=0; G.buildings.length=0;
+  }
+  _benchEnCours=false;
+  afficherResultatBenchmark(res);
+}
+window.lancerBenchmark=lancerBenchmark;
+
+// Score : rapport au temps de référence, borné, puis moyenne pondérée.
+// Plus haut = mieux. Le plafond de 3 évite qu'un poste très rapide (un atlas
+// mis en cache par le navigateur, par exemple) n'écrase les deux autres.
+function benchScore(res){
+  const part=(ref,vu)=>Math.max(0.05,Math.min(3,ref/Math.max(0.0001,vu)));
+  const a=part(BENCH.REF.atlas,res.atlas), s=part(BENCH.REF.sim,res.sim), r=part(BENCH.REF.rendu,res.rendu);
+  const g=a*BENCH.POIDS.atlas+s*BENCH.POIDS.sim+r*BENCH.POIDS.rendu;
+  return {points:Math.round(g*1000), a:Math.round(a*1000), s:Math.round(s*1000), r:Math.round(r*1000)};
+}
+
+function afficherResultatBenchmark(res){
+  const sc=benchScore(res);
+  const palier=BENCH_PALIERS.find(p=>sc.points>=p.min)||BENCH_PALIERS[BENCH_PALIERS.length-1];
+  // Images par seconde ESTIMÉES : une image paie un rendu, un demi pas de
+  // simulation (30 pas/s pour 60 images/s) ET le surcoût du navigateur, qui
+  // domine sur une machine rapide. Plafonné à 240 : au-delà c'est l'écran qui
+  // décide, plus le jeu — annoncer « 622 images/s » serait une promesse que
+  // le moniteur ne tiendra pas.
+  const fps=Math.min(240,Math.round(1000/Math.max(0.01,res.rendu+res.sim/2+BENCH.SURCOUT_IMAGE)));
+  const nav=navigator.hardwareConcurrency?navigator.hardwareConcurrency+' cœurs':'cœurs inconnus';
+  const mem=navigator.deviceMemory?' · '+navigator.deviceMemory+' Go':'';
+  const ligne=(nom,val,pts,det)=>`<div class="benchrow"><span class="bn">${nom}</span>`
+    +`<span class="bv">${val}</span><span class="bp">${pts}</span></div>`
+    +`<div class="benchdet">${det}</div>`;
+  document.getElementById('benchcorps').innerHTML=
+    `<div class="benchscore"><div class="bsico">${palier.ico}</div>`
+    +`<div class="bspts">${sc.points}</div><div class="bslbl">points</div>`
+    +`<div class="bsrang">${palier.nom}</div></div>`
+    +`<p class="benchsub">${palier.txt}</p>`
+    +`<div class="benchtable">`
+    +ligne('🎨 Sprites',Math.round(res.atlas)+' ms',sc.a,'Reconstruction complète de l’atlas — ce qu’on paie à chaque changement de zoom.')
+    +ligne('⚙️ Simulation',res.sim.toFixed(2)+' ms',sc.s,`Un pas de jeu avec ${BENCH.UNITES} unités en mouvement (déplacement, ciblage, séparation).`)
+    +ligne('🖼️ Rendu',res.rendu.toFixed(2)+' ms',sc.r,'Une image complète : sol, bâtiments, unités, brouillard.')
+    +`</div>`
+    +`<p class="benchsub">≈ <strong>${fps} images/s</strong> estimées en pleine bataille.<br>`
+    +`<span style="color:#8a7a5a;font-size:10.5px;">1000 points = machine de référence. ${nav}${mem} · écran ${Math.round(window.innerWidth)}×${Math.round(window.innerHeight)} @${(window.devicePixelRatio||1).toFixed(2)}×</span></p>`
+    +`<button class="bigbtn" onclick="lancerBenchmark()">↻ Refaire le test</button>`;
+}
+
 // ── PREVENT SCROLL ────────────────────────────────────────
 // Empêche le rebond/pinch-zoom du navigateur PENDANT UNE PARTIE (glisser sur
 // le <canvas> pour déplacer la caméra, pincer pour zoomer — canvas.addEven-

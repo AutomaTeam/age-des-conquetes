@@ -793,6 +793,60 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   padding:20px 14px;overflow-y:auto;touch-action:pan-y;
   padding-top:calc(env(safe-area-inset-top,0px) + 20px);
 }
+
+/* ── BANC D'ESSAI ── (même gabarit que les autres panneaux plein écran) */
+#benchpanel {
+  position:fixed;inset:0;z-index:550;display:none;
+  background:rgba(0,0,0,.92);
+  flex-direction:column;align-items:center;gap:10px;
+  padding:20px 14px;overflow-y:auto;touch-action:pan-y;
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);
+}
+#benchpanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px; }
+.benchsub {
+  font-family:'Crimson Text',serif;font-size:12px;color:#9a8a6a;
+  text-align:center;max-width:360px;line-height:1.5;
+}
+/* Jauge de progression : le banc rend la main entre deux phases (voir
+   benchSouffler) — sans ça elle ne se peindrait jamais. */
+.benchjauge {
+  width:100%;max-width:340px;height:8px;border-radius:5px;overflow:hidden;
+  background:rgba(0,0,0,.6);box-shadow:inset 0 1px 2px rgba(0,0,0,.7),0 0 0 1px rgba(212,160,23,.25);
+}
+#benchbarre {
+  height:100%;width:0%;border-radius:5px;transition:width .25s ease;
+  background:linear-gradient(180deg,#f0c040,#d4a017 60%,#8b6914);
+}
+/* Le score, présenté comme un blason plutôt qu'une ligne de tableau : c'est
+   le seul chiffre que le joueur doit retenir. */
+.benchscore {
+  display:flex;flex-direction:column;align-items:center;gap:1px;
+  padding:14px 30px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(58,32,4,.9),rgba(20,12,0,.9));
+  border:2px solid var(--gold-d);box-shadow:0 0 26px -8px var(--gold);
+}
+.benchscore .bsico { font-size:34px;line-height:1; }
+.benchscore .bspts { font-family:'Cinzel',serif;font-size:40px;font-weight:700;color:var(--gold-l);line-height:1.1; }
+.benchscore .bslbl { font-family:'Crimson Text',serif;font-size:11px;color:#8a7a5a;letter-spacing:.22em;text-transform:uppercase; }
+.benchscore .bsrang { font-family:'Cinzel',serif;font-size:15px;color:var(--parch);margin-top:5px; }
+.benchtable { width:100%;max-width:360px;display:flex;flex-direction:column;gap:2px; }
+.benchrow {
+  display:flex;align-items:center;gap:8px;padding:6px 10px;
+  background:rgba(20,12,0,.7);border:1px solid rgba(212,160,23,.22);
+  border-radius:8px 8px 0 0;
+}
+.benchrow .bn { font-family:'Cinzel',serif;font-size:12px;color:var(--parch2);flex:1; }
+.benchrow .bv { font-family:'Crimson Text',serif;font-size:12px;color:#9a8a6a; }
+.benchrow .bp {
+  font-family:'Cinzel',serif;font-size:13px;font-weight:700;color:var(--gold-l);
+  min-width:46px;text-align:right;
+}
+.benchdet {
+  font-family:'Crimson Text',serif;font-size:10.5px;color:#7a6a4a;line-height:1.45;
+  padding:0 10px 7px;background:rgba(20,12,0,.45);
+  border:1px solid rgba(212,160,23,.12);border-top:none;border-radius:0 0 8px 8px;
+  margin-bottom:5px;
+}
 #classementpanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px; }
 .classec {
   width:100%;max-width:360px;font-family:'Cinzel',serif;font-size:13px;
@@ -1268,6 +1322,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
       <button class="utilbtn" onclick="openAch()" title="Succès"><span class="uico">🏆</span><span class="ulabel">Succès <span id="achcount"></span></span></button>
       <button class="utilbtn" onclick="openClassement()" title="Classement"><span class="uico">🥇</span><span class="ulabel">Classement</span></button>
       <button class="utilbtn" onclick="openControls()" title="Contrôles"><span class="uico">🎮</span><span class="ulabel">Contrôles</span></button>
+      <button class="utilbtn" onclick="ouvrirBenchmark()" title="Tester les performances de votre machine"><span class="uico">📊</span><span class="ulabel">Benchmark</span></button>
       <button class="utilbtn" id="gauthbtn-title" onclick="googleAuthClick()" title="Connexion Google" style="display:none;"><span class="uico">☁️</span><span class="ulabel">Google</span></button>
     </div>
   </div>
@@ -1344,6 +1399,13 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   <h2>🎮 Contrôles</h2>
   <div id="ctrllist" style="display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;"></div>
   <button class="rclose" onclick="closeControls()">Fermer</button>
+</div>
+
+<!-- ── PANNEAU BANC D'ESSAI ── (même gabarit que #classementpanel) -->
+<div id="benchpanel">
+  <h2>📊 Banc d'essai</h2>
+  <div id="benchcorps" style="display:flex;flex-direction:column;gap:10px;width:100%;align-items:center;max-width:400px;"></div>
+  <button class="rclose" onclick="fermerBenchmark()">Fermer</button>
 </div>
 
 <!-- ── PANNEAU DU CLASSEMENT ── -->

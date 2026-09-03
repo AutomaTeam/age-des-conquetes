@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**109 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
+**110 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -43,7 +43,13 @@ qui **ne se voit pas** :
   `autoRepair` en étaient. Et la **RECONNEXION** : un client qui recharge sa
   page en pleine partie repart d'un SALUT + SNAP au milieu du jeu, jamais
   testé jusque-là.
-- **`reseau`** — la sérialisation hôte → client. Une divergence n'apparaît
+- **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
+  décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
+  descripteur bien formé sauf un champ) ne doit pas faire tomber la page du
+  destinataire en pleine partie, et un message sain doit ensuite le remettre
+  d'aplomb — un durcissement qui laisse l'état corrompu ne vaut pas mieux
+  qu'un plantage franc. Les lots étaient lus en `(m.x||[])` : cela couvre
+  l'absence et le null, pas un `{}` ni une chaîne. Une divergence n'apparaît
   qu'en partie en ligne, chez l'invité, et souvent plusieurs minutes après
   la cause. C'est le groupe le plus rentable : il a trouvé dès sa première
   exécution que `appliquerSnap` remettait les ~1900 cases de lac à 0 (l'eau

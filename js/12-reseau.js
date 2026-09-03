@@ -217,6 +217,9 @@ function factionsPour(dest){
     !dest||f.id===dest.id||(eq!=null&&f.equipe===eq)));
 }
 function appliquerFaction(d){
+  // Un descripteur sans identifiant ne designe rien : l'appliquer creerait une
+  // faction fantome sous la cle `undefined`.
+  if(!d||d.i==null) return null;
   let f=G.factions[d.i];
   if(!f){
     f=mkFaction(d.i,{genre:d.g,equipe:d.e,teinte:d.t,nom:d.n,hostileATous:!!d.ht,civ:d.cv});
@@ -238,7 +241,11 @@ function appliquerFaction(d){
   // allie en rouge, le prenait pour cible, et le comptait encore parmi les
   // rivaux a abattre pour gagner.
   if(d.e!=null) f.equipe=d.e;
-  f.age=d.a;
+  // L'age indexe AGE_BONUS, et pas seulement ici : updatePopCap lit
+  // `AGE_BONUS[f.age].popCap` pour CHAQUE faction a chaque image. Un age
+  // absent ou fantaisiste ne casserait donc pas le decodage — il casserait la
+  // boucle de jeu du destinataire, une image plus tard, loin d'ici.
+  if(AGE_BONUS[d.a]) f.age=d.a;
   f.pop=d.p; f.maxPop=d.mp; f.vaincu=!!d.v; f.nom=d.n; f.teinte=d.t;
   if(d.cv) f.civ=d.cv;
   f.merveilleAchevee=!!d.mv;
@@ -468,15 +475,39 @@ function construireDelta(){
 }
 
 // ── CLIENT : application ───────────────────────────────────────
+// Tout ce qui arrive par le reseau est une hypothese, pas une donnee. Les
+// lots du protocole etaient lus en `(m.x||[])` : cela couvre l'absence et le
+// null, mais PAS un `{}` ou une chaine, qui passent la garde et font lever
+// l'iteration -- un seul message tordu suffisait alors a faire tomber la
+// page du destinataire en pleine partie. `liste()` ramene tout ce qui n'est
+// pas un tableau a un lot vide : le message est ignore, la partie continue.
+// Meme chose pour les ELEMENTS d'un lot (`e[0]` sur un nombre ne leve pas,
+// mais une destructuration `[id,amt]` sur un nombre, si).
+const liste=v=>Array.isArray(v)?v:[];
+const paires=v=>liste(v).filter(Array.isArray);
+// mkUnit/mkBuilding indexent UDEF/BDEF par le type : un type inconnu ne rend
+// pas `undefined`, il LEVE. On refuse donc le descripteur au lieu de laisser
+// le decodage entier tomber pour une entree.
+// `x`/`y` d'un batiment sont des INDICES DE TUILE, et placeBuilding les
+// utilise pour ecrire dans G.bmap : hors grille, ce n'est pas une valeur
+// aberrante qu'on obtient, c'est `G.bmap[NaN][...]` qui leve.
+const uniteValide=d=>!!d&&typeof d==='object'&&!!UDEF[d.t]
+                   &&Number.isFinite(d.x)&&Number.isFinite(d.y);
+const batValide  =d=>!!d&&typeof d==='object'&&!!BDEF[d.t]
+                   &&Number.isInteger(d.x)&&Number.isInteger(d.y)
+                   &&d.x>=0&&d.y>=0&&d.x<COLS&&d.y<ROWS;
+
 function appliquerSnap(m){
-  G.gameTime=m.gt;
-  for(const f of m.fac) appliquerFaction(f);
-  for(const [id,amt] of (m.nodes||[])){ const nd=G.nodes.find(x=>x.id===id); if(nd) nd.amt=amt; }
-  for(const [id,owner] of (m.relics||[])){ const r=G.relics&&G.relics.find(x=>x.id===id); if(r) r.bankedBy=owner; }
-  if(m.wildlife){
-    const vus=new Set(m.wildlife.map(w=>w[0]));
+  if(!m||typeof m!=='object') return;
+  if(typeof m.gt==='number') G.gameTime=m.gt;
+  for(const f of liste(m.fac)) if(f&&typeof f==='object') appliquerFaction(f);
+  for(const [id,amt] of paires(m.nodes)){ const nd=G.nodes.find(x=>x.id===id); if(nd) nd.amt=amt; }
+  for(const [id,owner] of paires(m.relics)){ const r=G.relics&&G.relics.find(x=>x.id===id); if(r) r.bankedBy=owner; }
+  if(Array.isArray(m.wildlife)){
+    const faune=paires(m.wildlife);
+    const vus=new Set(faune.map(w=>w[0]));
     G.wildlife=(G.wildlife||[]).filter(w=>vus.has(w.id)); // absent du SNAP = déjà abattu
-    for(const [id,hp] of m.wildlife){ const w=G.wildlife.find(x=>x.id===id); if(w) w.hp=hp; }
+    for(const [id,hp] of faune){ const w=G.wildlife.find(x=>x.id===id); if(w) w.hp=hp; }
   }
   // Les batiments repassent par placeBuilding : la grille de blocage doit
   // refleter exactement celle de l'hote, sinon le pathfinding local diverge.
@@ -498,8 +529,8 @@ function appliquerSnap(m){
     const v=G.bmap[y][x];
     if(v===1||v===3||v===9) G.bmap[y][x]=(G.tiles[y][x]===T_WATER)?3:0;
   }
-  for(const bd of m.bat) placeBuilding(deserialiserBatiment(bd)); // placeBuilding pousse lui-meme
-  G.units=m.uni.map(deserialiserUnite);
+  for(const bd of liste(m.bat)) if(batValide(bd)) placeBuilding(deserialiserBatiment(bd)); // placeBuilding pousse lui-meme
+  G.units=liste(m.uni).filter(uniteValide).map(deserialiserUnite);
   G.wave=m.wave; G.waveTimer=m.waveTimer; G.waveActive=m.waveActive;
   G.nid=Math.max(...[...G.units,...G.buildings,...G.nodes].map(e=>e.id||0),0)+1;
   rebuildIndex();
@@ -509,21 +540,22 @@ function appliquerSnap(m){
 }
 
 function appliquerDelta(m){
-  if(m.gt!=null) G.gameTime=m.gt;
-  if(m.wave!=null) G.wave=m.wave;
-  if(m.fac) for(const f of m.fac) appliquerFaction(f);
+  if(!m||typeof m!=='object') return;
+  if(typeof m.gt==='number') G.gameTime=m.gt;
+  if(typeof m.wave==='number') G.wave=m.wave;
+  for(const f of liste(m.fac)) if(f&&typeof f==='object') appliquerFaction(f);
 
   // Resolution par INDEX plutot que par balayage : un `find` sur les ~460
   // gisements pour chaque entree du delta, dix fois par seconde, finissait
   // par couter plus cher que tout le reste du decodage reuni.
-  for(const nd of (m.n||[])){ const x=nodeById(nd[0]); if(x) x.amt=nd[1]; }
-  if(m.rl&&m.rl.length&&G.relics)
-    for(const rl of m.rl){ const x=G.relics.find(z=>z.id===rl[0]); if(x&&!x.bankedBy) x.bankedBy=rl[1]; }
-  if((m.w&&m.w.length)||(m.rmw&&m.rmw.length)){
+  for(const nd of paires(m.n)){ const x=nodeById(nd[0]); if(x) x.amt=nd[1]; }
+  if(G.relics)
+    for(const rl of paires(m.rl)){ const x=G.relics.find(z=>z.id===rl[0]); if(x&&!x.bankedBy) x.bankedBy=rl[1]; }
+  if(paires(m.w).length||liste(m.rmw).length){
     const iw=new Map(); for(const w of (G.wildlife||[])) iw.set(w.id,w);
-    for(const wd of (m.w||[])){ const x=iw.get(wd[0]); if(x) x.hp=wd[1]; }
-    if(m.rmw&&m.rmw.length){
-      const abattus=new Set(m.rmw);              // un seul balayage pour tout le lot
+    for(const wd of paires(m.w)){ const x=iw.get(wd[0]); if(x) x.hp=wd[1]; }
+    if(liste(m.rmw).length){
+      const abattus=new Set(liste(m.rmw));       // un seul balayage pour tout le lot
       G.wildlife=(G.wildlife||[]).filter(z=>!abattus.has(z.id));
     }
   }
@@ -531,17 +563,17 @@ function appliquerDelta(m){
   // bldById/unitById plutot que .some() : l'index est reconstruit a la fin
   // de chaque delta, et l'hote ne peut pas annoncer deux fois la meme entite
   // dans un meme lot (il les tire d'un Set).
-  for(const bd of (m.newB||[])){
-    if(bldById(bd.i)) continue;
+  for(const bd of liste(m.newB)){
+    if(!batValide(bd)||bldById(bd.i)) continue;
     placeBuilding(deserialiserBatiment(bd));
   }
-  for(const ud of (m.newU||[])){
-    if(unitById(ud.i)) continue;
+  for(const ud of liste(m.newU)){
+    if(!uniteValide(ud)||unitById(ud.i)) continue;
     G.units.push(deserialiserUnite(ud));
   }
   rebuildIndex();
 
-  for(const e of (m.u||[])){
+  for(const e of paires(m.u)){
     const u=unitById(e[0]); if(!u) continue;
     const masque=e[1]; let k=2;
     if(masque&M_X)     u._netX=e[k++];
@@ -554,7 +586,7 @@ function appliquerDelta(m){
     if(masque&M_ATK)   u.atk=e[k++];
     if(masque&M_XP)    { u.xp=e[k++]; u.rank=e[k++]; }
   }
-  for(const e of (m.b||[])){
+  for(const e of paires(m.b)){
     const b=bldById(e[0]); if(!b) continue;
     const avHp=b.hp, avOuvert=b.open;
     b.hp=e[1]; b.progress=e[2]; b.trainQ=e[3]; b.foodLeft=e[4];
@@ -582,9 +614,9 @@ function appliquerDelta(m){
   // Un seul balayage du tableau pour TOUT le lot : reconstruire G.units a
   // chaque identifiant retire coutait autant de copies du tableau qu'il y
   // avait de morts — precisement au moment ou le lot est le plus gros.
-  if((m.rm||[]).length){
+  if(liste(m.rm).length){
     const morts=new Set();
-    for(const id of m.rm){
+    for(const id of liste(m.rm)){
       const u=unitById(id); if(!u) continue;
       morts.add(id);
       G.deathfx.push({type:u.type,x:u.x,y:u.y,dir:u.dir||0,life:1,teinte:(fac(u)||{}).teinte||'rouge',civ:civKeyOf(u.owner)});
@@ -595,9 +627,9 @@ function appliquerDelta(m){
       G.sel=G.sel.filter(z=>!morts.has(z));
     }
   }
-  if((m.rmb||[]).length){
+  if(liste(m.rmb).length){
     const rases=new Set();
-    for(const id of m.rmb){
+    for(const id of liste(m.rmb)){
       const b=bldById(id); if(!b) continue;
       rases.add(id);
       spawnParts(b.x,b.y,'#e74c3c',14);
@@ -608,11 +640,11 @@ function appliquerDelta(m){
       G.sel=G.sel.filter(z=>!rases.has(z));
     }
   }
-  if((m.rm||[]).length||(m.rmb||[]).length){ rebuildIndex(); updatePopCap(); }
+  if(liste(m.rm).length||liste(m.rmb).length){ rebuildIndex(); updatePopCap(); }
 
   // Projectiles : etat complet, ils sont trop peu nombreux pour un differentiel
-  if(m.p){
-    G.projs=m.p.map(q=>({id:G.nid++,x:q[0],y:q[1],tx:q[2],ty:q[3],owner:q[4]||null,
+  if(m.p!=null){
+    G.projs=paires(m.p).map(q=>({id:G.nid++,x:q[0],y:q[1],tx:q[2],ty:q[3],owner:q[4]||null,
                          targetId:null,atk:0,spd:8*BASE_TILE,life:1,d0:1}));
   }
 }

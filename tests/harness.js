@@ -29,7 +29,7 @@ const EXPORTS = [
   'G', 'update', 'SIM_DT', 'startGame', 'initState', 'genMap', 'setGraine',
   'pickMode', 'pickDifficulty', 'mkUnit', 'mkBuilding', 'placeBuilding',
   'rebuildGrid', 'rebuildIndex', 'unitById', 'bldById', 'nodeById',
-  'findPath', 'tileBlocked', 'wallAt', 'losClear',
+  'findPath', 'tileBlocked', 'wallAt', 'losClear', 'nearestBy', 'forNearby',
   'construireSnap', 'appliquerSnap', 'construireDelta', 'appliquerDelta',
   'buildSaveData', 'migrerSauvegarde', 'RESEAU', 'PROTO_VERSION',
   'UT', 'BT', 'RT', 'UDEF', 'BDEF', 'FAC', 'CIVS', 'AGES', 'RDEF',

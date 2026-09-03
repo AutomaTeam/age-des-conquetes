@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**103 tests, 15 groupes, ~30 s.** Les groupes `ia` et `delta` comptent pour
+**109 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -36,6 +36,13 @@ qui **ne se voit pas** :
   `atk` à la montée d'âge, `xp`/`rank`/`atk` à la promotion de vétérance),
   et `autoTrain`/`rally` côté bâtiment. Plus le filtrage par brouillard (une
   fuite d'information = triche) et le différentiel `d.fac` (invariant n°2).
+  Depuis le 2026-09-03, l'invariant n°6 vaut aussi pour les FACTIONS —
+  `appliquerFaction` est le seul endroit du protocole où un champ peut n'être
+  posé qu'à la CRÉATION : `equipe` (que la diplomatie change en cours de
+  partie, si bien que le client voyait son propre allié en rouge) et
+  `autoRepair` en étaient. Et la **RECONNEXION** : un client qui recharge sa
+  page en pleine partie repart d'un SALUT + SNAP au milieu du jeu, jamais
+  testé jusque-là.
 - **`reseau`** — la sérialisation hôte → client. Une divergence n'apparaît
   qu'en partie en ligne, chez l'invité, et souvent plusieurs minutes après
   la cause. C'est le groupe le plus rentable : il a trouvé dès sa première
@@ -46,7 +53,14 @@ qui **ne se voit pas** :
   poissons ne voyagent PAS en position sur le réseau : le client les
   régénère depuis la graine partagée. Si `genMap` cesse d'être déterministe,
   le multijoueur casse en silence.
-- **`sauvegarde`** — `migrerSauvegarde` doit charger les formats anciens.
+- **`sauvegarde`** — `migrerSauvegarde` doit charger les formats anciens, et
+  un chargement doit REPARTIR sans le drapeau de defaite : `G.gameOver` n'est
+  pas un champ de sauvegarde et ne repartait pas a faux, donc perdre puis
+  recharger gelait toutes les fins de partie pour le restant de la session.
+  Couvre aussi la chaine **v6 -> v7 -> v8**, le seul palier dont l'echec est
+  SILENCIEUX : les coordonnees v6 etaient des pixels au zoom d'ecriture, pas
+  des unites `BASE_TILE` — rate d'un facteur 3, tout reste coherent a l'oeil,
+  simplement chaque entite est ailleurs.
 - **`chemin`** — contournement d'obstacle et ligne de vue.
 - **`combat`** — le triangle de contres (Piquier > Chevalier > Archer >
   Piquier) et les invariants de `degatsContre`.
@@ -77,13 +91,17 @@ qui **ne se voit pas** :
   passe bien par un rassemblement.
 - **`charge`** — des invariants de COÛT, pas de résultat. Ce sont les seuls
   défauts qui ne se voient pas du tout en petite partie et qui rendent une
-  grosse partie injouable. Deux pour l'instant : le BUDGET de balayage du
+  grosse partie injouable. Le BUDGET de balayage du
   voisinage (le reciblage est censé tourner 4×/s et par unité ; une garde de
   point d'intérêt sans cible, ou une tour qui ne voit rien, rebalayaient à
-  chaque image), et la passe de séparation qui doit survivre à une
+  chaque image) ; l'ORDRE des tests dans `nearestBy`, où la distance doit
+  écarter un candidat avant que le prédicat ne remonte à sa faction — le
+  balayage porte sur un CARRÉ de cellules, dont les coins sont hors du rayon
+  par construction ; le RECUL d'une recherche de chemin qui échoue ; et la
+  passe de séparation qui doit survivre à une
   population qui grossit — si sa liste de cellules survit à une réallocation
   du tableau de têtes, la boucle de chaînage ne se termine plus et l'onglet
-  se fige. Une régression sur ce second point BLOQUE ce fichier au lieu de
+  se fige. Une régression sur ce dernier point BLOQUE ce fichier au lieu de
   l'échouer : c'est le symptôme lui-même, et il vaut mieux ça que rien.
 
 Le **rendu n'est pas testé** et ne doit pas l'être ici : les bouchons ne

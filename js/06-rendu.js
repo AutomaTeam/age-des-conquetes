@@ -29,7 +29,7 @@ function render(){
     ctx.translate((Math.random()-0.5)*G.shake.mag,(Math.random()-0.5)*G.shake.mag);
   }
 
-  drawMap(); drawNodes(); drawRelics(); drawWildlife(); drawBuildings(); drawCaravans(); drawDeathFx(); drawHeroAuras(); drawUnits();
+  drawMap(); drawNodes(); drawRelics(); drawWildlife(); drawBuildings(); drawCaravans(); drawDeathFx(); drawHeroAuras(); drawUniqueUnitAuras(); drawUnits();
   drawHoverRing();
   drawProjs(); drawParts(); drawFTexts(); drawSelRings();
   if(G.mode==='build'&&(G.ghost||(G.wallLine&&G.wallLine.length))) drawGhost();
@@ -932,6 +932,42 @@ function drawHeroAuras(){
     ctx.setLineDash([]);
     ctx.strokeStyle=`rgba(${col},.12)`; ctx.lineWidth=6;
     ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── AURA DE RECONNAISSANCE DES UNITÉS UNIQUES DE CIVILISATION ──────────
+// Le Cataphractaire, le Cavalier-Archer et l'Arbalétrier à Répétition (une
+// seule unité par camp, jamais reformée une fois perdue — voir CIVS.unique)
+// se noyaient dans le reste de l'armée : rien à l'écran ne les distinguait
+// d'une unité commune de silhouette proche (cavalerie lourde, archer monté,
+// arbalétrier). Un halo doré pulsant au sol, sous leurs pieds, les rend
+// repérables d'un coup d'œil au milieu d'un gros combat — purement
+// cosmétique, à la différence de l'aura de commandement du Héros ci-dessus
+// qui, elle, matérialise un rayon de jeu réel (voir HERO_AURA_RADIUS).
+// Dérivé de CIVS plutôt que recopié en dur : une civ qui changerait
+// d'unique un jour n'aurait rien d'autre à toucher ici.
+const CIV_UNIQUE_TYPES=new Set(Object.values(CIVS).map(c=>c.unique).filter(Boolean));
+function drawUniqueUnitAuras(){
+  for(const u of G.units){
+    if(!CIV_UNIQUE_TYPES.has(u.type)||u.hp<=0||u.state==='garrison') continue;
+    const allie=!estHostile(u,G.me);
+    if(!allie&&G.fog.length){ // comme le Héros : une unité unique adverse non vue ne doit rien trahir
+      const fx=(u.x/BASE_TILE)|0, fy=(u.y/BASE_TILE)|0;
+      if(G.fog[fy]&&G.fog[fy][fx]!==2) continue;
+    }
+    const{x:sx,y:sy}=ws(u.x,u.y);
+    const r=BASE_TILE*0.62*(TILE/BASE_TILE);
+    if(sx+r<0||sx-r>W||sy+r<54||sy-r>H) continue;
+    const pulse=0.6+0.25*Math.sin(G.gameTime*3+u.id); // vivant sans clignoter, déphasé par unité
+    ctx.save();
+    const grad=ctx.createRadialGradient(sx,sy,0,sx,sy,r);
+    grad.addColorStop(0,`rgba(255,210,90,${0.5*pulse})`);
+    grad.addColorStop(1,'rgba(255,210,90,0)');
+    ctx.fillStyle=grad;
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=`rgba(255,228,150,${0.65*pulse})`; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.arc(sx,sy,r*0.82,0,Math.PI*2); ctx.stroke();
     ctx.restore();
   }
 }

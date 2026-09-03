@@ -1139,6 +1139,299 @@ groupe('tailles', () => {
 // vérifie pas est exploitable : l'interface, elle, ne verrouille que
 // l'affichage. Ces tests visent donc les REFUS, pas les cas nominaux.
 groupe('ordres', () => {
+  // ── Les douze ordres que rien n'eprouvait ────────────────
+  // Le groupe vise les REFUS : c'est ce que l'interface ne verrouille pas.
+  // Ces douze-la n'avaient ni test de refus ni test nominal, alors que chacun
+  // est une porte que le reseau ouvre directement sur l'etat de jeu.
+
+  // Un theatre commun : une poignee d'unites a soi, une a l'adversaire.
+  function scene(opts) {
+    const j = partie(charger(), Object.assign({ graine: 4242, mode: 'conquest', pas: 5 }, opts || {}));
+    riche(j, j.G.me);
+    const B = j.BASE_TILE;
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const rival = Object.values(j.G.factions).find((f) => f.genre === 'ia');
+    const poser = (type, dtx, dty, owner) => {
+      const u = j.mkUnit(type, (tc.tx + dtx) * B, (tc.ty + dty) * B, owner != null ? owner : j.G.me);
+      j.G.units.push(u); j.rebuildIndex(); return u;
+    };
+    return { j, B, tc, rival, poser };
+  }
+
+  test('ATK : on n attaque ni les siens, ni un mort, ni avec les unites d un autre', () => {
+    const { j, poser, rival } = scene();
+    const mien = poser(j.UT.MIL, 4, 4);
+    const allie = poser(j.UT.MIL, 5, 4);
+    const ennemi = poser(j.UT.MIL, 8, 8, rival.id);
+
+    egal(ordreDe(j, j.G.me, 'ATK', { ids: [mien.id], cible: allie.id }).ok, false,
+      'attaquer sa propre unite doit etre refuse');
+    ennemi.hp = 0;
+    egal(ordreDe(j, j.G.me, 'ATK', { ids: [mien.id], cible: ennemi.id }).ok, false,
+      'attaquer un cadavre doit etre refuse');
+    ennemi.hp = ennemi.maxHp;
+    // Ordre forge : le client commande une unite qui ne lui appartient pas.
+    egal(ordreDe(j, j.G.me, 'ATK', { ids: [ennemi.id], cible: mien.id }).ok, false,
+      'commander l unite d un autre camp doit etre refuse');
+    // Et le cas nominal.
+    const r = ordreDe(j, j.G.me, 'ATK', { ids: [mien.id], cible: ennemi.id });
+    ok(r.ok, 'attaquer un ennemi vivant : ' + JSON.stringify(r));
+    egal(mien.state, 'attack', 'etat de l assaillant');
+    egal(mien.target, ennemi.id, 'cible de l assaillant');
+  });
+
+  test('ATK sur un BATIMENT passe par genreCible, et respecte le camp', () => {
+    const { j, poser, rival, tc } = scene();
+    const mien = poser(j.UT.MIL, 4, 4);
+    const p = caseLibre(j, tc.tx + 14, tc.ty + 14, 2, 2);
+    const bEnnemi = batir(j, j.BT.HOUSE, p.tx, p.ty, rival.id);
+    // Sans genreCible, l'identifiant est cherche parmi les UNITES : rien.
+    egal(ordreDe(j, j.G.me, 'ATK', { ids: [mien.id], cible: bEnnemi.id }).ok, false,
+      'un batiment vise sans genreCible ne doit pas etre trouve');
+    ok(ordreDe(j, j.G.me, 'ATK', { ids: [mien.id], cible: bEnnemi.id, genreCible: 'b' }).ok,
+      'batiment ennemi vise correctement');
+    const mienB = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    egal(ordreDe(j, j.G.me, 'ATK', { ids: [mien.id], cible: mienB.id, genreCible: 'b' }).ok, false,
+      'on ne doit pas pouvoir viser son propre batiment');
+  });
+
+  test('AMOVE et POSTURE sont reserves aux MILITAIRES', () => {
+    const { j, poser } = scene();
+    const vil = poser(j.UT.VIL, 4, 4);
+    const sold = poser(j.UT.MIL, 5, 4);
+
+    egal(ordreDe(j, j.G.me, 'AMOVE', { ids: [vil.id], x: 100, y: 100 }).ok, false,
+      'un villageois ne fait pas d attaque-deplacement');
+    egal(ordreDe(j, j.G.me, 'POSTURE', { ids: [vil.id], posture: 'agg' }).ok, false,
+      'un villageois n a pas de posture');
+
+    const r = ordreDe(j, j.G.me, 'AMOVE', { ids: [vil.id, sold.id], x: 100, y: 100 });
+    egal(r.n, 1, 'seul le militaire doit partir en attaque-deplacement');
+    egal(sold.state, 'amove', 'etat du soldat');
+    ok(sold.amove && sold.amove.x != null, 'le point d attaque-deplacement doit etre memorise');
+
+    // Posture forgee : l'interface n'en propose que trois.
+    egal(ordreDe(j, j.G.me, 'POSTURE', { ids: [sold.id], posture: 'invincible' }).ok, false,
+      'une posture inventee doit etre refusee');
+    egal(ordreDe(j, j.G.me, 'POSTURE', { ids: [sold.id], posture: null }).ok, false,
+      'une posture absente doit etre refusee');
+    for (const st of ['agg', 'def', 'hold']) {
+      ok(ordreDe(j, j.G.me, 'POSTURE', { ids: [sold.id], posture: st }).ok, 'posture ' + st + ' refusee');
+      egal(sold.stance, st, 'posture appliquee');
+    }
+  });
+
+  test('STOP relache le poste au lieu de laisser un fantome derriere', () => {
+    const { j, poser } = scene();
+    const vil = poser(j.UT.VIL, 4, 4);
+    // Sur SON gisement : `gatherers` n'est garni qu'a l'arrivee (doGather),
+    // mais `homeNode` est pose des l'ordre — c'est lui que quitterPoste doit
+    // relacher, et lui qui laisse un fantome quand on l'oublie.
+    const nd = j.G.nodes.find((n) => n.amt > 0);
+    ok(ordreDe(j, j.G.me, 'RECOLTE', { ids: [vil.id], nodeId: nd.id }).ok, 'mise au travail');
+    egal(vil.homeNode, nd.id, 'le gisement doit etre memorise par l ordre');
+    // On simule l'arrivee : c'est la que le villageois s'inscrit reellement.
+    nd.gatherers.push(vil.id);
+
+    ok(ordreDe(j, j.G.me, 'STOP', { ids: [vil.id] }).ok, 'STOP refuse');
+    egal(vil.state, 'idle', 'etat apres STOP');
+    egal(vil.homeNode, null, 'STOP doit relacher le gisement memorise');
+    ok(!nd.gatherers.includes(vil.id),
+      'STOP doit DESINSCRIRE du gisement : un fantome y bloquerait une place pour toujours');
+    ok(!vil.target && !vil.amove, 'STOP doit aussi effacer cible et attaque-deplacement');
+    egal(ordreDe(j, j.G.me, 'STOP', { ids: [] }).ok, false, 'STOP sans unite doit etre refuse');
+
+    // Et il ne stoppe que les SIENNES.
+    const rival = Object.values(j.G.factions).find((f) => f.genre === 'ia');
+    const sien = poser(j.UT.MIL, 8, 8, rival.id);
+    sien.state = 'attack';
+    egal(ordreDe(j, j.G.me, 'STOP', { ids: [sien.id] }).ok, false,
+      'stopper l unite d un autre camp doit etre refuse');
+    egal(sien.state, 'attack', 'et son etat ne doit pas avoir bouge');
+  });
+
+  test('CHANTIER ne vise qu un chantier, REPARE ne vise qu un blesse', () => {
+    const { j, poser, tc, rival } = scene();
+    const vil = poser(j.UT.VIL, 4, 4);
+    const p = caseLibre(j, tc.tx + 8, tc.ty + 8, 2, 2);
+    const fini = batir(j, j.BT.HOUSE, p.tx, p.ty);
+
+    egal(ordreDe(j, j.G.me, 'CHANTIER', { ids: [vil.id], bId: fini.id }).ok, false,
+      'on n envoie pas batir un batiment DEJA fini');
+    egal(ordreDe(j, j.G.me, 'REPARE', { ids: [vil.id], bId: fini.id }).ok, false,
+      'on ne repare pas un batiment intact');
+
+    fini.hp = fini.maxHp * 0.5;
+    ok(ordreDe(j, j.G.me, 'REPARE', { ids: [vil.id], bId: fini.id }).ok, 'reparer un blesse');
+    egal(vil.state, 'repair', 'etat du reparateur');
+
+    // Chantier en cours : la ou CHANTIER vaut, et REPARE non.
+    fini.constructing = true; fini.progress = 0.3;
+    ok(ordreDe(j, j.G.me, 'CHANTIER', { ids: [vil.id], bId: fini.id }).ok, 'batir un chantier');
+    egal(vil.state, 'build', 'etat du batisseur');
+    egal(ordreDe(j, j.G.me, 'REPARE', { ids: [vil.id], bId: fini.id }).ok, false,
+      'on ne repare pas ce qui n est pas encore bati');
+
+    // Le batiment d un autre camp, jamais.
+    const q = caseLibre(j, tc.tx + 16, tc.ty + 16, 2, 2);
+    const autre = batir(j, j.BT.HOUSE, q.tx, q.ty, rival.id);
+    autre.hp = autre.maxHp * 0.5;
+    egal(ordreDe(j, j.G.me, 'REPARE', { ids: [vil.id], bId: autre.id }).ok, false,
+      'reparer le batiment de l ennemi doit etre refuse');
+    autre.constructing = true;
+    egal(ordreDe(j, j.G.me, 'CHANTIER', { ids: [vil.id], bId: autre.id }).ok, false,
+      'batir le chantier de l ennemi doit etre refuse');
+
+    // Et un soldat ne bricole pas.
+    const sold = poser(j.UT.MIL, 6, 4);
+    fini.constructing = false; fini.hp = fini.maxHp * 0.5;
+    egal(ordreDe(j, j.G.me, 'REPARE', { ids: [sold.id], bId: fini.id }).ok, false,
+      'seul un villageois repare');
+  });
+
+  test('PORTAIL bascule le passage DANS LA GRILLE, pas seulement a l ecran', () => {
+    const { j, tc } = scene();
+    const p = caseLibre(j, tc.tx + 6, tc.ty + 6, 1, 1);
+    const porte = batir(j, j.BT.GATE, p.tx, p.ty);
+    const lu = () => j.G.bmap[porte.ty][porte.tx];
+
+    // Ferme au depart : la case doit bloquer.
+    egal(porte.open, false, 'un portail neuf doit etre ferme');
+    egal(lu(), 3, 'ferme, la case doit etre solide dans bmap');
+
+    const r = ordreDe(j, j.G.me, 'PORTAIL', { bId: porte.id });
+    ok(r.ok && r.open === true, 'ouverture refusee : ' + JSON.stringify(r));
+    egal(lu(), 0, 'ouvert, la case doit devenir franchissable — sinon le pathfinding contourne une porte ouverte');
+    ok(!j.tileBlocked(porte.tx, porte.ty), 'tileBlocked doit suivre la grille');
+
+    ok(ordreDe(j, j.G.me, 'PORTAIL', { bId: porte.id }).open === false, 'refermeture');
+    egal(lu(), 3, 'referme, la case doit rebloquer');
+
+    // Tout autre batiment est refuse — sans ce test, PORTAIL sur un Centre
+    // Ville en aurait perce la grille de blocage.
+    egal(ordreDe(j, j.G.me, 'PORTAIL', { bId: tc.id }).ok, false, 'PORTAIL sur un Centre Ville');
+  });
+
+  test('AMELIORER_TOUR : verrous d age, de prix, de plafond et de cible', () => {
+    const { j, tc } = scene();
+    const p = caseLibre(j, tc.tx + 6, tc.ty + 6, 1, 1);
+    const tour = batir(j, j.BT.TOWER, p.tx, p.ty);
+    const f = j.G.factions[j.G.me];
+    egal(tour.level, 1, 'une tour neuve est de niveau 1');
+
+    f.age = 0;
+    egal(ordreDe(j, j.G.me, 'AMELIORER_TOUR', { bId: tour.id }).raison, 'age',
+      'niveau 2 avant l Age Feodal');
+
+    f.age = 1;
+    Object.assign(f.res, { food: 0, wood: 0, stone: 0, gold: 0 });
+    egal(ordreDe(j, j.G.me, 'AMELIORER_TOUR', { bId: tour.id }).raison, 'ressources',
+      'ameliorer sans payer');
+
+    riche(j, j.G.me);
+    const avantHp = tour.maxHp;
+    ok(ordreDe(j, j.G.me, 'AMELIORER_TOUR', { bId: tour.id }).ok, 'niveau 2 a l Age Feodal');
+    egal(tour.level, 2, 'niveau apres amelioration');
+    ok(tour.maxHp > avantHp, 'la Tour de Garde doit encaisser davantage');
+
+    egal(ordreDe(j, j.G.me, 'AMELIORER_TOUR', { bId: tour.id }).raison, 'age',
+      'le Donjon exige l Age des Chateaux');
+    f.age = 3;
+    ok(ordreDe(j, j.G.me, 'AMELIORER_TOUR', { bId: tour.id }).ok, 'niveau 3');
+    egal(ordreDe(j, j.G.me, 'AMELIORER_TOUR', { bId: tour.id }).raison, 'max',
+      'il n y a rien apres le Donjon');
+
+    // Les degats subis ne doivent pas etre effaces par une amelioration.
+    const q = caseLibre(j, tc.tx + 10, tc.ty + 10, 1, 1);
+    const t2 = batir(j, j.BT.TOWER, q.tx, q.ty);
+    t2.hp = t2.maxHp - 300;
+    ok(ordreDe(j, j.G.me, 'AMELIORER_TOUR', { bId: t2.id }).ok, 'amelioration de la tour blessee');
+    egal(t2.maxHp - t2.hp, 300, 'les degats subis doivent etre conserves, pas soignes gratuitement');
+
+    egal(ordreDe(j, j.G.me, 'AMELIORER_TOUR', { bId: tc.id }).ok, false, 'AMELIORER_TOUR sur un Centre Ville');
+  });
+
+  test('AMELIORER_CAMP ne vaut que pour les trois camps de ressource', () => {
+    const { j, tc } = scene();
+    const f = j.G.factions[j.G.me];
+    f.age = 1;
+    const camps = [j.BT.LUMBER, j.BT.MINE, j.BT.MILL].filter((t) => j.BDEF[t]);
+    ok(camps.length === 3, 'les trois camps de ressource doivent exister');
+    for (const type of camps) {
+      const d = j.BDEF[type];
+      const p = caseLibre(j, tc.tx + 8, tc.ty + 8, d.w, d.h);
+      const b = batir(j, type, p.tx, p.ty);
+      riche(j, j.G.me);
+      const r = ordreDe(j, j.G.me, 'AMELIORER_CAMP', { bId: b.id });
+      ok(r.ok, d.nom + ' : amelioration refusee — ' + JSON.stringify(r));
+      egal(b.level, 2, d.nom + ' : niveau apres amelioration');
+    }
+    // Une Maison n est pas un camp : la table CAMP_LEVELS fait foi. Le verrou
+    // est DOUBLE (applyCommand et appliquerUpgradeCamp le testent tous deux),
+    // donc en retirer un seul ne change rien — verifie a l ecriture ; il faut
+    // les retirer TOUS LES DEUX pour faire tomber ce test.
+    const p = caseLibre(j, tc.tx + 14, tc.ty + 14, 2, 2);
+    const maison = batir(j, j.BT.HOUSE, p.tx, p.ty);
+    egal(ordreDe(j, j.G.me, 'AMELIORER_CAMP', { bId: maison.id }).ok, false,
+      'ameliorer une Maison comme un camp');
+    egal(ordreDe(j, j.G.me, 'AMELIORER_CAMP', { bId: tc.id }).ok, false,
+      'ameliorer un Centre Ville comme un camp');
+  });
+
+  test('CHASSER : une proie vivante, et le gibier n appartient a personne', () => {
+    const { j, poser } = scene();
+    const vil = poser(j.UT.VIL, 4, 4);
+    ok((j.G.wildlife || []).length, 'pas de gibier sur cette carte, le test ne mesure rien');
+    const proie = j.G.wildlife[0];
+
+    egal(ordreDe(j, j.G.me, 'CHASSER', { ids: [vil.id], wildlifeId: -999 }).ok, false,
+      'chasser un animal qui n existe pas');
+    proie.hp = 0;
+    egal(ordreDe(j, j.G.me, 'CHASSER', { ids: [vil.id], wildlifeId: proie.id }).ok, false,
+      'chasser une carcasse');
+    proie.hp = 20;
+    ok(ordreDe(j, j.G.me, 'CHASSER', { ids: [vil.id], wildlifeId: proie.id }).ok, 'chasse refusee');
+    egal(vil.state, 'hunt', 'etat du chasseur');
+    egal(vil.target, proie.id, 'cible du chasseur');
+    // Contrairement aux reliques, plusieurs chasseurs peuvent viser la meme
+    // proie : pas d exclusivite, donc pas de blocage possible.
+    const sold = poser(j.UT.MIL, 5, 4);
+    ok(ordreDe(j, j.G.me, 'CHASSER', { ids: [sold.id], wildlifeId: proie.id }).ok,
+      'un second chasseur sur la meme proie doit etre accepte');
+  });
+
+  test('PECHER et NAVIGUER sont reserves aux BATEAUX', () => {
+    const { j, poser } = scene();
+    const vil = poser(j.UT.VIL, 4, 4);
+    const bateau = poser(j.UT.BOAT, 5, 4);
+    const banc = j.G.nodes.find((n) => n.type === j.RT.FISH && n.amt > 0);
+    const bois = j.G.nodes.find((n) => n.type !== j.RT.FISH && n.amt > 0);
+
+    egal(ordreDe(j, j.G.me, 'NAVIGUER', { ids: [vil.id], x: 100, y: 100 }).ok, false,
+      'un villageois ne navigue pas');
+    ok(ordreDe(j, j.G.me, 'NAVIGUER', { ids: [bateau.id], x: 100, y: 100 }).ok, 'navigation refusee');
+    egal(bateau.state, 'sailing', 'etat du bateau');
+
+    // Toutes les cartes en portent (6 au minimum, sur les Terres Arides) :
+    // un test qui se contenterait de sauter en leur absence ne garderait rien.
+    ok(banc, 'aucun banc de poisson sur cette carte, le test ne mesure rien');
+    {
+      egal(ordreDe(j, j.G.me, 'PECHER', { ids: [vil.id], nodeId: banc.id }).ok, false,
+        'un villageois ne peche pas depuis la berge');
+      egal(ordreDe(j, j.G.me, 'PECHER', { ids: [bateau.id], nodeId: bois.id }).ok, false,
+        'on ne peche pas dans une foret');
+      egal(ordreDe(j, j.G.me, 'PECHER', { ids: [bateau.id], nodeId: -999 }).ok, false,
+        'banc inexistant');
+      ok(ordreDe(j, j.G.me, 'PECHER', { ids: [bateau.id], nodeId: banc.id }).ok, 'peche refusee');
+      egal(bateau.state, 'fish', 'etat du pecheur');
+      egal(bateau.homeNode, banc.id, 'le banc doit etre memorise pour les allers-retours');
+      const vide = banc.amt; banc.amt = 0;
+      egal(ordreDe(j, j.G.me, 'PECHER', { ids: [bateau.id], nodeId: banc.id }).ok, false,
+        'on ne peche pas un banc epuise');
+      banc.amt = vide;
+    }
+  });
+
   test('un ordre ne peut pas déplacer les unités d\'un AUTRE camp', () => {
     const j = partie(charger(), { graine: 4242 });
     const sien = j.G.units.find((u) => j.estLocal(u));

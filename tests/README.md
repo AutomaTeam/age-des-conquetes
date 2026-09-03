@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**111 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
+**121 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -26,7 +26,14 @@ qui **ne se voit pas** :
   l'affichage. Ces tests visent donc les REFUS (verrous d'âge, arbre
   technologique, plafond de population, taux de troc forgé, ordre sur les
   unités d'un autre camp, démolition du Centre Ville…), pas les cas
-  nominaux.
+  nominaux. **Les 30 ordres sont désormais couverts** : douze ne l'étaient
+  par rien du tout (`ATK`, `AMOVE`, `CHANTIER`, `REPARE`, `POSTURE`, `STOP`,
+  `PORTAIL`, `AMELIORER_TOUR`, `AMELIORER_CAMP`, `CHASSER`, `PECHER`,
+  `NAVIGUER`). Deux d'entre eux valent d'être connus : `PORTAIL` est vérifié
+  DANS `G.bmap` et pas seulement sur `b.open` — une porte qui s'ouvre sans
+  libérer sa case laisse le pathfinding la contourner ; et `AMELIORER_TOUR`
+  garde le fait que les dégâts déjà subis ne soient pas effacés par une
+  amélioration, ce qui en ferait un soin gratuit.
 - **`delta`** — le flux différentiel hôte → client, la partie la plus
   fragile du jeu. Une paire hôte/client réellement reliée (même graine,
   SNAP puis deltas) doit CONVERGER, y compris sous le feu : 80 unités qui se

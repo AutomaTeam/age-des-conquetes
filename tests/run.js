@@ -1,13 +1,13 @@
 // Harnais de test du jeu — sans navigateur, sans dépendance, sans build.
 //
-//   node tests/run.js            tout (~35 s)
-//   node tests/run.js ordres     un seul groupe
+//   node tests/run.js            tout (103 tests, ~30 s)
+//   node tests/run.js ordres     un seul groupe — lui seul TOURNE
 //
 // Groupes : carte, reseau, sauvegarde, chemin, combat, civilisations,
-// cartes, tailles, ordres, economie, ages, finpartie, ia, delta.
-// Le groupe `ia` compte pour les deux tiers du temps total : il simule de
-// vraies parties de 15 minutes, c'est le prix pour observer un comportement
-// qui n'existe qu'apres plusieurs minutes de jeu.
+// cartes, tailles, ordres, economie, ages, finpartie, ia, delta, charge.
+// Les groupes `delta` et `ia` pèsent à eux deux la moitié du temps total :
+// ils simulent de vraies parties, c'est le prix pour observer des
+// comportements qui n'existent qu'apres plusieurs minutes de jeu.
 //
 // Ce que ces tests gardent, ce sont les zones qu'on NE PEUT PAS vérifier à
 // l'œil : la sérialisation réseau, la migration de sauvegarde, le
@@ -18,9 +18,22 @@
 const { charger } = require('./harness');
 
 // ── micro-cadre de test ────────────────────────────────────
+// Le groupe demandé en argument est filtré DANS `groupe()`, avant d'exécuter
+// quoi que ce soit : filtrer le rapport à la fin ferait tourner les 15
+// groupes pour n'en afficher qu'un, et `node tests/run.js reseau` coûterait
+// les 30 s de la suite complète. La liste des noms est recueillie au passage
+// pour refuser un groupe inconnu (voir le rapport) : une faute de frappe
+// affichait « 0/0 tests passent » et sortait au VERT.
+const cible = process.argv[2];
 let groupeCourant = '';
+const groupesConnus = [];
 const resultats = [];
-function groupe(nom, fn) { groupeCourant = nom; fn(); }
+function groupe(nom, fn) {
+  groupesConnus.push(nom);
+  if (cible && nom !== cible) return;
+  groupeCourant = nom;
+  fn();
+}
 function test(nom, fn) {
   const t0 = Date.now();
   try {
@@ -2045,8 +2058,14 @@ groupe('charge', () => {
 });
 
 // ── rapport ────────────────────────────────────────────────
-const cible = process.argv[2];
-const vus = cible ? resultats.filter((r) => r.groupe === cible) : resultats;
+if (cible && !groupesConnus.includes(cible)) {
+  console.log(`
+  groupe inconnu : « ${cible} »`);
+  console.log(`  groupes disponibles : ${groupesConnus.join(', ')}
+`);
+  process.exit(2);
+}
+const vus = resultats;
 let dernier = '';
 for (const r of vus) {
   if (r.groupe !== dernier) { console.log(`\n  ${r.groupe}`); dernier = r.groupe; }

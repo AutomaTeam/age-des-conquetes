@@ -639,6 +639,67 @@ groupe('combat', () => {
 
 // ════════════════════════════════════════════════════════════
 groupe('civilisations', () => {
+  test('les tables de regles ne designent que des choses qui existent', () => {
+    // PRODUCTION, TCOST, CIVS et BONUS se lisent partout dans le jeu, sans
+    // garde. Une entree qui designe un type inexistant ne leve pas forcement —
+    // elle rend `undefined`, et le defaut ressort trois ecrans plus loin : une
+    // unite formable sans prix dans TCOST serait GRATUITE (applyCommand lit
+    // `TCOST[type]`), une unite unique mal orthographiee rendrait la civ
+    // muette. Ces tables sont ecrites a la main, donc elles derivent.
+    const j = charger();
+    const RES = ['food', 'wood', 'stone', 'gold'];
+    const pbs = [];
+    const formables = new Set();
+
+    for (const [bt, entrees] of Object.entries(j.PRODUCTION)) {
+      if (!j.BDEF[bt]) pbs.push('batiment producteur inconnu : ' + bt);
+      for (const e of entrees) {
+        if (!j.UDEF[e.u]) { pbs.push(bt + ' forme un type inconnu : ' + e.u); continue; }
+        formables.add(e.u);
+        const cost = j.TCOST[e.u];
+        if (!cost) { pbs.push(bt + '/' + e.u + ' : aucun prix dans TCOST, l unite serait GRATUITE'); continue; }
+        for (const [r, v] of Object.entries(cost)) {
+          if (!RES.includes(r)) pbs.push(e.u + ' : ressource inconnue ' + r);
+          if (!(v > 0)) pbs.push(e.u + ' : prix ' + r + '=' + v);
+        }
+        if (e.age != null && !(e.age >= 0 && e.age <= 3)) pbs.push(bt + '/' + e.u + ' : age hors bornes ' + e.age);
+        if (e.rech && !j.RDEF[e.rech]) pbs.push(bt + '/' + e.u + ' exige une recherche inconnue : ' + e.rech);
+        if (e.civ && !j.CIVS[e.civ]) pbs.push(bt + '/' + e.u + ' exige une civ inconnue : ' + e.civ);
+      }
+    }
+    for (const u of Object.keys(j.TCOST))
+      if (!formables.has(u)) pbs.push('TCOST donne un prix a ' + u + ', que AUCUN batiment ne forme');
+
+    // Une unite unique doit exister, et n'appartenir qu'a UNE civilisation.
+    const uniques = [];
+    for (const [k, c] of Object.entries(j.CIVS)) {
+      if (!c.nom) pbs.push(k + ' : civilisation sans nom');
+      if (c.unique) {
+        if (!j.UDEF[c.unique]) pbs.push(k + ' : unite unique inconnue ' + c.unique);
+        if (uniques.includes(c.unique)) pbs.push('unite unique partagee par deux civs : ' + c.unique);
+        uniques.push(c.unique);
+        // Et elle doit etre REELLEMENT verrouillee dans PRODUCTION, sinon
+        // « unique » n'est qu'une etiquette (le groupe `civilisations` teste
+        // deja le refus, ici on garde la table qui le rend possible).
+        const offres = Object.values(j.PRODUCTION).flat().filter((o) => o.u === c.unique);
+        ok(offres.length && offres.every((o) => o.civ === k),
+          c.unique + ' est annoncee unique aux ' + k + ' mais PRODUCTION ne la verrouille pas');
+      }
+      if (c.techCiv && !j.RDEF[c.techCiv]) pbs.push(k + ' : recherche exclusive inconnue ' + c.techCiv);
+    }
+
+    // Le triangle de contres ne doit viser que des classes declarees.
+    const connues = new Set(Object.values(j.UDEF).map((d) => d.cls).filter(Boolean));
+    connues.add('bat');   // les batiments, cible legitime des bonus de siege
+    for (const [src, table] of Object.entries(j.BONUS || {})) {
+      if (!j.UDEF[src] && !connues.has(src)) pbs.push('BONUS : source inconnue ' + src);
+      for (const cible of Object.keys(table || {}))
+        if (!connues.has(cible)) pbs.push('BONUS[' + src + '] vise une classe inexistante : ' + cible);
+    }
+
+    ok(!pbs.length, pbs.length + ' incoherence(s) :\n        ' + pbs.slice(0, 10).join('\n        '));
+  });
+
   const civs = ['francs', 'byzantins', 'chinois', 'mongols'];
 
   test('chaque civilisation a une identité mécanique, pas seulement un multiplicateur', () => {

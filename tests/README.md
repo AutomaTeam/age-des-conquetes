@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**110 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
+**111 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -71,7 +71,12 @@ qui **ne se voit pas** :
 - **`combat`** — le triangle de contres (Piquier > Chevalier > Archer >
   Piquier) et les invariants de `degatsContre`.
 - **`civilisations`** — unité unique et recherche exclusive refusées aux
-  autres camps, même par ordre réseau forgé ; bonus économiques réels.
+  autres camps, même par ordre réseau forgé ; bonus économiques réels. Plus
+  l'INTÉGRITÉ des tables (`PRODUCTION`, `TCOST`, `CIVS`, `BONUS`), écrites à
+  la main donc sujettes à dérive : elles se lisent partout sans garde, et une
+  entrée qui désigne un type inexistant ne lève pas — elle rend `undefined`.
+  Une unité formable absente de `TCOST` serait GRATUITE, une unité unique mal
+  orthographiée rendrait sa civilisation muette.
 - **`cartes`** — les cinq presets, et surtout : aucun n'enferme un camp (un
   `findPath` réel entre les deux Centres Ville). Plus la table des SOLS :
   chaque carte doit décrire une matière complète, aucune ne doit partager le

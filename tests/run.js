@@ -192,6 +192,108 @@ groupe('reseau', () => {
     egalJSON(apres1, empreinteBatiments(client), 'bâtiments après double application');
   });
 
+  test('un message ABIME ne fait pas tomber le destinataire', () => {
+    // Le decodage lisait ses lots en `(m.x||[])` : cela couvre l'absence et le
+    // null, mais pas un `{}` ni une chaine, qui passent la garde et font lever
+    // l'iteration. Un seul message tordu suffisait alors a faire tomber la page
+    // du destinataire EN PLEINE PARTIE. Deux niveaux de degats sont eprouves
+    // ici : la cle du message, et les ELEMENTS du lot — c'est le second qui
+    // atteignait le plus loin, une faction sans age valide empoisonnant non pas
+    // le decodage mais `updatePopCap`, une image plus tard, loin d'ici.
+    const hote = charger();
+    hote.RESEAU.actif = true; hote.RESEAU.role = 'hote';
+    hote.RESEAU.adversaire = { id: hote.FAC.P2, nom: 'Invite' }; hote.RESEAU.tick = 0;
+    partie(hote, { graine: 4242, pas: 900 });
+    const p2 = hote.G.factions[hote.FAC.P2];
+    for (let y = 0; y < hote.ROWS; y++) for (let x = 0; x < hote.COLS; x++) p2.fog[y][x] = 2;
+
+    const monterClient = () => {
+      const c = charger();
+      c.RESEAU.actif = true; c.RESEAU.role = 'hote';
+      c.RESEAU.adversaire = { id: c.FAC.P2, nom: 'Invite' };
+      partie(c, { graine: 4242 });
+      c.G.me = c.FAC.P2; c.G.hote = false;
+      return c;
+    };
+    const client = monterClient();
+    client.appliquerSnap(JSON.parse(JSON.stringify(hote.construireSnap())));
+    for (let k = 0; k < 60; k++) hote.update(hote.SIM_DT);
+
+    // 1.5 n'est pas decoratif : un indice de tuile FRACTIONNAIRE indexe
+    // G.bmap tout aussi mal qu'une chaine, mais franchit un simple test de
+    // bornes — c'est le seul cas que le controle d'entier attrape.
+    const POISONS = [null, 0, 1, 1.5, '', 'x', [], {}, true, [null], [{}], [[]], [0, 0]];
+    const abimer = (sain) => {
+      const lots = [];
+      for (const k of Object.keys(sain)) {
+        for (const v of POISONS) {
+          const d = JSON.parse(JSON.stringify(sain)); d[k] = v;
+          lots.push(['.' + k + '=' + JSON.stringify(v), d]);
+        }
+        const d0 = JSON.parse(JSON.stringify(sain)); delete d0[k];
+        lots.push(['sans .' + k, d0]);
+        if (Array.isArray(sain[k]) && sain[k].length) {
+          for (const v of POISONS) {
+            const d = JSON.parse(JSON.stringify(sain));
+            d[k] = d[k].slice(); d[k][0] = v;
+            lots.push(['.' + k + '[0]=' + JSON.stringify(v), d]);
+          }
+        }
+      }
+      for (const d of [{}, null, undefined, 42, 'ordre', []]) lots.push(['enveloppe ' + JSON.stringify(d), d]);
+      // Troisieme niveau : un descripteur bien forme SAUF un de ses champs.
+      // C'est celui qui porte le plus loin — un age de faction fantaisiste ne
+      // casse pas le decodage mais `updatePopCap`, une image plus tard.
+      for (const k of Object.keys(sain)) {
+        const prem = Array.isArray(sain[k]) ? sain[k][0] : null;
+        if (!prem || typeof prem !== 'object' || Array.isArray(prem)) continue;
+        for (const champ of Object.keys(prem)) for (const v of POISONS) {
+          const d = JSON.parse(JSON.stringify(sain));
+          d[k] = d[k].slice(); d[k][0] = Object.assign({}, prem); d[k][0][champ] = v;
+          lots.push(['.' + k + '[0].' + champ + '=' + JSON.stringify(v), d]);
+        }
+      }
+      return lots;
+    };
+
+    const rates = [];
+    const deltas = abimer(JSON.parse(JSON.stringify(hote.construireDelta())));
+    for (const [nom, d] of deltas) {
+      try { client.appliquerDelta(d); client.updateVisuel(client.SIM_DT); }
+      catch (e) { rates.push('delta ' + nom + ' -> ' + e.message); }
+    }
+    // Un SEUL client pour les snapshots, remis d'aplomb par un snapshot SAIN
+    // entre deux cas : remonter une partie neuve a chaque fois coutait 24 s a
+    // lui seul, soit les deux tiers de tout le fichier de tests.
+    const sain = JSON.parse(JSON.stringify(hote.construireSnap()));
+    const snaps = abimer(sain);
+    const cs = monterClient();
+    for (const [nom, sn] of snaps) {
+      try { cs.appliquerSnap(sn); cs.updateVisuel(cs.SIM_DT); }
+      catch (e) { rates.push('snap ' + nom + ' -> ' + e.message); }
+      try { cs.appliquerSnap(JSON.parse(JSON.stringify(sain))); } catch (e) { /* couvert ci-dessus */ }
+    }
+    ok(deltas.length > 150 && snaps.length > 150, 'le fuzz doit couvrir assez de cas (' + deltas.length + '/' + snaps.length + ')');
+    ok(!rates.length, rates.length + ' message(s) abime(s) font tomber le destinataire :\n        ' + rates.slice(0, 6).join('\n        '));
+
+    // Et surtout : apres tout ce traitement, un message SAIN doit encore
+    // remettre le client d'aplomb. Un durcissement qui laisse l'etat corrompu
+    // ne vaudrait pas mieux qu'un plantage franc.
+    for (let k = 0; k < 300; k++) {
+      hote.update(hote.SIM_DT);
+      if (k % 10 === 9) {
+        for (let y = 0; y < hote.ROWS; y++) for (let x = 0; x < hote.COLS; x++) p2.fog[y][x] = 2;
+        client.appliquerDelta(JSON.parse(JSON.stringify(hote.construireDelta())));
+      }
+      client.updateVisuel(client.SIM_DT);
+    }
+    const eh = new Set(hote.G.units.filter((u) => u.hp > 0).map((u) => u.id));
+    const ec = new Set(client.G.units.filter((u) => u.hp > 0).map((u) => u.id));
+    const manq = [...eh].filter((i) => !ec.has(i));
+    ok(!manq.length, manq.length + ' unite(s) manquent au client apres la reprise : ' + manq.slice(0, 6));
+    ok(Math.abs(hote.G.gameTime - client.G.gameTime) < 0.5, 'le temps de jeu a diverge');
+  });
+
   test('le snapshot survit à un aller-retour JSON', () => {
     const hote = partie(charger(), { graine: 4242, pas: 300 });
     const snap = hote.construireSnap();

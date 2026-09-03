@@ -201,12 +201,103 @@ groupe('reseau', () => {
 
 // ════════════════════════════════════════════════════════════
 groupe('sauvegarde', () => {
+  test('un chargement REPART sans le drapeau de defaite', () => {
+    // G.gameOver n'est pas un champ de sauvegarde (une sauvegarde decrit
+    // toujours une partie EN COURS), mais loadGame ne le remettait pas a faux
+    // non plus : perdre puis recharger le laissait vrai pour le restant de la
+    // session. Or update() suspend TOUTES les fins de partie tant qu'il est
+    // leve. La partie rechargee ne pouvait donc plus etre ni gagnee ni
+    // reperdue — on jouait dans une partie qui ne s'arreterait jamais.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 5 });
+    // Tous les rivaux a terre : la victoire est due.
+    for (const f of Object.values(j.G.factions)) if (f.genre !== 'neutre' && f.id !== j.G.me) f.vaincu = true;
+
+    j.G.gameOver = true;                       // etat laisse par une defaite precedente
+    for (let k = 0; k < 30; k++) j.update(j.SIM_DT);
+    ok(!j.G.victory, 'le drapeau de defaite doit bien geler la fin de partie (sinon ce test ne prouve rien)');
+
+    j.G.gameOver = false;                      // ce que fait desormais loadGame
+    for (let k = 0; k < 30; k++) j.update(j.SIM_DT);
+    ok(j.G.victory, 'drapeau baisse, la victoire doit enfin tomber');
+
+    // Et le contrat cote chargement : la remise a zero est bien dans loadGame.
+    const cloud = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '13-cloud.js'), 'utf8');
+    const corps = cloud.slice(cloud.indexOf('async function loadGame'));
+    ok(/G\.gameOver\s*=\s*false/.test(corps.slice(0, corps.indexOf('async function') + 12000)),
+      'loadGame ne remet pas G.gameOver a faux');
+  });
+
   test('sauvegarde → migration : aucune perte sur un état courant', () => {
     const j = partie(charger(), { graine: 4242, pas: 600 });
     const d = j.buildSaveData();
     const m = j.migrerSauvegarde(JSON.parse(JSON.stringify(d)));
     ok(m && typeof m === 'object', 'migration a rendu autre chose qu\'un objet');
     egalJSON(Object.keys(d).sort(), Object.keys(m).sort(), 'clés de sauvegarde');
+  });
+
+  test('migration v6 -> v8 : les pixels redeviennent des coordonnees monde', () => {
+    // Le palier v6 -> v7 est le plus intrique de migrerSauvegarde et le seul
+    // dont l'echec est SILENCIEUX : les coordonnees v6 etaient des pixels au
+    // zoom d'ecriture, pas des unites BASE_TILE. Rate d'un facteur 3, tout
+    // reste coherent a l'oeil -- simplement, chaque entite est ailleurs. Le
+    // palier v7 -> v8 enchaine derriere et transforme joueur + IA en factions.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 900 });
+    const B = j.BASE_TILE, ZOOM = 3;
+    const moderne = JSON.parse(JSON.stringify(j.buildSaveData()));
+
+    // Fabrique une VRAIE v6 a partir de l'etat courant : pixels au zoom
+    // d'ecriture, destination nommee tx/ty, etat du joueur a plat sur data.
+    const v6 = JSON.parse(JSON.stringify(moderne));
+    v6.v = 6; v6.tile = B * ZOOM;
+    const m = (x) => (typeof x === 'number' ? x * ZOOM : x);
+    for (const u of v6.units) {
+      u.x = m(u.x); u.y = m(u.y);
+      u.tx = m(u.destX); u.ty = m(u.destY); delete u.destX; delete u.destY;
+      u.rng = m(u.rng);
+      if (u.campX != null) { u.campX = m(u.campX); u.campY = m(u.campY); }
+      if (u.anchorX != null) { u.anchorX = m(u.anchorX); u.anchorY = m(u.anchorY); }
+      u.owner = u.owner === j.FAC.P1 ? 'player' : 'enemy';
+      if (u.camp === j.FAC.IA) u.camp = 'ai';
+    }
+    for (const b of v6.buildings) {
+      b.x = m(b.x); b.y = m(b.y);
+      if (b.rally) { b.rally.x = m(b.rally.x); b.rally.y = m(b.rally.y); }
+      b.owner = b.owner === j.FAC.P1 ? 'player' : 'enemy';
+    }
+    for (const n of v6.nodes) { n.x = m(n.x); n.y = m(n.y); }
+    const p1 = moderne.factions[j.FAC.P1], ia = moderne.factions[j.FAC.IA];
+    v6.res = p1.res; v6.age = p1.age; v6.research = p1.research; v6.pop = p1.pop;
+    v6.maxPop = p1.maxPop; v6.stats = p1.stats; v6.fog = p1.fog;
+    v6.ai = ia ? { res: ia.res, age: ia.age, pop: ia.pop, baseX: m(ia.baseX),
+                   baseY: m(ia.baseY), tcId: ia.tcId, maxPop: ia.maxPop } : null;
+    delete v6.factions; delete v6.me;
+
+    const mig = j.migrerSauvegarde(JSON.parse(JSON.stringify(v6)));
+    egal(mig.v, 8, 'la chaine de migration ne va pas jusqu au format courant');
+
+    // v6 -> v7 : chaque coordonnee retrouve sa valeur d'origine.
+    const proche = (a, b) => Math.abs(a - b) <= 0.001;
+    for (let k = 0; k < moderne.units.length; k++) {
+      const a = moderne.units[k], c = mig.units[k];
+      ok(proche(a.x, c.x) && proche(a.y, c.y),
+        'unite ' + a.id + ' mal remise a l echelle : ' + c.x.toFixed(1) + ' au lieu de ' + a.x.toFixed(1));
+      ok(proche(a.rng, c.rng), 'la PORTEE de l unite ' + a.id + ' est une distance monde, elle doit suivre');
+      if (a.destX != null) ok(proche(a.destX, c.destX), 'destination de l unite ' + a.id);
+      ok(!('tx' in c), 'l unite ' + a.id + ' garde le champ tx de la v6, homonyme des indices de tuile');
+    }
+    for (let k = 0; k < moderne.nodes.length; k++)
+      ok(proche(moderne.nodes[k].x, mig.nodes[k].x), 'gisement ' + k + ' mal remis a l echelle');
+
+    // v7 -> v8 : joueur et IA deviennent des factions, l'etat a plat disparait.
+    egal(mig.me, j.FAC.P1, 'la faction locale');
+    ok(mig.factions[j.FAC.P1] && mig.factions[j.FAC.PILL], 'joueur et pillards doivent exister');
+    egal(mig.factions[j.FAC.P1].pop, p1.pop, 'population du joueur');
+    egal(Math.round(mig.factions[j.FAC.P1].res.food), Math.round(p1.res.food), 'caisse du joueur');
+    for (const u of mig.units) ok(u.owner !== 'player' && u.owner !== 'enemy',
+      'un proprietaire v7 (' + u.owner + ') n a pas ete converti en faction');
+    ok(!('res' in mig) && !('ai' in mig) && !('fog' in mig),
+      'l etat a plat de la v7 doit disparaitre, sinon il fait doublon avec les factions');
+    if (ia) ok(proche(mig.factions[j.FAC.IA].baseX, ia.baseX), 'la base de l IA est une coordonnee monde');
   });
 
   test('sauvegarde ancienne (sans les recherches économiques) : se charge', () => {
@@ -1940,6 +2031,104 @@ groupe('delta', () => {
     ok(Array.isArray(d2.fac) && d2.fac.length > 0, 'un changement de faction ne repart pas');
   });
 
+  test('l EQUIPE change en cours de partie et le changement voyage', () => {
+    // ORD.DIPLOMATIE fait passer une IA dans l'equipe du joueur qui s'allie a
+    // elle. `equipe` n'etait pose qu'a la CREATION de la faction cote client :
+    // il gardait donc l'equipe du debut, et son estHostile() repondait
+    // l'INVERSE de celui de l'hote — l'allie restait rouge, ciblable, et
+    // comptait encore parmi les rivaux a abattre pour gagner.
+    const { hote, client, pousser, tourner } = paireEnLigne();
+    const IA = hote.FAC.IA, P2 = hote.FAC.P2;
+    ok(hote.G.factions[IA], 'pas de faction IA dans cette partie, le test ne mesure rien');
+    egal(client.estHostile(P2, { owner: IA }), true, 'au depart l IA doit etre hostile a l invite');
+
+    const r = hote.applyCommand({ seq: 1, f: P2, t: hote.ORD.DIPLOMATIE, cibleId: IA, action: 'proposer' });
+    ok(r.ok, 'l alliance a ete refusee : ' + JSON.stringify(r));
+    egal(hote.estHostile(P2, { owner: IA }), false, 'chez l hote, l allie ne doit plus etre hostile');
+
+    for (let k = 0; k < 30; k++) { hote.update(hote.SIM_DT); if (k % 10 === 9) { pousser(); tourner(5); } }
+    egal(client.G.factions[IA].equipe, hote.G.factions[IA].equipe, 'l equipe de l IA chez le client');
+    egal(client.estHostile(P2, { owner: IA }), false, 'le client voit encore son allie comme un ennemi');
+  });
+
+  test('la reparation automatique revient au client qui l a demandee', () => {
+    // Le client bascule le reglage, l'ordre part chez l'hote qui l'applique
+    // pour de bon — mais rien ne le renvoyait. L'interface du client lit
+    // G.autoRepair (un shim vers sa propre faction) : le bouton restait donc
+    // eteint et la notification annoncait l'inverse de ce qui se passait.
+    const { hote, client, pousser, tourner } = paireEnLigne();
+    const P2 = hote.FAC.P2;
+    egal(client.G.factions[P2].autoRepair, false, 'etat de depart');
+
+    const r = hote.applyCommand({ seq: 1, f: P2, t: hote.ORD.AUTO_REPARE, actif: true });
+    ok(r.ok, 'ordre refuse : ' + JSON.stringify(r));
+    egal(hote.G.factions[P2].autoRepair, true, 'chez l hote');
+
+    for (let k = 0; k < 20; k++) { hote.update(hote.SIM_DT); if (k % 10 === 9) { pousser(); tourner(5); } }
+    egal(client.G.factions[P2].autoRepair, true, 'le reglage n est jamais revenu chez le client');
+
+    // Et il doit pouvoir le RETEINDRE : un reglage qui ne voyage que dans un
+    // sens laisse le client incapable de revenir en arriere.
+    hote.applyCommand({ seq: 2, f: P2, t: hote.ORD.AUTO_REPARE, actif: false });
+    for (let k = 0; k < 20; k++) { hote.update(hote.SIM_DT); if (k % 10 === 9) { pousser(); tourner(5); } }
+    egal(client.G.factions[P2].autoRepair, false, 'l extinction n est pas revenue chez le client');
+  });
+
+  test('RECONNEXION : un client qui revient repart d un etat COMPLET', () => {
+    // Recharger sa page en pleine partie est banal sur mobile. L'hote reutilise
+    // alors construireSalut() puis renvoie un SNAP (voir traiterResync), et le
+    // flux de deltas reprend. Ce chemin n'etait couvert par AUCUN test : les
+    // autres montent leur client a la premiere image, jamais au milieu d'une
+    // partie deja avancee, avec un hote dont les tables `connus*`/`dernier`
+    // portent encore la session precedente.
+    // Verifie a l'ecriture : reamorcer ces tables n'est PAS ce qui sauve le
+    // revenant (le SNAP lui renvoie de toute facon tout ce qu'il voit) — ce
+    // test garde la convergence du chemin complet, coupure comprise, pas ce
+    // mecanisme-la en particulier.
+    const { hote, client: premier, pousser, tourner } = paireEnLigne();
+
+    // Session 1 : 40 s de jeu, le client suit normalement.
+    for (let k = 0; k < 1200; k++) { hote.update(hote.SIM_DT); if (k % 10 === 9) pousser(); tourner(1); }
+    ok(premier.G.units.length > 0, 'le premier client n a rien recu, le test ne mesure rien');
+
+    // Coupure : l'hote continue SEUL 30 s. Il produit, il construit, des
+    // unites naissent et meurent sans que le client absent en sache rien.
+    for (let k = 0; k < 900; k++) hote.update(hote.SIM_DT);
+    ok(hote.RESEAU.connusU.size > 0, 'l hote a perdu ses tables, le scenario ne tient plus');
+
+    // RESYNC : un client NEUF, monte depuis le SALUT courant.
+    const salut = JSON.parse(JSON.stringify(hote.construireSalut()));
+    egal(salut.proto, hote.PROTO_VERSION, 'le SALUT de resync doit porter le protocole courant');
+    const revenant = charger();
+    revenant.RESEAU.actif = true; revenant.RESEAU.role = 'hote';
+    revenant.RESEAU.adversaire = { id: revenant.FAC.P2, nom: 'Invite' };
+    partie(revenant, { graine: salut.seed });
+    revenant.G.me = revenant.FAC.P2; revenant.G.hote = false;
+    for (const f of salut.fac) revenant.__sandbox.appliquerFaction(f);
+    hote.voirTout();
+    revenant.appliquerSnap(JSON.parse(JSON.stringify(hote.construireSnap())));
+
+    // Le flux reprend : 20 s de deltas.
+    for (let k = 0; k < 600; k++) {
+      hote.update(hote.SIM_DT);
+      if (k % 10 === 9) {
+        hote.voirTout();
+        revenant.appliquerDelta(JSON.parse(JSON.stringify(hote.construireDelta())));
+      }
+      revenant.updateVisuel(revenant.SIM_DT);
+    }
+
+    const eh = etatUnites(hote), ec = etatUnites(revenant);
+    const manquantes = [...eh.keys()].filter((id) => !ec.has(id));
+    const enTrop = [...ec.keys()].filter((id) => !eh.has(id));
+    ok(!manquantes.length, manquantes.length + ' unite(s) que le revenant ne verra JAMAIS : ' + manquantes.slice(0, 6));
+    ok(!enTrop.length, enTrop.length + ' unite(s) fantomes chez le revenant : ' + enTrop.slice(0, 6));
+    const bh = etatBatiments(hote), bc = etatBatiments(revenant);
+    ok(![...bh.keys()].filter((id) => !bc.has(id)).length, 'des batiments manquent au revenant');
+    egalJSON(hote.G.factions[hote.FAC.P2].res, revenant.G.factions[revenant.FAC.P2].res,
+      'la caisse du revenant');
+  });
+
   test('le delta reste sérialisable et modeste au repos', () => {
     const { hote, client, pousser, tourner } = paireEnLigne();
     for (let k = 0; k < 600; k++) {
@@ -2012,6 +2201,33 @@ groupe('charge', () => {
     const tas = j.G.units.filter((u) => u.type === j.UT.MIL && Math.abs(u.y - (tc.ty + 6) * B) < 6 * B);
     const largeur = Math.max(...tas.map((u) => u.x)) - Math.min(...tas.map((u) => u.x));
     ok(largeur > B, `l'amas ne s'est pas étalé (${largeur.toFixed(1)} px)`);
+  });
+
+  test('nearestBy ecarte par la DISTANCE avant d appeler le predicat', () => {
+    // forNearby balaie un CARRE de cellules : ses coins tombent hors du rayon,
+    // et `bd` retrecit des qu'un candidat est retenu. Appeler le predicat sur
+    // ces perdants d'avance, c'est remonter a la faction (estHostile) pour
+    // rien -- et ce ciblage tourne pour CHAQUE unite, 4 fois par seconde. Le
+    // test compte les appels au predicat, pas le resultat : c'est un invariant
+    // de COUT, invisible autrement.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 5 });
+    const B = j.BASE_TILE;
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const cx = (tc.tx + 10) * B, cy = (tc.ty + 10) * B;
+    // Un amas serre au centre, puis un chapelet qui s'eloigne bien au-dela du
+    // rayon : les lointaines ne doivent JAMAIS atteindre le predicat.
+    for (let i = 0; i < 30; i++) j.G.units.push(j.mkUnit(j.UT.MIL, cx + (i % 6) * 4, cy + ((i / 6) | 0) * 4, j.G.me));
+    for (let i = 0; i < 30; i++) j.G.units.push(j.mkUnit(j.UT.MIL, cx + (6 + i) * B, cy, j.G.me));
+    j.rebuildIndex(); j.rebuildGrid();
+
+    let vus = 0;
+    const proche = j.nearestBy(cx, cy, 12 * B, (u) => { vus++; return u.hp > 0; });
+    ok(proche, 'aucun voisin trouve, le test ne mesure rien');
+    // Sans le tri par distance, le predicat voyait TOUTES les unites des
+    // cellules balayees -- carre englobant compris. Avec, il n'en voit jamais
+    // plus qu'il n'y en a reellement dans le disque.
+    const dansRayon = j.G.units.filter((u) => Math.hypot(u.x - cx, u.y - cy) <= 12 * B).length;
+    ok(vus <= dansRayon, 'le predicat a vu ' + vus + ' unites pour ' + dansRayon + ' reellement dans le rayon');
   });
 
   test('une recherche de chemin qui échoue RECULE au lieu de s\'acharner', () => {

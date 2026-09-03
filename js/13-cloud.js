@@ -479,6 +479,15 @@ async function loadGame(key=SAVE_KEY){
     clampCam(); // même défaut que pour les bâtiments : une vieille sauvegarde
                 // sans le zoom exact peut placer la caméra hors de la carte
     G.gameTime=data.gameTime||0; G.targetWaves=data.targetWaves||20; G.victory=data.victory||false;
+    // Une sauvegarde decrit TOUJOURS une partie en cours (autoSave refuse une
+    // partie finie, et on ne sauvegarde pas depuis l'ecran de defaite). Le
+    // drapeau de defaite, lui, ne repartait jamais a faux : perdre puis
+    // recharger laissait G.gameOver=true pour le restant de la session, et
+    // update() saute alors TOUTES les conditions de fin (voir sa ligne
+    // `if(!G.victory&&!G.gameOver)` et checkMerveilleVictory) — la partie
+    // rechargee ne pouvait plus etre ni gagnee ni reperdue. G.victory, lui,
+    // est bien restaure : on peut continuer a jouer apres une victoire.
+    G.gameOver=false;
     G.tiles=data.tiles; G.bmap=data.bmap;
     invalidateTerrainChunks(); // les pavés en cache décrivent la carte précédente
     _mmFondVer=-1;             // idem pour le fond de mini-carte

@@ -58,7 +58,7 @@ window.transportLocal=transportLocal;
 // nouveaux, ne les dépile pas, et tout ce qui suit dans SA lecture tombe à
 // côté. Un écart de version doit donc refuser la connexion, pas la
 // dégrader — d'où le bump.
-const PROTO_VERSION = 3;
+const PROTO_VERSION = 4;   // v4 : equipe suivie en cours de partie, autoRepair emis
 const DELTA_HZ      = 10;
 const DELTA_PERIODE = 1/DELTA_HZ;
 const SEUIL_POS     = 1;    // unites-monde : en deca, on ne renvoie pas la position
@@ -202,7 +202,11 @@ function serialiserFaction(f,prive){
   const d={i:f.id, g:f.genre, e:f.equipe, t:f.teinte, n:f.nom, cv:f.civ,
            ht:f.hostileATous?1:0, a:f.age,
            p:f.pop, mp:f.maxPop, v:f.vaincu?1:0, mv:f.merveilleAchevee?1:0, hr:f.heroTrained?1:0};
-  if(prive){ d.r=f.res; d.q=f.ageUpQ; d.rc=f.research; d.rq=f.researchQ; }
+  // La reparation automatique est decidee par l'HOTE (applyCommand pose
+  // f.autoRepair), mais l'interface du client lit G.autoRepair — un shim vers
+  // sa propre faction. Sans ce champ, le client basculait le reglage, l'hote
+  // l'appliquait vraiment, et le bouton du client restait eteint pour de bon.
+  if(prive){ d.r=f.res; d.q=f.ageUpQ; d.rc=f.research; d.rq=f.researchQ; d.ar=f.autoRepair?1:0; }
   return d;
 }
 // Toutes les factions telles que le DESTINATAIRE a le droit de les voir : la
@@ -226,6 +230,14 @@ function appliquerFaction(d){
   if(d.rc!=null) f.research=d.rc;
   if('q'  in d)  f.ageUpQ=d.q;
   if('rq' in d)  f.researchQ=d.rq;
+  if('ar' in d) f.autoRepair=!!d.ar;
+  // L'EQUIPE change en cours de partie (ORD.DIPLOMATIE fait passer une IA
+  // dans l'equipe du joueur qui s'allie a elle). Elle n'etait posee qu'a la
+  // CREATION de la faction : le client gardait donc l'equipe du debut, et son
+  // estHostile() repondait l'inverse de celui de l'hote — il voyait son propre
+  // allie en rouge, le prenait pour cible, et le comptait encore parmi les
+  // rivaux a abattre pour gagner.
+  if(d.e!=null) f.equipe=d.e;
   f.age=d.a;
   f.pop=d.p; f.maxPop=d.mp; f.vaincu=!!d.v; f.nom=d.n; f.teinte=d.t;
   if(d.cv) f.civ=d.cv;

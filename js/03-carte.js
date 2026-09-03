@@ -548,12 +548,18 @@ function forNearby(x,y,r,fn){
   }
 }
 // Recherche générique : plus proche dans le rayon, filtrée par prédicat
+// La DISTANCE se teste avant le predicat, jamais l'inverse. forNearby balaie
+// un CARRE de cellules (les coins tombent hors du rayon) et `bd` retrecit des
+// qu'un candidat est retenu : la plupart des unites visitees ne peuvent deja
+// plus gagner. Deux multiplications les ecartent, la ou `pred` remonte a la
+// faction (estHostile) pour rien.
 function nearestBy(x,y,r,pred){
   let best=null,bd=r*r;
   forNearby(x,y,r,u=>{
-    if(!pred(u)) return;
     const dx=u.x-x,dy=u.y-y,d2=dx*dx+dy*dy;
-    if(d2<bd){bd=d2;best=u;}
+    if(d2>=bd) return;
+    if(!pred(u)) return;
+    bd=d2;best=u;
   });
   return best;
 }

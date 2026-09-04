@@ -1859,6 +1859,60 @@ groupe('finpartie', () => {
     egal(j.G.gameOver, true, 'aucune défaite malgré la perte du Centre Ville');
   });
 
+  // ── Modes proposés en Solo / en Multijoueur ──
+  // L'écran-titre filtre les modes par onglet (voir pickPlayTab), mais la
+  // VRAIE contrainte est ici : le client d'une partie en ligne n'évalue que
+  // la victoire par élimination (js/12-reseau.js), là où l'hôte connaît en
+  // plus la victoire aux vagues (js/07-simulation.js). Un mode à vagues
+  // proposé en ligne serait donc gagnable par l'hôte seul — l'invité pouvait
+  // survivre aux 20 vagues sans jamais voir sa victoire.
+  test('aucun mode à vagues n\'est proposé en Multijoueur', () => {
+    const j = charger();
+    for (const [cle, m] of Object.entries(j.MODES)) {
+      if ((m.targetWaves || 0) > 0) {
+        egal(j.modeDispo(cle, 'multi'), false,
+          `le mode « ${m.nom} » se gagne aux vagues : l'invité ne pourrait jamais gagner en ligne`);
+      }
+    }
+  });
+
+  test('chaque onglet propose au moins un mode, et le coop reste hors Solo', () => {
+    const j = charger();
+    const cles = Object.keys(j.MODES);
+    ok(cles.some((k) => j.modeDispo(k, 'solo')), 'aucun mode jouable en Solo');
+    ok(cles.some((k) => j.modeDispo(k, 'multi')), 'aucun mode jouable en Multijoueur');
+    // Sans second humain, un mode coop retombe sur « 1 rival IA » : c'est
+    // Conquête à l'identique, un doublon dans le sélecteur solo.
+    for (const [cle, m] of Object.entries(j.MODES)) {
+      if (m.coop) egal(j.modeDispo(cle, 'solo'), false, `le mode coop « ${m.nom} » est proposé en Solo`);
+    }
+  });
+
+  test('changer d\'onglet ramène toujours sur un mode proposé par cet onglet', () => {
+    const j = charger();
+    for (const depart of Object.keys(j.MODES)) {
+      for (const onglet of ['solo', 'multi']) {
+        j.pickMode(depart);
+        j.pickPlayTab(onglet);
+        const apres = j.lire('selectedMode');
+        ok(j.modeDispo(apres, onglet),
+          `parti de « ${depart} » vers ${onglet}, on reste sur « ${apres} » qui n'y est pas proposé`);
+      }
+    }
+  });
+
+  test('un aller-retour entre onglets ne fait pas perdre son mode au joueur', () => {
+    const j = charger();
+    // Survie n'existe pas en Multijoueur : l'aller impose donc un repli.
+    // Le retour doit rendre au joueur SON mode, pas le défaut de l'onglet.
+    j.pickPlayTab('solo');
+    j.pickMode('survival');
+    j.pickPlayTab('multi');
+    ok(j.modeDispo(j.lire('selectedMode'), 'multi'), 'le repli multi n\'est pas un mode multi');
+    j.pickPlayTab('solo');
+    egal(j.lire('selectedMode'), 'survival', 'la Survie choisie en Solo a été perdue en passant par Multijoueur');
+  });
+
   test('Merveille : victoire seulement APRÈS le délai, et pas avant', () => {
     const j = partie(charger(), { graine: 4242 });
     riche(j);

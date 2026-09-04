@@ -33,7 +33,7 @@ const EXPORTS = [
   'construireSnap', 'appliquerSnap', 'construireDelta', 'appliquerDelta',
   'buildSaveData', 'migrerSauvegarde', 'RESEAU', 'PROTO_VERSION',
   'UT', 'BT', 'RT', 'UDEF', 'BDEF', 'FAC', 'CIVS', 'AGES', 'RDEF',
-  'COLS', 'ROWS', 'BASE_TILE', 'MODES', 'DIFFS',
+  'COLS', 'ROWS', 'BASE_TILE', 'MODES', 'DIFFS', 'modeDispo', 'pickPlayTab',
   'estHostile', 'fac', 'moi', 'estLocal', 'isMilitary',
   'degatsContre', 'degatsDe', 'armureDe', 'classeDe', 'BONUS', 'BLD_ARMOR',
   'gatherCap', 'gatherMult', 'separerUnites', 'heroAuraMult', 'majHeros',
@@ -124,6 +124,10 @@ function charger({ silencieux = true } = {}) {
       ' return function(){ s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; })();',
       ctx, { filename: 'semerAleatoire' });
   };
+  // Lecture VIVANTE d'un `let` global du jeu (selectedMode, selectedPlayTab…).
+  // Les entrées d'EXPORTS sont figées à l'instant du chargement : une variable
+  // que le jeu réaffecte ensuite doit être relue, pas capturée.
+  jeu.lire = (nom) => sandbox.__lire(nom);
   jeu.__ctx = ctx;
   jeu.__sandbox = sandbox;
   return jeu;

@@ -1913,6 +1913,57 @@ groupe('finpartie', () => {
     egal(j.lire('selectedMode'), 'survival', 'la Survie choisie en Solo a été perdue en passant par Multijoueur');
   });
 
+  // ── Ce que l'interface PROMET doit être ce que le code FAIT ──
+  // Les trois tests qui suivent gardent des libellés, pas des mécaniques :
+  // chacun a menti à un joueur, et rien ne le signalait.
+  test('le raccourci d\'émotion marche aussi sur un clavier AZERTY', () => {
+    const j = charger();
+    // Sur AZERTY, la touche physique marquée « 1 » ne produit pas '1' : e.key
+    // vaut '&', puis 'é', '"', ''' pour les suivantes. Seul e.code est stable.
+    const azerty = ['&', 'é', '"', "'"];
+    for (let i = 0; i < 4; i++) {
+      egal(j.indexEmoteDepuisTouche({ altKey: true, code: `Digit${i + 1}`, key: azerty[i] }), i,
+        `Alt+${i + 1} ignoré sur un clavier AZERTY (e.key='${azerty[i]}')`);
+      egal(j.indexEmoteDepuisTouche({ altKey: true, code: `Digit${i + 1}`, key: String(i + 1) }), i,
+        `Alt+${i + 1} ignoré sur un clavier QWERTY`);
+    }
+    // Et rien ne se déclenche hors du contrat : sans Alt, ou au-delà des
+    // émotions existantes (les chiffres nus appartiennent aux groupes).
+    egal(j.indexEmoteDepuisTouche({ altKey: false, code: 'Digit1', key: '1' }), -1, 'émotion déclenchée sans Alt');
+    egal(j.indexEmoteDepuisTouche({ altKey: true, code: `Digit${j.EMOTES.length + 1}`, key: '9' }), -1,
+      'une touche au-delà des émotions existantes renvoie une émotion');
+  });
+
+  test('le texte de difficulté ne parle pas de vagues dans un mode sans vagues', () => {
+    const j = charger();
+    for (const [mk, m] of Object.entries(j.MODES)) {
+      const sansVagues = m.targetWaves === 0;
+      for (const dk of Object.keys(j.DIFFS)) {
+        const txt = j.diffDesc(dk, mk);
+        ok(txt && txt.length, `aucun texte de difficulté pour ${dk}/${mk}`);
+        if (sansVagues) {
+          ok(!/vague/i.test(txt),
+            `le mode « ${m.nom} » n'a aucune vague, mais sa difficulté ${dk} annonce : « ${txt} »`);
+        }
+      }
+    }
+  });
+
+  test('une civilisation n\'annonce que ce qui lui est propre', () => {
+    const j = charger();
+    // Le Paladin s'obtient par une recherche ouverte à tous (RDEF.faith, sans
+    // champ `civ`) : aucune civilisation ne peut le présenter comme un trait
+    // distinctif. Même règle pour toute recherche non exclusive.
+    const commun = Object.keys(j.RDEF).filter((k) => !j.RDEF[k].civ);
+    ok(commun.includes('faith'), 'RDEF.faith est devenue exclusive : ce test est à revoir');
+    for (const [ck, c] of Object.entries(j.CIVS)) {
+      ok(!/Paladin/i.test(c.desc),
+        `la civilisation « ${c.nom} » (${ck}) annonce le Paladin, que les quatre camps peuvent former`);
+      // Et l'unité exclusive annoncée, quand il y en a une, existe vraiment.
+      if (c.unique) ok(j.UDEF[c.unique], `l'unité exclusive de « ${c.nom} » n'existe pas dans UDEF`);
+    }
+  });
+
   test('Merveille : victoire seulement APRÈS le délai, et pas avant', () => {
     const j = partie(charger(), { graine: 4242 });
     riche(j);

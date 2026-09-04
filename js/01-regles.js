@@ -289,20 +289,41 @@ const WAVE_MIN_DELAY   = 150;  // plancher aux vagues tardives // stock de nourr
 // reste la seule difficulté « repos » ; à partir de Normal, le temps avant
 // la première attaque ET le coût des bâtiments augmentent tous les deux —
 // il faut désormais construire vite ET compter serré.
+// `desc` décrit la SURVIE (vagues scriptées) ; `descRival` décrit les modes
+// sans vagues (Conquête, 2 rivaux, 2v1 Coop), où la difficulté ne pilote pas
+// un minuteur de vagues mais l'adversaire IA lui-même — sa dotation de
+// départ, son nombre de villageois, la date de son premier raid et la taille
+// de ses assauts (voir AI_TUNE, js/08-ia.js). Sans ce second texte, le
+// sélecteur promettait « Vagues rapprochées et nombreuses » dans des parties
+// où aucune vague ne tombe jamais — c'est-à-dire dans TOUS les modes de
+// l'onglet Multijoueur. Même exigence que peaceLabel() juste plus bas : un
+// texte de réglage ne doit pas pouvoir mentir sur ce que le réglage fait.
 const DIFFS = {
   easy:   { nom:'Facile',    ico:'🌿', enemyHp:0.75, enemyAtk:0.75, enemyCount:0.75, waveDelayMult:1.25, rewardMult:0.85, buildCostMult:1.0,
             startRes:{food:120,wood:80,stone:0,gold:0},
-            desc:'Plus de temps, ennemis plus faibles, constructions au prix normal — pour découvrir le jeu.' },
+            desc:'Plus de temps, ennemis plus faibles, constructions au prix normal — pour découvrir le jeu.',
+            descRival:'Rival peu doté et lent à attaquer, ses unités plus faibles, constructions au prix normal — pour découvrir le jeu.' },
   normal: { nom:'Normal',    ico:'⚔️', enemyHp:1,    enemyAtk:1,    enemyCount:1,    waveDelayMult:0.75, rewardMult:1,    buildCostMult:1.15,
             startRes:{food:80,wood:50,stone:0,gold:0},
-            desc:"Moins de répit avant la 1ère vague, constructions +15% plus chères." },
+            desc:"Moins de répit avant la 1ère vague, constructions +15% plus chères.",
+            descRival:'Le rival attaque plus tôt et plus souvent, constructions +15% plus chères.' },
   hard:   { nom:'Difficile', ico:'🔥', enemyHp:1.3,  enemyAtk:1.2,  enemyCount:1.2,  waveDelayMult:0.6,  rewardMult:1.15, buildCostMult:1.3,
             startRes:{food:70,wood:45,stone:0,gold:0},
-            desc:'Vagues rapprochées et nombreuses, constructions +30% plus chères.' },
+            desc:'Vagues rapprochées et nombreuses, constructions +30% plus chères.',
+            descRival:'Rival mieux doté, assauts rapprochés et plus nombreux, unités plus solides, constructions +30% plus chères.' },
   brutal: { nom:'Brutal',    ico:'💀', enemyHp:1.65, enemyAtk:1.4,  enemyCount:1.4,  waveDelayMult:0.45, rewardMult:1.3,  buildCostMult:1.5,
             startRes:{food:60,wood:40,stone:0,gold:0},
-            desc:'Assauts massifs et quasi sans répit, constructions +50% plus chères.' },
+            desc:'Assauts massifs et quasi sans répit, constructions +50% plus chères.',
+            descRival:'Rival redoutable dès le départ, assauts massifs et quasi sans répit, constructions +50% plus chères.' },
 };
+// Le texte de difficulté qui correspond au mode donné (courant par défaut).
+function diffDesc(diffKey,modeKey){
+  const d=DIFFS[diffKey]||DIFFS.normal;
+  const mk=modeKey||(typeof selectedMode!=='undefined'?selectedMode:'survival');
+  const sansVagues=(MODES[mk]||{}).targetWaves===0;
+  return (sansVagues&&d.descRival)||d.desc;
+}
+window.diffDesc=diffDesc;
 
 // ── CIVILISATIONS ─────────────────────────────────────────
 // Un seul bonus passif marquant par civilisation, appliqué à des points de
@@ -321,8 +342,14 @@ const DIFFS = {
 //   un bonus ÉCONOMIQUE ou STRUCTUREL, lu là où il agit, jamais un
 //   multiplicateur global de plus.
 const CIVS = {
+  // `unique:null` assumé : les Francs échangent l'unité exclusive contre les
+  // fermes re-semées gratuitement. Leur description citait « Paladin » à la
+  // place exacte où les trois autres nomment LEUR unité exclusive — or le
+  // Paladin s'obtient par la recherche « Foi Divine » (RDEF.faith, sans
+  // champ `civ`) et se forme au Château dans les quatre camps : la promesse
+  // était fausse, et fausse précisément là où elle se comparait.
   francs:    { nom:'Francs',    ico:'🐴',
-               desc:'+20% PV Cavalerie · Fermes re-semées gratuitement · Paladin · Chevalerie Franque',
+               desc:'+20% PV Cavalerie · Fermes re-semées gratuitement · Chevalerie Franque',
                cavHpMult:1.20, fermeGratuite:true, unique:null, techCiv:'chevalerie' },
   byzantins: { nom:'Byzantins', ico:'🛡️',
                desc:'+15% PV bâtiments · chantiers 30% plus rapides · Cataphractaire · Feu Grégeois',
@@ -756,7 +783,7 @@ function pickDifficulty(key){
   selectedDifficulty=key;
   document.querySelectorAll('#diffrow .diffbtn').forEach(b=>b.classList.toggle('sel', b.dataset.d===key));
   const dt=document.getElementById('difftip');
-  if(dt) dt.textContent=`${DIFFS[key].nom} — ${DIFFS[key].desc}`;
+  if(dt) dt.textContent=`${DIFFS[key].nom} — ${diffDesc(key)}`;
   const pt=document.getElementById('peacetxt');
   if(pt) pt.textContent=peaceLabel(key);
   try{ localStorage.setItem('adc_diff',key); }catch(e){}
@@ -848,6 +875,11 @@ function pickMode(key){
   // aller-retour Conquête → Survie.
   const pt=document.getElementById('peacetxt');
   if(pt) pt.textContent=peaceLabel(selectedDifficulty);
+  // Le texte de difficulté dépend du mode (vagues ou rival IA — voir
+  // diffDesc) : changer de mode doit le réécrire, sinon il resterait à
+  // parler de vagues après un passage en Conquête.
+  const dtip=document.getElementById('difftip');
+  if(dtip) dtip.textContent=`${(DIFFS[selectedDifficulty]||DIFFS.normal).nom} — ${diffDesc(selectedDifficulty,key)}`;
   // #multitip (visible seulement sous l'onglet Multijoueur, voir
   // pickPlayTab()) précise si l'ami à venir sera un ALLIÉ (2v1 Coop, seul
   // mode avec coop:true) ou un ADVERSAIRE (Conquête, 2 rivaux) — sinon rien

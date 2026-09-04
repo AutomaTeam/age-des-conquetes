@@ -34,6 +34,7 @@ const EXPORTS = [
   'buildSaveData', 'migrerSauvegarde', 'RESEAU', 'PROTO_VERSION',
   'UT', 'BT', 'RT', 'UDEF', 'BDEF', 'FAC', 'CIVS', 'AGES', 'RDEF',
   'COLS', 'ROWS', 'BASE_TILE', 'MODES', 'DIFFS', 'modeDispo', 'pickPlayTab',
+  'diffDesc', 'EMOTES', 'indexEmoteDepuisTouche', 'ACH',
   'estHostile', 'fac', 'moi', 'estLocal', 'isMilitary',
   'degatsContre', 'degatsDe', 'armureDe', 'classeDe', 'BONUS', 'BLD_ARMOR',
   'gatherCap', 'gatherMult', 'separerUnites', 'heroAuraMult', 'majHeros',

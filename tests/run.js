@@ -1913,6 +1913,41 @@ groupe('finpartie', () => {
     egal(j.lire('selectedMode'), 'survival', 'la Survie choisie en Solo a été perdue en passant par Multijoueur');
   });
 
+  // Le Héros est une chance UNIQUE par partie (f.heroTrained, voir
+  // ORD.FORMER) : l'annulation la rend explicitement. Restait un trou — un
+  // Château qui tombe avec le Héros encore en file. Le joueur avait payé,
+  // ne recevait rien, et ne pouvait plus jamais en former.
+  const scenarioHeroEnFile = (j) => {
+    const p = caseLibre(j, 60, 60, 3, 3);
+    const chateau = batir(j, j.BT.CASTLE, p.tx, p.ty);
+    riche(j);
+    const f = j.moi(); f.age = 3; f.maxPop = 200;
+    const r = ordreDe(j, j.G.me, j.ORD.FORMER, { bId: chateau.id, unitType: j.UT.HERO });
+    ok(r.ok, 'la formation du Héros a été refusée : ' + (r.raison || ''));
+    egal(f.heroTrained, true, 'la chance du Héros n\'a pas été réservée');
+    return { chateau, f };
+  };
+
+  test('un Château rasé avec le Héros en file ne coûte pas le Héros de la partie', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const { chateau, f } = scenarioHeroEnFile(j);
+    chateau.hp = 0; // rasé au combat
+    for (let k = 0; k < 5; k++) j.update(j.SIM_DT);
+    egal(f.heroTrained, false, 'le Château rasé a emporté la seule chance de Héros de la partie');
+    // Et la chance est réellement réutilisable, pas juste remise à zéro.
+    const p2 = caseLibre(j, 70, 70, 3, 3);
+    const c2 = batir(j, j.BT.CASTLE, p2.tx, p2.ty);
+    ok(ordreDe(j, j.G.me, j.ORD.FORMER, { bId: c2.id, unitType: j.UT.HERO }).ok,
+      'impossible de reformer un Héros après la perte du premier Château');
+  });
+
+  test('démolir un Château avec le Héros en file ne coûte pas le Héros non plus', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const { chateau, f } = scenarioHeroEnFile(j);
+    j.appliquerDemolition(chateau);
+    egal(f.heroTrained, false, 'la démolition volontaire a emporté la chance de Héros');
+  });
+
   // ── Ce que l'interface PROMET doit être ce que le code FAIT ──
   // Les trois tests qui suivent gardent des libellés, pas des mécaniques :
   // chacun a menti à un joueur, et rien ne le signalait.
@@ -1945,6 +1980,30 @@ groupe('finpartie', () => {
           ok(!/vague/i.test(txt),
             `le mode « ${m.nom} » n'a aucune vague, mais sa difficulté ${dk} annonce : « ${txt} »`);
         }
+      }
+    }
+  });
+
+  test('le bonus annoncé à chaque âge correspond à AGE_BONUS', () => {
+    const j = charger();
+    const pct = (v) => Math.round((v - 1) * 100);
+    for (let i = 1; i < j.AGES.length; i++) {
+      const txt = j.AGES[i].bonus, b = j.AGE_BONUS[i];
+      // Chaque pourcentage annoncé doit exister dans la table.
+      for (const [champ, attendu] of [['bldHp', b.bldHp], ['gather', b.gather], ['unitHp', b.unitHp], ['milAtk', b.milAtk]]) {
+        ok(new RegExp('\\+' + pct(attendu) + '%').test(txt),
+          `l'${j.AGES[i].nom} applique ${champ} +${pct(attendu)}% mais ne l'annonce pas : « ${txt} »`);
+      }
+      ok(new RegExp('\\+' + b.housePop + ' par Maison').test(txt),
+        `l'${j.AGES[i].nom} donne ${b.housePop} par Maison, texte : « ${txt} »`);
+      // Un plafond de population chiffré ne doit être annoncé que s'il change
+      // vraiment d'un âge à l'autre — « pop. max 80 » a longtemps été affiché
+      // alors que popCap valait 300 partout.
+      const annonce = /pop\.?\s*max\s*(\d+)/i.exec(txt);
+      if (annonce) {
+        egal(+annonce[1], b.popCap, `l'${j.AGES[i].nom} annonce un plafond de population faux`);
+        ok(b.popCap !== j.AGE_BONUS[i - 1].popCap,
+          `l'${j.AGES[i].nom} annonce un plafond de population que l'âge précédent avait déjà`);
       }
     }
   });

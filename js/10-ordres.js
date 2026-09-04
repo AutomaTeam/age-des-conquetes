@@ -568,6 +568,7 @@ function appliquerDemolition(b,owner){
     u.state='idle'; u.target=null;
     if(enGarnison) reprendrePoste(u); // une Tour/un Château démoli(e) ne doit pas voler leur activité aux occupants
   }
+  libererFileFormation(b); // idem destruction au combat : le Héros en file reste formable
   G.buildings=G.buildings.filter(x=>x.id!==b.id);
   G.sel=G.sel.filter(id=>id!==b.id);
   updatePopCap();

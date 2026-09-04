@@ -966,8 +966,14 @@ const RDEF = {
   masonry:    { nom:'Maçonnerie',     ico:'🧱', cost:{stone:120,food:80},  time:40,  desc:'+25% PV aux bâtiments',              cat:'forge' },
   siege_smithing:{ nom:'Forge de Siège', ico:'🐏', cost:{gold:150,stone:100}, time:50,  desc:'+25% ATK Béliers et Trébuchets',   cat:'forge' },
   cavalry_lance:{ nom:'Lance de Cavalerie', ico:'🗡️', cost:{gold:120,wood:60}, time:40,  desc:'+20% ATK Chevaliers, Paladins et Éclaireurs', cat:'forge' },
-  longbow:    { nom:'Arc Long',       ico:'🎯', cost:{gold:150,wood:80},   time:60,  desc:'+50% portée des Archers',            cat:'univ'  },
-  tactics:    { nom:'Tactiques',      ico:'📜', cost:{gold:200,food:100},  time:75,  desc:'+20% ATK à toutes vos unités',       cat:'univ'  },
+  // « des Archers » sous-vendait : l'effet vise ARC **et** XBOW (voir le
+  // rattrapage rétroactif, js/08-ia.js), comme bow_craft juste au-dessus.
+  longbow:    { nom:'Arc Long',       ico:'🎯', cost:{gold:150,wood:80},   time:60,  desc:'+50% portée des Archers et Arbalétriers', cat:'univ'  },
+  // « à toutes vos unités » sur-vendait : l'effet est borné à isMilitary,
+  // les Villageois n'y gagnent rien — ce que la notification affichée APRÈS
+  // l'achat disait déjà correctement, contrairement à ce libellé-ci, qui est
+  // celui que le joueur lit AVANT de payer.
+  tactics:    { nom:'Tactiques',      ico:'📜', cost:{gold:200,food:100},  time:75,  desc:'+20% ATK à toutes vos unités militaires', cat:'univ'  },
   faith:      { nom:'Foi Divine',     ico:'✝️', cost:{gold:200,stone:150}, time:90,  desc:'Débloque le Paladin',                cat:'univ'  },
   engineering:{ nom:'Génie Civil',    ico:'🔧', cost:{stone:200,gold:80},  time:60,  desc:'+40% PV des Tours et Château',       cat:'univ'  },
   fortification:{ nom:'Fortifications', ico:'🏯', cost:{stone:220,gold:90}, time:65,  desc:'+25% PV Murs, Portails et Avant-postes', cat:'univ' },
@@ -995,14 +1001,24 @@ const RDEF = {
 };
 
 // ── SYSTÈME D'ÂGES ────────────────────────────────────────
+// `bonus` est affiché tel quel au joueur à chaque montée d'âge (voir
+// updateAgeUpFaction, js/07-simulation.js) : il doit refléter AGE_BONUS
+// juste en dessous, ligne pour ligne. Deux dérives corrigées le 2026-09-04 :
+//   • l'Impérial annonçait « pop. max 80 » alors que popCap vaut 300 — et
+//     vaut 300 à TOUS les âges : monter d'âge n'a jamais rien changé à ce
+//     plafond. Ce qui augmente vraiment, c'est housePop (5→8 par Maison),
+//     déjà annoncé. Le « 80 » était un fossile d'une version antérieure.
+//   • unitHp et milAtk s'appliquent dès le Féodal (voir mkUnit) mais
+//     n'étaient annoncés qu'à l'Impérial pour l'ATK, et jamais pour les PV :
+//     le joueur ne savait pas que ses unités se renforcent à chaque âge.
 const AGES = [
   { nom:'Âge Sombre',   ico:'🌑', cost:{},                     bonus:'Début de votre civilisation' },
   { nom:'Âge Féodal',   ico:'🌅', cost:{food:500},
-    bonus:'+15% PV bâtiments · +10% récolte · +6 par Maison · débloque Piquier & Tour de Garde' },
+    bonus:'+15% PV bâtiments · +10% récolte · +8% PV et ATK des unités · +6 par Maison · débloque Piquier & Tour de Garde' },
   { nom:'Âge des Châteaux',ico:'🏰', cost:{food:800,gold:200},
-    bonus:'+30% PV bâtiments · +20% récolte · +7 par Maison · débloque Château Fort, Arbalétrier & Donjon' },
+    bonus:'+30% PV bâtiments · +20% récolte · +15% PV et +16% ATK des unités · +7 par Maison · débloque Château Fort, Arbalétrier & Donjon' },
   { nom:'Âge Impérial', ico:'👑', cost:{food:1200,gold:600},
-    bonus:'+45% PV bâtiments · +30% récolte · +25% ATK unités · +8 par Maison · pop. max 80 · débloque Trébuchet' },
+    bonus:'+45% PV bâtiments · +30% récolte · +22% PV et +25% ATK des unités · +8 par Maison · débloque Trébuchet' },
 ];
 
 // ── BONUS CUMULÉS PAR ÂGE (source unique) ──────────────────────────────

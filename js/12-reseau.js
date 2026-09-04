@@ -532,7 +532,11 @@ function appliquerSnap(m){
   for(const bd of liste(m.bat)) if(batValide(bd)) placeBuilding(deserialiserBatiment(bd)); // placeBuilding pousse lui-meme
   G.units=liste(m.uni).filter(uniteValide).map(deserialiserUnite);
   G.wave=m.wave; G.waveTimer=m.waveTimer; G.waveActive=m.waveActive;
-  G.nid=Math.max(...[...G.units,...G.buildings,...G.nodes].map(e=>e.id||0),0)+1;
+  // Reliques et faune tirent du MEME compteur que les unites (voir genMap) :
+  // les omettre ici ne pardonnait que parce que les unites, creees apres
+  // elles, portent toujours des id plus hauts. Meme durcissement que le
+  // chargement d'une sauvegarde (js/13-cloud.js).
+  G.nid=Math.max(...[...G.units,...G.buildings,...G.nodes,...(G.relics||[]),...(G.wildlife||[])].map(e=>e.id||0),0)+1;
   rebuildIndex();
   updatePopCap();
   revealFog();

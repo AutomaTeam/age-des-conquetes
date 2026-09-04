@@ -1940,6 +1940,18 @@ try {
     const stop=onValue(ref(db,`signal/${code}/reponse`), async snap=>{
       const r=snap.val();
       if(!r||!pc||pc.currentRemoteDescription) return;
+      // Un vrai invite vient de repondre : c'est SEULEMENT maintenant que le
+      // delai de grace avant repli sur le relais a un sens, exactement comme
+      // cote invite (rejoindreSalon) qui le demarre apres avoir envoye SA
+      // reponse. Le demarrer plus tot, des la creation du salon (l'ancien
+      // comportement), le faisait courir pendant que personne n'avait encore
+      // rejoint -- un temps qu'un humain (partager le lien, se connecter,
+      // cliquer Rejoindre) depasse presque toujours en usage reel. Resultat
+      // mesure : l'hote basculait sur le relais avant meme que la negociation
+      // P2P n'ait pu commencer, alors que l'invite, lui, etablissait un P2P
+      // parfaitement sain dans la foulee -- les deux cotes finissaient en
+      // desaccord sur le canal reellement utilise.
+      if(!minuteurP2P) minuteurP2P=setTimeout(()=>basculerRelais(code,'hote','delai depasse'),DELAI_P2P);
       await pc.setRemoteDescription(new RTCSessionDescription(r));
     });
     poser(stop);
@@ -1952,7 +1964,6 @@ try {
     });
     poser(stop2);
 
-    minuteurP2P=setTimeout(()=>basculerRelais(code,'hote','delai depasse'),DELAI_P2P);
     return code;
   };
 
@@ -2084,10 +2095,15 @@ try {
     const stop=onValue(ref(db,`signal/${code}/reponse`), async snap=>{
       const r=snap.val();
       if(!r||!pc||pc.currentRemoteDescription) return;
+      // Meme principe que dans creerSalon : le delai de grace ne demarre
+      // qu'une fois une vraie reponse recue, pas des l'emission de l'offre --
+      // l'invite peut mettre jusqu'a son propre intervalle de nouvelle
+      // tentative (3 s, demarrerTentativesClient) avant meme de renvoyer une
+      // reponse.
+      if(!minuteurP2P) minuteurP2P=setTimeout(()=>basculerRelais(code,'hote','delai depasse'),DELAI_P2P);
       await pc.setRemoteDescription(new RTCSessionDescription(r));
     });
     poser(stop);
-    minuteurP2P=setTimeout(()=>basculerRelais(code,'hote','delai depasse'),DELAI_P2P);
   }
 
   // Invite : retente rejoindreSalon (deja idempotent — il nettoie puis

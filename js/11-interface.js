@@ -998,7 +998,112 @@ function toggleSfx(){
   if(el){ el.innerHTML=`${iconImg(SFX.on?'🔊':'🔇',18)} Son : ${SFX.on?'Activé':'Coupé'}`; el.style.opacity=SFX.on?'1':'.7'; }
   if(SFX.on){ SFX.unlock(); sfx('tap'); }
   notify(SFX.on?'🔊 Son activé':'🔇 Son coupé','#95a5a6');
+  syncOptionsUI();
 }
+
+// ── MENU OPTIONS (écran-titre + menu pause) ────────────────
+// Bascules globales compatibles mobile ET PC : Son (SFX ci-dessus, juste
+// relié ici), Vibrations, Plein écran, Réduire les animations. Chacune se
+// grise/se désactive toute seule si l'appareil ne la supporte pas (voir
+// optRowAvailability()) plutôt que de disparaître — un joueur PC voit encore
+// la rangée Vibrations, juste marquée indisponible, au lieu de se demander
+// où elle est passée.
+
+// Vibrations : buzz() (juste au-dessus) est le SEUL point d'entrée de toute
+// vibration du jeu — cette bascule suffit donc à tout couper d'un coup.
+// Activées par défaut (comportement historique inchangé tant que le joueur
+// n'a rien réglé).
+const VIBR={ on:true };
+try{ if(localStorage.getItem('adc_vibr')==='0') VIBR.on=false; }catch(e){}
+function toggleVibr(){
+  VIBR.on=!VIBR.on;
+  try{ localStorage.setItem('adc_vibr',VIBR.on?'1':'0'); }catch(e){}
+  if(VIBR.on) buzz(10);
+  notify(VIBR.on?'📳 Vibrations activées':'📴 Vibrations coupées','#95a5a6');
+  syncOptionsUI();
+}
+window.toggleVibr=toggleVibr;
+
+// Plein écran : API standard, avec repli webkit (vieux Safari). Le bouton
+// n'est que le déclencheur — l'état réel vient de document.fullscreenElement
+// (voir syncOptionsUI()), car on peut aussi en sortir avec Échap sans passer
+// par lui : d'où les écouteurs fullscreenchange qui re-synchronisent le
+// libellé dans ce cas.
+function toggleFullscreen(){
+  const el=document.documentElement;
+  const isFs=!!(document.fullscreenElement||document.webkitFullscreenElement);
+  try{
+    // Peut être refusé sans que ce soit une erreur du jeu (page dans un
+    // cadre sans permission plein écran, iOS Safari qui ne l'expose pas du
+    // tout…) : la promesse rejetée est avalée en silence plutôt que de
+    // remonter en rejet non traité dans la console — syncOptionsUI() via
+    // fullscreenchange dit de toute façon la vérité, pas ce bouton.
+    if(!isFs){
+      const req=el.requestFullscreen||el.webkitRequestFullscreen;
+      if(req){ const p=req.call(el); if(p&&p.catch) p.catch(()=>{}); }
+    } else {
+      const exit=document.exitFullscreen||document.webkitExitFullscreen;
+      if(exit){ const p=exit.call(document); if(p&&p.catch) p.catch(()=>{}); }
+    }
+  }catch(e){}
+}
+window.toggleFullscreen=toggleFullscreen;
+document.addEventListener('fullscreenchange', ()=>syncOptionsUI());
+document.addEventListener('webkitfullscreenchange', ()=>syncOptionsUI());
+
+// Réduire les animations : pose/retire html.reduce-motion (voir index.html,
+// section juste après le @media prefers-reduced-motion existant) — ne cible
+// QUE les animations décoratives en boucle infinie, jamais celles qui
+// portent une temporisation fonctionnelle (toasts, succès, bannières).
+const MOTION={ reduced:false };
+try{ if(localStorage.getItem('adc_reduce_motion')==='1') MOTION.reduced=true; }catch(e){}
+function applyReduceMotion(){
+  document.documentElement.classList.toggle('reduce-motion', MOTION.reduced);
+}
+function toggleReduceMotion(){
+  MOTION.reduced=!MOTION.reduced;
+  try{ localStorage.setItem('adc_reduce_motion',MOTION.reduced?'1':'0'); }catch(e){}
+  applyReduceMotion();
+  notify(MOTION.reduced?'🎞️ Animations réduites':'🎞️ Animations normales','#95a5a6');
+  syncOptionsUI();
+}
+window.toggleReduceMotion=toggleReduceMotion;
+applyReduceMotion(); // reprend le réglage de la dernière session dès le chargement
+
+// Une bascule sans effet sur cet appareil (Vibrations sur PC, Plein écran si
+// l'API n'existe pas) reste visible mais se grise et se désactive — évalué
+// une seule fois, la disponibilité ne change pas en cours de session.
+function optRowAvailability(){
+  if(!('vibrate' in navigator)){
+    const row=document.getElementById('opt-row-vibr'), btn=document.getElementById('opt-vibr-state');
+    if(row) row.classList.add('optrow-unavail');
+    if(btn){ btn.disabled=true; btn.textContent='Indisponible'; btn.classList.remove('on'); }
+  }
+  const canFs=!!(document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen);
+  if(!canFs){
+    const row=document.getElementById('opt-row-fs'), btn=document.getElementById('opt-fs-state');
+    if(row) row.classList.add('optrow-unavail');
+    if(btn){ btn.disabled=true; btn.textContent='Indisponible'; }
+  }
+}
+optRowAvailability();
+
+function syncOptionsUI(){
+  const setRow=(id,on,onLabel,offLabel)=>{
+    const el=document.getElementById(id);
+    if(!el||el.disabled) return; // indisponible sur cet appareil : garder "Indisponible"
+    el.textContent=on?onLabel:offLabel;
+    el.classList.toggle('on',on);
+  };
+  setRow('opt-sfx-state', SFX.on, 'Activé','Coupé');
+  setRow('opt-vibr-state', VIBR.on, 'Activées','Coupées');
+  setRow('opt-fs-state', !!(document.fullscreenElement||document.webkitFullscreenElement), 'Activé','Désactivé');
+  setRow('opt-motion-state', MOTION.reduced, 'Réduites','Normales');
+}
+window.syncOptionsUI=syncOptionsUI;
+function openOptions(){ syncOptionsUI(); document.getElementById('optionspanel').style.display='flex'; }
+function closeOptions(){ document.getElementById('optionspanel').style.display='none'; }
+window.openOptions=openOptions; window.closeOptions=closeOptions;
 
 // ── RÉPARATION AUTOMATIQUE ────────────────────────────────
 // Bascule globale (comme le son) : quand elle est active, tout villageois
@@ -1121,8 +1226,11 @@ function alertAttack(x,y){
   setTimeout(()=>el.remove(),5000);
 }
 
-// Retour haptique léger (mobile)
-function buzz(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+// Retour haptique léger (mobile). Point d'entrée UNIQUE de toute vibration
+// du jeu (une trentaine d'appels dans tout le code) : VIBR.on (menu Options,
+// voir toggleVibr() plus bas) suffit donc à tout couper d'un coup, sans
+// toucher aucun appelant.
+function buzz(ms){ if(!VIBR.on) return; try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
 
 
 // Plafond de toasts simultanés : une rafale (siège qui rase plusieurs

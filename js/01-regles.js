@@ -791,8 +791,19 @@ window.toggleCfg=toggleCfg;
 //   à l'autre bout de la carte. Aucune vague scriptée, aucun camp neutre :
 //   la seule menace est cette IA, et la victoire consiste à raser SON Centre
 //   Ville avant qu'elle ne rase le vôtre.
+// `solo` / `multi` (par défaut true) disent où le mode a réellement un sens.
+// Ce ne sont PAS des préférences d'affichage : chacun traduit une condition
+// de victoire qui existe, ou non, dans ce contexte.
+//   • survival, multi:false — la victoire y est « atteindre la vague 20 »,
+//     partagée et sans vainqueur désigné entre les deux humains. Pire, elle
+//     est ASYMÉTRIQUE en ligne : seul l'hôte l'évalue (voir checkVictory,
+//     js/07-simulation.js), le client n'a que la victoire par élimination
+//     (js/12-reseau.js) — il pouvait donc survivre aux 20 vagues sans jamais
+//     gagner. Le mode n'est pas proposé en ligne plutôt que d'y être cassé.
+//   • coop2v1, solo:false — sans second humain, il se joue exactement comme
+//     Conquête (1 rival IA) : un doublon déguisé dans le sélecteur solo.
 const MODES = {
-  survival: { nom:'Survie',   ico:'🛡️', targetWaves:20,
+  survival: { nom:'Survie',   ico:'🛡️', targetWaves:20, multi:false,
               desc:"Repoussez 20 vagues d'assaut pour l'emporter.",
               intro:'Récoltez bois, pierre et or. Bâtissez votre cité. Forgez vos armes.<br>Vous avez <strong id="peacetxt">20 minutes</strong> avant la première attaque !' },
   conquest2:{ nom:'2 rivaux', ico:'⚔️', targetWaves:0, rivaux:2,
@@ -801,14 +812,32 @@ const MODES = {
   conquest: { nom:'Conquête', ico:'🏴', targetWaves:0, rivaux:1,
               desc:'Un seigneur rival bâtit sa propre cité. Détruisez son Centre Ville — avant qu\'il ne détruise le vôtre.',
               intro:'Un rival récolte, construit, monte les âges et lève ses armées en même temps que vous.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong> — pas de vagues, un seul adversaire.' },
-  coop2v1:  { nom:'2v1 Coop',  ico:'🤝', targetWaves:0, rivaux:1, coop:true,
-              desc:'Deux joueurs alliés (bouton « Jouer avec un ami ») contre un seul seigneur IA, à la difficulté choisie ci-dessous.',
-              intro:'Rejoignez-vous à un allié (bouton « Jouer avec un ami » ci-dessous) pour affronter ensemble un seul seigneur rival.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong>. Lancé seul, ce mode se joue comme la Conquête.' },
+  coop2v1:  { nom:'2v1 Coop',  ico:'🤝', targetWaves:0, rivaux:1, coop:true, solo:false,
+              desc:'Deux joueurs alliés contre un seul seigneur IA, à la difficulté choisie ci-dessous.',
+              intro:'Rejoignez-vous à un allié (bouton « Jouer avec un ami » ci-dessous) pour affronter ensemble un seul seigneur rival.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong>.' },
 };
+// Un mode est-il proposable dans cet onglet ? (source unique : pickPlayTab()
+// pour l'affichage, mpCreer() pour le garde-fou réseau.)
+function modeDispo(key,tab){
+  const m=MODES[key];
+  if(!m) return false;
+  return tab==='multi' ? m.multi!==false : m.solo!==false;
+}
+window.modeDispo=modeDispo;
 let selectedMode='survival';
+// Dernier mode retenu DANS chaque onglet. Sans cette mémoire, un joueur en
+// Survie qui jette un œil à l'onglet Multijoueur (où Survie n'existe pas :
+// repli sur Conquête) revenait en Solo sur Conquête — son choix perdu pour
+// avoir simplement regardé à côté. Vivant le temps de la page seulement : la
+// reprise d'une session à l'autre reste assurée par adc_mode/adc_playtab.
+const _modeParOnglet={solo:null,multi:null};
 function pickMode(key){
   if(!MODES[key]) return;
   selectedMode=key;
+  // Rangé dans l'onglet COURANT (pickPlayTab a déjà basculé selectedPlayTab
+  // avant d'appeler son repli) : un mode ne mémorise jamais un onglet où il
+  // ne serait pas proposé.
+  if(modeDispo(key,selectedPlayTab)) _modeParOnglet[selectedPlayTab]=key;
   document.querySelectorAll('.modebtn').forEach(b=>b.classList.toggle('sel', b.dataset.m===key));
   const mt=document.getElementById('modetip');
   if(mt) mt.textContent=`${MODES[key].nom} — ${MODES[key].desc}`;
@@ -821,12 +850,15 @@ function pickMode(key){
   if(pt) pt.textContent=peaceLabel(selectedDifficulty);
   // #multitip (visible seulement sous l'onglet Multijoueur, voir
   // pickPlayTab()) précise si l'ami à venir sera un ALLIÉ (2v1 Coop, seul
-  // mode avec coop:true) ou un ADVERSAIRE (les 3 autres) — sinon rien ne le
-  // distingue plus une fois le badge « En ligne » retiré du bouton de mode.
+  // mode avec coop:true) ou un ADVERSAIRE (Conquête, 2 rivaux) — sinon rien
+  // ne le distingue plus une fois le badge « En ligne » retiré du bouton.
   const mtip=document.getElementById('multitip');
-  if(mtip) mtip.textContent=MODES[key].coop
-    ? '🤝 Ami ALLIÉ — vous combattez ensemble contre un seul seigneur IA.'
-    : '⚔️ Ami ADVERSAIRE — vous vous affrontez, l\'IA joue un 3ᵉ camp.';
+  if(mtip){
+    const nR=MODES[key].rivaux||0;
+    mtip.textContent=MODES[key].coop
+      ? '🤝 Ami ALLIÉ — vous combattez ensemble contre un seul seigneur IA.'
+      : `⚔️ Ami ADVERSAIRE — vous vous affrontez, avec ${nR>1?`${nR} seigneurs IA en camps`:'un seigneur IA en camp'} à part. Le dernier debout l'emporte.`;
+  }
   try{ localStorage.setItem('adc_mode',key); }catch(e){}
   updateCfgSummary();
 }
@@ -834,26 +866,55 @@ window.pickMode=pickMode;
 
 // ── BASCULE SOLO / MULTIJOUEUR (écran-titre) ──────────────
 // Répond directement à la confusion « comment configurer le multi ? » :
-// avant, le mode 2v1 Coop et le bouton « Jouer avec un ami » étaient mêlés
-// aux 3 modes solo et au CTA "Commencer la partie", sans rien pour dire
-// lequel allait avec lequel. Ici Solo et Multi affichent chacun EXACTEMENT
-// un CTA de lancement, et Multi seul révèle le mode 2v1 Coop (qui, seul,
-// se comporte de toute façon comme Conquête — inutile de le montrer en
-// Solo). Ne touche jamais au mode/difficulté/civ/carte choisis à côté :
-// seulement qui rejoint la partie ainsi réglée. Persisté comme le reste
-// pour rouvrir sur le dernier onglet choisi (voir js/13-cloud.js).
+// avant, les 4 modes et les deux CTA de lancement étaient mêlés sans rien
+// pour dire lequel allait avec lequel. Ici chaque onglet affiche EXACTEMENT
+// un CTA de lancement et SES modes — Survie n'apparaît qu'en Solo, 2v1 Coop
+// qu'en Multijoueur (voir les drapeaux solo/multi de MODES : ce ne sont pas
+// des goûts d'affichage, c'est là où une condition de victoire existe).
+// Ne touche jamais à la difficulté/civ/carte choisies à côté : seulement au
+// mode, et seulement quand celui-ci n'existe pas dans l'onglet demandé.
+// Persisté comme le reste pour rouvrir sur le dernier onglet choisi (voir
+// js/13-cloud.js).
 let selectedPlayTab='solo';
 function pickPlayTab(tab){
   if(tab!=='solo'&&tab!=='multi') return;
   selectedPlayTab=tab;
   document.querySelectorAll('.playtab').forEach(b=>b.classList.toggle('sel', b.dataset.tab===tab));
-  const coopBtn=document.querySelector('.modebtn[data-m="coop2v1"]');
-  if(coopBtn) coopBtn.style.display=(tab==='multi')?'':'none';
-  // Un 2v1 Coop resté sélectionné en repassant en Solo laisserait le
-  // sélecteur de mode sans bouton visible en surbrillance (le sien est
-  // caché) : on retombe sur Conquête, dont il est de toute façon la copie
-  // exacte tant que personne n'a rejoint.
-  if(tab==='solo'&&selectedMode==='coop2v1') pickMode('conquest');
+  // Chaque onglet ne montre QUE les modes qui ont un vainqueur défini dans
+  // ce contexte (voir MODES et modeDispo() plus haut) : Survie disparaît en
+  // Multijoueur, 2v1 Coop en Solo. Piloté par la table, pas par une liste
+  // codée en dur ici — ajouter un mode ne demande donc rien de plus que ses
+  // drapeaux.
+  let premierVisible=null;
+  document.querySelectorAll('.modebtn').forEach(b=>{
+    const ok=modeDispo(b.dataset.m,tab);
+    b.style.display=ok?'':'none';
+    if(ok&&!premierVisible) premierVisible=b.dataset.m;
+  });
+  // Quel mode afficher dans l'onglet qu'on vient d'ouvrir ?
+  //   1. celui qu'on y avait DÉJÀ retenu, s'il y en a un : chaque onglet
+  //      garde son propre choix, exactement comme le joueur l'y a laissé. Un
+  //      joueur en Survie qui va voir le Multijoueur et revient retrouve sa
+  //      Survie, au lieu du repli qu'on avait dû lui imposer à l'aller ;
+  //   2. sinon on garde le mode courant s'il est proposé ici — rien à faire ;
+  //   3. sinon il FAUT un repli, sans quoi le sélecteur n'aurait plus aucun
+  //      bouton en surbrillance et « Commencer »/« Jouer avec un ami »
+  //      lancerait en silence un mode invisible. On prend alors le mode le
+  //      plus proche de celui qu'on quitte (même nombre de rivaux IA, donc
+  //      même forme de partie) : venant de 2v1 Coop (1 rival) on retombe sur
+  //      Conquête (1 rival), pas sur Survie qui changerait la nature même de
+  //      la partie. À défaut, le premier bouton VISIBLE (ordre du DOM = celui
+  //      que le joueur lit) ; et sans DOM (tests hors navigateur), l'ordre
+  //      des clés de MODES.
+  const memo=_modeParOnglet[tab];
+  if(memo&&modeDispo(memo,tab)){
+    if(memo!==selectedMode) pickMode(memo);
+  } else if(!modeDispo(selectedMode,tab)){
+    const cles=Object.keys(MODES).filter(k=>modeDispo(k,tab));
+    const nR=(MODES[selectedMode]||{}).rivaux||0;
+    const repli=cles.find(k=>(MODES[k].rivaux||0)===nR)||premierVisible||cles[0];
+    if(repli) pickMode(repli);
+  }
   const startBtn=document.getElementById('startsolobtn');
   const friendBtn=document.getElementById('mpbtn-titre');
   if(startBtn) startBtn.style.display=(tab==='solo')?'block':'none';

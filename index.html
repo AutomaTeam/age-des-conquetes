@@ -486,6 +486,27 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 @media (prefers-reduced-motion:reduce) {
   #overlay::before, #overlay::after { animation:none;opacity:.8; }
 }
+/* ── BASCULE MANUELLE « Réduire les animations » (menu Options) ──
+   Même esprit que prefers-reduced-motion ci-dessus, mais un choix explicite
+   du joueur plutôt qu'un réglage système — un mobile bas de gamme peut
+   saccader sans que l'OS ne déclare de préférence. Cible UNIQUEMENT les
+   animations décoratives EN BOUCLE INFINIE (torches, reflet du CTA,
+   pulsations d'attention) : jamais celles qui portent une temporisation
+   fonctionnelle (apparition/disparition d'un toast, d'un succès, d'une
+   bannière — voir nfade/achin/achout/bannerflash, non touchées ici), qui
+   deviendraient invisibles avant même d'être vues si on coupait leur durée.
+   La couleur/bordure de chaque élément dit déjà son état sans l'animation :
+   rien n'est perdu, seul le mouvement s'arrête. Toggle posé sur <html> par
+   toggleReduceMotion() (js/11-interface.js). */
+html.reduce-motion #overlay::before, html.reduce-motion #overlay::after,
+html.reduce-motion .mpwait,
+html.reduce-motion .bigbtn.sheen::after,
+html.reduce-motion #idlebtn-inner.active,
+html.reduce-motion #bconfirm.ready,
+html.reduce-motion #agebtn.ready,
+html.reduce-motion #ico-start {
+  animation:none!important;
+}
 /* Écran de fin de partie : bien plus haut que l'écran-titre (bilan chiffré +
    succès). Un conteneur flex centré verticalement rogne le HAUT du contenu
    dès qu'il déborde — on repasse donc en alignement haut, seul moyen de
@@ -938,6 +959,42 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 }
 .ctrlrow .cdesc { font-family:'Crimson Text',serif;font-size:12.5px;color:var(--parch2);line-height:1.35; }
 
+/* ── PANNEAU OPTIONS ── (même gabarit que #achpanel/#controlspanel) —
+   accessible depuis l'écran-titre (utilrow, avant même de lancer une
+   partie) ET depuis le menu pause (openOptions()), comme Succès/Contrôles :
+   voir js/11-interface.js pour syncOptionsUI() et les 4 bascules. */
+#optionspanel {
+  position:fixed;inset:0;z-index:610;display:none;
+  background:rgba(0,0,0,.92);
+  flex-direction:column;align-items:center;gap:10px;
+  padding:20px 14px;overflow-y:auto;touch-action:pan-y;
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);
+}
+#optionspanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px; }
+.optrow {
+  width:100%;max-width:400px;background:rgba(42,22,0,.9);
+  border:1.5px solid #4a3a20;border-radius:10px;padding:10px 12px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+/* Réglage sans effet sur cet appareil (ex. Vibrations sur PC, Plein écran
+   sur un navigateur qui ne l'expose pas) : la rangée reste visible — pour
+   ne jamais laisser le joueur chercher une option "disparue" — mais s'éteint
+   et son bouton se désactive (voir optRowAvailability(), js/11-interface.js). */
+.optrow.optrow-unavail { opacity:.5; }
+.optinfo { display:flex;flex-direction:column;gap:2px;min-width:0; }
+.optlabel { font-family:'Cinzel',serif;font-size:13px;color:var(--gold-l); }
+.optdesc { font-family:'Crimson Text',serif;font-size:11.5px;color:#9a8a6a;line-height:1.35; }
+.opttoggle {
+  flex-shrink:0;font-family:'Cinzel',serif;font-size:12px;font-weight:700;
+  padding:7px 14px;border-radius:8px;cursor:pointer;white-space:nowrap;
+  background:rgba(20,12,0,.8);color:#9a8a6a;border:1.5px solid #5a4a2a;
+  -webkit-tap-highlight-color:transparent;
+  transition:background .15s,color .15s,border-color .15s;
+}
+.opttoggle.on { background:rgba(46,204,113,.16);color:#2ecc71;border-color:#2ecc71; }
+.opttoggle:active { transform:scale(.96); }
+.opttoggle:disabled { opacity:.5;cursor:not-allowed;transform:none; }
+
 /* ── PANNEAU DU CLASSEMENT ── (même gabarit que #achpanel) */
 #classementpanel {
   /* z-index au-dessus de #pausemenu (600) : même gabarit qu'#achpanel/
@@ -1356,6 +1413,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   <button class="pmenu-btn" style="background:rgba(212,160,23,.12);color:var(--gold-l);border-color:var(--gold-d);" onclick="openAch()">🏆 Succès <span id="achcount2"></span></button>
   <button class="pmenu-btn" id="diplobtn" style="display:none;background:rgba(46,204,113,.1);color:#7fd8a0;border-color:#2ecc71;" onclick="openDiplo()">🤝 Diplomatie</button>
   <button class="pmenu-btn" style="background:rgba(127,184,232,.1);color:#7fb8e8;border-color:#2a6a9a;" onclick="openControls()">🎮 Contrôles</button>
+  <button class="pmenu-btn" style="background:rgba(255,255,255,.06);color:#c9c9c9;border-color:#6a6a6a;" onclick="openOptions()">⚙️ Options</button>
   <button class="pmenu-btn pmenu-google" id="gauthbtn" onclick="googleAuthClick()" style="display:none;">☁️ Connexion Google</button>
   <button class="pmenu-btn pmenu-save"   id="savebtn-pause" onclick="saveGame()">💾 Sauvegarder</button>
   <button class="pmenu-btn pmenu-load"   id="loadbtn-pause" onclick="loadGame()">📂 Charger</button>
@@ -1449,11 +1507,11 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la partie</button>
 
     <!-- Bascule SOLO / MULTIJOUEUR — décidée EN PREMIER, avant tout réglage :
-         c'est elle qui répond à « comment configurer le multi ? » en rendant
-         visibles le mode 2v1 Coop et le bouton "Jouer avec un ami" (et eux
-         seuls) dès qu'on bascule sur Multijoueur. Ne change pas le mode/
-         difficulté/civ/carte réglés juste en dessous — seulement qui rejoint
-         la partie ainsi configurée. Voir pickPlayTab() (js/01-regles.js). -->
+         c'est elle qui répond à « comment configurer le multi ? ». Chaque
+         onglet ne laisse ensuite voir QUE ses modes (Survie en Solo, 2v1 Coop
+         en Multi, Conquête/2 rivaux dans les deux) et QUE son bouton de
+         lancement. Ne change pas la difficulté/civ/carte réglées juste en
+         dessous. Voir pickPlayTab() et MODES (js/01-regles.js). -->
     <div class="playtabs" id="playtabs">
       <button type="button" class="playtab sel" data-tab="solo" onclick="pickPlayTab('solo')"><span class="pt-ico">🎮</span><span class="pt-label">Solo</span></button>
       <button type="button" class="playtab" data-tab="multi" onclick="pickPlayTab('multi')"><span class="pt-ico">👥</span><span class="pt-label">Multijoueur</span></button>
@@ -1468,20 +1526,23 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
       <span class="cfgchevron">›</span>
     </button>
     <div class="cfgdetails" id="cfgdetails" style="display:none;">
+      <!-- Les display:none ci-dessous ne sont que l'état de DÉPART (onglet
+           Solo par défaut) : c'est pickPlayTab() qui pilote ensuite la
+           visibilité de chaque bouton, d'après les drapeaux solo/multi de
+           MODES. Survie n'a pas de vainqueur désigné à deux, 2v1 Coop est un
+           doublon de Conquête sans second joueur — chacun ne s'affiche donc
+           que dans l'onglet où il veut dire quelque chose. -->
       <div class="moderow" id="moderow">
         <button class="modebtn" data-m="survival" onclick="pickMode('survival')"><span class="mico">🛡️</span><span class="mlabel">Survie</span></button>
         <button class="modebtn" data-m="conquest" onclick="pickMode('conquest')"><span class="mico">🏴</span><span class="mlabel">Conquête</span></button>
         <button class="modebtn" data-m="conquest2" onclick="pickMode('conquest2')"><span class="mico">⚔️</span><span class="mlabel">2 rivaux</span></button>
-        <!-- Masqué en Solo par pickPlayTab() : identique à Conquête tant que
-             personne n'a rejoint, ce mode ne devient un vrai choix qu'en
-             Multijoueur (c'est là qu'un ami peut rejoindre en ALLIÉ). -->
         <button class="modebtn" data-m="coop2v1" onclick="pickMode('coop2v1')" style="display:none;"><span class="mico">🤝</span><span class="mlabel">2v1 coop</span></button>
       </div>
       <p class="tip" id="modetip">Survie — Repoussez 20 vagues d'assaut pour l'emporter.</p>
       <!-- Précise, seulement visible sous l'onglet Multijoueur, si l'ami à
-           venir sera un ALLIÉ (2v1 Coop) ou un ADVERSAIRE (les 3 autres
-           modes) — la seule ambiguïté réelle du multijoueur. -->
-      <p class="tip" id="multitip" style="display:none;color:#7fb8e8;">⚔️ Ami ADVERSAIRE — vous vous affrontez, l'IA joue un 3ᵉ camp.</p>
+           venir sera un ALLIÉ (2v1 Coop) ou un ADVERSAIRE (Conquête /
+           2 rivaux) — la seule ambiguïté réelle du multijoueur. -->
+      <p class="tip" id="multitip" style="display:none;color:#7fb8e8;">⚔️ Ami ADVERSAIRE — vous vous affrontez, avec un seigneur IA en camp à part. Le dernier debout l'emporte.</p>
       <div class="diffrow" id="diffrow">
         <button class="diffbtn" data-d="easy"   onclick="pickDifficulty('easy')"><span class="dico">🌿</span><span class="dlabel">Facile</span></button>
         <button class="diffbtn" data-d="normal" onclick="pickDifficulty('normal')"><span class="dico">⚔️</span><span class="dlabel">Normal</span></button>
@@ -1525,6 +1586,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
       <button class="utilbtn" onclick="openAch()" title="Succès"><span class="uico">🏆</span><span class="ulabel">Succès <span id="achcount"></span></span></button>
       <button class="utilbtn" onclick="openClassement()" title="Classement"><span class="uico">🥇</span><span class="ulabel">Classement</span></button>
       <button class="utilbtn" onclick="openControls()" title="Contrôles"><span class="uico">🎮</span><span class="ulabel">Contrôles</span></button>
+      <button class="utilbtn" onclick="openOptions()" title="Options"><span class="uico">⚙️</span><span class="ulabel">Options</span></button>
       <button class="utilbtn" onclick="ouvrirBenchmark()" title="Tester les performances de votre machine"><span class="uico">📊</span><span class="ulabel">Benchmark</span></button>
       <button class="utilbtn" id="gauthbtn-title" onclick="googleAuthClick()" title="Connexion Google" style="display:none;"><span class="uico">☁️</span><span class="ulabel">Google</span></button>
     </div>
@@ -1602,6 +1664,28 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   <h2>🎮 Contrôles</h2>
   <div id="ctrllist" style="display:flex;flex-direction:column;gap:7px;width:100%;align-items:center;"></div>
   <button class="rclose" onclick="closeControls()">Fermer</button>
+</div>
+
+<!-- ── PANNEAU OPTIONS ── -->
+<div id="optionspanel">
+  <h2>⚙️ Options</h2>
+  <div class="optrow" id="opt-row-sfx">
+    <div class="optinfo"><div class="optlabel">🔊 Son</div><div class="optdesc">Effets sonores du jeu (récolte, combat, alertes…).</div></div>
+    <button type="button" class="opttoggle on" id="opt-sfx-state" onclick="toggleSfx()">Activé</button>
+  </div>
+  <div class="optrow" id="opt-row-vibr">
+    <div class="optinfo"><div class="optlabel">📳 Vibrations</div><div class="optdesc">Retour haptique tactile (alertes, actions) — mobile uniquement.</div></div>
+    <button type="button" class="opttoggle on" id="opt-vibr-state" onclick="toggleVibr()">Activées</button>
+  </div>
+  <div class="optrow" id="opt-row-fs">
+    <div class="optinfo"><div class="optlabel">🖥️ Plein écran</div><div class="optdesc">Bascule l'affichage en plein écran du navigateur.</div></div>
+    <button type="button" class="opttoggle" id="opt-fs-state" onclick="toggleFullscreen()">Désactivé</button>
+  </div>
+  <div class="optrow" id="opt-row-motion">
+    <div class="optinfo"><div class="optlabel">🎞️ Réduire les animations</div><div class="optdesc">Coupe les effets décoratifs en boucle — utile sur mobile bas de gamme.</div></div>
+    <button type="button" class="opttoggle" id="opt-motion-state" onclick="toggleReduceMotion()">Normales</button>
+  </div>
+  <button class="rclose" onclick="closeOptions()">Fermer</button>
 </div>
 
 <!-- ── PANNEAU BANC D'ESSAI ── (même gabarit que #classementpanel) -->

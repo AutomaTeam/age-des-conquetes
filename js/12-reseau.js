@@ -1409,6 +1409,17 @@ window.mpPseudo=mpPseudo;
 
 async function mpCreer(){
   if(!mpDispo()) return;
+  // Garde-fou : le mode envoyé décide de la condition de victoire des DEUX
+  // camps pour toute la partie. Un mode sans vainqueur défini à deux (Survie,
+  // multi:false — l'hôte gagne à la vague 20, le client ne le peut jamais)
+  // laisserait l'invité dans une partie ingagnable. L'onglet Multijoueur ne
+  // le propose déjà plus (pickPlayTab), mais un réglage restauré d'une
+  // ancienne version pourrait encore le poser : on replie ici plutôt que de
+  // faire confiance au seul affichage.
+  if(!modeDispo(selectedMode,'multi')){
+    const repli=Object.keys(MODES).find(k=>modeDispo(k,'multi'));
+    if(repli) pickMode(repli);
+  }
   try{
     const code=await window.MP.creerSalon({
       gmode:selectedMode, difficulty:selectedDifficulty,

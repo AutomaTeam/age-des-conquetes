@@ -605,6 +605,14 @@ try{
   _jamaisChoisi=!savedMode;
   if(savedMode&&MODES[savedMode]) selectedMode=savedMode;
 }catch(e){}
+// Onglet Solo/Multi restauré AVANT pickMode() : pickPlayTab() décide si le
+// bouton "2v1 coop" est visible, et rabat selectedMode sur Conquête s'il
+// était resté sur 2v1 Coop côté Solo (voir pickPlayTab(), js/01-regles.js).
+try{
+  const savedTab=localStorage.getItem('adc_playtab');
+  if(savedTab==='multi') selectedPlayTab='multi';
+}catch(e){}
+try{ pickPlayTab(selectedPlayTab); }catch(e){}
 try{ pickMode(selectedMode); }catch(e){}
 // Résumé mode+difficulté déplié uniquement au tout premier lancement (aucun
 // mode jamais choisi sur cet appareil) : un nouveau joueur doit voir les

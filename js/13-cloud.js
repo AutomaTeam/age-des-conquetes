@@ -274,6 +274,13 @@ function buildSaveData(){
       wildlife:(G.wildlife||[]).map(w=>({...w})),
       buildings:G.buildings.map(b=>({...b, trainQ:[...b.trainQ]})),
       units:G.units.map(u=>({...u, pendingAction:null})),
+      // Groupes de contrôle (Ctrl+1..9). Ils étaient les seuls réglages
+      // FAITS PAR LE JOUEUR à ne pas survivre à une sauvegarde : reprendre
+      // une partie obligeait à les refaire un par un, sans que rien ne le
+      // dise. Les identifiants d'unités, eux, sont sauvegardés tels quels et
+      // restent donc valides ; rappelerGroupe() purge de toute façon au
+      // rappel ce qui n'existe plus.
+      groupes:JSON.parse(JSON.stringify(G.groupes||{})),
     };
 }
 
@@ -545,7 +552,17 @@ async function loadGame(key=SAVE_KEY){
     const bp=document.getElementById('bpin'); if(bp) bp.style.display='none';
     _wallAnchor=null; _wallLinePending=false;
     G.speed=1; G.rateAcc={food:0,wood:0,stone:0,gold:0}; G.rateShow={food:0,wood:0,stone:0,gold:0}; G.rateTimer=0;
-    G.nid=Math.max(...[...G.units,...G.buildings,...G.nodes].map(e=>e.id||0),0)+1;
+    // Groupes de contrôle : absents des sauvegardes d'avant ce champ, d'où
+    // le repli sur {} plutôt qu'un accès direct.
+    G.groupes=(data.groupes&&typeof data.groupes==='object')?data.groupes:{};
+    // Le compteur d'identifiants doit repartir AU-DESSUS de tout ce qui
+    // existe déjà, sinon une unité formée après le chargement porterait l'id
+    // d'une entité vivante et l'index (voir rebuildIndex) en désignerait une
+    // pour l'autre. Reliques et faune puisent au MÊME compteur : les omettre
+    // ne pardonnait que parce que les unités, créées après elles au
+    // démarrage, portent toujours des id plus hauts — une fragilité qu'un
+    // simple réordonnancement de genMap suffirait à réveiller.
+    G.nid=Math.max(...[...G.units,...G.buildings,...G.nodes,...(G.relics||[]),...(G.wildlife||[])].map(e=>e.id||0),0)+1;
     G.lastTime=null;
     G.running=true;
     rebuildIndex(); // même raison qu'au démarrage : l'index doit être prêt avant la 1ère image

@@ -329,6 +329,43 @@ groupe('sauvegarde', () => {
       'loadGame ne remet pas G.gameOver a faux');
   });
 
+  test('les groupes de contrôle survivent à une sauvegarde', () => {
+    const j = partie(charger(), { graine: 4242, pas: 30 });
+    const ids = j.G.units.filter((u) => j.estLocal(u)).slice(0, 3).map((u) => u.id);
+    ok(ids.length >= 2, 'pas assez d\'unités locales pour constituer un groupe');
+    j.G.groupes[1] = ids.slice();
+    const d = j.buildSaveData();
+    ok(d.groupes, 'la sauvegarde ne contient aucun champ `groupes` : les groupes de contrôle sont perdus au rechargement');
+    egalJSON(d.groupes[1], ids, 'le groupe de contrôle 1 n\'est pas celui qui était assigné');
+    // Et il doit survivre à la migration, comme le reste de l'état.
+    const m = j.migrerSauvegarde(JSON.parse(JSON.stringify(d)));
+    ok(m.groupes, 'la migration a fait disparaître le champ `groupes`');
+    egalJSON(m.groupes[1], ids, 'le groupe de contrôle 1 est perdu à la migration');
+  });
+
+  test('le compteur d\'identifiants repart au-dessus de TOUTES les entités', () => {
+    // units/buildings/nodes ne sont pas les seuls à puiser dans G.nid :
+    // reliques et faune aussi (voir genMap). Le recalcul doit tous les
+    // couvrir, sinon une unité formée après un chargement peut porter l'id
+    // d'une entité vivante — et l'index en désigner une pour l'autre.
+    const j = partie(charger(), { graine: 4242, pas: 30 });
+    const G = j.G;
+    const toutes = [...G.units, ...G.buildings, ...G.nodes, ...(G.relics || []), ...(G.wildlife || [])];
+    const maxId = Math.max(...toutes.map((e) => e.id || 0));
+    // Les deux chemins de reprise (sauvegarde et réseau) recalculent nid ;
+    // on vérifie la formule qu'ils appliquent, sur les mêmes collections.
+    for (const [nom, fichier] of [['chargement', '13-cloud.js'], ['réseau', '12-reseau.js']]) {
+      const code = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', fichier), 'utf8');
+      const ligne = /G\.nid=Math\.max\(([^;]*)\)\+1;/.exec(code);
+      ok(ligne, `${nom} : aucun recalcul de G.nid trouvé dans ${fichier}`);
+      for (const coll of ['relics', 'wildlife', 'nodes', 'units', 'buildings']) {
+        ok(ligne[1].includes(coll),
+          `${nom} : le recalcul de G.nid ignore G.${coll}, qui puise pourtant dans le même compteur`);
+      }
+    }
+    ok(maxId > 0, 'aucune entité en jeu : ce test ne prouverait rien');
+  });
+
   test('sauvegarde → migration : aucune perte sur un état courant', () => {
     const j = partie(charger(), { graine: 4242, pas: 600 });
     const d = j.buildSaveData();

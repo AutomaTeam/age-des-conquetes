@@ -931,6 +931,12 @@ function mpAbandonner(){
   effacerRejoinEnLigne();
   envoyerReseau({t:'ABANDON', par:G.me});
   const f=G.factions[G.me]; if(f) f.vaincu=true;
+  // La partie est terminée de notre point de vue : on n'a plus besoin que le
+  // guet-apens de reconnexion continue de tourner en fond — sans ça, sa
+  // bannière pouvait surgir par-dessus l'écran de fin affiché juste après.
+  // RESEAU.actif lui-même n'est PAS remis à false ici : envoyerBilanReseau(),
+  // appelé par showGameOver(), a encore besoin du canal ouvert pour partir.
+  arreterVeilleReseau();
   if(!G.gameOver){ G.gameOver=true; showGameOver(); }
 }
 window.mpAbandonner=mpAbandonner;
@@ -1278,7 +1284,7 @@ function mpEstCoop(){ return !!(MODES[typeof G!=='undefined'&&G&&G.gmode?G.gmode
 function mpOuvrir(){
   document.getElementById('mppanel').style.display='flex';
   const ps=document.getElementById('mppseudo');
-  if(ps&&!ps.value) ps.value=localStorage.getItem('adc_pseudo')||'';
+  if(ps&&!ps.value) ps.value=lirePseudoStocke()||'';
   const intro=document.getElementById('mpintro');
   if(intro) intro.textContent=mpEstCoop()
     ? "Rejoignez-vous à un ami pour affronter ensemble un seul seigneur IA — réglez sa difficulté sur l'écran-titre."

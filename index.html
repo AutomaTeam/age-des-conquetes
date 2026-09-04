@@ -839,7 +839,11 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── PANNEAU DES SUCCÈS ── */
 #achpanel {
-  position:fixed;inset:0;z-index:550;display:none;
+  /* z-index au-dessus de #pausemenu (600) : ce panneau s'ouvre aussi DEPUIS
+     un bouton DANS #pausemenu (openAch()), qui ne se ferme pas avant de
+     l'afficher — sous 600 il restait peint dessous et ses boutons,
+     inatteignables (même bug que #diplopanel avant correction). */
+  position:fixed;inset:0;z-index:610;display:none;
   background:rgba(0,0,0,.92);
   flex-direction:column;align-items:center;gap:10px;
   padding:20px 14px;overflow-y:auto;touch-action:pan-y;
@@ -885,7 +889,9 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── PANNEAU DES CONTRÔLES ── (même gabarit que #achpanel) */
 #controlspanel {
-  position:fixed;inset:0;z-index:550;display:none;
+  /* z-index au-dessus de #pausemenu (600) : ouvert aussi depuis un bouton
+     DANS #pausemenu (openControls()) — voir commentaire sur #achpanel. */
+  position:fixed;inset:0;z-index:610;display:none;
   background:rgba(0,0,0,.92);
   flex-direction:column;align-items:center;gap:10px;
   padding:20px 14px;overflow-y:auto;touch-action:pan-y;
@@ -911,7 +917,10 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── PANNEAU DU CLASSEMENT ── (même gabarit que #achpanel) */
 #classementpanel {
-  position:fixed;inset:0;z-index:550;display:none;
+  /* z-index au-dessus de #pausemenu (600) : même gabarit qu'#achpanel/
+     #controlspanel, aligné par cohérence même s'il n'est pour l'instant
+     ouvert que depuis l'écran-titre. */
+  position:fixed;inset:0;z-index:610;display:none;
   background:rgba(0,0,0,.92);
   flex-direction:column;align-items:center;gap:10px;
   padding:20px 14px;overflow-y:auto;touch-action:pan-y;
@@ -1005,11 +1014,10 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 
 /* ── PANNEAU DIPLOMATIE ── (même gabarit que #achpanel) */
 #diplopanel {
-  /* z-index au-dessus de #pausemenu (600) : contrairement aux autres
-     panneaux du même gabarit (Succès/Contrôles/Classement, tous à 550,
-     ouverts depuis l'écran-titre où rien ne les recouvre), celui-ci
-     s'ouvre DEPUIS le menu pause lui-même — sans être au-dessus, il
-     resterait peint dessous et ses boutons, inatteignables. */
+  /* z-index au-dessus de #pausemenu (600) : comme les autres panneaux du
+     même gabarit (Succès/Contrôles/Classement, cf. leurs commentaires),
+     puisque celui-ci s'ouvre lui aussi DEPUIS le menu pause — sans être
+     au-dessus, il resterait peint dessous et ses boutons, inatteignables. */
   position:fixed;inset:0;z-index:610;display:none;
   background:rgba(0,0,0,.92);
   flex-direction:column;align-items:center;gap:10px;

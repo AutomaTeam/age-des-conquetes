@@ -576,6 +576,13 @@ function nightFactor(){ return Math.max(0,Math.sin(G.dayPhase*Math.PI*2-Math.PI/
 // vraiment, pas seulement à l'écran — un raid nocturne peut approcher plus
 // près avant d'être repéré.
 const VISION_NIGHT_MULT = 0.75;
+// Même courbe que revealFog() ci-dessous, factorisée pour aussi s'appliquer à
+// la détection auto d'hostiles (prochainHostileUnite/Toute, 07-simulation.js) :
+// sans elle, unités et tours repéraient et engageaient des ennemis à une
+// portée fixe, de jour comme de nuit, alors que le brouillard de guerre
+// qu'elles révèlent réellement se rétrécit d'un quart la nuit — l'IA et les
+// tours « voyaient » au-delà de ce que le joueur voit lui-même sur son écran.
+function visionMult(){ return 1-(1-VISION_NIGHT_MULT)*nightFactor(); }
 // Cases actuellement à 2, par camp — HORS de l'objet faction, qui part sur le
 // réseau et dans la sauvegarde : y coller un tableau typé de 100 000 entrées
 // gonflerait chaque instantané. `ref` garde l'identité du calque auquel la
@@ -600,7 +607,7 @@ function disqueOffsets(rad){
 }
 function revealFog(){
   G.fogVer=(G.fogVer||0)+1; // invalide le fond de mini-carte (voir dessinerFondMinimap)
-  const visMult=1-(1-VISION_NIGHT_MULT)*nightFactor();
+  const visMult=visionMult();
   for(const f of factionsHumaines()){
     // Le CLIENT d'une partie en ligne n'a qu'une vue partielle des camps
     // adverses : leur calque serait faux, et il n'est de toute facon jamais

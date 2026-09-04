@@ -599,6 +599,11 @@ function heroAuraMult(u){
   if(!_heros.length||!isMilitary(u.type)) return 1;
   for(const h of _heros){
     if(h.hp<=0||h.owner!==u.owner) continue;   // un héros peut mourir dans le pas courant
+    // Un héros à l'abri (ORD.GARNIR) est retiré du champ de bataille comme
+    // n'importe quelle autre unité garnie (voir doAttack/updateProjs) — sans
+    // cette garde, un héros caché continuait de galvaniser les troupes à
+    // distance depuis les coordonnées mêmes du bâtiment qui l'abrite.
+    if(h.state==='garrison') continue;
     if(Math.hypot(h.x-u.x,h.y-u.y)<=HERO_AURA_RADIUS) return HERO_AURA_MULT;
   }
   return 1;

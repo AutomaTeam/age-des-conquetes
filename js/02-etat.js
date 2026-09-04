@@ -9,6 +9,13 @@
 // environnement lexical global, exactement comme quand ils ne
 // formaient qu'un seul <script>. L'ORDRE est donc significatif.
 
+// localStorage peut lever (contexte de stockage restreint : iframe
+// verrouillée, réglage de confidentialité) — jamais laissé remonter ici,
+// sans quoi un appelant en plein milieu d'une initialisation ou d'un
+// callback d'auth s'arrêterait net à mi-chemin. Point de passage unique
+// pour lire le pseudo stocké localement (voir initState, mpOuvrir).
+function lirePseudoStocke(){ try{ return localStorage.getItem('adc_pseudo'); }catch(e){ return null; } }
+
 // ── ÉTAT GLOBAL ───────────────────────────────────────────
 let G = {};
 
@@ -198,7 +205,7 @@ function initState() {
   // « Vous a abandonne » et dans le bilan a deux colonnes. En reseau, l'hote
   // se nomme donc de son pseudo, comme il nomme deja son adversaire.
   const nomLocal=(typeof RESEAU!=='undefined'&&RESEAU.actif&&RESEAU.role==='hote')
-    ? ((typeof _mpEtat!=='undefined'&&_mpEtat.nom)||localStorage.getItem('adc_pseudo')||'Hôte')
+    ? ((typeof _mpEtat!=='undefined'&&_mpEtat.nom)||lirePseudoStocke()||'Hôte')
     : 'Vous';
   G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:nomLocal,res:diff.startRes,maxPop:5,civ:selectedCiv});
   G.factions[FAC.PILL]=mkFaction(FAC.PILL,{genre:'neutre',equipe:0,hostileATous:true});

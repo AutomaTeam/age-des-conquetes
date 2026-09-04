@@ -265,7 +265,11 @@ canvas.addEventListener('contextmenu',e=>{
   cancelOrDeselect();
 });
 window.addEventListener('keydown',e=>{
-  if(e.key==='Escape') cancelOrDeselect();
+  // Même garde que les raccourcis clavier et les groupes de contrôle
+  // (saisieEnCours) : sans elle, Échap tapé pour quitter un champ texte
+  // (chat, graine, code de partie) annulait aussi silencieusement la
+  // sélection / le mode de construction en cours.
+  if(e.key==='Escape'&&!saisieEnCours(e)) cancelOrDeselect();
 });
 
 // ── CLAVIER ──────────────────────────────────────────────────

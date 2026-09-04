@@ -190,6 +190,27 @@ function genMap() {
   place(SC(8),SC(8),SC(2),6,RT.BERRY,280);   place(COLS-SC(10),ROWS-SC(10),SC(2),6,RT.BERRY,280);
   place(COLS-SC(20),SC(8),SC(2),5,RT.BERRY,260); place(SC(10),ROWS-SC(10),SC(2),5,RT.BERRY,260);
 
+  // Garantit un strict minimum de ressources à portée de CHAQUE départ
+  // humain, et à CHACUN des 8 ancrages où l'IA (initAI, 08-ia.js) pourrait
+  // s'installer — quels que soient la taille de la carte et le nombre de
+  // joueurs. Tous les amas ci-dessus sont semés à des coordonnées ABSOLUES
+  // fixes, calibrées pour un joueur seul au centre (déjà entouré : "grande
+  // forêt centrale", carrière et filons centraux, baies centrales). Dès
+  // qu'un second humain existe, departsHumains() répartit les départs sur
+  // un ANNEAU à un angle tiré de la graine, qui peut tomber loin de tout
+  // amas et laisser un camp sans le moindre bois, or ou pierre à portée —
+  // c'est exactement ce qui a été constaté en partie.
+  // Pour l'IA, on ne peut pas semer APRÈS coup autour du site qu'elle aura
+  // choisi : initAI() ne tourne que côté hôte (le client ne le rejoue
+  // jamais), donc tout gisement ajouté à ce moment-là existerait chez l'hôte
+  // sans exister chez le client — une divergence de G.nodes que le réseau
+  // n'a aucun moyen de rattraper (seul l'ENTAMEMENT d'un gisement voyage,
+  // jamais son existence). On garantit donc le minimum aux 8 ancrages
+  // CANDIDATS ici, pendant genMap() (identique des deux côtés), avant même
+  // qu'initAI() ne décide lequel il occupera.
+  for(const [dtx,dty] of G.departs) assurerRessourcesDepart(dtx,dty);
+  for(const [atx,aty] of aiAnchors()) assurerRessourcesDepart(atx,aty);
+
   // Reliques : générées AVANT spawnPOIs pour rester à un point fixe de la
   // séquence RND (déterminisme partagé hôte/client — voir construireSnap,
   // seul r.bankedBy voyage sur le réseau, jamais la position).
@@ -417,6 +438,60 @@ function place(cx,cy,rx,cnt,type,amt){
       G.nodes.push({id:G.nid++,type,tx:x,ty:y,x:x*BASE_TILE+BASE_TILE/2,y:y*BASE_TILE+BASE_TILE/2,amt:a2,max:a2,gatherers:[]});
     }
   }
+}
+
+// Les 8 emplacements où l'IA (initAI, 08-ia.js) peut poser sa base : mi-bords
+// + coins, comme les camps de Survie (déjà réputés riches, spawnPOIs). Source
+// UNIQUE partagée avec initAI, pour que genMap() puisse garantir un minimum
+// de ressources à CHACUN d'eux avant même qu'elle ait choisi lequel occuper.
+function aiAnchors(){
+  return [[SC(9),ROWS>>1],[COLS-SC(10),ROWS>>1],[COLS>>1,SC(13)],[COLS>>1,ROWS-SC(13)],
+          [SC(14),SC(14)],[COLS-SC(15),SC(14)],[SC(14),ROWS-SC(15)],[COLS-SC(15),ROWS-SC(15)]];
+}
+// Strict minimum de ressources à portée de marche d'un départ (humain ou
+// ancrage IA). Un simple TOP-UP : place() ignore déjà les cases occupées
+// (bmap!==0), donc ceci s'ajoute à ce qui existe sans jamais rien retirer —
+// un départ déjà bien entouré par les amas ci-dessus n'en devient jamais
+// moins généreux. Comptes modestes (juste de quoi lancer une économie), pas
+// un amas généreux comme les autres : le but est un plancher, pas un jackpot.
+// RAYON FIXE (pas de SC()) : contrairement aux amas décoratifs, qui décrivent
+// des régions de la carte et doivent grandir avec elle, la distance de
+// marche utile depuis UN Centre Ville ne grandit pas avec la taille totale
+// de la carte — un gisement mis à l'échelle sur une grande carte se
+// retrouvait à 25+ tuiles, hors de portée réelle malgré le nom de la
+// fonction.
+function assurerRessourcesDepart(tx,ty){
+  place(tx,ty,5,9,RT.TREE,280);
+  place(tx,ty,5,5,RT.BERRY,260);
+  place(tx,ty,6,7,RT.STONE,420);
+  place(tx,ty,6,5,RT.GOLD,380);
+  // Un tirage aléatoire peut échouer par malchance (case déjà occupée) même
+  // avec plusieurs tentatives — ça ne garantit qu'une PROBABILITÉ, pas un
+  // strict minimum. Pour chaque type encore absent après les tirages
+  // ci-dessus, on force un gisement sur la première case libre trouvée en
+  // spirale (même parcours que departLibre) plutôt que de laisser ce départ
+  // sans la moindre ressource de ce type.
+  const absent=(type,rayon)=>{
+    for(const n of G.nodes) if(n.type===type&&Math.hypot(n.tx-tx,n.ty-ty)<=rayon) return false;
+    return true;
+  };
+  const forcerSiAbsent=(type,rayon,amt)=>{
+    if(!absent(type,rayon)) return;
+    for(let r=1;r<=rayon+10;r++){
+      for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+        if(Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
+        const x=tx+dx,y=ty+dy;
+        if(x<1||y<1||x>=COLS-1||y>=ROWS-1||G.bmap[y][x]!==0) continue;
+        G.bmap[y][x]=2;
+        const a2=Math.round(amt*NODE_RICHNESS);
+        G.nodes.push({id:G.nid++,type,tx:x,ty:y,x:x*BASE_TILE+BASE_TILE/2,y:y*BASE_TILE+BASE_TILE/2,amt:a2,max:a2,gatherers:[]});
+        return;
+      }
+    }
+  };
+  forcerSiAbsent(RT.TREE,5,280);
+  forcerSiAbsent(RT.STONE,6,420);
+  forcerSiAbsent(RT.GOLD,6,380);
 }
 
 // ── POINTS D'INTÉRÊT : filons infinis gardés ──────────────

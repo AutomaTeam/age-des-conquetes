@@ -573,8 +573,9 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   // Quatre ancrages à mi-bord (le joueur démarre au centre) + les quatre
   // coins (position des camps de Survie, donc déjà réputés riches en
   // ressources — la Conquête désactivant spawnPOIs, ils sont libres ici).
-  const anchors=[[SC(9),ROWS>>1],[COLS-SC(10),ROWS>>1],[COLS>>1,SC(13)],[COLS>>1,ROWS-SC(13)],
-                 [SC(14),SC(14)],[COLS-SC(15),SC(14)],[SC(14),ROWS-SC(15)],[COLS-SC(15),ROWS-SC(15)]];
+  // aiAnchors() (03-carte.js) est la source UNIQUE : genMap() y garantit déjà
+  // un minimum de ressources à chacun, avant même que l'un d'eux soit choisi.
+  const anchors=aiAnchors();
   const d=BDEF[BT.TC];
   // Priorité à la richesse en ressources plutôt qu'au seul éloignement : un
   // adversaire posé loin mais sans la moindre pierre ni or à portée ne

@@ -1358,7 +1358,11 @@ const ACH = [
   { id:'quarryman',   ico:'🪨',  nom:'Carrier',            desc:'Récolter 2 500 de pierre en une partie.',     test:(s)=>s.gathered.stone>=2500 },
   { id:'farmer',      ico:'🌾',  nom:'Grenier Plein',      desc:'Exploiter 12 fermes en même temps.',          test:(s)=>s.peakFarms>=12 },
   { id:'warlord',     ico:'🎺',  nom:"Chef de Guerre",     desc:'Aligner 40 unités militaires simultanément.', test:(s)=>s.peakMil>=40 },
-  { id:'scholar',     ico:'🎓',  nom:'Érudit',             desc:'Terminer les 9 recherches.',                  test:(s)=>s.research>=9 },
+  // « les 9 recherches » datait du temps où RDEF en comptait exactement 9 :
+  // il y en a 20 aujourd'hui (17 accessibles à une civ donnée, les 4 autres
+  // étant exclusives aux trois autres). Le seuil, lui, est resté à 9 — c'est
+  // le libellé qui promettait à tort la totalité.
+  { id:'scholar',     ico:'🎓',  nom:'Érudit',             desc:'Terminer 9 recherches en une partie.',        test:(s)=>s.research>=9 },
   { id:'rampart',     ico:'🧱',  nom:'Rempart',            desc:'Poser 50 sections de mur.',                   test:(s)=>s.wallsBuilt>=50 },
   { id:'slayer',      ico:'🐉',  nom:'Tueur de Seigneurs', desc:'Abattre un Seigneur de Guerre.',              test:(s)=>s.bossKilled>=1 },
   { id:'siegemaster', ico:'💥',  nom:'Assiégeur',          desc:'Détruire 25 bâtiments ennemis.',              test:(s)=>s.bldDestroyed>=25 },

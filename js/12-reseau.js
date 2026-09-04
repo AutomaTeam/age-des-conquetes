@@ -983,13 +983,32 @@ function afficherEmote(par,code,local){
 // Touches Alt+1-4 : raccourci clavier pour les emotes (le bouton tactile
 // reste le chemin principal, indispensable sur mobile). Alt et non les
 // chiffres nus : 1-9 sont deja pris par les groupes de controle.
+//
+// `e.code` (touche PHYSIQUE) et non `e.key` : c'est exactement le piege
+// deja documente pour les groupes de controle (voir js/09-entree.js) — sur
+// un clavier AZERTY, la touche du haut marquee « 1 » ne produit pas '1'
+// mais '&', puis 'e' accent aigu, '"', ''' pour les suivantes. Le test
+// `'1234'.indexOf(e.key)` d'origine ne retombait donc JAMAIS sur ses pieds
+// sur un AZERTY : le raccourci annonce dans le panneau Controles etait mort
+// pour tout joueur francophone, sans le moindre message d'erreur.
+//
+// Sorti du gestionnaire d'evenement pour etre verifiable seul : le harnais
+// de test ne sait pas emettre d'evenement clavier (addEventListener y est
+// un no-op), une fonction pure est donc le seul moyen d'en garder un test.
+function indexEmoteDepuisTouche(e){
+  if(!e||!e.altKey) return -1;
+  const m=/^Digit([1-9])$/.exec(e.code||'')||/^Numpad([1-9])$/.exec(e.code||'');
+  if(!m) return -1;
+  const i=+m[1]-1;
+  return i<EMOTES.length ? i : -1;
+}
+window.indexEmoteDepuisTouche=indexEmoteDepuisTouche;
 window.addEventListener('keydown',e=>{
   if(!reseauActif()) return;
-  if(!e.altKey) return;
   const cible=e.target;
   if(cible&&(cible.tagName==='INPUT'||cible.tagName==='TEXTAREA')) return;
-  const idx='1234'.indexOf(e.key);
-  if(idx>=0&&EMOTES[idx]){ mpEmote(EMOTES[idx].code); e.preventDefault(); }
+  const idx=indexEmoteDepuisTouche(e);
+  if(idx>=0){ mpEmote(EMOTES[idx].code); e.preventDefault(); }
 });
 
 // \u2500\u2500 VITESSE VERROUILLEE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500

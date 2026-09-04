@@ -1671,13 +1671,21 @@ const E = {
   connecte:false,
 };
 const abonnesMessage=[], abonnesEtat=[];
-function prevenirEtat(){ for(const f of abonnesEtat){ try{ f({...E}); }catch(e){} } }
+// Vue PUBLIQUE de E : sans ceci, driveToken/driveTokenExp (jeton OAuth Drive
+// vivant, scope drive.appdata) partaient tels quels dans window.MP.etat() ET
+// dans chaque appel des abonnes de surEtat -- lisible par N'IMPORTE QUEL
+// script tournant sur la page (autre code du jeu, extension de navigateur).
+// Le seul acces prevu au jeton est window.MP.driveToken(), qui verifie en
+// plus son expiration -- E.driveToken/driveTokenExp restent prives a ce
+// module, jamais dans un objet qui sort de cette portee.
+function etatPublic(){ const{driveToken,driveTokenExp,...pub}=E; return pub; }
+function prevenirEtat(){ for(const f of abonnesEtat){ try{ f(etatPublic()); }catch(e){} } }
 function prevenirMessage(m){ for(const f of abonnesMessage){ try{ f(m); }catch(e){} } }
 
 // API publiee tres tot : le jeu peut l'interroger meme si le SDK n'a pas
 // (encore) charge, et affichera "indisponible" plutot que de planter.
 window.MP = {
-  etat: ()=>({...E}),
+  etat: etatPublic,
   surMessage: f=>{ abonnesMessage.push(f); },
   surEtat:    f=>{ abonnesEtat.push(f); prevenirEtat(); },
   connecter:  async()=>{ throw new Error('Multijoueur non configure'); },

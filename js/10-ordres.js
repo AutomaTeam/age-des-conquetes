@@ -275,7 +275,14 @@ function applyCommand(cmd){
       if(G.units.some(u=>u.owner===cmd.f&&u.type===UT.HERO&&u.hp>0)) return KO('deja');
     }
     if(!canAfford(cost,cmd.f)) return KO('ressources');
-    if(f.pop+b.trainQ.length>=f.maxPop) return KO('pop');
+    // Total des files de TOUS les bâtiments d'entraînement de la faction, pas
+    // juste celle de `b` : sinon, mettre en file depuis la Caserne A puis
+    // immédiatement depuis la Caserne B (place restante pour une seule
+    // recrue) passait les deux vérifications — chacune ne voyant que sa
+    // propre file, toujours vide de son point de vue — et payait deux unités
+    // pour une seule place de population réellement disponible.
+    const enFile=G.buildings.reduce((s,bb)=>bb.owner===cmd.f?s+bb.trainQ.length:s,0);
+    if(f.pop+enFile>=f.maxPop) return KO('pop');
     spend(cost,cmd.f);
     b.trainQ.push(cmd.unitType);
     if(cmd.unitType===UT.HERO) f.heroTrained=true;

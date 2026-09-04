@@ -1015,6 +1015,12 @@ function doRelic(u,dt){
     }
     u.relicHeld=true; // relique ramassée : elle voyage désormais avec le moine
   }
+  // Sans ce suivi, relic.x/y restaient figées à leur point de GÉNÉRATION
+  // pendant tout le trajet : si le moine meurt ou est réaffecté en route
+  // (relicFree() la libère alors tout seule), la relique "téléportait" en
+  // arrière jusqu'à ce point d'origine au lieu de rester là où elle a
+  // réellement été lâchée — potentiellement à l'autre bout de la carte.
+  relic.x=u.x; relic.y=u.y;
   u.moving=false;
   const mon=findNearestMonastery(u.x,u.y,u.owner);
   if(!mon) return; // pas de Monastère : attente sur place, relique en main
@@ -1432,15 +1438,44 @@ function checkMerveilleVictory(){
   if(G.victory||G.gameOver) return false;
   const gagnant=factionsJouantes().find(f=>f.merveilleAchevee);
   if(!gagnant) return false;
-  if(gagnant.id===G.me){ G.victory=true; showVictory(); }
+  // Même comparaison d'équipe que la victoire par élimination (update()) :
+  // sans elle, un ALLIÉ qui achève sa Merveille (mode coop ou alliance
+  // conclue via ORD.DIPLOMATIE) affichait un écran de DÉFAITE au joueur
+  // alors que son propre camp venait de gagner.
+  if(gagnant.id===G.me||gagnant.equipe===(moi()?moi().equipe:-1)){ G.victory=true; showVictory(); }
   else { G.gameOver=true; showGameOver(); }
   return true;
 }
 
+// Cherche une tuile d'eau au pourtour du Quai (même parcours que
+// hasAdjacentWater dans 09-entree.js, qui a validé la construction — dupliqué
+// ici car ce fichier charge avant) pour y faire naître une Barque. Sans ça,
+// spawnUnit() faisait toujours naître la Barque au SUD du bâtiment quel que
+// soit le côté réellement bordé d'eau — un Quai construit rive sud d'un lac
+// (eau au nord, placement pourtant parfaitement valide) faisait naître chaque
+// Barque sur la terre ferme, où advanceNaval() la bloque net dès le premier
+// pas (elle n'atteint jamais l'eau).
+function findDockWaterSpawn(building,d){
+  const tx=building.tx, ty=building.ty, w=d.w, h=d.h;
+  for(let dy=-1;dy<=h;dy++) for(let dx=-1;dx<=w;dx++){
+    if(dy>=0&&dy<h&&dx>=0&&dx<w) continue; // intérieur de l'emprise, pas le pourtour
+    const x=tx+dx, y=ty+dy;
+    if(x>=0&&y>=0&&x<COLS&&y<ROWS&&G.tiles[y][x]===T_WATER) return {x:(x+.5)*BASE_TILE,y:(y+.5)*BASE_TILE};
+  }
+  // Repli — ne devrait jamais servir puisque hasAdjacentWater() a déjà validé
+  // la construction, mais garde l'ancien comportement par sécurité.
+  return {x:(tx+w/2)*BASE_TILE,y:(ty+h)*BASE_TILE+BASE_TILE*.6};
+}
 function spawnUnit(type,building,owner){
   const d=BDEF[building.type];
-  const wx=(building.tx+d.w/2)*BASE_TILE+(Math.random()-.5)*BASE_TILE;
-  const wy=(building.ty+d.h)*BASE_TILE+BASE_TILE*.6;
+  let wx,wy;
+  if(type===UT.BOAT){
+    const spawn=findDockWaterSpawn(building,d);
+    wx=spawn.x; wy=spawn.y;
+  } else {
+    wx=(building.tx+d.w/2)*BASE_TILE+(Math.random()-.5)*BASE_TILE;
+    wy=(building.ty+d.h)*BASE_TILE+BASE_TILE*.6;
+  }
   const u=mkUnit(type,wx,wy,owner);
   // Point de ralliement
   if(building.rally){
@@ -1712,13 +1747,16 @@ function nearPlayerBuildingSmart(x,y,src){
 // protéger. Voir aussi cibleAssaillant, qui garde le même filtre pour la
 // même raison côté ciblage ennemi.
 function prochainHostileUnite(x,y,r,src){
-  return nearestBy(x,y,r,u=>u.hp>0&&u.state!=='garrison'&&estHostile(src,u));
+  // r*visionMult() : la même réduction nocturne que le brouillard de guerre
+  // (revealFog, 03-carte.js) — sans elle, la détection auto engageait à
+  // portée pleine de nuit, au-delà de ce que le joueur voit réellement.
+  return nearestBy(x,y,r*visionMult(),u=>u.hp>0&&u.state!=='garrison'&&estHostile(src,u));
 }
 // Unités ET bâtiments hostiles (les tours prennent aussi les bâtiments).
 function prochainHostileToute(x,y,r,src){
   const u=prochainHostileUnite(x,y,r,src);
   if(u) return u;
-  let best=null,bd=r;
+  let best=null,bd=r*visionMult();
   for(const b of G.buildings){
     if(b.hp<=0||!estHostile(src,b)) continue;
     const d=Math.hypot(b.x-x,b.y-y);
@@ -1823,7 +1861,11 @@ function updateProjs(dt){
         // shootProj) : si la cible s'est mise à l'abri PENDANT le vol, ce
         // même test loupait le fait qu'elle n'est plus sur le terrain, et le
         // trait la touchait quand même en garnison.
-        if(t&&t.hp>0&&t.state!=='garrison'){ dealDmg(t,degatsContre({atk:p.atk,type:p.srcType},t),p); if(t.hp<=0) awardKillXP(p.shooterId); }
+        // estHostile(p,t) : un trait déjà en vol (jusqu'à plus d'une seconde
+        // de trajet) continuait sinon de frapper sa cible même si une
+        // alliance (ORD.DIPLOMATIE) l'a fait changer de camp entre-temps —
+        // la même garde que le tir en zone juste au-dessus applique déjà.
+        if(t&&t.hp>0&&t.state!=='garrison'&&estHostile(p,t)){ dealDmg(t,degatsContre({atk:p.atk,type:p.srcType},t),p); if(t.hp<=0) awardKillXP(p.shooterId); }
       }
       p.life=0;
     } else {

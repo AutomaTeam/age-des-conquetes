@@ -1366,6 +1366,7 @@ function updateBuildings(dt){
       u.hp=0; u.dernierAgresseur=b.dernierAgresseur;
       if(b.dernierAgresseurUnit!=null) awardKillXP(b.dernierAgresseurUnit);
     }
+    libererFileFormation(b); // un Héros encore en file n'est pas perdu pour la partie
     const fv=fac(b.owner); if(fv) fv.stats.bldLost++;
     const fk=fac(b.dernierAgresseur); if(fk&&fk!==fv) fk.stats.bldDestroyed++;
     if(estLocal(b)) notify(`${BDEF[b.type].nom} détruite !`,'#e74c3c');

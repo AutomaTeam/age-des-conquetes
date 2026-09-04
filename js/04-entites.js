@@ -167,6 +167,21 @@ function updatePopCap(){
   for(const f of factionsJouantes()) f.maxPop=Math.min(cap[f.id],AGE_BONUS[f.age].popCap);
 }
 
+// Un bâtiment disparaît (rasé au combat ou démoli volontairement) : sa file
+// de formation part avec lui. Le Héros est le seul élément de cette file qui
+// réserve autre chose que des ressources — f.heroTrained est une CHANCE
+// UNIQUE pour toute la partie (voir ORD.FORMER, js/10-ordres.js : un second
+// Héros y est refusé). L'annulation d'une formation rend explicitement cette
+// chance ; la destruction, elle, ne le faisait pas : un Château rasé pendant
+// que le Héros y était en file coûtait au joueur son Héros ET tout espoir
+// d'en former un autre, sans le moindre message. Appelé par les DEUX chemins
+// de disparition, sans quoi le correctif ne vaudrait que pour l'un des deux.
+function libererFileFormation(b){
+  if(!b||!b.trainQ||!b.trainQ.includes(UT.HERO)) return;
+  const f=fac(b.owner);
+  if(f) f.heroTrained=false;
+}
+
 // ── AMÉLIORATION DES TOURS DÉFENSIVES ──────────────────────
 // Trois paliers façon AoE2 (Tour de Guet → Tour de Garde → Donjon) : chaque
 // palier coûte des ressources et améliore PV, dégâts, portée et cadence.

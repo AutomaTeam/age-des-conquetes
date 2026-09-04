@@ -329,7 +329,7 @@ function moveTo(u,dt,keepState){
   const dx=u.destX-u.x, dy=u.destY-u.y;
   const d=Math.sqrt(dx*dx+dy*dy);
   if(d<4){
-    u.x=u.destX; u.y=u.destY; u.moving=false; u.path=null;
+    u.x=u.destX; u.y=u.destY; u.moving=false; u.path=null; u.pfWait=0;
     if(u.pendingAction){const f=u.pendingAction;u.pendingAction=null;f(u);}
     else if(!keepState) u.state='idle';
     return;
@@ -337,10 +337,24 @@ function moveTo(u,dt,keepState){
   if(advance(u,u.destX,u.destY,dt)){
     const r=requestPath(u);                       // coincé : calculer un contournement
     if(r===false){                                // aucun chemin : on abandonne l'ordre
-      u.pathFail=(u.pathFail||0)+1;
+      u.pathFail=(u.pathFail||0)+1; u.pfWait=0;
       if(u.pathFail>=3){ u.pathFail=0; u.path=null; u.moving=false; if(!keepState) u.state='idle'; }
-    } else if(r===true) u.pathFail=0;
-  }
+    } else if(r===true){ u.pathFail=0; u.pfWait=0; }
+    else{
+      // Budget de recherche épuisé cette image (goulot dense : plusieurs
+      // unités bloquées en même temps). Sans ceci, une unité systématiquement
+      // devancée par d'autres dans G.units peut ne jamais obtenir son tour et
+      // rester figée indéfiniment. Après ~3s d'attente sans avoir pu tenter
+      // une seule recherche, on la traite comme un échec pour qu'elle finisse
+      // par abandonner proprement (état 'idle') au lieu de geler pour de bon.
+      u.pfWait=(u.pfWait||0)+1;
+      if(u.pfWait>=180){
+        u.pfWait=0;
+        u.pathFail=(u.pathFail||0)+1;
+        if(u.pathFail>=3){ u.pathFail=0; u.path=null; u.moving=false; if(!keepState) u.state='idle'; }
+      }
+    }
+  } else u.pfWait=0;
 }
 
 // Un mur bloque physiquement le passage (bmap===3)

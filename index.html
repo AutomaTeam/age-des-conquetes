@@ -581,7 +581,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 /* Anneau de focus clavier — cohérent sur tous les contrôles de l'écran-titre,
    invisible au tactile/souris (:focus-visible ne s'arme qu'au clavier). */
 .bigbtn:focus-visible, .cfgsummary:focus-visible, .modebtn:focus-visible,
-.diffbtn:focus-visible, .utilbtn:focus-visible {
+.diffbtn:focus-visible, .utilbtn:focus-visible, .playtab:focus-visible {
   outline:2px solid var(--gold-l);outline-offset:2px;
 }
 /* Reflet qui balaie le bouton principal — discret rappel du "clignotement
@@ -616,6 +616,37 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
   flex-shrink:0;font-family:'Cinzel',serif;font-size:9px;font-weight:700;letter-spacing:.04em;
   color:#1a1204;background:linear-gradient(180deg,var(--gold-l),var(--gold));
   border-radius:5px;padding:2.5px 6px;box-shadow:0 1px 3px rgba(0,0,0,.4);
+}
+
+/* ── BASCULE SOLO / MULTIJOUEUR (écran-titre) ──
+   Segmented control à deux options, avant tout le reste : c'est le choix qui
+   détermine quels boutons de mode (2v1 Coop) et quel CTA de lancement
+   (Commencer / Jouer avec un ami) apparaissent plus bas (voir pickPlayTab(),
+   js/01-regles.js). Chaque onglet porte déjà la couleur de son CTA associé —
+   doré pour Solo (comme .bigbtn.sheen), bleu pour Multi (comme .friendbtn) —
+   pour que la bascule annonce visuellement ce qu'elle va révéler. */
+.playtabs {
+  display:flex;gap:5px;width:100%;max-width:320px;
+  background:rgba(20,12,0,.7);border:1.5px solid var(--gold-d);border-radius:12px;
+  padding:4px;
+}
+.playtab {
+  --tc:var(--gold-l);
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  background:transparent;border:none;border-radius:9px;
+  color:#8a7454;font-family:'Cinzel',serif;font-size:13px;font-weight:700;
+  padding:9px 8px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:background .15s,color .15s,box-shadow .15s;
+}
+.playtab[data-tab="multi"] { --tc:#7fb8e8; }
+.playtab .pt-ico { font-size:15px; }
+.playtab.sel {
+  background:color-mix(in srgb, var(--tc) 20%, rgba(20,12,0,.7));color:var(--tc);
+  box-shadow:inset 0 0 0 1.5px var(--tc);
+}
+.playtab:active { transform:scale(.97); }
+@media (hover:hover) and (pointer:fine){
+  .playtab:not(.sel):hover { color:var(--tc); }
 }
 
 /* ── SÉLECTEUR DE DIFFICULTÉ (écran-titre) ──
@@ -658,15 +689,7 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .modebtn[data-m="conquest"] { --mc:#e05a4e; }
 .modebtn[data-m="conquest2"] { --mc:#b07cc6; }
 .modebtn[data-m="coop2v1"] { --mc:#2ecc71; }
-/* Seul mode qui exige un second joueur en ligne : un badge suffit à éviter
-   la confusion avec les 3 autres, jouables seul dès "Commencer la partie". */
 .modebtn { position:relative; }
-.modebtn .mbadge {
-  position:absolute;top:-7px;right:6px;
-  font-family:'Crimson Text',serif;font-size:8.5px;font-weight:700;letter-spacing:.03em;
-  color:#0a1f10;background:#2ecc71;border-radius:7px;padding:1.5px 5px;
-  box-shadow:0 0 0 2px rgba(20,12,0,.92);white-space:nowrap;
-}
 
 /* ── RÉSUMÉ PLIABLE MODE + DIFFICULTÉ ──
    Replié par défaut (sauf tout premier lancement) : évite d'imposer 8
@@ -1425,10 +1448,21 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
     <button class="bigbtn rejoinbtn" id="mprejoinbtn" onclick="mpReprendrePartieEnLigne()" style="display:none;">🔌 Reprendre en ligne</button>
     <button class="bigbtn loadbtn" id="loadbtn" onclick="loadGame()" style="display:none;">📂 Reprendre la partie</button>
 
-    <!-- Groupe "Nouvelle partie" — configurer, puis lancer, seul ou avec un
-         ami. Le mode/difficulté/civ choisis ici sont exactement ceux transmis
-         à mpCreer() : pas de sélecteur séparé dans le lobby, on continue
-         simplement avec ce qu'on vient de choisir. -->
+    <!-- Bascule SOLO / MULTIJOUEUR — décidée EN PREMIER, avant tout réglage :
+         c'est elle qui répond à « comment configurer le multi ? » en rendant
+         visibles le mode 2v1 Coop et le bouton "Jouer avec un ami" (et eux
+         seuls) dès qu'on bascule sur Multijoueur. Ne change pas le mode/
+         difficulté/civ/carte réglés juste en dessous — seulement qui rejoint
+         la partie ainsi configurée. Voir pickPlayTab() (js/01-regles.js). -->
+    <div class="playtabs" id="playtabs">
+      <button type="button" class="playtab sel" data-tab="solo" onclick="pickPlayTab('solo')"><span class="pt-ico">🎮</span><span class="pt-label">Solo</span></button>
+      <button type="button" class="playtab" data-tab="multi" onclick="pickPlayTab('multi')"><span class="pt-ico">👥</span><span class="pt-label">Multijoueur</span></button>
+    </div>
+
+    <!-- Groupe "Nouvelle partie" — configurer, puis lancer avec le bouton de
+         l'onglet actif juste en dessous. Le mode/difficulté/civ choisis ici
+         sont exactement ceux transmis à mpCreer() : pas de sélecteur séparé
+         dans le lobby, on continue simplement avec ce qu'on vient de choisir. -->
     <button type="button" class="cfgsummary" id="cfgsummary" onclick="toggleCfg()">
       <span id="cfgsummary-txt">🛡️ Survie · ⚔️ Normal</span>
       <span class="cfgchevron">›</span>
@@ -1438,9 +1472,16 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
         <button class="modebtn" data-m="survival" onclick="pickMode('survival')"><span class="mico">🛡️</span><span class="mlabel">Survie</span></button>
         <button class="modebtn" data-m="conquest" onclick="pickMode('conquest')"><span class="mico">🏴</span><span class="mlabel">Conquête</span></button>
         <button class="modebtn" data-m="conquest2" onclick="pickMode('conquest2')"><span class="mico">⚔️</span><span class="mlabel">2 rivaux</span></button>
-        <button class="modebtn" data-m="coop2v1" onclick="pickMode('coop2v1')"><span class="mico">🤝</span><span class="mlabel">2v1 coop</span><span class="mbadge">👥 En ligne</span></button>
+        <!-- Masqué en Solo par pickPlayTab() : identique à Conquête tant que
+             personne n'a rejoint, ce mode ne devient un vrai choix qu'en
+             Multijoueur (c'est là qu'un ami peut rejoindre en ALLIÉ). -->
+        <button class="modebtn" data-m="coop2v1" onclick="pickMode('coop2v1')" style="display:none;"><span class="mico">🤝</span><span class="mlabel">2v1 coop</span></button>
       </div>
       <p class="tip" id="modetip">Survie — Repoussez 20 vagues d'assaut pour l'emporter.</p>
+      <!-- Précise, seulement visible sous l'onglet Multijoueur, si l'ami à
+           venir sera un ALLIÉ (2v1 Coop) ou un ADVERSAIRE (les 3 autres
+           modes) — la seule ambiguïté réelle du multijoueur. -->
+      <p class="tip" id="multitip" style="display:none;color:#7fb8e8;">⚔️ Ami ADVERSAIRE — vous vous affrontez, l'IA joue un 3ᵉ camp.</p>
       <div class="diffrow" id="diffrow">
         <button class="diffbtn" data-d="easy"   onclick="pickDifficulty('easy')"><span class="dico">🌿</span><span class="dlabel">Facile</span></button>
         <button class="diffbtn" data-d="normal" onclick="pickDifficulty('normal')"><span class="dico">⚔️</span><span class="dlabel">Normal</span></button>
@@ -1477,8 +1518,8 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
       </div>
       <p class="tip">Deux parties de même graine ont exactement la même carte.</p>
     </div>
-    <button class="bigbtn sheen" onclick="startGame()">⚔️ Commencer la partie</button>
-    <button class="bigbtn friendbtn" id="mpbtn-titre" onclick="mpOuvrir()">👥 Jouer avec un ami</button>
+    <button class="bigbtn sheen" id="startsolobtn" onclick="startGame()">⚔️ Commencer la partie</button>
+    <button class="bigbtn friendbtn" id="mpbtn-titre" onclick="mpOuvrir()" style="display:none;">👥 Jouer avec un ami</button>
 
     <div class="utilrow">
       <button class="utilbtn" onclick="openAch()" title="Succès"><span class="uico">🏆</span><span class="ulabel">Succès <span id="achcount"></span></span></button>

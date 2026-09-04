@@ -819,10 +819,50 @@ function pickMode(key){
   // aller-retour Conquête → Survie.
   const pt=document.getElementById('peacetxt');
   if(pt) pt.textContent=peaceLabel(selectedDifficulty);
+  // #multitip (visible seulement sous l'onglet Multijoueur, voir
+  // pickPlayTab()) précise si l'ami à venir sera un ALLIÉ (2v1 Coop, seul
+  // mode avec coop:true) ou un ADVERSAIRE (les 3 autres) — sinon rien ne le
+  // distingue plus une fois le badge « En ligne » retiré du bouton de mode.
+  const mtip=document.getElementById('multitip');
+  if(mtip) mtip.textContent=MODES[key].coop
+    ? '🤝 Ami ALLIÉ — vous combattez ensemble contre un seul seigneur IA.'
+    : '⚔️ Ami ADVERSAIRE — vous vous affrontez, l\'IA joue un 3ᵉ camp.';
   try{ localStorage.setItem('adc_mode',key); }catch(e){}
   updateCfgSummary();
 }
 window.pickMode=pickMode;
+
+// ── BASCULE SOLO / MULTIJOUEUR (écran-titre) ──────────────
+// Répond directement à la confusion « comment configurer le multi ? » :
+// avant, le mode 2v1 Coop et le bouton « Jouer avec un ami » étaient mêlés
+// aux 3 modes solo et au CTA "Commencer la partie", sans rien pour dire
+// lequel allait avec lequel. Ici Solo et Multi affichent chacun EXACTEMENT
+// un CTA de lancement, et Multi seul révèle le mode 2v1 Coop (qui, seul,
+// se comporte de toute façon comme Conquête — inutile de le montrer en
+// Solo). Ne touche jamais au mode/difficulté/civ/carte choisis à côté :
+// seulement qui rejoint la partie ainsi réglée. Persisté comme le reste
+// pour rouvrir sur le dernier onglet choisi (voir js/13-cloud.js).
+let selectedPlayTab='solo';
+function pickPlayTab(tab){
+  if(tab!=='solo'&&tab!=='multi') return;
+  selectedPlayTab=tab;
+  document.querySelectorAll('.playtab').forEach(b=>b.classList.toggle('sel', b.dataset.tab===tab));
+  const coopBtn=document.querySelector('.modebtn[data-m="coop2v1"]');
+  if(coopBtn) coopBtn.style.display=(tab==='multi')?'':'none';
+  // Un 2v1 Coop resté sélectionné en repassant en Solo laisserait le
+  // sélecteur de mode sans bouton visible en surbrillance (le sien est
+  // caché) : on retombe sur Conquête, dont il est de toute façon la copie
+  // exacte tant que personne n'a rejoint.
+  if(tab==='solo'&&selectedMode==='coop2v1') pickMode('conquest');
+  const startBtn=document.getElementById('startsolobtn');
+  const friendBtn=document.getElementById('mpbtn-titre');
+  if(startBtn) startBtn.style.display=(tab==='solo')?'block':'none';
+  if(friendBtn) friendBtn.style.display=(tab==='multi')?'block':'none';
+  const mtip=document.getElementById('multitip');
+  if(mtip) mtip.style.display=(tab==='multi')?'block':'none';
+  try{ localStorage.setItem('adc_playtab',tab); }catch(e){}
+}
+window.pickPlayTab=pickPlayTab;
 
 // Recherches — cat:'forge' = Forge / cat:'univ' = Université
 const RDEF = {

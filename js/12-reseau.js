@@ -800,7 +800,12 @@ function construireSalut(){
 // L'hote lance la partie, puis decrit au client ce qu'il doit generer.
 function demarrerPartieHote(adversaire){
   RESEAU.actif=true; RESEAU.role='hote';
-  RESEAU.adversaire={id:FAC.P2, nom:adversaire&&adversaire.nom||'Adversaire'};
+  // `civ` vient du salon (l'invite l'y publie en rejoignant, voir
+  // rejoindreSalon dans index.html) : initState en a besoin AVANT de creer
+  // FAC.P2. Absente d'un invite en vieille version, d'ou le repli conserve
+  // cote initState.
+  RESEAU.adversaire={id:FAC.P2, nom:adversaire&&adversaire.nom||'Adversaire',
+                     civ:(adversaire&&adversaire.civ)||null};
   RESEAU.tick=0; RESEAU.accDelta=0; RESEAU.pret=false;
   RESEAU.pausesRestantes=3; RESEAU.finRecue=null;
   startGame();
@@ -1406,7 +1411,22 @@ function mpRafraichir(){
   const parts=[];
   const labelAutre=mpEstCoop()?'Allié':'Adversaire';
   if(e.code) parts.push(`Salon <b>${e.code}</b> — ${e.role==='hote'?'vous h\u00e9bergez':'vous avez rejoint'}`);
-  if(e.adversaire) parts.push(`<span class="ok">${labelAutre} connecté : <b>${e.adversaire.nom||'…'}</b></span>`);
+  // Civilisations des DEUX camps, avant le lancement : l'invite doit pouvoir
+  // verifier que son choix a bien ete enregistre (il se fait sur l'ecran-titre,
+  // derriere ce panneau), et l'hote savoir ce qu'il va affronter.
+  // `e.adversaire.civ` est absente si l'invite joue une version anterieure a
+  // cette fonctionnalite : l'hote lui en attribuera une (voir initState), et on
+  // n'annonce alors rien plutot que d'annoncer faux.
+  const nomCiv=(k)=>(CIVS[k]&&`${CIVS[k].ico} ${CIVS[k].nom}`)||null;
+  const maCiv=nomCiv(e.civ||selectedCiv);
+  // Dire OÙ se change ce choix : le sélecteur de civilisation est sur
+  // l'écran-titre, que ce panneau recouvre — sans ce rappel, un invité voit
+  // sa civilisation sans deviner qu'elle lui appartient encore.
+  if(e.code&&maCiv) parts.push(`Vous jouez <b>${maCiv}</b> <span style="opacity:.65">(pour changer : fermez ce panneau)</span>`);
+  if(e.adversaire){
+    const sonCiv=nomCiv(e.adversaire.civ);
+    parts.push(`<span class="ok">${labelAutre} connecté : <b>${e.adversaire.nom||'…'}</b>${sonCiv?` — <b>${sonCiv}</b>`:''}</span>`);
+  }
   else if(e.code&&e.role==='hote') parts.push(`<span class="warn mpwait">En attente ${mpEstCoop()?"d'un allié":"d'un adversaire"}…</span>`);
   if(e.connecte){
     parts.push(e.canal==='p2p'

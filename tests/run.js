@@ -676,6 +676,53 @@ groupe('combat', () => {
 
 // ════════════════════════════════════════════════════════════
 groupe('civilisations', () => {
+  // L'invité d'une partie en ligne choisit désormais SA civilisation : elle
+  // remonte du salon dans RESEAU.adversaire.civ, et l'hôte — seul à créer
+  // l'état de partie — la pose sur FAC.P2. Auparavant il lui en imposait une,
+  // prise juste après la sienne dans la table.
+  const partieEnLigne = (civInvite) => {
+    const j = charger();
+    j.RESEAU.actif = true; j.RESEAU.role = 'hote';
+    j.RESEAU.adversaire = { id: j.FAC.P2, nom: 'Ami', civ: civInvite };
+    j.pickCiv('francs');          // l'hôte joue Francs
+    j.setGraine(4242); j.pickMode('conquest');
+    j.startGame();
+    return j;
+  };
+
+  test('l\'invité joue la civilisation QU\'IL a choisie', () => {
+    for (const choix of ['byzantins', 'chinois', 'mongols', 'francs']) {
+      const j = partieEnLigne(choix);
+      egal(j.G.factions[j.FAC.P2].civ, choix,
+        `l'invité voulait ${choix} et l'hôte lui a donné autre chose`);
+    }
+    // Y compris la MÊME que l'hôte : c'est un choix, pas une distribution.
+    const j = partieEnLigne('francs');
+    egal(j.G.factions[j.FAC.P1].civ, 'francs', 'l\'hôte ne joue plus sa propre civilisation');
+    egal(j.G.factions[j.FAC.P2].civ, 'francs', 'la civilisation de l\'invité a été refusée car identique à l\'hôte');
+  });
+
+  test('sans choix connu, l\'ancien repli tient toujours', () => {
+    // Invité sur une version antérieure, ou salon rejoint avant qu'il n'ait
+    // choisi : mieux vaut deux camps aux bonus différents qu'un camp sans civ.
+    for (const absent of [null, undefined, '', 'civ_inexistante']) {
+      const j = partieEnLigne(absent);
+      const civP2 = j.G.factions[j.FAC.P2].civ;
+      ok(j.CIVS[civP2], `repli sur une civilisation inexistante : ${civP2}`);
+      ok(civP2 !== 'francs', 'le repli doit donner une civilisation différente de celle de l\'hôte');
+    }
+  });
+
+  test('la civilisation de l\'invité VOYAGE jusqu\'à lui', () => {
+    // L'invité ne crée pas FAC.P2 lui-même : il la reçoit dans le SALUT de
+    // l'hôte. Sans le champ `cv`, il jouerait une civ et en verrait une autre.
+    const j = partieEnLigne('mongols');
+    const salut = j.construireSalut();
+    const p2 = salut.fac.find((f) => f.i === j.FAC.P2);
+    ok(p2, 'FAC.P2 absente du SALUT envoyé à l\'invité');
+    egal(p2.cv, 'mongols', 'le SALUT n\'emporte pas la civilisation de l\'invité');
+  });
+
   test('les tables de regles ne designent que des choses qui existent', () => {
     // PRODUCTION, TCOST, CIVS et BONUS se lisent partout dans le jeu, sans
     // garde. Une entree qui designe un type inexistant ne leve pas forcement —

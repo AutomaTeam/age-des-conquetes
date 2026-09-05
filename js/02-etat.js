@@ -220,10 +220,20 @@ function initState() {
     // propre à chacun, ciblage IA, bascule en IA à la déconnexion) suit déjà
     // le système d'équipes sans rien connaître de plus sur le mode.
     const allie=(MODES[mode]||{}).coop;
-    // Le second joueur humain ne choisit pas encore sa civilisation via le
-    // protocole en ligne (hors scope v1) : on lui en attribue une différente
-    // de celle de l'hôte, pour au moins varier les bonus des deux côtés.
-    const civKeys=Object.keys(CIVS), civP2=civKeys[(civKeys.indexOf(selectedCiv)+1)%civKeys.length];
+    // Civilisation du second joueur humain : CELLE QU'IL A CHOISIE. Elle
+    // remonte du salon (l'invité la publie en rejoignant — voir
+    // rejoindreSalon dans index.html — et RESEAU.adversaire la porte jusqu'ici).
+    // Rien n'interdit aux deux camps de jouer la même : c'est un choix, pas
+    // une distribution.
+    // Repli sur l'ancien comportement — la civ suivante dans la table — quand
+    // aucun choix n'est connu : invité sur une version antérieure à cette
+    // fonctionnalité, ou salon rejoint avant qu'il n'ait choisi. Mieux vaut
+    // deux camps aux bonus différents qu'un second camp sans civilisation.
+    const choixInvite=RESEAU.adversaire&&RESEAU.adversaire.civ;
+    const civKeys=Object.keys(CIVS);
+    const civP2=(choixInvite&&CIVS[choixInvite])
+      ? choixInvite
+      : civKeys[(civKeys.indexOf(selectedCiv)+1)%civKeys.length];
     G.factions[FAC.P2]=mkFaction(FAC.P2,{genre:'humain',equipe:allie?1:2,
       nom:(RESEAU.adversaire&&RESEAU.adversaire.nom)||'Adversaire',
       res:diff.startRes,maxPop:5,civ:civP2});

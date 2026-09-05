@@ -1792,7 +1792,12 @@ const E = {
   code:null, role:null,        // 'hote' | 'invite'
   canal:null,                  // 'p2p' | 'relais' | null
   rtt:null,
-  adversaire:null,             // {uid,nom}
+  // Civilisation choisie sur l'écran-titre. L'invité la PUBLIE dans le salon
+  // (voir rejoindreSalon) pour que l'hôte, seul à créer l'état de partie,
+  // lui attribue celle qu'il a réellement choisie — auparavant l'hôte lui en
+  // imposait une, prise juste après la sienne dans la table.
+  civ:null,
+  adversaire:null,             // {uid,nom,civ}
   connecte:false,
 };
 const abonnesMessage=[], abonnesEtat=[];
@@ -1887,6 +1892,19 @@ try {
   window.MP.definirPseudo = nom=>{
     const t=String(nom||'').trim().slice(0,18);
     if(t){ localStorage.setItem('adc_pseudo',t); E.nom=t; prevenirEtat(); }
+  };
+
+  // Civilisation choisie par CE joueur. Appelee a chaque pickCiv (voir
+  // js/01-regles.js) : si l'on est deja invite dans un salon, le choix est
+  // repousse tout de suite dans la base, sans quoi changer d'avis apres
+  // avoir rejoint n'aurait servi a rien. L'hote, lui, n'a rien a publier :
+  // c'est lui qui cree l'etat de partie, sa propre civ y passe directement.
+  window.MP.definirCiv = async(civ)=>{
+    const c=String(civ||'').trim().slice(0,20);
+    if(!c||c===E.civ) return;
+    E.civ=c; prevenirEtat();
+    if(E.role!=='invite'||!E.code||!E.uid) return;
+    try{ await update(ref(db,`parties/${E.code}/invite`),{civ:c}); }catch(e){}
   };
 
   // ── SALON ─────────────────────────────────────────────────
@@ -2092,7 +2110,7 @@ try {
     // Qui nous rejoint ?
     const stop2=onValue(ref(db,`parties/${code}/invite`), snap=>{
       const v=snap.val();
-      E.adversaire=v?{uid:v.uid,nom:v.nom}:null;
+      E.adversaire=v?{uid:v.uid,nom:v.nom,civ:v.civ||null}:null;
       prevenirEtat();
     });
     poser(stop2);
@@ -2109,7 +2127,10 @@ try {
     const p=snap.val();
     if(p.invite&&p.invite.uid&&p.invite.uid!==E.uid) throw new Error('Cette partie est deja complete');
 
-    await update(ref(db,`parties/${code}`),{invite:{uid:E.uid,nom:E.nom,ts:Date.now()},etat:'plein'});
+    // `civ` voyage avec le pseudo : c'est la seule occasion pour l'invite de
+    // dire a l'hote ce qu'il veut jouer AVANT que celui-ci ne cree l'etat de
+    // partie (initState, js/02-etat.js, qui fige la civ de FAC.P2).
+    await update(ref(db,`parties/${code}`),{invite:{uid:E.uid,nom:E.nom,civ:E.civ||null,ts:Date.now()},etat:'plein'});
     E.code=code; E.role='invite'; E.adversaire=p.hote?{uid:p.hote.uid,nom:p.hote.nom}:null;
     prevenirEtat();
     await set(ref(db,`presence/${code}/${E.uid}`),'connecte');

@@ -51,7 +51,12 @@ const BT = { TC:'TC', HOUSE:'HO', LUMBER:'LU', MINE:'MI', FARM:'FA',
 // Définitions bâtiments
 const BDEF = {
   [BT.TC]:       { nom:'Centre Ville',   w:2,h:2, hp:1500, cost:{},                          col:'#7a5018',cld:'#503410', drops:true, popBonus:5, garrisonCap:10 },
-  [BT.HOUSE]:    { nom:'Maison',         w:1,h:1, hp:180,  cost:{wood:25},                   col:'#8B6914',cld:'#5a4010', popBonus:5 },
+  // Pas de `popBonus` ici, contrairement aux trois autres bâtiments qui
+  // logent : la Maison est le seul dont la capacité CROÎT avec l'âge
+  // (AGE_BONUS.housePop, 5→8). Le champ existait bien, mais popGain() le
+  // court-circuitait pour ce type — il ne valait 5 que par coïncidence à
+  // l'Âge Sombre, et le modifier n'aurait eu strictement aucun effet.
+  [BT.HOUSE]:    { nom:'Maison',         w:1,h:1, hp:180,  cost:{wood:25},                   col:'#8B6914',cld:'#5a4010' },
   [BT.HLM]:      { nom:'Immeuble HLM',   w:2,h:2, hp:560,  cost:{wood:150,stone:100},         col:'#8a8f96',cld:'#565b62', popBonus:25 },
   [BT.LUMBER]:   { nom:'Camp Forestier', w:2,h:1, hp:260,  cost:{wood:80},                   col:'#5a3810',cld:'#3a2008', drops:true },
   [BT.MINE]:     { nom:'Camp Minier',    w:2,h:1, hp:260,  cost:{wood:80},                   col:'#6a6a6a',cld:'#444',    drops:true },

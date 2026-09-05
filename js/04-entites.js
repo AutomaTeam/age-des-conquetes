@@ -148,13 +148,24 @@ function toggleGate(b){
 
 // Recalcule la capacité de population de CHAQUE camp : chacun ne loge que
 // dans ses propres Maisons, avec le bonus de SON âge.
+// Combien de places de population ce type de bâtiment apporte à ce camp.
+// SOURCE UNIQUE, partagée par la mécanique (updatePopCap, juste dessous) et
+// par l'affichage (menu de construction, js/11-interface.js) : le joueur
+// choisit entre une Maison et un Immeuble sur ce seul chiffre, il ne doit
+// pas pouvoir être calculé deux fois différemment.
+// La Maison est le cas particulier : sa capacité CROÎT avec l'âge
+// (AGE_BONUS.housePop, 5→8) et ne vient donc pas de BDEF.popBonus, qui
+// resterait figé à 5.
+function popGain(type,owner){
+  if(type===BT.HOUSE) return AGE_BONUS[ageOf(owner)].housePop;
+  return (BDEF[type]||{}).popBonus||0;
+}
 function updatePopCap(){
   const cap={};
   for(const f of factionsJouantes()) cap[f.id]=0;
   for(const b of G.buildings){
     if(cap[b.owner]==null) continue;
-    if(b.type===BT.HOUSE) cap[b.owner]+=AGE_BONUS[ageOf(b.owner)].housePop; // capacité croissante avec l'âge
-    else { const d=BDEF[b.type]; if(d.popBonus) cap[b.owner]+=d.popBonus; }
+    cap[b.owner]+=popGain(b.type,b.owner);
   }
   // Bonus de population de civilisation. Les Chinois démarrent avec deux
   // villageois de plus (voir startGame) : sans la place qui va avec, ils

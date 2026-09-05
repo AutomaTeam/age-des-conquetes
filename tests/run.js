@@ -2045,6 +2045,29 @@ groupe('finpartie', () => {
     }
   });
 
+  test('le gain de population affiché est celui qui est réellement appliqué', () => {
+    const j = partie(charger(), { graine: 4242, pas: 5 });
+    const moi = j.moi();
+    const loge = Object.keys(j.BDEF).filter((bt) => j.popGain(bt, j.G.me) > 0);
+    ok(loge.length >= 3, 'moins de trois bâtiments qui logent : ce test est à revoir');
+    // popGain doit être la SEULE source : ce que le menu affiche et ce que
+    // updatePopCap additionne doivent bouger ensemble, à tous les âges.
+    for (let age = 0; age < j.AGE_BONUS.length; age++) {
+      moi.age = age;
+      // La Maison suit l'âge, les autres non — c'est précisément le piège
+      // qu'un `popBonus` figé sur la Maison recréerait.
+      egal(j.popGain(j.BT.HOUSE, j.G.me), j.AGE_BONUS[age].housePop,
+        `à l'âge ${age}, la Maison n'annonce pas la capacité de son âge`);
+      const avant = (() => { j.updatePopCap(); return moi.maxPop; })();
+      const maison = j.G.buildings.filter((b) => b.owner === j.G.me && b.type === j.BT.HOUSE).length;
+      ok(avant >= maison * j.popGain(j.BT.HOUSE, j.G.me) || avant === j.AGE_BONUS[age].popCap,
+        `à l'âge ${age}, le plafond calculé ignore ce que popGain annonce`);
+    }
+    // Et l'affichage passe bien par popGain, pas par une seconde formule.
+    const ui = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '11-interface.js'), 'utf8');
+    ok(/popGain\(/.test(ui), 'le menu de construction n\'utilise pas popGain : le chiffre affiché peut diverger du réel');
+  });
+
   test('une unité qui résiste aux contres le dit à l\'écran', () => {
     const j = charger();
     // `resistBonus` divise les bonus de contre reçus (voir degatsContre) :

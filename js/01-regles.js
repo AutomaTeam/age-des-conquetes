@@ -588,6 +588,11 @@ function pickCiv(key){
   const ct=document.getElementById('civtip');
   if(ct) ct.textContent=`${CIVS[key].nom} — ${CIVS[key].desc}`;
   try{ localStorage.setItem('adc_civ',key); }catch(e){}
+  // En ligne, ce choix doit remonter au salon : c'est l'hôte qui crée l'état
+  // de partie, il ne peut donner à l'invité que ce qu'il connaît de lui.
+  // Appelé même hors salon (le module ne fait alors que mémoriser), et
+  // silencieux si le multijoueur n'est pas configuré du tout.
+  try{ if(window.MP&&window.MP.definirCiv) window.MP.definirCiv(key); }catch(e){}
   updateCfgSummary();
 }
 window.pickCiv=pickCiv;

@@ -955,7 +955,11 @@ function confirmBuild(tx,ty){
   const batisseurs=G.units.filter(u=>estSel(u.id)&&estLocal(u)&&u.type===UT.VIL).map(u=>u.id);
   const r=emettreOrdre(ordre(ORD.BATIR,{type, tx, ty, batisseurs}));
   if(!r.ok){
-    if(r.raison==='age'){ notify('🔒 Nécessite l\'Âge des Châteaux','#e74c3c'); exitBuild(); }
+    // Le nom de l'âge vient du refus (r.reqAge), pas d'une chaîne écrite ici :
+    // BATIR refuse pour DEUX exigences distinctes — Château/Atelier à l'Âge
+    // des Châteaux, Merveille à l'Impérial — et ce message les annonçait
+    // toutes les deux comme « Âge des Châteaux ».
+    if(r.raison==='age'){ notify(`🔒 Nécessite ${AGES[r.reqAge!=null?r.reqAge:2].nom}`,'#e74c3c'); exitBuild(); }
     else if(r.raison==='ressources'){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(scaleCost(d.cost)); }
     else notify('Placement impossible !','#e74c3c');
     return;

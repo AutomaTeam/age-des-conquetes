@@ -94,7 +94,11 @@ function _bldDe(cmd,id){
   const b=G.buildings.find(x=>x.id===cible);
   return (b&&b.owner===cmd.f&&b.hp>0)?b:null;
 }
-const KO=r=>({ok:false,raison:r});
+// `info` optionnel, symétrique d'OK : un refus peut avoir besoin de dire
+// AVEC QUOI il refuse (l'âge requis, par exemple) pour que l'appelant compose
+// un message juste au lieu d'en coder un en dur. Même convention que
+// appliquerUpgradeTour, qui rend déjà {raison:'age',reqAge}.
+const KO=(r,info)=>Object.assign({ok:false,raison:r},info||{});
 const OK=info=>Object.assign({ok:true},info||{});
 
 // -- ARBRE TECHNOLOGIQUE : SOURCE DE VERITE DE L'HOTE --------------------
@@ -239,8 +243,12 @@ function applyCommand(cmd){
   // ── Production et économie ──────────────────────────────
   case ORD.BATIR: {
     const d=BDEF[cmd.type]; if(!d) return KO('invalide');
-    if((cmd.type===BT.CASTLE||cmd.type===BT.SIEGE)&&f.age<2) return KO('age');
-    if(cmd.type===BT.WONDER&&f.age<3) return KO('age');
+    // L'âge requis VOYAGE avec le refus : deux exigences différentes se
+    // cachent derrière le même motif, et l'appelant annonçait « Âge des
+    // Châteaux » pour les deux — faux pour la Merveille, qui demande
+    // l'Impérial (voir confirmBuild, js/09-entree.js).
+    if((cmd.type===BT.CASTLE||cmd.type===BT.SIEGE)&&f.age<2) return KO('age',{reqAge:2});
+    if(cmd.type===BT.WONDER&&f.age<3) return KO('age',{reqAge:3});
     if(cmd.type===BT.WONDER&&G.buildings.some(bb=>bb.owner===cmd.f&&bb.type===BT.WONDER)) return KO('invalide'); // une seule Merveille à la fois
     // Emplacement réellement libre : un client ne décide pas seul où poser.
     const tx=cmd.tx, ty=cmd.ty;

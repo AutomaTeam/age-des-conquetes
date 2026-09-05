@@ -1176,6 +1176,32 @@ groupe('tailles', () => {
 // vérifie pas est exploitable : l'interface, elle, ne verrouille que
 // l'affichage. Ces tests visent donc les REFUS, pas les cas nominaux.
 groupe('ordres', () => {
+  test('un refus d\'âge dit LEQUEL, et pas toujours le même', () => {
+    // BATIR refuse pour DEUX exigences derrière le même motif : Château et
+    // Atelier de Siège à l'Âge des Châteaux, Merveille à l'Impérial. Le
+    // message de confirmBuild annonçait « Âge des Châteaux » dans les deux
+    // cas. L'âge requis voyage désormais avec le refus.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 5 });
+    riche(j, j.G.me);
+    j.moi().age = 0;
+    const p = caseLibre(j, 60, 60, 3, 3);
+    const chateau = ordreDe(j, j.G.me, j.ORD.BATIR, { type: j.BT.CASTLE, tx: p.tx, ty: p.ty, batisseurs: [] });
+    egal(chateau.raison, 'age', 'le Château passe à l\'Âge Sombre');
+    egal(chateau.reqAge, 2, 'le refus du Château n\'annonce pas l\'Âge des Châteaux');
+
+    const merveille = ordreDe(j, j.G.me, j.ORD.BATIR, { type: j.BT.WONDER, tx: p.tx, ty: p.ty, batisseurs: [] });
+    egal(merveille.raison, 'age', 'la Merveille passe à l\'Âge Sombre');
+    egal(merveille.reqAge, 3, 'le refus de la Merveille annonce le mauvais âge');
+    ok(chateau.reqAge !== merveille.reqAge,
+      'les deux exigences rendent le même âge : le message ne peut pas être juste pour les deux');
+
+    // Et le message doit être composé depuis ce champ, pas écrit en dur.
+    const entree = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '09-entree.js'), 'utf8');
+    const corps = entree.slice(entree.indexOf('function confirmBuild'), entree.indexOf('function confirmBuild') + 1400);
+    ok(/AGES\[r\.reqAge/.test(corps),
+      'confirmBuild écrit le nom de l\'âge en dur : il ne peut pas être juste pour les deux exigences');
+  });
+
   test('un refus de recherche dit LE bon motif, pas « ressources »', () => {
     // Le panneau de recherche annonçait « Ressources insuffisantes ! » pour
     // les six motifs de refus d'ORD.RECHERCHE. Le cas qui ment vraiment :

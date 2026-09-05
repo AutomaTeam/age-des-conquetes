@@ -51,7 +51,7 @@ préservent.
 node tests/run.js
 ```
 
-121 tests, 15 groupes, ~35 s, sans dépendance ni build — comme le jeu. Ils
+143 tests, 15 groupes, ~38 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, et des
@@ -59,6 +59,42 @@ invariants de CHARGE (budget de balayage du voisinage, ordre des tests dans
 `nearestBy`, recul d'une recherche de chemin qui échoue, passe de séparation
 qui survit à une population qui grossit). Voir
 [`tests/README.md`](tests/README.md).
+
+## Écran-titre
+
+Le premier choix est **Solo** ou **Multijoueur** : deux onglets, avant tout
+réglage. Chacun n'affiche que ses modes et **un seul** bouton de lancement,
+pour qu'on ne puisse plus se demander lequel va avec quoi.
+
+| | Modes proposés | Bouton |
+|---|---|---|
+| 🎮 **Solo** | Survie · Conquête · 2 rivaux | ⚔️ *Commencer la partie* |
+| 👥 **Multijoueur** | Conquête · 2 rivaux · 2v1 Coop | 👥 *Jouer avec un ami* |
+
+Ce filtrage n'est pas cosmétique : il traduit l'existence d'une condition de
+victoire (drapeaux `solo`/`multi` de la table `MODES`).
+
+- **Survie n'est pas proposée en ligne** : sa victoire (« atteindre la vague
+  20 ») n'est évaluée que par l'hôte, le client ne connaissant que la victoire
+  par élimination — un invité pouvait survivre aux 20 vagues sans jamais
+  gagner. `mpCreer()` garde le même verrou, pour qu'un réglage restauré d'une
+  ancienne version ne puisse pas ouvrir un salon dans un mode ingagnable.
+- **2v1 Coop n'est pas proposé en solo** : sans second humain, il se joue
+  exactement comme la Conquête.
+
+Chaque onglet **retient son dernier mode** : aller voir le Multijoueur puis
+revenir ne fait pas perdre la Survie qu'on avait choisie.
+
+Le bouton ⚙️ **Options** (rangée d'utilitaires, et aussi dans le menu pause)
+regroupe quatre réglages : *Son*, *Vibrations* et *Réduire les animations*,
+retenus d'une partie à l'autre, plus *Plein écran*, dont l'état est relu du
+navigateur à chaque fois — on peut en sortir avec Échap sans passer par le
+bouton, un drapeau à nous finirait par mentir. Un réglage sans effet sur
+l'appareil se grise au lieu de disparaître. « Réduire les animations » ne coupe que les animations
+décoratives **en boucle** (torches, reflets, pulsations) : jamais celles qui
+portent une temporisation d'affichage — les notifications, succès et
+bannières tirent leur visibilité de leur propre animation, les couper les
+rendrait invisibles.
 
 ## Modes de jeu
 
@@ -75,9 +111,16 @@ Le mode se choisit sur l'écran-titre, en plus de la difficulté.
   villageois ralentit vraiment ses chantiers.
 - **2 rivaux** — deux seigneurs IA, hostiles à vous ET entre eux. Le dernier
   Centre Ville debout l'emporte.
-- **2v1 Coop** — vous et un allié (bouton *Jouer avec un ami*, voir plus bas)
-  affrontez ensemble un seul seigneur IA, à la difficulté choisie sur
-  l'écran-titre. Lancé seul, ce mode se joue comme la Conquête.
+- **2v1 Coop** — vous et un allié (bouton *Jouer avec un ami*) affrontez
+  ensemble un seul seigneur IA, à la difficulté choisie sur l'écran-titre.
+  Réservé à l'onglet Multijoueur : sans second humain, il se jouerait
+  exactement comme la Conquête.
+
+La difficulté règle deux choses différentes selon le mode, et son texte le
+dit : en Survie le rythme des vagues, ailleurs l'adversaire IA lui-même
+(dotation de départ, nombre de villageois, date de son premier raid, taille
+de ses assauts — table `AI_TUNE`). Le coût des constructions monte dans tous
+les cas, et le prix affiché est toujours celui qui sera réellement prélevé.
 
 ## Types de carte
 
@@ -286,17 +329,31 @@ uniquement à l'authentification, au salon et à la mise en relation ; la partie
 elle-même passe en **WebRTC pair-à-pair**, avec repli sur un relais Firebase
 si le pair-à-pair échoue.
 
-Le bouton 👥 *Jouer avec un ami* vit délibérément juste sous le sélecteur de
-mode/difficulté/civilisation de l'écran-titre plutôt que dans les
-utilitaires (Succès/Classement/Contrôles) : la séquence est "je choisis mon
-mode, puis je retrouve un ami dessus" — le panneau qu'il ouvre reprend tel
-quel le mode déjà choisi, aucun second sélecteur à l'intérieur. Il se
-présente comme un lobby en trois étapes — Compte → Retrouver un ami → Salon
-— une seule carte visible à la fois selon où on en est ; le code du salon
-s'affiche en grand et se partage via `navigator.share` quand le navigateur le
-permet (sinon copie presse-papiers), et un bouton *Quitter le salon* permet
-de renoncer à une
-partie créée/rejointe sans avoir à fermer tout le panneau.
+Le bouton 👥 *Jouer avec un ami* est le seul bouton de lancement de l'onglet
+**Multijoueur** de l'écran-titre (voir *Écran-titre* plus haut) : la séquence
+est "je choisis mon mode, puis je retrouve un ami dessus" — le panneau qu'il
+ouvre reprend tel quel le mode et la difficulté déjà choisis. Il se présente
+comme un lobby en trois étapes — Compte → Retrouver un ami → Salon — une
+seule carte visible à la fois selon où on en est ; le code du salon s'affiche
+en grand et se partage via `navigator.share` quand le navigateur le permet
+(sinon copie presse-papiers), et un bouton *Quitter le salon* permet de
+renoncer à une partie créée/rejointe sans avoir à fermer tout le panneau.
+
+**Chaque joueur choisit sa civilisation**, y compris l'invité. Le sélecteur
+est repris DANS la carte du salon (et non seulement sur l'écran-titre, que le
+panneau recouvre) : sans cela, choisir obligeait l'invité à fermer le salon,
+déplier le résumé de configuration, choisir, puis rouvrir. Les deux rangées
+partagent la classe `civbtn` et `pickCiv()` les surligne ensemble, donc
+l'endroit où l'on clique n'a aucune importance.
+
+Le trajet du choix de l'invité : il l'écrit dans le salon Firebase en
+rejoignant (`parties/<code>/invite`, à côté de son pseudo), l'hôte le lit,
+le porte dans `RESEAU.adversaire.civ`, et `initState()` le pose sur `FAC.P2` ;
+il revient à l'invité par le SALUT, dont la sérialisation de faction
+emportait déjà le champ. Aucun changement de protocole. Un invité sur une
+version antérieure ne publie rien : l'hôte lui attribue alors la civilisation
+suivant la sienne dans la table, comme avant. Rien n'interdit aux deux camps
+de jouer la **même** civilisation — c'est un choix, pas une distribution.
 
 ### Configuration
 

@@ -408,7 +408,11 @@ function drawUnitAct(bar,u){
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:4px 6px;line-height:1.6;';
     const heroLine=u.type===UT.HERO?`${u.heroIco} <strong style="color:#f0c040">${u.heroNom}</strong> — aura : +${Math.round((HERO_AURA_MULT-1)*100)}% ATK aux alliés proches<br>`:'';
-    const rankLine=u.rank>0?`${RANK_THRESHOLDS[u.rank-1].ico} <strong style="color:#f0c040">${RANK_THRESHOLDS[u.rank-1].nom}</strong> (${u.xp||0} victoires)<br>`:'';
+    // Le gain du rang est annoncé, comme l'aura du Héros juste au-dessus le
+    // fait déjà pour le sien : il était le seul des deux à taire son effet,
+    // alors que `mult` est là. Dérivé de la table, donc il ne peut pas mentir.
+    const rk=u.rank>0?RANK_THRESHOLDS[u.rank-1]:null;
+    const rankLine=rk?`${rk.ico} <strong style="color:#f0c040">${rk.nom}</strong> (${u.xp||0} victoires) — +${Math.round((rk.mult-1)*100)}% ATK et PV<br>`:'';
     info.innerHTML=`${heroLine}${rankLine}ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
     bar.appendChild(info);
   }
@@ -1803,7 +1807,11 @@ function showVictory(){
   quitterSessionReseau(); // le bilan est rendu : plus rien a echanger
 }
 function continuePlay(){
-  document.getElementById('overlay').style.display='none';
+  const ov=document.getElementById('overlay');
+  ov.style.display='none';
+  // On quitte l'écran de fin : sa mise en page ne doit pas rester armée sur
+  // #overlay, que l'écran-titre partage (voir .endscreen, index.html).
+  ov.classList.remove('endscreen');
   G.targetWaves=9999; G.victory=false; G.running=true;
   G.lastTime=null;
   requestAnimationFrame(loop);
@@ -2086,9 +2094,24 @@ function quitGame(){
   tutoArreter();
   G.running=false; G.paused=false;
   document.getElementById('pausemenu').style.display='none';
+  // Les écrans de fin (showVictory/showGameOver, et celui du réseau)
+  // réécrivent TOUT #overlay : la carte-titre n'existe alors plus. On ne
+  // peut pas « réafficher » un écran-titre détruit — seul un rechargement le
+  // reconstruit, exactement ce que fait déjà le bouton « Nouvelle partie ».
+  // Cas réel : gagner en Survie, prendre « Continuer (sans fin) », puis
+  // quitter par le menu pause. Le joueur retombait sur l'ancien écran de
+  // victoire, sans bouton pour lancer quoi que ce soit — le jeu devenait
+  // inatteignable sans un rechargement à la main. Le test porte sur un
+  // repère de la carte-titre (#playtabs) plutôt que sur un drapeau à tenir
+  // à jour : ce qui compte est l'état RÉEL du DOM, quel qu'en soit l'auteur.
+  if(!document.getElementById('playtabs')){ location.reload(); return; }
   document.getElementById('overlay').style.display='flex';
   document.getElementById('pausebtn-inner').innerHTML=iconImg('⏸',16);
   checkSaveExists().then(exists=>{
-    document.getElementById('loadbtn').style.display=exists?'block':'none';
+    // Peut avoir disparu entre-temps (voir ci-dessus) : cette promesse se
+    // résout APRÈS le retour de quitGame, et une lecture de `.style` sur
+    // null n'y remonterait qu'en rejet non traité, donc en silence.
+    const lb=document.getElementById('loadbtn');
+    if(lb) lb.style.display=exists?'block':'none';
   });
 }

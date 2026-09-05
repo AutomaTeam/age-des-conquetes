@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**143 tests, 15 groupes, ~38 s.** Les groupes `ia` et `delta` comptent pour
+**151 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -85,10 +85,27 @@ qui **ne se voit pas** :
   Une unité formable absente de `TCOST` serait GRATUITE, une unité unique mal
   orthographiée rendrait sa civilisation muette. Depuis que l'invité d'une
   partie en ligne choisit SA civilisation, ce groupe garde aussi ce trajet :
-  son choix arrive bien sur `FAC.P2` (les quatre civs, y compris la même que
+  son choix arrive bien sur `FAC.P2` (toutes les civs, y compris la même que
   l'hôte), le repli tient quand il ne publie rien (invité en version
   antérieure), le champ voyage dans le SALUT, et le sélecteur du salon reste
   synchronisé avec celui de l'écran-titre.
+  La liste des civilisations testées est **dérivée de `CIVS`**, jamais
+  recopiée : elle était écrite en dur, si bien qu'ajouter une cinquième
+  civilisation laissait tout le groupe au vert sans jamais l'avoir testée.
+  Trois replis SILENCIEUX y sont désormais gardés, parce qu'aucun ne lève et
+  qu'aucun ne se voit sans jouer : une civ absente de `HEROES` sortirait
+  Charlemagne sous son propre drapeau ; une unité unique absente de
+  `UNIT_ICO` sortirait un '⭐' ; et une unité unique sans planche ni case
+  dédiée dans `buildUnitSprite` sortirait sous la silhouette humanoïde
+  générique — une Roulotte de Guerre en fantassin à tunique brune. Même
+  logique côté décor : chaque civ non franque doit avoir soit un jeu de
+  planches, soit une livrée (`CIV_LIVERY`), faute de quoi elle jouerait dans
+  un bourg franc. Enfin les deux bonus gitans, qui passent par des chemins
+  que rien d'autre ne couvrait — une boucle de simulation (`updateTradeRoutes`,
+  lue sur la civ du PROPRIÉTAIRE du Marché, pas du joueur local) et la vitesse
+  d'un civil — et « Roues Cerclées », dont le libellé nomme trois unités : le
+  test vérifie que ce sont EXACTEMENT celles qui accélèrent, ni plus (un bonus
+  caché sur toute l'armée) ni moins (une des trois oubliée).
 - **`cartes`** — les cinq presets, et surtout : aucun n'enferme un camp (un
   `findPath` réel entre les deux Centres Ville). Plus la table des SOLS :
   chaque carte doit décrire une matière complète, aucune ne doit partager le
@@ -140,9 +157,20 @@ qui **ne se voit pas** :
   du tableau de têtes, la boucle de chaînage ne se termine plus et l'onglet
   se fige. Une régression sur ce dernier point BLOQUE ce fichier au lieu de
   l'échouer : c'est le symptôme lui-même, et il vaut mieux ça que rien.
+  S'y ajoute la LECTURE DE PIXELS : tout décor peint par-dessus un sprite de
+  bâtiment (la livrée de civilisation) doit savoir où le contenu est
+  réellement peint, et la tentation est de le retrouver par `getImageData`.
+  Mesuré en jeu : la première image après un changement de zoom passait de
+  3,6 ms à 219 ms sur un camp de 39 bâtiments. Le rectangle est donc noté à la
+  construction du sprite (champ `box`) et transporté par les copies. Deux
+  tests le tiennent, et l'un des deux vérifie EXPRÈS la moitié négative — sans
+  boîte, la lecture doit bien avoir lieu — sinon il passerait à vide le jour
+  où le repli disparaîtrait. Ils comptent les appels plutôt que de les rendre
+  fatals : `_contentBox` avale l'échec dans un `try/catch` (canevas « taint »),
+  un test par exception ne prouverait rien.
 
 Le **rendu n'est pas testé** et ne doit pas l'être ici : les bouchons ne
-dessinent rien.
+dessinent rien — ces deux tests-là mesurent des APPELS, pas des pixels.
 
 ## Comment ça marche
 

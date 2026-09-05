@@ -40,6 +40,14 @@ const EXPORTS = [
   'degatsContre', 'degatsDe', 'armureDe', 'classeDe', 'BONUS', 'BLD_ARMOR',
   'gatherCap', 'gatherMult', 'separerUnites', 'heroAuraMult', 'majHeros',
   'estSel', 'selMilitary', 'ASSET_EXT',
+  // Tables d'identité de civilisation : héros nommé, icône d'unité, planche
+  // illustrée. Chacune a un repli SILENCIEUX quand une civilisation y manque
+  // (Charlemagne pour tout le monde, '⭐', silhouette humanoïde générique) —
+  // c'est justement pour tenir ces trois-là que le groupe `civilisations` les
+  // lit.
+  'HEROES', 'UNIT_ICO', 'UNIT_SPRITE_FILES', 'UNIT_CIV_SPRITE_FILES',
+  'BLD_CIV_SPRITE_FILES', 'CIV_LIVERY', 'ROUES_TYPES', 'CARAVAN_SPEED',
+  'liverySprite', 'resetLiveryBudget',
   'applyCommand', 'pickCiv', 'civKeyOf', 'civOf', 'PRODUCTION', 'ORD', 'mkFaction',
   'CARTES', 'pickCarte', 'carteCfg', 'poserMursArene', 'construireSalut', 'T_WATER',
   'TAILLES', 'pickTaille', 'departsHumains',

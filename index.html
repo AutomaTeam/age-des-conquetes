@@ -836,6 +836,16 @@ html.reduce-motion #ico-start {
 #mpcivrow .diffbtn { padding:7px 6px;min-width:0; }
 #mpcivrow .dico { font-size:17px; }
 #mpcivrow .dlabel { font-size:10px; }
+/* CINQ civilisations depuis les Gitanos. `.diffrow` est calibrée pour QUATRE
+   boutons (min-width:64px, gap:8px) : dans les 346px de la colonne, le
+   cinquième passait à la ligne et s'y étirait sur toute la largeur — une
+   civilisation deux fois plus grosse que les autres, qui se lisait comme un
+   bouton d'action et non comme un cinquième choix. On resserre gouttière et
+   rembourrage POUR CES DEUX RANGÉES seulement : les autres (difficulté,
+   carte, taille) en comptent quatre et gardent leur respiration. */
+#civrow, #mpcivrow { gap:5px; }
+#civrow .diffbtn, #mpcivrow .diffbtn { padding:8px 3px;min-width:0;flex:1 1 0; }
+#civrow .dlabel, #mpcivrow .dlabel { font-size:9.5px;letter-spacing:.02em; }
 #mpcivtip { margin:0;font-size:11px; }
 .mpin {
   padding:8px 10px;font:inherit;font-size:13px;text-align:center;
@@ -1572,6 +1582,7 @@ html.reduce-motion #ico-start {
         <button class="diffbtn civbtn" data-c="byzantins" onclick="pickCiv('byzantins')"><span class="dico">🛡️</span><span class="dlabel">Byzantins</span></button>
         <button class="diffbtn civbtn" data-c="chinois"   onclick="pickCiv('chinois')"><span class="dico">🌾</span><span class="dlabel">Chinois</span></button>
         <button class="diffbtn civbtn" data-c="mongols"   onclick="pickCiv('mongols')"><span class="dico">🏹</span><span class="dlabel">Mongols</span></button>
+        <button class="diffbtn civbtn" data-c="gitanos"   onclick="pickCiv('gitanos')"><span class="dico">🎪</span><span class="dlabel">Gitanos</span></button>
       </div>
       <p class="tip" id="civtip">Francs — +20% PV à la Cavalerie (Chevaliers, Paladins, Éclaireurs)</p>
       <div class="diffrow" id="carterow">
@@ -1655,6 +1666,7 @@ html.reduce-motion #ico-start {
       <button class="diffbtn civbtn" data-c="byzantins" onclick="pickCiv('byzantins')"><span class="dico">🛡️</span><span class="dlabel">Byzantins</span></button>
       <button class="diffbtn civbtn" data-c="chinois"   onclick="pickCiv('chinois')"><span class="dico">🌾</span><span class="dlabel">Chinois</span></button>
       <button class="diffbtn civbtn" data-c="mongols"   onclick="pickCiv('mongols')"><span class="dico">🏹</span><span class="dlabel">Mongols</span></button>
+      <button class="diffbtn civbtn" data-c="gitanos"   onclick="pickCiv('gitanos')"><span class="dico">🎪</span><span class="dlabel">Gitanos</span></button>
     </div>
     <p class="tip" id="mpcivtip"></p>
     <button class="mpbtn mpbtn-primary" id="mpbtn-copier" style="display:none;" onclick="mpCopierLien()">🔗 Partager l'invitation</button>

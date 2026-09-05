@@ -1395,7 +1395,10 @@ function updateTradeRoutes(dt){
     tr.t+=dt;
     if(tr.t>=tr.dur){
       tr.t=0; tr.dir*=-1;
-      const gold=Math.round(10+(tr.dist/BASE_TILE)*0.6);
+      // civOf(b.owner) et non civOf(G.me) : cette boucle tourne cote HOTE pour
+      // les marches des DEUX camps (meme raison que tryAutoReseed), et les
+      // deux n'ont pas la meme civilisation. Gitanos : +50%.
+      const gold=Math.round((10+(tr.dist/BASE_TILE)*0.6)*(civOf(b.owner).tradeMult||1));
       const pool=resPool(b.owner);
       if(pool){
         pool.gold+=gold;

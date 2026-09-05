@@ -51,7 +51,8 @@ function initResearch(){
            cavalry:false, longbow:false, tactics:false, faith:false, engineering:false,
            siege_smithing:false, cavalry_lance:false, fortification:false, logistics:false,
            brouette:false, charrue:false, sentiers:false,
-           chevalerie:false, feu_gregeois:false, arc_composite:false, etriers:false };
+           chevalerie:false, feu_gregeois:false, arc_composite:false, etriers:false,
+           roues_cerclees:false };
 }
 // Lecture seule : recherches d'un camp qui n'en a pas (pillards).
 const EMPTY_RESEARCH = initResearch();

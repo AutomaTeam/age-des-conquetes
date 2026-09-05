@@ -19,12 +19,18 @@
 // après mkUnit avec sa propre formule d'échelle, et FAC.PILL n'a ni âge ni
 // recherche qui pourraient déclencher ces bonus entre-temps.
 const MIL_TYPES=[UT.MIL,UT.ARC,UT.KNIGHT,UT.PALADIN,UT.PIKE,UT.XBOW,UT.TREB,UT.RAM,UT.SCOUT,UT.HERO,
-                 UT.CATA,UT.CAVARC,UT.ARBRAP,
+                 UT.CATA,UT.CAVARC,UT.ARBRAP,UT.ROUL,
                  UT.ENEMI,UT.ENEMIA,UT.ENEMI_G,UT.ENEMI_C,UT.ENEMI_BOSS];
 // Silhouette montee. La liste etait ecrite DEUX FOIS a l'identique (cycle de
 // marche et dessin de l'unite) : ajouter une unite montee sans mettre les
 // deux a jour lui donnait un cycle de jambes de fantassin sous son cheval.
 const CAV_TYPES=[UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.ENEMI_C,UT.CATA,UT.CAVARC];
+// Ce qui roule sur des ROUES plutot que sur des pattes : cible de la recherche
+// gitane « Roues Cerclees ». Volontairement distinct du couple SIEGE de mkUnit
+// (Belier/Trebuchet) qui sert, lui, a `siege_smithing` : cette recherche-la
+// annonce « Beliers et Trebuchets » et ne doit PAS se mettre a toucher la
+// Roulotte dans le dos du libelle.
+const ROUES_TYPES=[UT.RAM,UT.TREB,UT.ROUL];
 // Set, pas Array.includes : isMilitary est appelé DANS des balayages de
 // toute l'armée (selMilitary, heroAuraMult, les statistiques par seconde,
 // les effets rétroactifs de recherche…), et chaque appel reparcourait les
@@ -67,6 +73,11 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
   if(rech.logistics&&mil) spd*=1.15;
   if(rech.etriers&&CAV.includes(type)) spd*=1.15;   // Étriers de Fer (mongols)
   if(rech.sentiers&&type===UT.VIL) spd*=1.15;   // Sentiers Paves (recherche economique)
+  if(rech.roues_cerclees&&ROUES_TYPES.includes(type)) spd*=1.25;   // Roues Cerclees (gitanos)
+  // Gitanos : peuple de la route. Le bonus porte sur le VILLAGEOIS et non sur
+  // la recolte -- il ouvre la carte (gisements lointains, camps qu'on
+  // deplace) au lieu d'ajouter des pourcents a ce qu'on faisait deja.
+  if(civ.vilSpdMult&&type===UT.VIL) spd*=civ.vilSpdMult;
   // Héros : nom/icône affichés selon la civilisation du propriétaire — les
   // statistiques de combat, elles, restent celles d'UDEF[UT.HERO] pour tous.
   const heroDef=(type===UT.HERO)?(HEROES[fac(owner)&&fac(owner).civ]||HEROES.francs):null;

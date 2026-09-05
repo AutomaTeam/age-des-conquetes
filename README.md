@@ -51,7 +51,7 @@ préservent.
 node tests/run.js
 ```
 
-143 tests, 15 groupes, ~38 s, sans dépendance ni build — comme le jeu. Ils
+151 tests, 15 groupes, ~40 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, et des
@@ -121,6 +121,54 @@ dit : en Survie le rythme des vagues, ailleurs l'adversaire IA lui-même
 (dotation de départ, nombre de villageois, date de son premier raid, taille
 de ses assauts — table `AI_TUNE`). Le coût des constructions monte dans tous
 les cas, et le prix affiché est toujours celui qui sera réellement prélevé.
+
+## Civilisations
+
+Cinq, choisies sur l'écran-titre **et** dans le salon multijoueur (les deux
+sélecteurs sont les mêmes boutons, `pickCiv()` les surligne ensemble). Chacune
+a **trois** choses, et c'est le minimum pour qu'elle se joue différemment
+plutôt que d'être « la même en plus fort » : une **unité unique** formée au
+Château, une **recherche exclusive** à l'Âge Impérial, et un bonus
+**économique ou structurel** — jamais un multiplicateur global de plus.
+
+| Civ | Unité unique | Recherche | Bonus |
+|---|---|---|---|
+| 🐴 **Francs** | *(aucune — voir plus bas)* | Chevalerie Franque | +20% PV Cavalerie · fermes re-semées gratuitement |
+| 🛡️ **Byzantins** | Cataphractaire | Feu Grégeois | +15% PV bâtiments · chantiers 30% plus rapides |
+| 🌾 **Chinois** | Arbalétrier à Répétition | Arc Composite | +15% récolte · 2 villageois et +2 de population au départ |
+| 🏹 **Mongols** | Cavalier-Archer | Étriers de Fer | +20% ATK à distance · chasse deux fois plus rapide |
+| 🎪 **Gitanos** | Roulotte de Guerre | Roues Cerclées | +50% d'or des routes commerciales · villageois +15% de vitesse |
+
+Les Francs échangent l'unité exclusive contre les fermes gratuites : c'est
+assumé, et leur description ne cite donc **pas** le Paladin, qui s'obtient par
+une recherche ouverte aux cinq camps (`RDEF.faith`).
+
+Chaque unité unique occupe une **niche** que le roster commun ne couvre pas,
+plutôt que d'être une unité existante en mieux :
+
+- **Cataphractaire** — la seule cavalerie qui ne fond pas sous les Piquiers.
+- **Cavalier-Archer** — le seul tireur qui peut fuir ce qui le contre.
+- **Arbalétrier à Répétition** — deux fois plus de traits, mais l'armure se
+  soustrait à chacun : ravageur sur l'infanterie nue, inoffensif sur ce qui
+  est blindé.
+- **Roulotte de Guerre** — le seul tireur qui **tient la ligne**. Tous les
+  autres sont en papier et fondent dès qu'on les rejoint ; leur réponse au
+  corps à corps, c'est de ne pas y être. La Roulotte fait l'inverse : lente,
+  150 PV, armure 6 en perforant, elle encaisse ce qui efface un Archer et
+  continue de tirer. Elle est de classe **siège** et non tireur — c'est un
+  chariot bâché — et c'est ce qui lui donne ses contres : l'infanterie qui la
+  **rejoint** la démonte (Piquier +8, Milicien +4). Elle ne démolit pas les
+  bâtiments : elle tient un front.
+
+Les Gitanos sont un peuple de la **route**, et leurs deux bonus disent
+exactement ça. Le Marché n'était pour personne une vraie économie ; pour eux
+deux Marchés bien écartés valent un filon d'or, ce qui change l'ordre de
+construction. Et leurs villageois plus rapides ouvrent la carte (gisements
+lointains, camps qu'on redéplace) au lieu d'ajouter des pourcents à ce qu'on
+faisait déjà. Leur unité unique est aussi la seule du jeu qui ne soit pas un
+humain : elle a sa propre silhouette dessinée (`drawWagonSprite`), sans quoi
+elle serait sortie sous le corps humanoïde générique — un repli parfaitement
+silencieux, que le groupe de tests `civilisations` garde désormais.
 
 ## Types de carte
 
@@ -228,6 +276,23 @@ centaines d'unités. Quatre caches portent l'essentiel du travail :
 
 Le HUD n'écrit dans le DOM que lorsqu'une valeur affichée change réellement.
 
+**Un sprite ne se relit jamais au pixel.** Tout décor ajouté par-dessus un
+sprite de bâtiment (aujourd'hui la livrée de civilisation, voir plus bas) doit
+savoir où le contenu est réellement peint : `fitBuildingImage` cale
+l'illustration **en bas** du canevas, donc une planche haute et étroite laisse
+un grand vide au-dessus. La tentation est de retrouver ce rectangle après coup
+par un `getImageData` — c'est un piège mesuré : sur un camp de 39 bâtiments,
+la première image après un changement de zoom passait de 3,6 ms à **219 ms**,
+un gel parfaitement visible. Une lecture de canevas coûte ~24 ms à froid puis
+2 à 4 ms, contre 0,4 ms pour peindre la livrée elle-même. Le rectangle est
+donc **noté à la construction du sprite** (champ `box`, posé par
+`fitBuildingImage` et `buildBuildings`) et transporté par toutes les copies —
+teinte d'équipe, lavis ennemi, fondu du portail, état de dégât — parce que
+chacune passe par un `Object.assign`. Deux tests du groupe `charge` le
+tiennent. S'y ajoute un **budget par image** : au plus six livrées peintes par
+image, sinon un changement de zoom (qui recrée tous les canevas d'un coup) les
+redemanderait toutes dans la même.
+
 ## Assets illustrés (surcouche optionnelle sur le rendu procédural)
 
 Un deuxième niveau de rendu, purement additif : au démarrage, le jeu tente de
@@ -261,7 +326,7 @@ de la carte montre vraiment la progression de la partie. Voir
 à un autre bâtiment.
 
 Le Centre Ville a en plus une illustration **dédiée par civilisation**, croisée
-avec les quatre âges — **complète pour les quatre camps jouables** :
+avec les quatre âges — **complète pour les quatre camps illustrés** :
 - **Francs** : château de pierre occidental (le style de base, sans fichier
   à part — c'est déjà son identité).
 - **Byzantins** : dômes dorés, appareillage de brique, mosaïques, croix et
@@ -273,6 +338,37 @@ avec les quatre âges — **complète pour les quatre camps jouables** :
 
 Voir `BLD_CIV_SPRITE_FILES` dans `js/05-sprites.js` pour étendre cette couverture
 à un autre bâtiment.
+
+### Une civilisation sans planches : la livrée
+
+Les **Gitanos** n'ont, eux, aucun jeu d'illustrations — et c'est là qu'un
+piège attendait : une civilisation absente de `BLD_CIV_SPRITE_FILES` retombe
+**silencieusement** sur la planche de base, c'est-à-dire sur le style
+**franc**. Un camp gitan aurait donc été bâti en bourg à colombages
+allemandes, exactement le défaut qu'on avait corrigé pour les Chinois et les
+Mongols.
+
+Plutôt que de laisser ce trou en attendant vingt et une planches, une
+**livrée** est peinte par-dessus le sprite déjà construit, quel qu'il soit
+(voir `CIV_LIVERY` et `liverySprite`, `js/05-sprites.js`) : guirlande de
+fanions accrochée au faîte, lanterne, roue de roulotte adossée au pied. Trois
+propriétés voulues :
+
+- **additive** — elle n'altère pas un pixel du sujet, elle ajoute autour. Un
+  lavis de couleur sur une planche peinte à la main l'aurait salie ;
+- **ancrée au CONTENU** et non au canevas — `fitBuildingImage` cale
+  l'illustration en bas du canevas, si bien qu'une planche haute et étroite
+  laisse un grand vide au-dessus : une guirlande posée à 20 % de la hauteur du
+  canevas flottait dans le ciel, une demi-case au-dessus du toit ;
+- **éphémère** — mise en cache dans une `WeakMap` indexée par le canevas
+  source, comme `damagedSprite`. Les sprites sont recréés à chaque changement
+  de zoom, donc de nouveaux canevas : le cache se purge seul, et la livrée
+  suit toujours la planche du moment — si l'illustration arrive après coup
+  (chargement asynchrone), c'est la nouvelle planche qui est décorée.
+
+Le jour où `<type>_gitanos.webp` existe, `drawBuildings` prend la planche
+dédiée et n'appelle plus la livrée : rien à retirer. La liste exacte des
+fichiers à produire est dans [`assets/README.md`](assets/README.md).
 
 Le détourage de chaque planche n'est fait **qu'une seule fois par partie** et
 mis en cache : c'est de loin l'opération la plus coûteuse du pipeline de

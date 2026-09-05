@@ -1289,6 +1289,10 @@ function updateResearchFaction(dt,f){
         if(u.owner===owner&&UDEF[u.type]&&UDEF[u.type].atkType==='p'&&!UDEF[u.type].siege) u.rng+=BASE_TILE;
       if(local) notify('🏹 Vos tireurs gagnent une case de portée !','#16a085');
     }
+    if(r.type==='roues_cerclees'){
+      for(const u of G.units) if(u.owner===owner&&ROUES_TYPES.includes(u.type)) u.spd*=1.25;
+      if(local) notify('🛞 Vos attelages roulent plus vite !','#e67e22');
+    }
     // Le Feu Grégeois n'a rien à rattraper : updateBuildings lit la recherche
     // à chaque tir (comme gatherMult pour la Charrue).
     // Sentiers Pavés : même effet rétroactif que Logistique, côté civil.

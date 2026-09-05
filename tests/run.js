@@ -2045,6 +2045,30 @@ groupe('finpartie', () => {
     }
   });
 
+  test('quitter APRÈS un écran de fin ne laisse pas le joueur sans écran-titre', () => {
+    // showVictory/showGameOver réécrivent tout #overlay : la carte-titre
+    // n'existe plus. quitGame() se contentait de réafficher #overlay, donc
+    // l'ANCIEN écran de fin — sans bouton pour relancer quoi que ce soit.
+    // Chemin réel : gagner en Survie, « Continuer (sans fin) », puis quitter
+    // par le menu pause. Reproduit puis corrigé en navigateur ; ici on garde
+    // le contrat, le harnais ne pouvant pas exprimer « cet élément a disparu »
+    // (getElementById y rend toujours un élément).
+    const ui = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '11-interface.js'), 'utf8');
+    const corps = ui.slice(ui.indexOf('function quitGame'), ui.indexOf('function quitGame') + 1800);
+    ok(/playtabs/.test(corps) && /location\.reload/.test(corps),
+      'quitGame() ne vérifie plus que la carte-titre existe encore : quitter après un écran de fin rend le jeu inatteignable');
+    // Et la lecture de #loadbtn, qui arrive APRÈS le retour de quitGame
+    // (promesse), doit tolérer que l'élément ait disparu — sinon l'erreur
+    // ne remonte qu'en rejet non traité, donc en silence.
+    ok(/const lb=document\.getElementById\('loadbtn'\);\s*if\(lb\)/.test(corps),
+      'quitGame() lit #loadbtn sans vérifier qu\'il existe : erreur silencieuse si la carte-titre a été détruite');
+    // continuePlay() quitte l'écran de fin : sa mise en page ne doit pas
+    // rester armée sur #overlay, que l'écran-titre partage.
+    const cp = ui.slice(ui.indexOf('function continuePlay'), ui.indexOf('function continuePlay') + 500);
+    ok(/classList\.remove\('endscreen'\)/.test(cp),
+      'continuePlay() laisse la classe endscreen sur #overlay, que l\'écran-titre partage');
+  });
+
   test('le gain de population affiché est celui qui est réellement appliqué', () => {
     const j = partie(charger(), { graine: 4242, pas: 5 });
     const moi = j.moi();

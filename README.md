@@ -309,8 +309,10 @@ bâtiments, les 18 unités, les 6 gisements de la carte (arbre, pierre, or,
 baies, poisson, viande), la faune (cerf, sanglier) et les objets uniques
 (relique, caravane). Seuls les effets ponctuels (particules, projectiles)
 restent volontairement procéduraux : trop brefs pour justifier une
-illustration. Voir `assets/README.md` pour la convention de nommage et le
-format attendu.
+illustration. Voir [`assets/README.md`](assets/README.md) pour la convention
+de nommage, le format attendu et les pièges de détourage — et
+[`outils/`](outils/README.md) pour le script qui prépare une planche générée
+(détourage, recadrage, WebP au bon gabarit).
 
 L'illustration d'un bâtiment couvre **toutes ses variantes** par défaut —
 habillages d'âge de la Caserne et du Mur, niveaux de la Tour, portail ouvert.

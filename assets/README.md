@@ -307,6 +307,32 @@ Le jour où elles arrivent : ajouter `gitanos:` aux entrées `[BT.LUMBER]` et
 `[BT.MINE]` de `BLD_CIV_SPRITE_FILES` (forme `{ 0:'...' }`, ces deux types
 n'ont pas de variante de clé) et retirer le commentaire qui les précède.
 
+**Les deux prompts, mot pour mot** — proportions **3:2 (Horizontal)**, et
+traiter la planche avec le gabarit `bld_wide` (640×427) et non `bld` :
+
+> Isometric 2.5D game sprite, one building centered, 3/4 top view, cel-shaded
+> painted art, bold dark outlines, soft shadow at the base, pure white
+> background, no scenery, no text, no people. **Two carts loaded with logs, a
+> sawhorse and two-man saw, axes in a stump, stacked timber under a long low
+> striped awning. Wide low composition.** Nomad wagon-camp style: painted wood
+> in ochre, crimson, turquoise and gold, striped canvas, cartwheels, bunting;
+> no stone.
+
+> (idem, en remplaçant la partie en gras par) **An ore cart, pickaxes and
+> shovels, baskets of raw stone and gold ore under a long low striped awning on
+> poles. Wide low composition.**
+
+454 et 444 caractères : sous le plafond de 480, mais de peu — ne pas rallonger
+la description sans raccourcir ailleurs, le bouton « Générer » se désactive
+au-delà **sans le dire**.
+
+**L'échange de points Rewards ne marche pas** (essayé le 2026-09-05, trois
+fois) : le bouton « Utiliser 100 points Rewards » (10 créations) répond
+« Nous n'avons pas pu échanger vos créations — veuillez réessayer
+ultérieurement ». Panne côté Bing : **aucun point n'est débité**, le solde
+reste intact après chaque tentative. Ne pas s'acharner — passer par le quota
+quotidien (15 générations + le cadeau gratuit de 10).
+
 ### Comment ces planches ont été faites
 
 Générées au **Créateur d'images Bing** (modèle MAI-Image-2.5-Flash), une

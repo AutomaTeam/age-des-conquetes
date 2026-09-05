@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**121 tests, 15 groupes, ~35 s.** Les groupes `ia` et `delta` comptent pour
+**143 tests, 15 groupes, ~38 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -83,7 +83,12 @@ qui **ne se voit pas** :
   la main donc sujettes à dérive : elles se lisent partout sans garde, et une
   entrée qui désigne un type inexistant ne lève pas — elle rend `undefined`.
   Une unité formable absente de `TCOST` serait GRATUITE, une unité unique mal
-  orthographiée rendrait sa civilisation muette.
+  orthographiée rendrait sa civilisation muette. Depuis que l'invité d'une
+  partie en ligne choisit SA civilisation, ce groupe garde aussi ce trajet :
+  son choix arrive bien sur `FAC.P2` (les quatre civs, y compris la même que
+  l'hôte), le repli tient quand il ne publie rien (invité en version
+  antérieure), le champ voyage dans le SALUT, et le sélecteur du salon reste
+  synchronisé avec celui de l'écran-titre.
 - **`cartes`** — les cinq presets, et surtout : aucun n'enferme un camp (un
   `findPath` réel entre les deux Centres Ville). Plus la table des SOLS :
   chaque carte doit décrire une matière complète, aucune ne doit partager le
@@ -104,7 +109,21 @@ qui **ne se voit pas** :
   une unité formée APRÈS a exactement les mêmes statistiques qu'une unité
   relevée. C'est l'invariant qui casse le plus discrètement.
 - **`finpartie`** — élimination, victoire, défaite, et la Merveille qui ne
-  doit PAS donner la victoire avant son délai.
+  doit PAS donner la victoire avant son délai. Ce groupe garde aussi une
+  famille à part : **ce que l'interface PROMET doit être ce que le code
+  FAIT**. Chacun de ces tests correspond à un libellé qui a menti à un
+  joueur, sans que rien ne le signale — d'où un test plutôt qu'une simple
+  correction. Aucun mode à vagues proposé en ligne (leur victoire n'est
+  évaluée que par l'hôte) ; chaque onglet Solo/Multi garde au moins un mode
+  et ne perd pas le choix du joueur ; le raccourci d'émotion fonctionne sur
+  un clavier **AZERTY** (`e.code`, pas `e.key`) ; aucun texte de difficulté
+  ne parle de vagues dans un mode qui n'en a pas ; aucune civilisation
+  n'annonce une unité que les quatre camps peuvent former ; le gain de
+  population affiché est celui qui est réellement appliqué ; une unité qui
+  résiste aux contres le dit à l'écran ; le Héros n'est pas perdu pour la
+  partie si son Château tombe pendant sa formation ; une attente de
+  reconnexion ne se fait pas dégeler par la reprise de pause ; et quitter
+  après un écran de fin ne laisse pas le joueur sans écran-titre.
 - **`ia`** — plafond des Moines, atelier de siège au roster, et l'assaut qui
   passe bien par un rassemblement.
 - **`charge`** — des invariants de COÛT, pas de résultat. Ce sont les seuls

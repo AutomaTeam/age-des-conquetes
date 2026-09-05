@@ -690,6 +690,30 @@ groupe('civilisations', () => {
     return j;
   };
 
+  test('le sélecteur de civilisation existe AUSSI dans le salon, et les deux suivent', () => {
+    // Choisir sa civilisation obligeait l'invité à fermer le salon, déplier
+    // le résumé de configuration de l'écran-titre, choisir, puis rouvrir.
+    // Le sélecteur est donc dupliqué dans la carte du salon — et pickCiv doit
+    // surligner LES DEUX rangées, sinon l'écran-titre contredirait le salon.
+    const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
+    const j = charger();
+    for (const rangee of ['civrow', 'mpcivrow']) {
+      const i = html.indexOf('id="' + rangee + '"');
+      ok(i > 0, `la rangée de civilisations #${rangee} est absente de index.html`);
+      const bloc = html.slice(i, html.indexOf('</div>', i));
+      for (const civ of Object.keys(j.CIVS)) {
+        ok(bloc.includes(`data-c="${civ}"`), `#${rangee} ne propose pas ${civ}`);
+      }
+      ok((bloc.match(/civbtn/g) || []).length === Object.keys(j.CIVS).length,
+        `#${rangee} : toutes les civilisations doivent porter la classe civbtn, sinon pickCiv en oublie`);
+    }
+    // pickCiv doit viser la CLASSE commune, pas une seule des deux rangées.
+    const regles = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '01-regles.js'), 'utf8');
+    const corps = regles.slice(regles.indexOf('function pickCiv'), regles.indexOf('function pickCiv') + 900);
+    ok(/querySelectorAll\('\.civbtn'\)/.test(corps),
+      'pickCiv ne met à jour qu\'une rangée : le salon et l\'écran-titre vont se contredire');
+  });
+
   test('l\'invité joue la civilisation QU\'IL a choisie', () => {
     for (const choix of ['byzantins', 'chinois', 'mongols', 'francs']) {
       const j = partieEnLigne(choix);

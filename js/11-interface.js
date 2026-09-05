@@ -915,7 +915,26 @@ function openRP(cat='forge'){
       if(rShort) btn.title='Il manque : '+missingLabel(r.cost);
       btn.addEventListener('click',()=>{
         const res=emettreOrdre(ordre(ORD.RECHERCHE,{cle:key}));
-        if(!res.ok){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(r.cost); return; }
+        if(!res.ok){
+          // ORD.RECHERCHE refuse pour SIX raisons distinctes ; ce panneau les
+          // annonçait toutes comme « Ressources insuffisantes ». Le cas qui
+          // ment vraiment au joueur : `cible` — le bâtiment requis a été
+          // détruit pendant que le panneau était ouvert (un raid sur la Forge
+          // en pleine partie). On lui disait alors qu'il était pauvre, en
+          // faisant clignoter des ressources qu'il avait. Même découpage par
+          // motif que trainUnit (js/10-ordres.js), qui fait déjà les choses
+          // ainsi pour la formation d'unités.
+          if(res.raison==='ressources'){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(r.cost); }
+          else if(res.raison==='cible'){
+            const req=r.cat==='eco'?'un Moulin':r.cat==='univ'?'une Université':'une Forge';
+            notify(`🏚️ Il vous faut ${req} debout pour lancer cette recherche`,'#e67e22');
+            closeRP(); // le panneau décrit un bâtiment qui n'existe plus
+          }
+          else if(res.raison==='deja') notify('Recherche déjà lancée ou terminée','#e67e22');
+          else if(res.raison==='age') notify(`🔒 Nécessite ${AGES[r.age].nom}`,'#e74c3c');
+          else notify('Recherche impossible','#e74c3c');
+          return;
+        }
         closeRP();
         notify(`🔬 ${res.nom} en cours…`,'#3498db');
       });

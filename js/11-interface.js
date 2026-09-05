@@ -2081,9 +2081,18 @@ function openPause(){
 
 function closePause(){
   if(reseauActif()) mpLeverPause();
-  G.paused=false;
   document.getElementById('pausemenu').style.display='none';
   document.getElementById('pausebtn-inner').innerHTML=iconImg('⏸',16);
+  // Une attente de reconnexion DÉTIENT la pause : elle seule doit la lever
+  // (voir sortirAttenteReconnexion, js/12-reseau.js). Sans cette garde, la
+  // reprise automatique de la pause en ligne — armée pour 90 s, donc plus
+  // longue que la fenêtre de reconnexion de 60 s — dégelait la partie APRÈS
+  // l'escalade : l'hôte voyait sa simulation repartir toute seule pendant
+  // qu'on lui demandait encore s'il voulait continuer. Le menu, lui, se
+  // referme quand même : c'est bien la fenêtre de reconnexion qui doit
+  // rester à l'écran, pas le menu pause.
+  if(typeof RESEAU!=='undefined'&&RESEAU.enAttenteReconnexion) return;
+  G.paused=false;
   // Relancer la boucle si elle s'est arrêtée
   requestAnimationFrame(loop);
 }

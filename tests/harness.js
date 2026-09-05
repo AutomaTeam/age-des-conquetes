@@ -47,6 +47,10 @@ const EXPORTS = [
   // lit.
   'HEROES', 'UNIT_ICO', 'UNIT_SPRITE_FILES', 'UNIT_CIV_SPRITE_FILES',
   'BLD_CIV_SPRITE_FILES', 'CIV_LIVERY', 'ROUES_TYPES', 'CARAVAN_SPEED',
+  // Les trois tables de planches de BÂTIMENT qui manquaient ici : sans
+  // elles, aucun test ne pouvait vérifier qu'un nom de fichier écrit dans
+  // le code existe vraiment sur le disque — et un nom faux ne lève RIEN.
+  'BLD_SPRITE_FILES', 'BLD_AGE_SPRITE_FILES', 'BLD_LEVEL_SPRITE_FILES',
   'liverySprite', 'resetLiveryBudget',
   'applyCommand', 'pickCiv', 'civKeyOf', 'civOf', 'PRODUCTION', 'ORD', 'mkFaction',
   'CARTES', 'pickCarte', 'carteCfg', 'poserMursArene', 'construireSalut', 'T_WATER',

@@ -322,8 +322,10 @@ bâtiments, les 18 unités, les 6 gisements de la carte (arbre, pierre, or,
 baies, poisson, viande), la faune (cerf, sanglier) et les objets uniques
 (relique, caravane). Seuls les effets ponctuels (particules, projectiles)
 restent volontairement procéduraux : trop brefs pour justifier une
-illustration. Voir `assets/README.md` pour la convention de nommage et le
-format attendu.
+illustration. Voir [`assets/README.md`](assets/README.md) pour la convention
+de nommage, le format attendu et les pièges de détourage — et
+[`outils/`](outils/README.md) pour le script qui prépare une planche générée
+(détourage, recadrage, WebP au bon gabarit).
 
 L'illustration d'un bâtiment couvre **toutes ses variantes** par défaut —
 habillages d'âge de la Caserne et du Mur, niveaux de la Tour, portail ouvert.
@@ -348,18 +350,20 @@ avec les quatre âges — **complète pour les quatre camps illustrés** :
   laqué rouge, dragons dorés, lanternes.
 - **Mongols** : yourte de feutre sur base fortifiée en bois, étendards en
   queue de cheval, camp qui s'étend (plusieurs yourtes) aux âges avancés.
+- **Gitanos** : campement de la route — bois peint en ocre, carmin, turquoise
+  et or, bâches rayées sur arceaux, roues de chariot, guirlandes de fanions.
+  Rien n'est maçonné : tout a l'air démontable. **19 types sur 21** ; le Camp
+  Forestier et le Camp Minier gardent la livrée (voir plus bas).
 
 Voir `BLD_CIV_SPRITE_FILES` dans `js/05-sprites.js` pour étendre cette couverture
 à un autre bâtiment.
 
-### Une civilisation sans planches : la livrée
+### La livrée : ce qui tient les types encore sans planche
 
-Les **Gitanos** n'ont, eux, aucun jeu d'illustrations — et c'est là qu'un
-piège attendait : une civilisation absente de `BLD_CIV_SPRITE_FILES` retombe
-**silencieusement** sur la planche de base, c'est-à-dire sur le style
-**franc**. Un camp gitan aurait donc été bâti en bourg à colombages
-allemandes, exactement le défaut qu'on avait corrigé pour les Chinois et les
-Mongols.
+Une civilisation absente de `BLD_CIV_SPRITE_FILES` retombe **silencieusement**
+sur la planche de base, c'est-à-dire sur le style **franc**. À leur arrivée,
+les **Gitanos** bâtissaient donc un bourg à colombages allemandes — exactement
+le défaut qu'on avait corrigé pour les Chinois et les Mongols.
 
 Plutôt que de laisser ce trou en attendant vingt et une planches, une
 **livrée** est peinte par-dessus le sprite déjà construit, quel qu'il soit
@@ -379,9 +383,12 @@ propriétés voulues :
   suit toujours la planche du moment — si l'illustration arrive après coup
   (chargement asynchrone), c'est la nouvelle planche qui est décorée.
 
-Le jour où `<type>_gitanos.webp` existe, `drawBuildings` prend la planche
-dédiée et n'appelle plus la livrée : rien à retirer. La liste exacte des
-fichiers à produire est dans [`assets/README.md`](assets/README.md).
+Dès que `<type>_gitanos.webp` existe, `drawBuildings` prend la planche dédiée
+et n'appelle plus la livrée : rien à retirer, et **elle s'efface d'elle-même
+bâtiment par bâtiment**. C'est ce qui s'est produit : 19 des 21 types ont
+maintenant leur planche, et la livrée ne décore plus que le **Camp Forestier**
+et le **Camp Minier** — les deux seuls types 2×1, qui demandent une planche en
+paysage. Le mécanisme reste donc en place, et il est fait pour ça.
 
 Le détourage de chaque planche n'est fait **qu'une seule fois par partie** et
 mis en cache : c'est de loin l'opération la plus coûteuse du pipeline de

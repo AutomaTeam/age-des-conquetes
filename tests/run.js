@@ -1063,6 +1063,36 @@ groupe('civilisations', () => {
       manques.length + ' bâtiment(s) sans style de civilisation, ils sortiraient en francs :\n        ' +
       manques.slice(0, 10).join(', '));
   });
+
+  test('toute planche nommée dans le code existe vraiment sur le disque', () => {
+    // Le repli des illustrations est SILENCIEUX par construction : un fichier
+    // introuvable ne lève rien, ne trace rien, et le sprite procédural reste
+    // affiché (voir withIllustration). Une faute de frappe dans un nom de
+    // planche est donc invisible jusqu'à ce qu'on remarque, en jouant, qu'un
+    // bâtiment n'a pas changé d'aspect — c'est le défaut que assets/README.md
+    // signale déjà à propos de ASSET_EXT. Et ces tables sont écrites À LA
+    // MAIN, une ligne par civilisation et par bâtiment.
+    const fs = require('fs'), path = require('path');
+    const j = charger();
+    const racine = path.join(__dirname, '..', 'assets');
+    const attendus = [];
+    const pousser = (dossier, v) => {
+      if (typeof v === 'string') attendus.push(dossier + '/' + v);
+      else if (v && typeof v === 'object') for (const k of Object.keys(v)) pousser(dossier, v[k]);
+    };
+    pousser('batiments', j.BLD_SPRITE_FILES);
+    pousser('batiments', j.BLD_AGE_SPRITE_FILES);
+    pousser('batiments', j.BLD_LEVEL_SPRITE_FILES);
+    pousser('batiments', j.BLD_CIV_SPRITE_FILES);
+    pousser('unites', j.UNIT_SPRITE_FILES);
+    pousser('unites', j.UNIT_CIV_SPRITE_FILES);
+    const absents = [...new Set(attendus)]
+      .filter((rel) => !fs.existsSync(path.join(racine, rel + j.ASSET_EXT)));
+    ok(!absents.length,
+      absents.length + ' planche(s) nommée(s) dans le code sont absentes de assets/, ' +
+      'le jeu retomberait EN SILENCE sur le rendu procédural :\n        ' +
+      absents.slice(0, 10).join(', '));
+  });
 });
 
 // ════════════════════════════════════════════════════════════

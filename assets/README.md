@@ -55,16 +55,20 @@ procédural existant (aucune régression).
 ## État : couverture complète
 
 Toutes les catégories prévues sont fournies — 4 icônes de ressources, 21
-bâtiments (+ 76 variantes par civilisation — **les 21 types du jeu**, Mur et
-Portail compris), 21 unités (+ 3 variantes de
+bâtiments (+ 94 variantes par civilisation), 22 unités (+ 4 variantes de
 Héros par civilisation), 6 gisements de carte, 2 animaux, 2 objets uniques.
 
-**Sauf les Gitanos**, cinquième civilisation ajoutée le 2026-09-05 : elle n'a
-aucune planche ici et n'en attend aucune (voir la section qui lui est
-consacrée plus bas). Compter les fichiers ne dit donc plus « couverture
-complète » : c'est `BLD_CIV_SPRITE_FILES` qu'il faut recouper avec `CIVS`.
-`effets/` reste volontairement vide : particules et projectiles sont trop
-brefs à l'écran pour qu'une illustration s'y voie.
+**Presque complet pour les Gitanos** aussi, cinquième civilisation : 19 des
+21 types de bâtiment ont leur planche depuis le 2026-09-05, plus la Roulotte
+de Guerre et Zaïda la Voyageuse. Restent le **Camp Forestier** et le **Camp
+Minier**, qui gardent la livrée peinte par code (voir la section qui leur est
+consacrée plus bas). Compter les fichiers ne dit donc pas « couverture
+complète » : c'est `BLD_CIV_SPRITE_FILES` qu'il faut recouper avec `CIVS` —
+et depuis le 2026-09-05 un test le fait pour de bon, en vérifiant en plus que
+**chaque nom de fichier écrit dans le code existe vraiment sur le disque**
+(groupe `civilisations`) : un nom faux ne lève rien, il repasse en silence au
+rendu procédural. `effets/` reste volontairement vide : particules et
+projectiles sont trop brefs à l'écran pour qu'une illustration s'y voie.
 
 Les trois dernières unités (`cataphractaire`, `cavalier_archer`,
 `arbaletrier_repetition`) sont les **unités uniques de civilisation** — celles
@@ -234,11 +238,12 @@ qu'un fichier manque. Les unités n'ont pas de paliers d'âge, donc pas de
 suffixe `_ageN` ; les deux frames de foulée (`_W1`/`_W2`) reçoivent la même
 image, comme pour la surcouche commune.
 
-Seul le **Héros** en bénéficie, et il est **complet pour les 4 civilisations** :
-`HEROES` nomme quatre personnages distincts (Charlemagne, Bélisaire, Sun Tzu,
-Gengis Khan) qui sortaient tous sous la même silhouette de seigneur occidental.
-Charlemagne garde `heros.webp` — c'est le style Francs — et les trois autres ont
-leur planche (`heros_byzantins`, `heros_chinois`, `heros_mongols`).
+Seul le **Héros** en bénéficie, et il est **complet pour les 5 civilisations** :
+`HEROES` nomme cinq personnages distincts (Charlemagne, Bélisaire, Sun Tzu,
+Gengis Khan, Zaïda la Voyageuse) qui sortaient tous sous la même silhouette de
+seigneur occidental. Charlemagne garde `heros.webp` — c'est le style Francs — et
+les quatre autres ont leur planche (`heros_byzantins`, `heros_chinois`,
+`heros_mongols`, `heros_gitanos`).
 
 Les trois unités uniques de civilisation, elles, n'ont pas besoin d'entrée
 ici : une seule civilisation peut les former, leur planche unique EST déjà
@@ -257,81 +262,137 @@ moucheture claire isolée dans la marge, que le flood fill ne peut pas
 atteindre depuis les bords, gonflait la boîte de recadrage et faisait donc
 dessiner le bâtiment plus petit qu'il ne devait l'être.
 
-## Gitanos : la cinquième civilisation, sans planches (à ce jour)
+## Gitanos : 19 types sur 21 (2026-09-05)
 
-Ajoutée le 2026-09-05. Elle n'a **aucun fichier** dans ce dossier, et le jeu
-ne l'attend pas : ni `BLD_CIV_SPRITE_FILES` ni `UNIT_CIV_SPRITE_FILES` ne la
-mentionnent, donc aucun 404, aucune tentative de chargement.
+La cinquième civilisation est arrivée **sans aucune planche** : les bâtiments
+portaient une **livrée** peinte par code par-dessus le décor franc (guirlande
+de fanions au faîte, lanterne, roue de roulotte au pied — voir `CIV_LIVERY` /
+`liverySprite` / `drawGitanoLivery`, `js/05-sprites.js`), et la Roulotte de
+Guerre sa propre silhouette dessinée (`drawWagonSprite`).
 
-Ce qui la distingue à l'écran aujourd'hui :
+Les planches ont été produites le 2026-09-05 : **22 fichiers de bâtiment**
+couvrant **19 des 21 types** (le Centre Ville en prend quatre, un par âge),
+plus `unites/roulotte.webp` et `unites/heros_gitanos.webp`.
 
-- **les bâtiments** portent une **livrée** peinte par code par-dessus la
-  planche franque : guirlande de fanions accrochée au faîte, lanterne, roue de
-  roulotte adossée au pied (voir `CIV_LIVERY` / `liverySprite` /
-  `drawGitanoLivery`, `js/05-sprites.js`). Additive : elle n'altère pas un
-  pixel de l'illustration, elle ajoute autour. Elle s'accroche au champ `box`
-  du sprite — le rectangle réellement peint, noté par `fitBuildingImage` — et
-  **jamais** à un `getImageData` : `fitBuildingImage` cale l'illustration en
-  bas du canevas, donc une planche haute et étroite laisse un grand vide
-  au-dessus, et retrouver ce rectangle par lecture de pixels coûtait 219 ms
-  sur la première image d'un camp de 39 bâtiments ;
-- **la Roulotte de Guerre**, son unité unique, a sa **propre silhouette
-  dessinée** (`drawWagonSprite`), au même titre que le Trébuchet, le Bélier et
-  la Barque — les trois autres unités non humanoïdes du jeu. Sans elle, elle
-  serait sortie sous le corps humanoïde générique de `buildUnitSprite`, en
-  fantassin à tunique brune. Ce repli-là ne lève rien et ne se voit qu'en
-  jouant : un test du groupe `civilisations` le garde désormais pour TOUTE
-  unité unique, présente ou future.
+Direction artistique : un **campement de la route**, pas une ville. Bois peint
+en ocre, carmin, turquoise et or, bâches rayées tendues sur des arceaux, roues
+de chariot, guirlandes de fanions, lanternes. Ni pierre de taille ni
+maçonnerie : tout a l'air démontable. Vérifié en jeu — un camp gitan complet
+ne partage plus aucune silhouette avec un bourg franc.
 
-### Les planches à produire, si on veut lui donner le même traitement
+Deux conséquences à ne pas défaire :
 
-Même convention que les autres : `<nom>_gitanos.webp`, forme **chaîne** dans
-`BLD_CIV_SPRITE_FILES` (une seule planche par bâtiment, recopiée sur toutes
-les variantes de clé), sauf le Centre Ville qui mérite ses quatre âges.
-**24 fichiers** au total, et la livrée s'efface d'elle-même bâtiment par
-bâtiment à mesure qu'ils arrivent — il n'y a pas de « tout ou rien ».
+- la **livrée n'a pas été retirée** et ne doit pas l'être. Elle s'efface
+  d'elle-même bâtiment par bâtiment (`drawBuildings` ne l'appelle que faute de
+  planche dédiée) et c'est exactement ce qui la rend utile : elle couvre
+  encore les deux types restants, et couvrirait n'importe quelle sixième
+  civilisation le jour venu ;
+- la Roulotte de Guerre est entrée dans `UNIT_SPRITE_FILES`, ce qui **remplace
+  `drawWagonSprite` à l'affichage** — mais le sprite dessiné reste le repli si
+  le fichier manque, et c'est lui qui fixe le cadrage de référence. Ne pas le
+  supprimer.
 
-Direction artistique commune : un **campement de la route**, pas une ville.
-Bois peint aux couleurs vives (ocre, carmin, turquoise, or), bâches rayées
-tendues sur des arceaux, roues de chariot, guirlandes de fanions, lanternes de
-papier. Ni pierre de taille, ni maçonnerie : tout doit avoir l'air démontable.
+### Ce qui reste à produire : les deux camps 2×1
 
-- `centre_ville_gitanos` + `_age1/2/3` (4) — un cercle de roulottes autour
-  d'un feu, qui s'agrandit et se fortifie de bâches et de palissades légères
-  aux âges avancés.
-- `maison_gitanos` (1) — une roulotte bâchée dételée, marchepied sorti,
-  linge tendu. C'est le bâtiment le plus NOMBREUX de la carte : c'est là
-  qu'une seule planche change le plus la lecture d'une ville.
-- `chateau_gitanos` (1) — un grand chapiteau rayé sur mâts, ceint de
-  chariots mis en cercle. Bâtiment signature : c'est lui qui forme la
-  Roulotte de Guerre et Zaïda la Voyageuse.
-- `ferme_gitanos` (1) — pas de champ labouré : un enclos de chevaux et de
-  paniers de cueillette sous un auvent.
-- `monastere_gitanos` (1) — tente de divination, fumée d'encens, cartes et
-  fanions ; ni croix ni dôme.
-- `caserne_gitanos`, `ecurie_gitanos`, `marche_gitanos`, `forge_gitanos` (4)
-  — respectivement un râtelier d'armes sous auvent rayé, une ligne de chevaux
-  entravés, un étal de colporteur croulant de marchandises, une forge portative
-  sur son chariot.
-- `moulin_gitanos`, `camp_bois_gitanos`, `camp_minier_gitanos` (3) — meule à
-  main et sacs, chariots de grumes, chariot de minerai. **Les deux camps en
-  PAYSAGE (640×427)** : ce sont les seuls types 2×1, voir plus haut.
-- `tour_gitanos`, `avant_poste_gitanos`, `mur_gitanos`, `portail_gitanos` (4)
-  — mirador de perches et de toile, guet sur un chariot, barricade de
-  chariots et de perches, porte de perches liées entre deux chariots. Pour le
-  Mur : **crénelage/pointes dans le haut, corps continu dans le bas** —
-  `murSuite` recoupe la source à 53 % de hauteur.
-- `universite_gitanos`, `atelier_siege_gitanos`, `quai_gitanos`,
-  `hlm_gitanos`, `merveille_gitanos` (5) — tente d'astronomie et cartes du
-  ciel, chariots en cours de montage sous une bâche, ponton de perches et
-  barque, cercle serré de roulottes à étages, et pour la Merveille un grand
-  chapiteau doré au centre d'une roue complète de chariots.
-- `unites/roulotte.webp` (1) — la Roulotte de Guerre, de profil comme le
-  Bélier et la Barque : bâche rayée en berceau, roues à rayons, meurtrière
-  d'où sort un trait. À ajouter dans `UNIT_SPRITE_FILES` le jour venu ; le
-  sprite dessiné actuel lui sert de cadrage de référence.
-- `unites/heros_gitanos.webp` (1) — Zaïda la Voyageuse, à ajouter dans
-  `UNIT_CIV_SPRITE_FILES[UT.HERO]` comme les trois autres héros.
+`camp_bois_gitanos` et `camp_minier_gitanos` — chariots de grumes pour l'un,
+chariot de minerai pour l'autre, sous un long auvent rayé. Ce sont les seuls
+types **2×1** traités dans ce dossier : leur sprite est **large et bas**, et
+une planche générée en portrait s'y retrouverait réduite à la hauteur puis
+perdue au milieu d'un canevas trop large (`fitBuildingImage` fait un
+« contain »). À demander en **PAYSAGE (640×427)**, comme les six planches de
+camp déjà livrées. C'est le seul endroit du dossier où le format de
+génération dépend de l'emprise du bâtiment.
+
+Le jour où elles arrivent : ajouter `gitanos:` aux entrées `[BT.LUMBER]` et
+`[BT.MINE]` de `BLD_CIV_SPRITE_FILES` (forme `{ 0:'...' }`, ces deux types
+n'ont pas de variante de clé) et retirer le commentaire qui les précède.
+
+**Les deux prompts, mot pour mot** — proportions **3:2 (Horizontal)**, et
+traiter la planche avec le gabarit `bld_wide` (640×427) et non `bld` :
+
+> Isometric 2.5D game sprite, one building centered, 3/4 top view, cel-shaded
+> painted art, bold dark outlines, soft shadow at the base, pure white
+> background, no scenery, no text, no people. **Two carts loaded with logs, a
+> sawhorse and two-man saw, axes in a stump, stacked timber under a long low
+> striped awning. Wide low composition.** Nomad wagon-camp style: painted wood
+> in ochre, crimson, turquoise and gold, striped canvas, cartwheels, bunting;
+> no stone.
+
+> (idem, en remplaçant la partie en gras par) **An ore cart, pickaxes and
+> shovels, baskets of raw stone and gold ore under a long low striped awning on
+> poles. Wide low composition.**
+
+454 et 444 caractères : sous le plafond de 480, mais de peu — ne pas rallonger
+la description sans raccourcir ailleurs, le bouton « Générer » se désactive
+au-delà **sans le dire**.
+
+**L'échange de points Rewards ne marche pas** (essayé le 2026-09-05, trois
+fois) : le bouton « Utiliser 100 points Rewards » (10 créations) répond
+« Nous n'avons pas pu échanger vos créations — veuillez réessayer
+ultérieurement ». Panne côté Bing : **aucun point n'est débité**, le solde
+reste intact après chaque tentative. Ne pas s'acharner — passer par le quota
+quotidien (15 générations + le cadeau gratuit de 10).
+
+### Comment ces planches ont été faites
+
+Générées au **Créateur d'images Bing** (modèle MAI-Image-2.5-Flash), une
+image par requête, proportions **2:3** pour les bâtiments et le Héros, **3:2**
+pour la Roulotte — qui est de profil comme le Bélier, le Trébuchet et la
+Barque (400×267, et non 400×600). Trois choses valent d'être notées pour la
+prochaine fois :
+
+- **le champ de saisie plafonne à 480 caractères**, et au-delà le bouton
+  « Générer » est simplement *désactivé* — sans message. Un prompt de style
+  bavard passe donc silencieusement à la trappe. D'où un préfixe de style
+  court et une queue de direction artistique commune, tous deux comptés ;
+- **les proportions retombent au défaut (3:2) à chaque rechargement** de la
+  page. Elles tiennent d'une génération à l'autre, mais pas d'un chargement
+  au suivant : à revérifier, sinon un bâtiment sort en paysage ;
+- le quota quotidien est de quinze générations, plus un **cadeau quotidien**
+  gratuit de dix. C'est ce qui a arrêté la passe à 24 planches sur 26.
+
+Détourage : le fond blanc est enlevé **à pleine résolution** avec exactement
+le test de `computeStripBgTrimmed` (`r,g,b > 230` et écarts < 12), flood fill
+8-connexe depuis les bords, puis le fond est rebouché par la couleur du sujet
+la plus proche **avant** la réduction — sans ce rebouchage, le rééchantillon-
+nage fait baver le blanc dans le contour et laisse un liséré clair tout autour
+de la planche. Les deux pièges décrits plus bas (poches fermées, sujet trop
+blanc) ont été mesurés sur chaque planche, et les poches vidées : le vide sous
+un auvent et le centre d'un cercle de roulottes en sont pleins.
+
+### Le contrôle qui a trouvé deux défauts : la HAUTEUR RENDUE
+
+Une planche peut être irréprochable et sortir quand même trop petite en jeu.
+`fitBuildingImage` fait un **« contain »** dans un canevas au gabarit fixe :
+c'est donc la **proportion du sujet** — pas sa beauté — qui décide de sa
+taille à l'écran. Une planche large et basse est réduite à la largeur, et le
+bâtiment sort écrasé, sans que rien ne le signale.
+
+Le contrôle tient en une ligne dans la console d'une partie lancée :
+comparer `box.maxY - box.minY` d'un sprite à celui de ses **sœurs** (le même
+bâtiment chez les autres civilisations, et les autres âges du même bâtiment).
+
+Deux défauts trouvés comme ça le 2026-09-05, invisibles sur la planche seule :
+
+- le **Portail** gitano sortait à **57 px contre 105 px pour son propre Mur** —
+  une porte deux fois moins haute que la clôture où elle s'insère, là où les
+  autres civs sont à égalité (Chinois : 109 et 109). En cause : la planche
+  montrait **deux roulottes entières** de part et d'autre, donc une boîte très
+  large ;
+- le **Centre Ville** à l'**Âge Impérial** rendait **plus petit** que celui de
+  l'Âge des Châteaux (169 contre 189) : le joueur aurait vu son bâtiment
+  principal *rétrécir* en montant d'âge, alors que la planche impériale est la
+  plus riche des quatre.
+
+Remède dans les deux cas : un **recadrage latéral** de la planche (les
+roulottes extérieures sont rognées, comme le sont les tuiles d'un mur), pas
+une nouvelle génération. Résultat : Portail 104 contre Mur 105, et une
+progression d'âge enfin monotone — 149, 161, 189, 198.
+
+Le camp gitan reste globalement **plus bas** que les villes des autres civs
+(un Centre Ville à 149-198 px contre 268) : ça, c'est voulu, c'est un
+campement et non une ville de pierre. Ce qu'il faut traquer, ce sont les
+écarts **internes** — un bâtiment contre son propre voisinage.
 
 ## Poches de fond FERMÉES — le piège du flood fill
 

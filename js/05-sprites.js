@@ -824,6 +824,7 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: { 0:'centre_ville_byzantins', 1:'centre_ville_byzantins_age1', 2:'centre_ville_byzantins_age2', 3:'centre_ville_byzantins_age3' },
     chinois:   { 0:'centre_ville_chinois',   1:'centre_ville_chinois_age1',   2:'centre_ville_chinois_age2',   3:'centre_ville_chinois_age3' },
     mongols:   { 0:'centre_ville_mongols',   1:'centre_ville_mongols_age1',   2:'centre_ville_mongols_age2',   3:'centre_ville_mongols_age3' },
+    gitanos:   { 0:'centre_ville_gitanos',   1:'centre_ville_gitanos_age1',   2:'centre_ville_gitanos_age2',   3:'centre_ville_gitanos_age3' },
   },
   // La Maison est le bâtiment le PLUS NOMBREUX de la carte : c'est là qu'une
   // seule planche change le plus la lecture d'une ville. Un joueur chinois
@@ -832,6 +833,7 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: { 0:'maison_byzantins' },   // pierre blanchie, bandeaux de brique, tuile romaine
     chinois:   { 0:'maison_chinois' },     // toit de tuiles grises aux avant-toits relevés
     mongols:   { 0:'maison_mongols' },     // yourte de feutre sur treillis de bois
+    gitanos:   { 0:'maison_gitanos' },     // roulotte bâchée dételée, marchepied sorti, linge tendu
   },
   // Le Château est le bâtiment SIGNATURE : c'est lui qui forme l'unité unique
   // de la civilisation et son héros (voir CIVS[...].unique et HEROES).
@@ -839,6 +841,7 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: { 0:'chateau_byzantins' },  // tours à dômes, bandeaux de brique, bannières pourpres
     chinois:   { 0:'chateau_chinois' },    // porterie de pierre, tour à étages laquée de rouge
     mongols:   { 0:'chateau_mongols' },    // palissade et rempart de terre autour d'une tente de guerre
+    gitanos:   { 0:'chateau_gitanos' },    // grand chapiteau rayé sur mâts, ceint de chariots en cercle
   },
   // La Ferme dit ce que le peuple CULTIVE — et pour les Mongols, qu'il ne
   // cultive pas : c'est un enclos de bétail, cohérent avec leur bonus de
@@ -847,6 +850,7 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: { 0:'ferme_byzantins' },    // vigne en treilles et oliviers, muret de pierre sèche
     chinois:   { 0:'ferme_chinois' },      // rizière en terrasses inondées
     mongols:   { 0:'ferme_mongols' },      // enclos de moutons et de chèvres sous un auvent de feutre
+    gitanos:   { 0:'ferme_gitanos' },      // enclos de chevaux et paniers de cueillette sous un auvent
   },
   // Le Monastère était le plus incongru de tous : un joueur chinois ou mongol
   // priait dans une chapelle gothique surmontée d'une croix.
@@ -854,6 +858,7 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: { 0:'monastere_byzantins' },// chapelle à dôme doré et croix, cyprès
     chinois:   { 0:'monastere_chinois' },  // temple bouddhiste, toit de tuiles vertes, lions de pierre
     mongols:   { 0:'monastere_mongols' },  // cairn ovoo et drapeaux de prière, tente-temple de feutre
+    gitanos:   { 0:'monastere_gitanos' },  // tente de divination, encens, fanions ; ni croix ni dôme
   },
   // Écurie, Marché et Forge : les trois bâtiments civils les plus courants
   // après la Maison et la Ferme. Chez les Mongols les trois deviennent des
@@ -864,16 +869,19 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: { 0:'ecurie_byzantins' },   // pierre crème, bandeaux de brique, portes en arche
     chinois:   { 0:'ecurie_chinois' },     // poteaux laqués rouges, toit de tuiles grises, stalles ouvertes
     mongols:   { 0:'ecurie_mongols' },     // ligne de chevaux entravés sous un auvent de feutre
+    gitanos:   { 0:'ecurie_gitanos' },     // ligne de chevaux entravés sous un long auvent rayé
   },
   [BT.MARKET]: {
     byzantins: { 0:'marche_byzantins' },   // arcade de pierre, banne rayée pourpre, amphores
     chinois:   { 0:'marche_chinois' },     // étal laqué rouge, lanternes de papier, porcelaine et soie
     mongols:   { 0:'marche_mongols' },     // tente de commerce, tapis et fourrures, chameau au repos
+    gitanos:   { 0:'marche_gitanos' },     // étal de colporteur croulant de marchandises
   },
   [BT.FORGE]: {
     byzantins: { 0:'forge_byzantins' },    // cheminée de brique en dôme, enclume sous un auvent de tuiles
     chinois:   { 0:'forge_chinois' },      // charpente sombre, toit relevé, fourneau de brique
     mongols:   { 0:'forge_mongols' },      // forge de campagne : auvent de feutre sur un fourneau de pierre
+    gitanos:   { 0:'forge_gitanos' },      // forge portative sur son chariot
   },
   // La CASERNE porte des habillages d'âge (clés `_A1.._A3`) : d'où la forme
   // CHAÎNE, qui applique la même planche aux quatre âges. Sans elle il aurait
@@ -885,11 +893,13 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: 'caserne_byzantins',        // pierre crème, bandeaux de brique, bannières pourpres
     chinois:   'caserne_chinois',          // halle laquée rouge, râtelier de hallebardes, tambour
     mongols:   'caserne_mongols',          // campement de yourtes autour d'un râtelier d'armes
+    gitanos:   'caserne_gitanos',          // râtelier d'armes sous un auvent rayé, mannequin de paille
   },
   [BT.MILL]: {
     byzantins: { 0:'moulin_byzantins' },   // moulin à eau de pierre, roue de bois, sacs de grain
     chinois:   { 0:'moulin_chinois' },     // charpente sous toit relevé, roue à aubes, paniers de riz
     mongols:   { 0:'moulin_mongols' },     // réserve de grain sous auvent, meule à main
+    gitanos:   { 0:'moulin_gitanos' },     // meule à main et sacs de grain sous un auvent
   },
   // Camp Forestier et Camp Minier sont les seuls types 2×1 traités ici : leur
   // sprite est LARGE ET BAS, et une planche générée en portrait s'y serait
@@ -898,6 +908,13 @@ const BLD_CIV_SPRITE_FILES={
   // demandées en PAYSAGE, comme les planches d'origine — 640×427 et non
   // 640×960. C'est le seul endroit où le format de génération dépend de
   // l'emprise du bâtiment.
+  // Gitanos : ces DEUX types sont les seuls à ne pas avoir leur planche —
+  // ce sont justement les deux qui la veulent en PAYSAGE (voir juste au-dessus
+  // et assets/README.md). Manque assumé, pas oubli : ils gardent le décor
+  // franc plus la LIVRÉE peinte par code (CIV_LIVERY), exactement comme les
+  // 21 types avant cette passe. Le repli est silencieux par construction —
+  // c'est tout l'intérêt de la table, et c'est ce qui permet à la livrée de
+  // s'effacer bâtiment par bâtiment plutôt qu'en tout ou rien.
   [BT.LUMBER]: {
     byzantins: { 0:'camp_bois_byzantins' },  // hangar ouvert à toit de tuiles sur piliers de pierre
     chinois:   { 0:'camp_bois_chinois' },    // toit de tuiles grises relevé, poteaux laqués, bambou
@@ -914,6 +931,7 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: { 0:'universite_byzantins' }, // scriptorium à coupole, bandeaux de brique, arcades
     chinois:   { 0:'universite_chinois' },   // académie laquée, toit de tuiles vertes, stèle de pierre
     mongols:   { 0:'universite_mongols' },   // pavillon de savants, pupitres bas, sphère armillaire
+    gitanos:   { 0:'universite_gitanos' },   // tente d'astronomie, lunette sur trépied, sphère armillaire
   },
   // La TOUR porte des variantes de NIVEAU (`_L2`/`_L3`, garde renforcée puis
   // créneaux) plutôt que d'âge — même piège, même remède : la forme chaîne
@@ -924,6 +942,7 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: 'tour_byzantins',           // tourelle ronde crénelée, bandeaux de brique, bannière
     chinois:   'tour_chinois',             // tour à étages laquée rouge, toits relevés superposés
     mongols:   'tour_mongols',             // tour de guet en treillis de bois sur socle de pierre
+    gitanos:   'tour_gitanos',             // mirador de perches et de toile, nid-de-pie et fanions
   },
   // Atelier de Siège et Avant-poste n'ont aucune variante de clé : la forme
   // chaîne s'applique ici à la seule clé de base, comme le ferait un objet
@@ -932,16 +951,19 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: 'atelier_siege_byzantins',  // hangar de pierre à toit de tuiles, charpente d'engins
     chinois:   'atelier_siege_chinois',    // halle laquée à toit relevé, arbalète géante en montage
     mongols:   'atelier_siege_mongols',    // auvent de feutre sur poteaux, trébuchet en construction
+    gitanos:   'atelier_siege_gitanos',    // chariots en cours de montage sous une bâche
   },
   [BT.OUTPOST]: {
     byzantins: 'avant_poste_byzantins',    // tourelle de guet en pierre crème, bannière pourpre
     chinois:   'avant_poste_chinois',      // pavillon de guet laqué rouge, toit relevé, fanion
     mongols:   'avant_poste_mongols',      // plateforme de guet sur pilotis, auvent de feutre, échelle
+    gitanos:   'avant_poste_gitanos',      // plateforme de guet bâtie sur le toit d'un chariot
   },
   [BT.DOCK]: {
     byzantins: 'quai_byzantins',           // pierre crème et brique, jetée de bois, grue
     chinois:   'quai_chinois',             // pavillon laqué rouge sur pilotis, jonque amarrée
     mongols:   'quai_mongols',             // ponton rudimentaire, auvent de feutre, radeau
+    gitanos:   'quai_gitanos',             // ponton de perches, barque amarrée, auvent rayé
   },
   [BT.HLM]: {
     byzantins: 'hlm_byzantins',            // tour de six étages, arcades et balcons de pierre crème
@@ -950,6 +972,7 @@ const BLD_CIV_SPRITE_FILES={
     // CAMP DE YOURTES groupées en cercle — cohérent avec leur identité
     // nomade plutôt qu'une tour qu'ils ne bâtiraient jamais.
     mongols:   'hlm_mongols',
+    gitanos:   'hlm_gitanos',              // roulottes à étages serrées flanc à flanc, passerelles de planches
   },
   // La Merveille est l'aboutissement architectural de chaque civilisation :
   // basilique à dômes dorés (Byzantins, référence Sainte-Sophie), pagode à
@@ -958,6 +981,7 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: 'merveille_byzantins',
     chinois:   'merveille_chinois',
     mongols:   'merveille_mongols',
+    gitanos:   'merveille_gitanos',        // chapiteau doré au centre d'une roue complète de chariots
   },
   // Mur et Portail étaient les deux DERNIERS types communs aux 4 civs.
   // Chaîne obligatoire : le Mur porte des habillages d'âge (`_A1.._A3`,
@@ -970,11 +994,13 @@ const BLD_CIV_SPRITE_FILES={
     byzantins: 'mur_byzantins',   // crénelage pierre crème + bandeau de brique, cohérent avec leur Château
     chinois:   'mur_chinois',     // muraille de pierre grise crénelée, corbeaux de bois sombre
     mongols:   'mur_mongols',     // talus de terre battue surmonté de pieux, étendard en queue de cheval
+    gitanos:   'mur_gitanos',     // barricade de chariots et de perches, pointes sur toute l'arête haute
   },
   [BT.GATE]: {
     byzantins: 'portail_byzantins', // porte en arc de brique, vantaux de bois cloutés de fer
     chinois:   'portail_chinois',   // arc de pierre grise, vantaux laqués rouge à clous de laiton
     mongols:   'portail_mongols',   // porte de bois liée de corde entre deux talus de terre à pieux
+    gitanos:   'portail_gitanos',   // porte de perches liées entre deux chariots, deux vantaux clos
   },
 };
 
@@ -1076,8 +1102,8 @@ function damagedSprite(spr,stage){
 // colombages — exactement le défaut qu'on avait corrigé pour les Chinois et
 // les Mongols, mais qu'on aurait réintroduit pour le cinquième camp.
 //
-// Plutôt que de laisser ce trou béant en attendant 21 planches, on peint une
-// LIVRÉE par-dessus le sprite déjà construit, quel qu'il soit : banderole de
+// Plutôt que de laisser ce trou béant en attendant les 21 planches, on peint
+// une LIVRÉE par-dessus le sprite déjà construit, quel qu'il soit : banderole de
 // fanions, lanterne, roue de roulotte adossée au pied du bâtiment. Trois
 // propriétés voulues :
 //   • ADDITIVE — elle ne touche pas un pixel du sujet, elle ajoute autour.
@@ -1094,8 +1120,14 @@ function damagedSprite(spr,stage){
 //     asynchrone, voir upgradeBuildingSprites), c'est la NOUVELLE planche qui
 //     est décorée, pas le sprite procédural figé d'avant.
 //
-// Le jour où `<type>_gitanos.webp` existe, drawBuildings prend la planche
-// dédiée et n'appelle plus la livrée du tout : rien à retirer ici.
+// Dès que `<type>_gitanos.webp` existe, drawBuildings prend la planche dédiée
+// et n'appelle plus la livrée : rien à retirer ici, elle s'efface D'ELLE-MÊME
+// bâtiment par bâtiment. C'est exactement ce qui s'est produit le 2026-09-05 —
+// 19 des 21 types ont reçu leur planche, et il ne reste sous livrée que le
+// Camp Forestier et le Camp Minier (les deux seuls types 2×1, qui demandent
+// une planche en paysage). Garder ce bloc : c'est lui qui rend l'arrivée des
+// planches progressive au lieu d'un tout ou rien, et il resservira tel quel à
+// une sixième civilisation.
 const CIV_LIVERY={
   gitanos:{
     // Couleurs de fanion : les teintes d'une bâche de roulotte peinte —
@@ -2177,6 +2209,12 @@ const UNIT_SPRITE_FILES={ [UT.VIL]:'villageois', [UT.MIL]:'milicien', [UT.ARC]:'
   // qui avait couvert « tous les types de UT ». Leur repli procédural, lui,
   // ne les distinguait pas non plus (voir buildUnitSprite).
   [UT.CATA]:'cataphractaire', [UT.CAVARC]:'cavalier_archer', [UT.ARBRAP]:'arbaletrier_repetition',
+  // La Roulotte de Guerre est la QUATRIÈME unité non humanoïde du jeu (avec
+  // le Trébuchet, le Bélier et la Barque) : sa planche est donc de PROFIL,
+  // comme les leurs, et au même format (400×267). Elle remplace à l'affichage
+  // le sprite dessiné de drawWagonSprite — qui reste le repli si le fichier
+  // manque, et qui lui a servi de cadrage de référence : ne pas le retirer.
+  [UT.ROUL]:'roulotte',
   [UT.ENEMI]:'pillard', [UT.ENEMIA]:'archer_pillard', [UT.ENEMI_G]:'geant', [UT.ENEMI_C]:'cavalier_noir', [UT.ENEMI_BOSS]:'seigneur_guerre' };
 
 // Illustrations DÉDIÉES par CIVILISATION, pour les rares unités dont
@@ -2192,7 +2230,7 @@ const UNIT_SPRITE_FILES={ [UT.VIL]:'villageois', [UT.MIL]:'milicien', [UT.ARC]:'
 // civilisation peut les former, leur planche unique EST déjà leur planche de
 // civilisation.
 const UNIT_CIV_SPRITE_FILES={
-  [UT.HERO]: { byzantins:'heros_byzantins', chinois:'heros_chinois', mongols:'heros_mongols' },
+  [UT.HERO]: { byzantins:'heros_byzantins', chinois:'heros_chinois', mongols:'heros_mongols', gitanos:'heros_gitanos' },
 };
 
 // Détoure (même flood fill que les bâtiments) et centre horizontalement,

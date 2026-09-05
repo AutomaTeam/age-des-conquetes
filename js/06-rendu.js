@@ -679,6 +679,7 @@ function indexerMurs(){
 
 function drawBuildings(){
   indexerMurs();
+  resetLiveryBudget();   // voir liverySprite : au plus quelques livrées peintes par image
   for(const b of G.buildings){
     const pw=b.w*TILE, ph=b.h*TILE;
     const{x:sx,y:sy}=ws(b.x,b.y);
@@ -698,8 +699,18 @@ function drawBuildings(){
     // sinon repli sur le sprite générique, exactement comme avant.
     const civ=civKeyOf(b.owner);
     const civDispo=civ!=='francs'&&BLD_CIV_SPRITE_FILES[b.type]&&BLD_CIV_SPRITE_FILES[b.type][civ];
-    const sprSain=(civDispo&&sprTeinte('bldCiv',b.type+'_'+civ+lvlSuffix+suf,teinte))
+    const sprCiv=civDispo&&sprTeinte('bldCiv',b.type+'_'+civ+lvlSuffix+suf,teinte);
+    const sprBase=sprCiv
              ||sprTeinte('bld',b.type+lvlSuffix+suf,teinte)||sprTeinte('bld',b.type+suf,teinte);
+    // Livrée de civilisation : appliquée UNIQUEMENT quand ce camp n'a pas de
+    // planche dédiée pour ce type (voir CIV_LIVERY, js/05-sprites.js). Sans
+    // elle, une civilisation sans jeu d'illustrations retombe sur le style
+    // franc et se joue dans un décor qui n'est pas le sien. `sprCiv` et non
+    // `civDispo` dans le test : tant que la planche déclarée n'est pas encore
+    // chargée (surcouche asynchrone), c'est la livrée qui tient le décor.
+    // La clé de géométrie (type + variante) sert au cache de boîte : deux
+    // camps aux teintes différentes partagent la même silhouette.
+    const sprSain=(!sprCiv&&CIV_LIVERY[civ])?liverySprite(sprBase,civ,b.type,b.type+lvlSuffix):sprBase;
     // État de dégât : un bâtiment abîmé doit se lire d'un coup d'œil, pas
     // seulement via sa jauge de PV qui disparaît dès qu'il est désélectionné
     // (voir damagedSprite, js/05-sprites.js). Deux paliers, jamais pour un
@@ -806,7 +817,7 @@ const UCOL={
   [UT.KNIGHT]:'#8e44ad',[UT.MONK]:'#d4ac0d',[UT.PALADIN]:'#9b59b6',
   [UT.PIKE]:'#2980b9',[UT.XBOW]:'#1abc9c',[UT.TREB]:'#7f6a4a',
   [UT.RAM]:'#6a4a28',[UT.SCOUT]:'#27ae60',[UT.HERO]:'#d4af37',[UT.BOAT]:'#4a90d9',
-  [UT.CATA]:'#6c3483',[UT.CAVARC]:'#117a65',[UT.ARBRAP]:'#148f77',
+  [UT.CATA]:'#6c3483',[UT.CAVARC]:'#117a65',[UT.ARBRAP]:'#148f77',[UT.ROUL]:'#b7472a',
   [UT.ENEMI]:'#e74c3c',[UT.ENEMIA]:'#c0392b',[UT.ENEMI_G]:'#7b241c',
   [UT.ENEMI_C]:'#a93226',[UT.ENEMI_BOSS]:'#641e16',
 };

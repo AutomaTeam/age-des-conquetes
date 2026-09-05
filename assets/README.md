@@ -58,6 +58,11 @@ Toutes les catégories prévues sont fournies — 4 icônes de ressources, 21
 bâtiments (+ 76 variantes par civilisation — **les 21 types du jeu**, Mur et
 Portail compris), 21 unités (+ 3 variantes de
 Héros par civilisation), 6 gisements de carte, 2 animaux, 2 objets uniques.
+
+**Sauf les Gitanos**, cinquième civilisation ajoutée le 2026-09-05 : elle n'a
+aucune planche ici et n'en attend aucune (voir la section qui lui est
+consacrée plus bas). Compter les fichiers ne dit donc plus « couverture
+complète » : c'est `BLD_CIV_SPRITE_FILES` qu'il faut recouper avec `CIVS`.
 `effets/` reste volontairement vide : particules et projectiles sont trop
 brefs à l'écran pour qu'une illustration s'y voie.
 
@@ -251,6 +256,82 @@ rééchantillonnage et de l'encodage : sur une douzaine de planches, une
 moucheture claire isolée dans la marge, que le flood fill ne peut pas
 atteindre depuis les bords, gonflait la boîte de recadrage et faisait donc
 dessiner le bâtiment plus petit qu'il ne devait l'être.
+
+## Gitanos : la cinquième civilisation, sans planches (à ce jour)
+
+Ajoutée le 2026-09-05. Elle n'a **aucun fichier** dans ce dossier, et le jeu
+ne l'attend pas : ni `BLD_CIV_SPRITE_FILES` ni `UNIT_CIV_SPRITE_FILES` ne la
+mentionnent, donc aucun 404, aucune tentative de chargement.
+
+Ce qui la distingue à l'écran aujourd'hui :
+
+- **les bâtiments** portent une **livrée** peinte par code par-dessus la
+  planche franque : guirlande de fanions accrochée au faîte, lanterne, roue de
+  roulotte adossée au pied (voir `CIV_LIVERY` / `liverySprite` /
+  `drawGitanoLivery`, `js/05-sprites.js`). Additive : elle n'altère pas un
+  pixel de l'illustration, elle ajoute autour. Elle s'accroche au champ `box`
+  du sprite — le rectangle réellement peint, noté par `fitBuildingImage` — et
+  **jamais** à un `getImageData` : `fitBuildingImage` cale l'illustration en
+  bas du canevas, donc une planche haute et étroite laisse un grand vide
+  au-dessus, et retrouver ce rectangle par lecture de pixels coûtait 219 ms
+  sur la première image d'un camp de 39 bâtiments ;
+- **la Roulotte de Guerre**, son unité unique, a sa **propre silhouette
+  dessinée** (`drawWagonSprite`), au même titre que le Trébuchet, le Bélier et
+  la Barque — les trois autres unités non humanoïdes du jeu. Sans elle, elle
+  serait sortie sous le corps humanoïde générique de `buildUnitSprite`, en
+  fantassin à tunique brune. Ce repli-là ne lève rien et ne se voit qu'en
+  jouant : un test du groupe `civilisations` le garde désormais pour TOUTE
+  unité unique, présente ou future.
+
+### Les planches à produire, si on veut lui donner le même traitement
+
+Même convention que les autres : `<nom>_gitanos.webp`, forme **chaîne** dans
+`BLD_CIV_SPRITE_FILES` (une seule planche par bâtiment, recopiée sur toutes
+les variantes de clé), sauf le Centre Ville qui mérite ses quatre âges.
+**24 fichiers** au total, et la livrée s'efface d'elle-même bâtiment par
+bâtiment à mesure qu'ils arrivent — il n'y a pas de « tout ou rien ».
+
+Direction artistique commune : un **campement de la route**, pas une ville.
+Bois peint aux couleurs vives (ocre, carmin, turquoise, or), bâches rayées
+tendues sur des arceaux, roues de chariot, guirlandes de fanions, lanternes de
+papier. Ni pierre de taille, ni maçonnerie : tout doit avoir l'air démontable.
+
+- `centre_ville_gitanos` + `_age1/2/3` (4) — un cercle de roulottes autour
+  d'un feu, qui s'agrandit et se fortifie de bâches et de palissades légères
+  aux âges avancés.
+- `maison_gitanos` (1) — une roulotte bâchée dételée, marchepied sorti,
+  linge tendu. C'est le bâtiment le plus NOMBREUX de la carte : c'est là
+  qu'une seule planche change le plus la lecture d'une ville.
+- `chateau_gitanos` (1) — un grand chapiteau rayé sur mâts, ceint de
+  chariots mis en cercle. Bâtiment signature : c'est lui qui forme la
+  Roulotte de Guerre et Zaïda la Voyageuse.
+- `ferme_gitanos` (1) — pas de champ labouré : un enclos de chevaux et de
+  paniers de cueillette sous un auvent.
+- `monastere_gitanos` (1) — tente de divination, fumée d'encens, cartes et
+  fanions ; ni croix ni dôme.
+- `caserne_gitanos`, `ecurie_gitanos`, `marche_gitanos`, `forge_gitanos` (4)
+  — respectivement un râtelier d'armes sous auvent rayé, une ligne de chevaux
+  entravés, un étal de colporteur croulant de marchandises, une forge portative
+  sur son chariot.
+- `moulin_gitanos`, `camp_bois_gitanos`, `camp_minier_gitanos` (3) — meule à
+  main et sacs, chariots de grumes, chariot de minerai. **Les deux camps en
+  PAYSAGE (640×427)** : ce sont les seuls types 2×1, voir plus haut.
+- `tour_gitanos`, `avant_poste_gitanos`, `mur_gitanos`, `portail_gitanos` (4)
+  — mirador de perches et de toile, guet sur un chariot, barricade de
+  chariots et de perches, porte de perches liées entre deux chariots. Pour le
+  Mur : **crénelage/pointes dans le haut, corps continu dans le bas** —
+  `murSuite` recoupe la source à 53 % de hauteur.
+- `universite_gitanos`, `atelier_siege_gitanos`, `quai_gitanos`,
+  `hlm_gitanos`, `merveille_gitanos` (5) — tente d'astronomie et cartes du
+  ciel, chariots en cours de montage sous une bâche, ponton de perches et
+  barque, cercle serré de roulottes à étages, et pour la Merveille un grand
+  chapiteau doré au centre d'une roue complète de chariots.
+- `unites/roulotte.webp` (1) — la Roulotte de Guerre, de profil comme le
+  Bélier et la Barque : bâche rayée en berceau, roues à rayons, meurtrière
+  d'où sort un trait. À ajouter dans `UNIT_SPRITE_FILES` le jour venu ; le
+  sprite dessiné actuel lui sert de cadrage de référence.
+- `unites/heros_gitanos.webp` (1) — Zaïda la Voyageuse, à ajouter dans
+  `UNIT_CIV_SPRITE_FILES[UT.HERO]` comme les trois autres héros.
 
 ## Poches de fond FERMÉES — le piège du flood fill
 

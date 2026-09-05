@@ -118,7 +118,8 @@ const PRODUCTION = {
   [BT.CASTLE]:    [{u:UT.PALADIN,rech:'faith'},{u:UT.XBOW,age:2},{u:UT.TREB,age:3},{u:UT.HERO},
                    {u:UT.CATA,   age:2, civ:'byzantins'},
                    {u:UT.CAVARC, age:2, civ:'mongols'},
-                   {u:UT.ARBRAP, age:2, civ:'chinois'}],
+                   {u:UT.ARBRAP, age:2, civ:'chinois'},
+                   {u:UT.ROUL,   age:2, civ:'gitanos'}],
   [BT.SIEGE]:     [{u:UT.RAM}],
   [BT.DOCK]:      [{u:UT.BOAT}],
 };

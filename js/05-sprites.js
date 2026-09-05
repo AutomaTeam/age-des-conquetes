@@ -705,13 +705,20 @@ function buildBuildings(T,i0,i1){
     // variantes d'age et de niveau construites plus bas restent procedurales.
     const illus=BLD_SPRITE_FILES[type]
       ? illustrationPrete('assets/batiments/'+BLD_SPRITE_FILES[type]+ASSET_EXT) : false;
+    // Boîte du contenu peint, en pixels de canevas : le sprite procédural
+    // occupe toute la largeur et court du haut du toit (la marge `T*0.5`
+    // laissée au relief) jusqu'au sol. Notée ici plutôt que retrouvée après
+    // coup — voir fitBuildingImage pour le pourquoi chiffré. L'illustration
+    // qui vient par-dessus (upgradeBuildingSprites) apporte la sienne, plus
+    // serrée, et l'écrase.
+    const boxProc={minX:0,minY:T*0.5,maxX:pw,maxY:ph+T*0.5};
     const{c,cx}=offCanvas(pw,ph+T*0.5); // marge pour toit en relief
     if(!illus) drawBuildingSprite(cx,type,d,pw,ph,T,false);
-    SPR.bld[type]={c,cx,oy,dw,dh};
+    SPR.bld[type]={c,cx,oy,dw,dh,box:boxProc};
     // version ennemie (teinte rouge)
     const{c:ce,cx:cxe}=offCanvas(pw,ph+T*0.5);
     if(!illus) drawBuildingSprite(cxe,type,d,pw,ph,T,true);
-    SPR.bld[type+'_E']={c:ce,cx:cxe,oy,dw,dh};
+    SPR.bld[type+'_E']={c:ce,cx:cxe,oy,dw,dh,box:boxProc};
     // Tour Défensive : variantes visuelles pour les niveaux 2 et 3
     // (bannière de garde, puis créneaux renforcés) — même géométrie de
     // clic/collision (tx,ty,w,h inchangés), seul l'habillage change.
@@ -719,10 +726,10 @@ function buildBuildings(T,i0,i1){
       for(const lvl of [2,3]){
         const{c:cl,cx:cxl}=offCanvas(pw,ph+T*0.5);
         if(!illus) drawBuildingSprite(cxl,type,d,pw,ph,T,false,lvl);
-        SPR.bld[type+'_L'+lvl]={c:cl,cx:cxl,oy,dw,dh};
+        SPR.bld[type+'_L'+lvl]={c:cl,cx:cxl,oy,dw,dh,box:boxProc};
         const{c:cle,cx:cxle}=offCanvas(pw,ph+T*0.5);
         if(!illus) drawBuildingSprite(cxle,type,d,pw,ph,T,true,lvl);
-        SPR.bld[type+'_L'+lvl+'_E']={c:cle,cx:cxle,oy,dw,dh};
+        SPR.bld[type+'_L'+lvl+'_E']={c:cle,cx:cxle,oy,dw,dh,box:boxProc};
       }
     }
     // Portail : variante ouverte (vantail rabattu, passage dégagé), en plus
@@ -730,10 +737,10 @@ function buildBuildings(T,i0,i1){
     if(type===BT.GATE){
       const{c:co,cx:cxo}=offCanvas(pw,ph+T*0.5);
       if(!illus) drawBuildingSprite(cxo,type,d,pw,ph,T,false,1,0,true);
-      SPR.bld[type+'_OPEN']={c:co,cx:cxo,oy,dw,dh};
+      SPR.bld[type+'_OPEN']={c:co,cx:cxo,oy,dw,dh,box:boxProc};
       const{c:coe,cx:cxoe}=offCanvas(pw,ph+T*0.5);
       if(!illus) drawBuildingSprite(cxoe,type,d,pw,ph,T,true,1,0,true);
-      SPR.bld[type+'_OPEN_E']={c:coe,cx:cxoe,oy,dw,dh};
+      SPR.bld[type+'_OPEN_E']={c:coe,cx:cxoe,oy,dw,dh,box:boxProc};
     }
     // Centre Ville, Caserne et Mur : habillage qui s'enrichit avec les âges
     // du joueur (renforts de pierre, tourelles, dorures...), pour que la
@@ -747,10 +754,10 @@ function buildBuildings(T,i0,i1){
       for(const age of [1,2,3]){
         const{c:ca,cx:cxa}=offCanvas(pw,ph+T*0.5);
         if(!illus) drawBuildingSprite(cxa,type,d,pw,ph,T,false,1,age);
-        SPR.bld[type+'_A'+age]={c:ca,cx:cxa,oy,dw,dh};
+        SPR.bld[type+'_A'+age]={c:ca,cx:cxa,oy,dw,dh,box:boxProc};
         const{c:cae,cx:cxae}=offCanvas(pw,ph+T*0.5);
         if(!illus) drawBuildingSprite(cxae,type,d,pw,ph,T,true,1,age);
-        SPR.bld[type+'_A'+age+'_E']={c:cae,cx:cxae,oy,dw,dh};
+        SPR.bld[type+'_A'+age+'_E']={c:cae,cx:cxae,oy,dw,dh,box:boxProc};
       }
     }
   }
@@ -982,8 +989,17 @@ function fitBuildingImage(src,W,H){
   const{c,cx}=offCanvas(W,H);
   const scale=Math.min(W*0.94/bw,H*0.94/bh);
   const dw=bw*scale, dh=bh*scale;
-  cx.drawImage(wc,minX,minY,bw,bh,(W-dw)/2,H-dh,dw,dh);
-  return{c,cx};
+  const dx=(W-dw)/2, dy=H-dh;
+  cx.drawImage(wc,minX,minY,bw,bh,dx,dy,dw,dh);
+  // `box` : le rectangle réellement peint dans le canevas. On le CONNAÎT ici —
+  // c'est le rectangle de destination du drawImage — et le noter coûte quatre
+  // nombres, là où le retrouver après coup demande un getImageData. Mesuré :
+  // une seule lecture de canevas coûtait 24 ms à froid puis 2 à 4 ms, contre
+  // 0,4 ms pour peindre la livrée elle-même (voir liverySprite). Une planche
+  // haute et étroite est calée EN BAS du canevas (« contain » + ancrage au
+  // sol) : sans cette boîte, tout décor ajouté par-dessus se posait par
+  // rapport au canevas et flottait au-dessus du toit.
+  return{c,cx,box:{minX:dx,minY:dy,maxX:dx+dw,maxY:H}};
 }
 
 // Copie atténuée d'un sprite — sert au Portail ouvert (voir
@@ -993,7 +1009,7 @@ function fondu(base,W,H,alpha){
   cx.globalAlpha=alpha;
   cx.drawImage(base.c,0,0);
   cx.globalAlpha=1;
-  return{c,cx};
+  return{c,cx,box:base.box};   // même silhouette : la boîte suit la copie
 }
 
 // Variante « camp ennemi » : lavis rouge semi-transparent en surimpression,
@@ -1006,7 +1022,7 @@ function tintEnemyBuilding(base,W,H){
   cx.fillStyle='rgba(200,40,40,.4)';
   cx.fillRect(0,0,W,H);
   cx.globalCompositeOperation='source-over';
-  return{c,cx};
+  return{c,cx,box:base.box};   // même silhouette : la boîte suit la copie
 }
 
 // Traits de lézarde à coordonnées FIXES (fraction de largeur/hauteur), pour
@@ -1051,6 +1067,203 @@ function damagedSprite(spr,stage){
   const out=Object.assign({},spr,{c,cx});
   arr[stage]=out;
   return out;
+}
+
+// ── LIVRÉE DE CIVILISATION (surcouche, sans planche dédiée) ───────────
+// Le problème que ça règle : une civilisation SANS jeu d'illustrations
+// (BLD_CIV_SPRITE_FILES) retombe silencieusement sur la planche de base,
+// c'est-à-dire sur le style FRANC. Un camp gitan sortait donc en bourg à
+// colombages — exactement le défaut qu'on avait corrigé pour les Chinois et
+// les Mongols, mais qu'on aurait réintroduit pour le cinquième camp.
+//
+// Plutôt que de laisser ce trou béant en attendant 21 planches, on peint une
+// LIVRÉE par-dessus le sprite déjà construit, quel qu'il soit : banderole de
+// fanions, lanterne, roue de roulotte adossée au pied du bâtiment. Trois
+// propriétés voulues :
+//   • ADDITIVE — elle ne touche pas un pixel du sujet, elle ajoute autour.
+//     Un lavis de couleur sur une planche peinte à la main l'aurait salie ;
+//     une guirlande tendue au-dessus du toit, non.
+//   • DÉTERMINISTE par type — le nombre, la couleur et la position des
+//     fanions dérivent du type de bâtiment (srnd), sinon les 21 bâtiments
+//     d'un camp portaient rigoureusement la même décoration collée.
+//   • ÉPHÉMÈRE — mise en cache dans une WeakMap indexée par le CANVAS source,
+//     exactement comme damagedSprite. Les sprites sont recréés à chaque
+//     changement de zoom, donc de nouveaux canvases : le cache se purge tout
+//     seul, il n'y a pas d'invalidation à écrire. Et surtout, la livrée suit
+//     la planche du moment — si l'illustration arrive après coup (chargement
+//     asynchrone, voir upgradeBuildingSprites), c'est la NOUVELLE planche qui
+//     est décorée, pas le sprite procédural figé d'avant.
+//
+// Le jour où `<type>_gitanos.webp` existe, drawBuildings prend la planche
+// dédiée et n'appelle plus la livrée du tout : rien à retirer ici.
+const CIV_LIVERY={
+  gitanos:{
+    // Couleurs de fanion : les teintes d'une bâche de roulotte peinte —
+    // volontairement saturées et contrastées entre elles, pour se lire à la
+    // taille de jeu par-dessus n'importe quel toit.
+    fanions:['#c0392b','#e08a1e','#2e8b8b','#8e44ad','#d4b13a','#2176ae'],
+    corde:'rgba(40,28,16,.75)',
+  },
+};
+const LIVERY_CACHE=new WeakMap();
+// Graine stable pour un type de bâtiment : deux caractères suffisent (BT.*
+// fait 2 lettres) mais on balaie la chaîne entière au cas où elle s'allonge.
+function _liverySeed(type){
+  let h=7;
+  for(let i=0;i<type.length;i++) h=(h*31+type.charCodeAt(i))|0;
+  return Math.abs(h)+1;
+}
+// Boîte du CONTENU réellement peint (alpha > 0), et non du canevas.
+// C'est le point qui a fait toute la différence à l'écran : `fitBuildingImage`
+// cale l'illustration en BAS du canevas (« contain » + ancrage au sol), si
+// bien qu'une planche haute et étroite laisse un grand vide au-dessus. Une
+// guirlande posée à 20 % de la HAUTEUR DU CANEVAS flottait donc dans le ciel,
+// parfois à une demi-case au-dessus du toit.
+//
+// DEUX précautions de coût, et elles ne sont pas décoratives — mesurées sur un
+// camp de 39 bâtiments, la première image après un changement de zoom passait
+// de 3,6 ms (Francs) à 219 ms : un gel parfaitement visible, exactement le
+// genre de régression que le reste du pipeline de sprites passe son temps à
+// éviter.
+//
+//   1. On ne lit JAMAIS le canevas en pleine résolution. `getImageData` force
+//      une lecture GPU→CPU dont le coût est dominé par la latence d'appel ET
+//      par la surface : sur un Château 3×3 au zoom maximum, c'est ~46 000
+//      pixels lus pour en tirer quatre nombres. Le sprite est donc d'abord
+//      réduit dans un canevas de travail de 32 px de large — la boîte n'a
+//      besoin d'être exacte qu'à ~3 % près pour accrocher une banderole.
+//   2. Le résultat est mis en cache par GÉOMÉTRIE (type + variante + taille du
+//      canevas) et non par canevas : les variantes de teinte d'équipe
+//      (`sprTeinte`, une par couleur de camp) et la version ennemie ont
+//      exactement la même silhouette. Sans ça, la même mesure était refaite
+//      une fois par camp et par teinte.
+const BOX_CACHE=new Map();
+let _boxScratch=null;
+function _contentBox(canvas,cle){
+  const W=canvas.width, H=canvas.height;
+  const k=cle+'|'+W+'x'+H;
+  const vu=BOX_CACHE.get(k);
+  if(vu) return vu;
+  const plein={minX:0,minY:0,maxX:W,maxY:H};
+  const sw=Math.min(32,W), sh=Math.max(1,Math.round(H*sw/W));
+  if(!_boxScratch||_boxScratch.c.width<sw||_boxScratch.c.height<sh) _boxScratch=offCanvas(Math.max(32,sw),Math.max(64,sh));
+  const{c:sc,cx:scx}=_boxScratch;
+  scx.clearRect(0,0,sw,sh);
+  scx.drawImage(canvas,0,0,W,H,0,0,sw,sh);
+  let d;
+  try{ d=scx.getImageData(0,0,sw,sh).data; }
+  catch(e){ return plein; }                       // canvas « taint » : on retombe sur le canevas entier
+  let minX=sw,minY=sh,maxX=0,maxY=0,trouve=false;
+  for(let y=0;y<sh;y++){
+    const row=y*sw*4;
+    for(let x=0;x<sw;x++){
+      if(d[row+x*4+3]<24) continue;               // le rééchantillonnage adoucit les bords : seuil bas
+      trouve=true;
+      if(x<minX)minX=x; if(x>maxX)maxX=x;
+      if(y<minY)minY=y; if(y>maxY)maxY=y;
+    }
+  }
+  const kx=W/sw, ky=H/sh;
+  const box=trouve
+    ? {minX:minX*kx, minY:minY*ky, maxX:Math.min(W,(maxX+1)*kx), maxY:Math.min(H,(maxY+1)*ky)}
+    : plein;
+  BOX_CACHE.set(k,box);
+  return box;
+}
+// Budget par image : le cache de livrée est indexé par le CANEVAS source, donc
+// un changement de zoom (qui recrée tous les canevas) le vide d'un coup — et
+// tous les bâtiments à l'écran redemanderaient leur livrée dans la MÊME image.
+// On en peint au plus quelques-uns par image ; les autres s'affichent nus le
+// temps d'une image ou deux, ce qui ne se voit pas, là où un pic de 200 ms se
+// voyait très bien. Même principe que la reconstruction étalée de l'atlas
+// (voir avancerAtlas).
+const LIVERY_PAR_IMAGE=6;
+let _liveryBudget=LIVERY_PAR_IMAGE;
+function resetLiveryBudget(){ _liveryBudget=LIVERY_PAR_IMAGE; }
+function liverySprite(spr,civ,type,cle){
+  const liv=CIV_LIVERY[civ];
+  if(!spr||!liv) return spr;
+  let parCiv=LIVERY_CACHE.get(spr.c);
+  if(!parCiv){ parCiv={}; LIVERY_CACHE.set(spr.c,parCiv); }
+  if(parCiv[civ]) return parCiv[civ];
+  if(_liveryBudget<=0) return spr;                // reporté à l'image suivante
+  _liveryBudget--;
+  const W=spr.c.width, H=spr.c.height;
+  const{c,cx}=offCanvas(W,H);
+  cx.drawImage(spr.c,0,0);
+  // `spr.box` est posée à la construction du sprite (fitBuildingImage pour une
+  // planche, buildBuildings pour le procédural) et suit toutes les copies
+  // (teinte d'équipe, lavis ennemi, fondu du portail, état de dégât) parce que
+  // chacune passe par un Object.assign. Le balayage d'alpha ne sert plus que
+  // de filet, pour un sprite venu d'ailleurs.
+  drawGitanoLivery(cx,spr.box||_contentBox(spr.c,cle||type),liv,srnd(_liverySeed(type)));
+  const out=Object.assign({},spr,{c,cx});
+  parCiv[civ]=out;
+  return out;
+}
+// Tout est exprimé en fraction de la BOÎTE du bâtiment (bw/bh), pas du
+// canevas : un Mur d'une case et un Château de trois portent ainsi la même
+// guirlande à la même échelle apparente.
+function drawGitanoLivery(cx,box,liv,rng){
+  const bw=box.maxX-box.minX, bh=box.maxY-box.minY;
+  const u=Math.min(bw,bh);
+  if(u<6) return;                          // sprite minuscule : on ne barbouille pas
+  // ── guirlande de fanions, accrochée aux deux bords du toit ──
+  // Elle déborde volontairement d'un cheveu de chaque côté (les bouts d'une
+  // vraie banderole sont attachés ailleurs qu'au bâtiment) mais reste dans le
+  // canevas, sinon le bord se couperait net.
+  const x0=Math.max(1,box.minX-bw*0.04), x1=Math.min(cx.canvas.width-1,box.maxX+bw*0.04);
+  // Accrochée HAUT (les deux bouts au ras du faîte, le ventre qui retombe sur
+  // le toit) : à la taille de jeu — un bâtiment de 2 cases fait 76 px de large
+  // — une guirlande posée au milieu du toit se noie dans les tuiles. Il lui
+  // faut se découper sur le ciel par ses deux extrémités.
+  const yTop=box.minY+bh*0.02;
+  const y0=yTop+rng()*bh*0.03, y1=yTop+rng()*bh*0.03;
+  const xm=(x0+x1)/2, ym=(y0+y1)/2+bh*0.15;
+  cx.strokeStyle=liv.corde; cx.lineWidth=Math.max(1,u*0.02);
+  cx.beginPath(); cx.moveTo(x0,y0); cx.quadraticCurveTo(xm,ym,x1,y1); cx.stroke();
+  const n=Math.max(3,Math.min(9,Math.round(bw/(u*0.3))));
+  const fw=Math.max(3,u*0.11), fh=Math.max(4,u*0.17);
+  for(let k=0;k<n;k++){
+    const t=(k+0.5)/n, it=1-t;
+    const fx=it*it*x0+2*it*t*xm+t*t*x1;
+    const fy=it*it*y0+2*it*t*ym+t*t*y1;
+    cx.fillStyle=liv.fanions[(k+((rng()*6)|0))%liv.fanions.length];
+    cx.beginPath();
+    cx.moveTo(fx-fw/2,fy); cx.lineTo(fx+fw/2,fy); cx.lineTo(fx,fy+fh);
+    cx.closePath(); cx.fill();
+    cx.fillStyle='rgba(0,0,0,.22)';        // pli : un fanion plat se lit comme un confetti
+    cx.beginPath();
+    cx.moveTo(fx,fy); cx.lineTo(fx+fw/2,fy); cx.lineTo(fx,fy+fh);
+    cx.closePath(); cx.fill();
+  }
+  // ── lanterne pendue à un bout de la corde ──
+  // Sans halo : posé sur l'herbe, un dégradé chaud translucide sortait en
+  // grand disque olive terne — plus visible que la lanterne elle-même.
+  {
+    const lx=rng()<0.5?x0:x1, ly=(lx===x0?y0:y1)+u*0.03;
+    const lw=Math.max(3,u*0.1), lh=Math.max(4,u*0.12);
+    px(cx,lx-lw/2,ly,lw,lh,'#e8a63a');
+    px(cx,lx-lw/2,ly,lw,Math.max(1,lh*0.3),'#f6d67a');   // reflet : ça brille par le haut
+    px(cx,lx-lw*0.7,ly-Math.max(1,u*0.02),lw*1.4,Math.max(1,u*0.02),'#6a4a24'); // chapeau
+  }
+  // ── roue de roulotte adossée au pied, côté ombre ──
+  // Seulement sur les bâtiments assez larges : sur un Mur ou un Portail
+  // (une case) elle mangerait la moitié de la façade.
+  if(bw>u*1.35){
+    const rr=Math.max(3,u*0.15), wx=box.minX+bw*0.1+rng()*bw*0.05, wy=box.maxY-rr*1.05;
+    cx.fillStyle='#8a7a62'; cx.beginPath(); cx.arc(wx,wy,rr,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#6a4a24'; cx.beginPath(); cx.arc(wx,wy,rr*0.8,0,Math.PI*2); cx.fill();
+    cx.strokeStyle='#3a2818'; cx.lineWidth=Math.max(1,rr*0.16);
+    for(let k=0;k<4;k++){
+      const a=k*Math.PI/4+0.4;
+      cx.beginPath();
+      cx.moveTo(wx-Math.cos(a)*rr*0.76,wy-Math.sin(a)*rr*0.76);
+      cx.lineTo(wx+Math.cos(a)*rr*0.76,wy+Math.sin(a)*rr*0.76);
+      cx.stroke();
+    }
+    cx.fillStyle='#2c1e12'; cx.beginPath(); cx.arc(wx,wy,rr*0.2,0,Math.PI*2); cx.fill();
+  }
 }
 
 // buildBuildings(T) — et donc SPR.bld — est régénéré à chaque changement de
@@ -1934,8 +2147,11 @@ function buildUnits(T){
     // les unités bipèdes au sol. Cavalerie et trébuchet gardent une pose
     // unique (leur mouvement se lit déjà via la monture / les roues + le
     // bobbing) — leur dessiner un vrai cycle de jambes n'aurait pas de sens.
+    // ROUES_TYPES et non `UDEF[type].siege` seul : la Roulotte de Guerre roule
+    // elle aussi mais n'est PAS marquée `siege` (elle ne démolit rien, voir
+    // UDEF) — sans elle ici, on peignait trois fois exactement la même image.
     const isCav=CAV_TYPES.includes(type);
-    if(!UDEF[type].siege&&!isCav){
+    if(!UDEF[type].siege&&!isCav&&!ROUES_TYPES.includes(type)){
       SPR.unit[type+'_W1']=buildUnitSprite(type,T,1);
       SPR.unit[type+'_W2']=buildUnitSprite(type,T,-1);
     }
@@ -2296,6 +2512,123 @@ function drawRamSprite(cx,cxp,S,enemy){
   cx.beginPath(); cx.moveTo(cxp+S*0.38,ry); cx.lineTo(cxp+S*0.5,ry-S*0.07); cx.lineTo(cxp+S*0.5,ry+S*0.07); cx.closePath(); cx.fill(); // tête de bélier
 }
 
+// ── ROULOTTE DE GUERRE (unité unique des Gitanos) ─────────────────────
+// Cas dédié, comme le Trébuchet, le Bélier et la Barque : le corps humanoïde
+// générique de buildUnitSprite aurait donné un fantassin en tunique brune —
+// or c'est un ATTELAGE, la seule unité du jeu qui roule au lieu de marcher,
+// et la seule dont la silhouette doit dire « caravane » avant de dire
+// « soldat ». Vue de profil comme la Barque et le Bélier.
+//
+// Trois pièces portent la lecture, dans cet ordre :
+//   • la BÂCHE en berceau, rayée — c'est la grande forme claire et haute,
+//     celle qu'on reconnaît de loin, exactement le rôle que joue la voile
+//     dans la Barque ;
+//   • les deux ROUES à rayons, volontairement grandes (elles dépassent du
+//     châssis) : elles disent « ça roule » d'un coup d'œil ;
+//   • la MEURTRIÈRE à l'arrière, avec le trait qui en sort — sans elle la
+//     Roulotte se lit comme la caravane commerciale (SPR.caravan, un chameau
+//     de bât) et non comme une unité qui tire.
+function drawWagonSprite(cx,cxp,S,enemy){
+  const bois   = enemy?'#7a3a30':'#9a5a2e',  boisDk=shade(bois,-30), boisLt=shade(bois,22);
+  const toile  = enemy?'#d8b0a8':'#e8dcc0',  toileDk=shade(toile,-18);
+  const raie   = enemy?'#8b2a2a':'#c0392b';               // rayure de bâche
+  const roue   = '#5a3c1c', roueDk=shade(roue,-28), cercle='#8a7a62';
+  const gy=S*0.78;                                        // ligne de sol (essieu)
+
+  // ── roues : dessinées AVANT la caisse, pour que le châssis morde dessus
+  for(const wx of [-0.26,0.26]){
+    const rx=cxp+wx*S, rr=S*0.15;
+    cx.fillStyle=cercle; cx.beginPath(); cx.arc(rx,gy,rr,0,Math.PI*2); cx.fill();      // bandage de fer
+    cx.fillStyle=roue;   cx.beginPath(); cx.arc(rx,gy,rr*0.82,0,Math.PI*2); cx.fill();
+    cx.strokeStyle=roueDk; cx.lineWidth=Math.max(1,S*0.016);                            // rayons
+    for(let k=0;k<6;k++){
+      const a=k*Math.PI/6+0.3;
+      cx.beginPath();
+      cx.moveTo(rx-Math.cos(a)*rr*0.78,gy-Math.sin(a)*rr*0.78);
+      cx.lineTo(rx+Math.cos(a)*rr*0.78,gy+Math.sin(a)*rr*0.78);
+      cx.stroke();
+    }
+    cx.fillStyle='#2c1e12'; cx.beginPath(); cx.arc(rx,gy,rr*0.2,0,Math.PI*2); cx.fill(); // moyeu
+  }
+
+  // ── caisse peinte, un peu plus large que l'écart des roues
+  const cw=S*0.74, ch=S*0.19, cxL=cxp-cw/2, cyT=gy-S*0.2;
+  px(cx,cxL,cyT,cw,ch,bois);
+  px(cx,cxL,cyT,cw,Math.max(2,S*0.028),boisLt);                       // arête éclairée
+  px(cx,cxL,cyT+ch-Math.max(2,S*0.03),cw,Math.max(2,S*0.03),boisDk);  // ombre au ras du plancher
+  // dado peint : deux filets clairs et des losanges — la caisse d'une
+  // roulotte est PEINTE, c'est ce qui la sépare d'un chariot de siège nu.
+  px(cx,cxL,cyT+ch*0.3,cw,Math.max(1,S*0.016),'#e8c84a');
+  px(cx,cxL,cyT+ch*0.86,cw,Math.max(1,S*0.016),'#e8c84a');
+  cx.fillStyle=enemy?'#e8b0a0':'#2e8b8b';
+  for(let k=0;k<5;k++){
+    const dx=cxL+cw*0.13+k*cw*0.19, dy=cyT+ch*0.58, r=S*0.024;
+    cx.beginPath(); cx.moveTo(dx,dy-r); cx.lineTo(dx+r,dy); cx.lineTo(dx,dy+r); cx.lineTo(dx-r,dy); cx.closePath(); cx.fill();
+  }
+
+  // ── bâche en berceau : arceaux + toile rayée ──
+  // `archY` est la MÊME courbe que celle qui sert de contour : tout ce qui se
+  // pose sur la bâche (arceaux, tuyau, fanion) s'y accroche par cette
+  // fonction plutôt que par une hauteur devinée. Une hauteur devinée, c'était
+  // des piquets et un tuyau qui dépassaient dans le ciel au-dessus du toit.
+  const bw=S*0.66, bh=S*0.3, bx=cxp-bw/2, byB=cyT;
+  const archY=(f)=>byB-bh*1.55*2*f*(1-f);
+  cx.save();
+  cx.beginPath();
+  cx.moveTo(bx,byB);
+  cx.quadraticCurveTo(cxp,byB-bh*1.55,bx+bw,byB);
+  cx.closePath();
+  cx.clip();
+  cx.fillStyle=toile; cx.fillRect(bx,byB-bh*1.7,bw,bh*1.75);
+  cx.fillStyle=raie;                                                   // rayures verticales
+  for(let k=0;k<5;k++) cx.fillRect(bx+bw*0.06+k*bw*0.19,byB-bh*1.7,bw*0.075,bh*1.75);
+  cx.fillStyle='rgba(0,0,0,.16)'; cx.fillRect(cxp+bw*0.14,byB-bh*1.7,bw*0.36,bh*1.75); // flanc à l'ombre
+  cx.restore();
+  cx.strokeStyle=toileDk; cx.lineWidth=Math.max(1,S*0.02);             // liseré de la bâche
+  cx.beginPath(); cx.moveTo(bx,byB); cx.quadraticCurveTo(cxp,byB-bh*1.55,bx+bw,byB); cx.stroke();
+  cx.strokeStyle='rgba(0,0,0,.2)'; cx.lineWidth=Math.max(1,S*0.014);   // arceaux, arrêtés SUR la toile
+  for(const f of [0.22,0.5,0.78]){
+    cx.beginPath(); cx.moveTo(bx+bw*f,byB); cx.lineTo(bx+bw*f,archY(f)+S*0.01); cx.stroke();
+  }
+
+  // ── tuyau de poêle, planté sur la bâche à l'arrière : le détail
+  // domestique qui dit « on vit dedans » et sépare la Roulotte d'un engin.
+  {
+    const f=0.24, tx=bx+bw*f, ty=archY(f);
+    px(cx,tx-S*0.016,ty-S*0.1,Math.max(2,S*0.032),S*0.11,'#3a3a40');
+    px(cx,tx-S*0.03,ty-S*0.125,Math.max(3,S*0.06),Math.max(2,S*0.028),'#4a4a52');
+  }
+
+  // ── fanion au faîte : la petite tache claire et haute qui sépare la
+  // silhouette du fond, même rôle que la voile de la Barque.
+  {
+    const tx=bx+bw*0.5, ty=archY(0.5);
+    px(cx,tx-S*0.011,ty-S*0.15,Math.max(2,S*0.022),S*0.16,'#caa83a');
+    cx.fillStyle=enemy?'#8b1a1a':'#2e8b8b';
+    cx.beginPath();
+    cx.moveTo(tx+S*0.011,ty-S*0.15); cx.lineTo(tx+S*0.14,ty-S*0.115); cx.lineTo(tx+S*0.011,ty-S*0.08);
+    cx.closePath(); cx.fill();
+  }
+
+  // ── meurtrière + trait : sans elle la Roulotte se lit comme la caravane
+  // marchande (SPR.caravan) et non comme une unité qui TIRE. Percée dans la
+  // CAISSE, à hauteur d'essieu, et non dans la bâche : une planche se perce,
+  // une toile non — et à cette hauteur le trait sort dans le vide plutôt que
+  // par-dessus les rayures, où il se perdait.
+  {
+    const my=cyT+ch*0.34, mh=Math.max(2,S*0.055);
+    px(cx,cxp+cw*0.24,my,S*0.11,mh,'#241a10');
+    px(cx,cxp+cw*0.24,my,S*0.11,Math.max(1,S*0.012),boisDk);
+    const ay=my+mh/2;
+    cx.strokeStyle='#d8cca8'; cx.lineWidth=Math.max(1,S*0.02);         // fût du trait
+    cx.beginPath(); cx.moveTo(cxp+cw*0.3,ay); cx.lineTo(cxp+S*0.42,ay); cx.stroke();
+    cx.fillStyle='#b0b6bc';                                            // pointe de fer
+    cx.beginPath();
+    cx.moveTo(cxp+S*0.47,ay); cx.lineTo(cxp+S*0.41,ay-S*0.028); cx.lineTo(cxp+S*0.41,ay+S*0.028);
+    cx.closePath(); cx.fill();
+  }
+}
+
 // ── BARQUE DE PÊCHE : jusqu'ici sans case dédiée, elle retombait sur le
 // corps humanoïde générique — une Barque ressemblait à un villageois en
 // tunique bleue debout sur l'herbe. Coque en amande vue de dessus, banc,
@@ -2384,6 +2717,7 @@ function buildUnitSprite(type,T,legPhase){
   const isTreb=type===UT.TREB;
   const isRam=type===UT.RAM;
   const isBoat=type===UT.BOAT;
+  const isWagon=type===UT.ROUL;
   const isCav=CAV_TYPES.includes(type);
   // Géant et Seigneur de Guerre : silhouette agrandie — la menace doit se
   // lire avant même le premier coup d'épée (convention AoE2 : plus gros
@@ -2409,13 +2743,14 @@ function buildUnitSprite(type,T,legPhase){
   // resserrée sous les pieds pour une unité debout
   cx.fillStyle='rgba(0,0,0,.25)';
   cx.beginPath();
-  if(isTreb||isRam) cx.ellipse(cxp,S*0.82,S*0.34,S*0.06,0,0,Math.PI*2);
+  if(isTreb||isRam||isWagon) cx.ellipse(cxp,S*0.82,S*0.34,S*0.06,0,0,Math.PI*2);
   else if(!isBoat) cx.ellipse(cxp,S*0.84,S*0.22,S*0.045,0,0,Math.PI*2); // la Barque dessine son propre sillage
   cx.fill();
 
   if(isTreb){ drawTrebuchetSprite(cx,cxp,S,enemy); return {c,cx,S:S/SS}; }
   if(isRam){ drawRamSprite(cx,cxp,S,enemy); return {c,cx,S:S/SS}; }
   if(isBoat){ drawBoatSprite(cx,cxp,S,enemy); return {c,cx,S:S/SS}; }
+  if(isWagon){ drawWagonSprite(cx,cxp,S,enemy); return {c,cx,S:S/SS}; }
 
   if(isCav) drawHorse(cx,cxp,S,enemy);
 

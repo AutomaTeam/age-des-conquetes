@@ -82,7 +82,7 @@ const BDEF = {
 const UT = { VIL:'V', MIL:'M', ARC:'A', KNIGHT:'K', MONK:'MON', PALADIN:'P',
              PIKE:'PK', XBOW:'XB', TREB:'TR', RAM:'RM', SCOUT:'SC', HERO:'HE', BOAT:'BO',
              // Unites uniques de civilisation, formees au Chateau (voir CIVS.unique)
-             CATA:'CT', CAVARC:'CA', ARBRAP:'AR',
+             CATA:'CT', CAVARC:'CA', ARBRAP:'AR', ROUL:'RL',
              ENEMI:'E', ENEMIA:'EA', ENEMI_G:'EG', ENEMI_C:'EC', ENEMI_BOSS:'EB' };
 
 // ── CLASSES D'ARMURE ET TYPES D'ATTAQUE ────────────────────
@@ -139,6 +139,18 @@ const UDEF = {
   [UT.CATA]:    { nom:'Cataphractaire', hp:130, spd:2.4, atk:16, rng:1.3, atkSpd:1.1, cls:CLS.CAV, atkType:'m', armor:{m:4,p:3}, resistBonus:0.5 }, // byzantins : la seule cavalerie qui ne fond pas sous les Piquiers
   [UT.CAVARC]:  { nom:'Cavalier-Archer', hp:60, spd:3.0, atk:8,  rng:4.0, atkSpd:1.1, cls:CLS.CAV, atkType:'p', armor:{m:0,p:1} }, // mongols : le seul tireur qui peut fuir ce qui le contre
   [UT.ARBRAP]:  { nom:'Arbalétrier à Répétition', hp:42, spd:1.9, atk:7, rng:4.8, atkSpd:2.4, cls:CLS.ARC, atkType:'p', armor:{m:0,p:0} }, // chinois : peu de degats par trait, mais deux fois plus de traits -- redoutable sur l'infanterie nue, inoffensif sur ce qui est blinde (l'armure se soustrait A CHAQUE trait)
+  // gitanos : le SEUL tireur qui tient la ligne. Tous les autres (Archer,
+  // Arbaletrier, Cavalier-Archer, Arbaletrier a Repetition) sont en papier et
+  // fondent des qu'on les rejoint -- leur reponse au corps a corps, c'est de
+  // ne pas y etre. La Roulotte fait l'inverse : elle est lente, elle ne fuit
+  // rien, mais avec 150 PV et une armure 6 en perforant elle encaisse ce qui
+  // efface un Archer et continue de tirer. Classe SIEGE et non ARC : c'est un
+  // chariot bache, et c'est ce qui lui donne ses contres (Piquier +8,
+  // Milicien +4 -- l'infanterie qui la REJOINT la demonte), la ou une classe
+  // ARC en aurait fait un archer lourd que rien n'arrete.
+  // Pas de `siege:true` : elle ne demolit pas les batiments, elle tient un
+  // front. Ce drapeau-la donne le bonus anti-batiment (voir doAttack).
+  [UT.ROUL]:    { nom:'Roulotte de Guerre', hp:150, spd:1.6, atk:9, rng:4.6, atkSpd:1.0, cls:CLS.SIEGE, atkType:'p', armor:{m:2,p:6} },
   [UT.ENEMI]:   { nom:'Pillard',       hp:38,  spd:1.6, atk:7,  rng:1.2, atkSpd:1.0, cls:CLS.INF,   atkType:'m', armor:{m:1,p:1} },
   [UT.ENEMIA]:  { nom:'Archer Pillard',hp:28,  spd:1.7, atk:5,  rng:4.0, atkSpd:0.8, cls:CLS.ARC,   atkType:'p', armor:{m:0,p:0} },
   [UT.ENEMI_G]: { nom:'Géant',         hp:160, spd:1.2, atk:20, rng:1.2, atkSpd:0.7, cls:CLS.INF,   atkType:'m', armor:{m:2,p:2} },
@@ -176,6 +188,10 @@ const BONUS = {
   // d'encaisser les Piquiers (armure 4 en melee), pas de tout surclasser.
   [UT.CAVARC]:    { arc:4 },
   [UT.ARBRAP]:    { inf:5 },
+  // La Roulotte roule sur les lignes de tireurs -- c'est sa raison d'etre en
+  // bataille rangee : elle avance sous leurs fleches (armure 6 en perforant)
+  // et les balaie. Aucun bonus contre l'infanterie : c'est elle qui la contre.
+  [UT.ROUL]:      { arc:8 },
   [UT.ENEMI_C]:   { arc:6 },
   [UT.ENEMI_G]:   { bat:8 },
   [UT.ENEMI_BOSS]:{ bat:24 },            // 40 + 24 = 64 ≈ l'ancien 40×1,6
@@ -214,6 +230,7 @@ const TCOST = {
   [UT.CATA]:    { food:70, gold:75 },
   [UT.CAVARC]:  { wood:40, gold:65 },
   [UT.ARBRAP]:  { wood:40, gold:35 },
+  [UT.ROUL]:    { wood:70, gold:70 },
 };
 
 // Libellé de coût généré depuis TCOST : plus de valeurs écrites en dur dans les boutons
@@ -229,7 +246,7 @@ function missingLabel(cost){
 }
 const TTIME = { [UT.VIL]:20, [UT.MIL]:15, [UT.ARC]:18, [UT.KNIGHT]:25, [UT.MONK]:22, [UT.PALADIN]:35,
                 [UT.PIKE]:16, [UT.XBOW]:20, [UT.TREB]:50, [UT.RAM]:40, [UT.SCOUT]:14, [UT.HERO]:60, [UT.BOAT]:18,
-                [UT.CATA]:24, [UT.CAVARC]:22, [UT.ARBRAP]:19 };
+                [UT.CATA]:24, [UT.CAVARC]:22, [UT.ARBRAP]:19, [UT.ROUL]:28 };
 
 // Taux de récolte (par seconde)
 const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, [RT.MEAT]:1.3, [RT.FISH]:1.1, farm:1.0, mill:0.38 };
@@ -365,6 +382,21 @@ const CIVS = {
   mongols:   { nom:'Mongols',   ico:'🏹',
                desc:'+20% ATK à distance · chasse deux fois plus rapide · Cavalier-Archer · Étriers de Fer',
                rangedAtkMult:1.20, chasseMult:2.0, unique:UT.CAVARC, techCiv:'etriers' },
+  // Les Gitanos sont un peuple de la ROUTE : caravanes bâchées, campements
+  // qu'on plie et qu'on remonte ailleurs, marchands avant d'être bâtisseurs.
+  // Leurs deux bonus disent exactement ça, et aucun des deux n'est un
+  // multiplicateur de combat de plus :
+  //   • `tradeMult`  — la route commerciale entre deux Marchés rapporte
+  //     moitié plus. C'est le seul camp pour qui le Marché est une vraie
+  //     économie et pas un dépannage : deux Marchés bien écartés valent un
+  //     filon d'or, ce qui change l'ordre de construction.
+  //   • `vilSpdMult` — villageois plus rapides. Un peuple nomade re-site son
+  //     économie vite : bonus STRUCTUREL (on ose aller loin, on déménage un
+  //     camp) et non un pourcent de récolte de plus.
+  // Leur unité unique est la seule à ne pas être un humain (voir UT.ROUL).
+  gitanos:   { nom:'Gitanos',   ico:'🎪',
+               desc:'+50% d’or des routes commerciales · villageois +15% de vitesse · Roulotte de Guerre · Roues Cerclées',
+               tradeMult:1.50, vilSpdMult:1.15, unique:UT.ROUL, techCiv:'roues_cerclees' },
 };
 // ── TYPES DE CARTE ────────────────────────────────────────
 // genMap() ne produisait qu'UN seul type de monde : lacs epars, forets
@@ -622,6 +654,10 @@ const HEROES = {
   byzantins: { nom:'Bélisaire',   ico:'🛡️' },
   chinois:   { nom:'Sun Tzu',     ico:'📯' },
   mongols:   { nom:'Gengis Khan', ico:'🏇' },
+  // Les quatre autres sont des figures historiques. Les Gitanos n'ont pas de
+  // souverain — c'est un peuple de la route, pas un empire : leur héros est
+  // une meneuse de caravane, nommée pour ce qu'elle fait et non pour un trône.
+  gitanos:   { nom:'Zaïda la Voyageuse', ico:'🎻' },
 };
 const HERO_AURA_RADIUS = BASE_TILE*6;
 const HERO_AURA_MULT = 1.15;
@@ -1014,6 +1050,12 @@ const RDEF = {
                   desc:'+1 case de portée à tous vos tireurs', cat:'univ' },
   etriers:      { nom:'Étriers de Fer',     ico:'👟', cost:{gold:200,food:200}, time:80, age:3, civ:'mongols',
                   desc:'+15% vitesse de toute votre cavalerie', cat:'univ' },
+  // La Roulotte est volontairement LENTE (1,6, moins qu'un villageois) : sans
+  // quoi un tireur à 150 PV qui suit l'armée n'aurait aucun défaut. Cette
+  // recherche lève ce défaut à l'Âge Impérial, et le lève aussi pour le
+  // Bélier et le Trébuchet — l'attelage, pas la monture (voir ROUES_TYPES).
+  roues_cerclees:{ nom:'Roues Cerclées',   ico:'🛞', cost:{gold:200,wood:220}, time:80, age:3, civ:'gitanos',
+                  desc:'+25% vitesse des Roulottes, Béliers et Trébuchets', cat:'univ' },
   sentiers:   { nom:'Sentiers Pavés', ico:'🛤️', cost:{wood:120,gold:50},   time:45,  desc:'+15% vitesse de déplacement des villageois',          cat:'eco' },
 };
 
@@ -1060,5 +1102,5 @@ const UNIT_ICO = {
   [UT.VIL]:'👷', [UT.MIL]:'⚔️', [UT.ARC]:'🏹', [UT.PIKE]:'🔱', [UT.SCOUT]:'💨',
   [UT.KNIGHT]:'🐴', [UT.MONK]:'⛪', [UT.PALADIN]:'🌟', [UT.XBOW]:'🎯',
   [UT.TREB]:'🪨', [UT.RAM]:'🐏', [UT.HERO]:'⭐', [UT.BOAT]:'⛵',
-  [UT.CATA]:'🛡️', [UT.CAVARC]:'🏎️', [UT.ARBRAP]:'🎋',
+  [UT.CATA]:'🛡️', [UT.CAVARC]:'🏎️', [UT.ARBRAP]:'🎋', [UT.ROUL]:'🎪',
 };

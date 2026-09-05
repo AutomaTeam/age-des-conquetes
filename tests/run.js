@@ -808,22 +808,59 @@ groupe('civilisations', () => {
     ok(!pbs.length, pbs.length + ' incoherence(s) :\n        ' + pbs.slice(0, 10).join('\n        '));
   });
 
-  const civs = ['francs', 'byzantins', 'chinois', 'mongols'];
+  // DÉRIVÉE de CIVS, jamais recopiée : la liste était écrite en dur, si bien
+  // qu'ajouter une cinquième civilisation laissait TOUS les tests de ce
+  // groupe au vert sans jamais l'avoir testée — le pire des faux positifs.
+  const civs = Object.keys(charger().CIVS);
 
   test('chaque civilisation a une identité mécanique, pas seulement un multiplicateur', () => {
     const j = charger();
+    ok(civs.length >= 4, 'liste de civilisations vide ou tronquée');
     for (const c of civs) {
       const d = j.CIVS[c];
       ok(!!d, `civilisation ${c} absente`);
       ok(!!d.techCiv, `${c} n'a pas de recherche exclusive`);
       ok(!!j.RDEF[d.techCiv], `${c} : recherche ${d.techCiv} absente de RDEF`);
       egal(j.RDEF[d.techCiv].civ, c, `${c} : la recherche n'est pas filtrée sur la bonne civ`);
+      ok(!!(d.nom && d.ico && d.desc), `${c} : nom, icône ou description manquants`);
+      // Un héros nommé par camp : mkUnit lit HEROES[civ] avec repli SILENCIEUX
+      // sur les Francs (voir js/04-entites.js). Une civ oubliée ici sortirait
+      // donc Charlemagne sous son propre drapeau, sans le moindre signal.
+      ok(!!(j.HEROES[c] && j.HEROES[c].nom && j.HEROES[c].ico),
+        `${c} n'a pas de héros dans HEROES : il jouerait celui des Francs`);
     }
-    // Trois unités uniques ; les Francs gardent le Paladin, qui est commun —
-    // c'est assumé et documenté dans CIVS.
+    const noms = civs.map((c) => j.HEROES[c].nom);
+    egal(new Set(noms).size, noms.length, 'deux civilisations partagent le même héros');
+    // Les Francs gardent le Paladin, qui est commun — c'est assumé et
+    // documenté dans CIVS ; toutes les autres ont leur unité à elles.
     const uniques = civs.map((c) => j.CIVS[c].unique).filter(Boolean);
-    egal(uniques.length, 3, 'nombre d\'unités uniques');
-    egal(new Set(uniques).size, 3, 'deux civilisations partagent la même unité unique');
+    egal(uniques.length, civs.length - 1, 'nombre d\'unités uniques');
+    egal(new Set(uniques).size, uniques.length, 'deux civilisations partagent la même unité unique');
+  });
+
+  test('chaque unité unique a une icône ET un sprite qui lui est propre', () => {
+    // Deux replis SILENCIEUX se cumulent sur une unité neuve :
+    //   • UNIT_ICO — le bouton de formation et la file d'attente retombent
+    //     sur '⭐' / '❓' (voir js/11-interface.js) ;
+    //   • buildUnitSprite — sans case dédiée ni planche illustrée, une unité
+    //     sort sous le corps HUMANOÏDE générique. Une Roulotte de Guerre
+    //     ressemblerait à un fantassin en tunique brune.
+    // Le second ne lève rien et ne se voit qu'en jouant : d'où ce test.
+    const j = charger();
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '05-sprites.js'), 'utf8');
+    for (const c of civs) {
+      const u = j.CIVS[c].unique;
+      if (!u) continue;
+      ok(!!j.UNIT_ICO[u], `${c} : l'unité unique ${u} n'a pas d'icône dans UNIT_ICO`);
+      const illustree = !!j.UNIT_SPRITE_FILES[u];
+      // Une case dédiée dans buildUnitSprite se reconnaît au nom du type : les
+      // unités non humanoïdes (Trébuchet, Bélier, Barque, Roulotte) ont chacune
+      // leur draw*Sprite branché sur un booléen `is*`.
+      const cle = Object.keys(j.UT).find((k) => j.UT[k] === u);
+      const dediee = src.includes('type===UT.' + cle + ';') || src.includes('type===UT.' + cle + ')');
+      ok(illustree || dediee,
+        `${c} : ${u} n'a ni planche dans UNIT_SPRITE_FILES ni case dédiée dans buildUnitSprite — elle sortirait sous la silhouette humanoïde générique`);
+    }
   });
 
   test('l\'unité unique est refusée à une autre civilisation, même par ordre réseau', () => {
@@ -905,6 +942,126 @@ groupe('civilisations', () => {
     ok(vsCata < vsKnight, `le Cataphractaire doit encaisser mieux que le Chevalier : ${vsCata} vs ${vsKnight}`);
     // ...mais il ne doit pas devenir invulnérable au contre.
     ok(vsCata > j.degatsDe(j.mkUnit(j.UT.MIL, 0, 0, j.G.me), cata), 'le Piquier ne contre plus du tout le Cataphractaire');
+  });
+
+  // ── GITANOS ──────────────────────────────────────────────
+  // Cinquième civilisation. Ses deux bonus ne passent PAS par les points de
+  // lecture déjà couverts plus haut (gatherMult, cavHpMult, rangedAtkMult) :
+  // ils touchent une boucle de simulation (routes commerciales) et la vitesse
+  // d'un civil. Chacun a donc son test, sinon rien ne les tient.
+
+  const enGitanos = (opts) => {
+    const j = charger();
+    j.__sandbox.selectedCiv = 'gitanos';
+    j.pickCiv('gitanos');
+    return partie(j, opts || { graine: 4242 });
+  };
+
+  test('Gitanos : la route commerciale rapporte réellement +50%', () => {
+    // La règle vit dans updateTradeRoutes, qui tourne côté HÔTE pour les
+    // marchés des DEUX camps : elle doit lire la civ du PROPRIÉTAIRE du
+    // marché, pas celle du joueur local. On monte donc la même route pour un
+    // camp franc et un camp gitan et on compare l'or encaissé.
+    const orDUneLivraison = (civ) => {
+      const j = charger();
+      j.__sandbox.selectedCiv = civ; j.pickCiv(civ);
+      partie(j, { graine: 4242 });
+      const f = j.moi();
+      const a = caseLibre(j, 40, 40, 2, 2), b = caseLibre(j, 52, 40, 2, 2);
+      const m1 = batir(j, j.BT.MARKET, a.tx, a.ty), m2 = batir(j, j.BT.MARKET, b.tx, b.ty);
+      const dist = Math.hypot(m2.x - m1.x, m2.y - m1.y);
+      m1.tradeRoute = { toId: m2.id, dist, t: 0, dur: 1, dir: 1 };
+      const avant = f.res.gold;
+      // Un seul pas assez long pour déclencher exactement UNE livraison.
+      j.update(1.05);
+      return f.res.gold - avant;
+    };
+    const franc = orDUneLivraison('francs'), gitan = orDUneLivraison('gitanos');
+    ok(franc > 0, 'la route commerciale ne paie rien : le test ne prouverait rien');
+    // Le gain est arrondi DEUX fois (une par camp), d'où la tolérance d'un
+    // point d'or plutôt qu'une égalité stricte sur franc × 1,5.
+    ok(Math.abs(gitan - franc * 1.5) <= 1,
+      `route gitane : ${gitan} or au lieu de ~${Math.round(franc * 1.5)} (franc : ${franc})`);
+  });
+
+  test('Gitanos : les villageois sont réellement plus rapides', () => {
+    const vit = (civ) => {
+      const j = charger();
+      j.__sandbox.selectedCiv = civ; j.pickCiv(civ);
+      partie(j, { graine: 4242 });
+      return j.mkUnit(j.UT.VIL, 0, 0, j.G.me).spd;
+    };
+    const g = vit('gitanos'), f = vit('francs');
+    ok(g > f, `villageois gitan ${g} contre franc ${f} : le bonus de vitesse n'est pas appliqué`);
+    // Et il ne déborde PAS sur l'armée : c'est un bonus civil, pas un
+    // +15% de vitesse pour tout le camp.
+    const jg = enGitanos(), jf = charger(); jf.pickCiv('francs'); partie(jf, { graine: 4242 });
+    egal(jg.mkUnit(jg.UT.MIL, 0, 0, jg.G.me).spd, jf.mkUnit(jf.UT.MIL, 0, 0, jf.G.me).spd,
+      'le bonus gitan déborde sur les unités militaires');
+  });
+
+  test('Roulotte : le seul tireur qui tient la ligne, et l\'infanterie le paie', () => {
+    // Sa niche tient en une phrase : elle encaisse ce qui efface un Archer,
+    // mais l'infanterie qui la REJOINT la démonte. Si l'un des deux bouts
+    // lâche, ce n'est plus une niche — c'est un archer lourd que rien
+    // n'arrête, ou un tas de bois inutile.
+    const j = enGitanos();
+    const me = j.G.me;
+    const roul = j.mkUnit(j.UT.ROUL, 0, 0, me);
+    const arc = j.mkUnit(j.UT.ARC, 0, 0, me);
+    const xbow = j.mkUnit(j.UT.XBOW, 0, 0, me);
+    const pike = j.mkUnit(j.UT.PIKE, 0, 0, me);
+    // Sous le trait : la Roulotte encaisse bien mieux que les tireurs.
+    const surRoul = j.degatsContre(xbow, roul), surArc = j.degatsContre(xbow, arc);
+    ok(surRoul < surArc, `sous le trait : ${surRoul} sur la Roulotte contre ${surArc} sur l'Archer`);
+    // Et elle a la masse pour en profiter : plus de PV que les deux tireurs.
+    ok(roul.maxHp > arc.maxHp * 2, `Roulotte ${roul.maxHp} PV : trop fragile pour tenir une ligne`);
+    // Au corps à corps, en revanche, l'infanterie la démonte.
+    ok(j.degatsContre(pike, roul) > j.degatsContre(pike, arc),
+      'le Piquier ne contre pas la Roulotte : elle n\'a plus de défaut');
+    // Et elle roule sur les lignes de tireurs, c'est sa raison d'être.
+    ok(j.degatsContre(roul, arc) > j.degatsContre(roul, pike),
+      'la Roulotte ne frappe pas plus fort les tireurs que l\'infanterie');
+  });
+
+  test('Roues Cerclées : ce que le libellé annonce est EXACTEMENT ce qui accélère', () => {
+    // Famille « l'interface ne doit pas mentir ». La recherche annonce trois
+    // unités nommées : ni plus (un bonus caché sur toute l'armée), ni moins
+    // (une des trois oubliée dans ROUES_TYPES).
+    const j = enGitanos();
+    const me = j.G.me;
+    const avant = {};
+    for (const t of Object.keys(j.UDEF)) avant[t] = j.mkUnit(t, 0, 0, me).spd;
+    j.moi().research.roues_cerclees = true;
+    const accelerees = Object.keys(j.UDEF).filter((t) => j.mkUnit(t, 0, 0, me).spd > avant[t] + 1e-9);
+    egalJSON(accelerees.sort(), [j.UT.ROUL, j.UT.RAM, j.UT.TREB].sort(),
+      'Roues Cerclées n\'accélère pas exactement les Roulottes, Béliers et Trébuchets');
+    const desc = j.RDEF.roues_cerclees.desc;
+    for (const t of accelerees) {
+      const mot = j.UDEF[t].nom.split(' ')[0].replace(/s$/, '');
+      ok(desc.includes(mot), `le libellé « ${desc} » ne nomme pas ${j.UDEF[t].nom}, qu'il accélère pourtant`);
+    }
+  });
+
+  test('aucune civilisation ne joue dans le décor d\'une autre', () => {
+    // Le piège documenté dans assets/README.md : une civilisation SANS jeu
+    // d'illustrations retombe SILENCIEUSEMENT sur la planche de base, c'est-
+    // à-dire sur le style FRANC. Un camp gitan sortait en bourg à colombages.
+    // Chaque civ non-franque doit donc avoir, pour chaque type de bâtiment,
+    // soit une planche dédiée, soit une livrée (voir CIV_LIVERY).
+    const j = charger();
+    const manques = [];
+    for (const c of civs) {
+      if (c === 'francs') continue;               // son style EST la planche de base
+      if (j.CIV_LIVERY[c]) continue;              // livrée : couvre TOUS les types d'un coup
+      for (const bt of Object.keys(j.BDEF)) {
+        const tbl = j.BLD_CIV_SPRITE_FILES[bt];
+        if (!tbl || !tbl[c]) manques.push(c + '/' + bt);
+      }
+    }
+    ok(!manques.length,
+      manques.length + ' bâtiment(s) sans style de civilisation, ils sortiraient en francs :\n        ' +
+      manques.slice(0, 10).join(', '));
   });
 });
 
@@ -2457,7 +2614,13 @@ groupe('ia', () => {
   test("l'IA forme l'unité unique de SA civilisation, et seulement la sienne", () => {
     const j = partie(charger(), { graine: 4242 });
     const a = j.G.factions.ia;
-    const attendu = { byzantins: j.UT.CATA, mongols: j.UT.CAVARC, chinois: j.UT.ARBRAP };
+    // DÉRIVÉ de CIVS, comme la liste du groupe `civilisations` : la table
+    // était écrite en dur, donc une civilisation ajoutée n'était jamais
+    // vérifiée ici — son IA aurait pu ne jamais former son unité unique sans
+    // qu'un seul test rougisse.
+    const attendu = {};
+    for (const [k, c] of Object.entries(j.CIVS)) if (c.unique) attendu[k] = c.unique;
+    ok(Object.keys(attendu).length >= 3, 'aucune unité unique à vérifier');
     for (const civ of Object.keys(attendu)) {
       a.civ = civ;
       a.age = 1;
@@ -3117,6 +3280,75 @@ groupe('charge', () => {
     // plus qu'il n'y en a reellement dans le disque.
     const dansRayon = j.G.units.filter((u) => Math.hypot(u.x - cx, u.y - cy) <= 12 * B).length;
     ok(vus <= dansRayon, 'le predicat a vu ' + vus + ' unites pour ' + dansRayon + ' reellement dans le rayon');
+  });
+
+  test('la livrée de civilisation ne relit JAMAIS les pixels d\'un sprite', () => {
+    // Mesuré en jeu sur un camp de 39 bâtiments : la première image après un
+    // changement de zoom passait de 3,6 ms (Francs) à 219 ms (Gitanos). Toute
+    // la différence tenait à UN appel — `getImageData`, pour retrouver après
+    // coup le rectangle réellement peint dans le canevas. Une lecture coûte
+    // 24 ms à froid puis 2 à 4 ms, là où peindre la livrée elle-même en coûte
+    // 0,4. Le rectangle est donc NOTÉ à la construction du sprite
+    // (`fitBuildingImage`, `buildBuildings`) et transporté par toutes les
+    // copies (teinte d'équipe, lavis ennemi, fondu du portail, dégâts).
+    //
+    // Le test COMPTE les lectures de pixels, il ne les rend pas fatales :
+    // `_contentBox` avale l'échec dans un try/catch (canevas « taint »), un
+    // test par exception passerait donc à vide. Les deux moitiés sont
+    // vérifiées : avec une boîte, zéro lecture ; sans boîte, au moins une —
+    // sans quoi le test ne prouverait plus rien le jour où le repli change.
+    const j = charger();
+    const doc = j.__sandbox.document;
+    const creerVrai = doc.createElement.bind(doc);
+    let lectures = 0;
+    const espionner = (el) => {
+      const cx = el.getContext('2d');
+      const vrai = cx.getImageData.bind(cx);
+      cx.getImageData = (...a) => { lectures++; return vrai(...a); };
+      return el;
+    };
+    doc.createElement = (tag) => {
+      const el = creerVrai(tag);
+      return String(tag).toLowerCase() === 'canvas' ? espionner(el) : el;
+    };
+    const sprite = (avecBoite) => {
+      const c = espionner(creerVrai('canvas'));
+      c.width = 120; c.height = 180;
+      const s = { c, cx: c.getContext('2d') };
+      if (avecBoite) s.box = { minX: 0, minY: 20, maxX: 120, maxY: 180 };
+      return s;
+    };
+
+    j.resetLiveryBudget();
+    const avec = sprite(true);
+    lectures = 0;
+    const orne = j.liverySprite(avec, 'gitanos', j.BT.HOUSE, 'HO');
+    ok(orne && orne.c !== avec.c, 'la livrée n\'a produit aucun sprite');
+    egal(lectures, 0, 'la livrée relit les pixels alors que la boîte est connue');
+    egalJSON(orne.box, avec.box, 'la livrée perd la boîte : la copie suivante la relirait');
+
+    j.resetLiveryBudget();
+    lectures = 0;
+    j.liverySprite(sprite(false), 'gitanos', j.BT.HOUSE, 'HO2');
+    ok(lectures > 0, 'sans boîte, la livrée ne relit plus les pixels : ce test ne prouve plus rien');
+    doc.createElement = creerVrai;
+  });
+
+  test('tout sprite de bâtiment porte la boîte de son contenu peint', () => {
+    // L'autre moitié de l'invariant ci-dessus : la boîte doit être posée sur
+    // TOUTES les clés de SPR.bld, variantes comprises (âges du Centre Ville,
+    // niveaux de la Tour, portail ouvert, versions ennemies). Une seule clé
+    // oubliée et c'est ce bâtiment-là qui repart en lecture de pixels, une
+    // fois par teinte d'équipe et à chaque changement de zoom.
+    const j = partie(charger(), { graine: 4242 });
+    const SPR = j.lire('SPR');
+    const cles = Object.keys(SPR.bld || {});
+    ok(cles.length > 20, 'aucun sprite de bâtiment construit : le test ne prouverait rien');
+    const sans = cles.filter((k) => {
+      const b = SPR.bld[k] && SPR.bld[k].box;
+      return !b || !(b.maxX > b.minX) || !(b.maxY > b.minY);
+    });
+    ok(!sans.length, sans.length + ' sprite(s) sans boîte : ' + sans.slice(0, 8).join(', '));
   });
 
   test('une recherche de chemin qui échoue RECULE au lieu de s\'acharner', () => {

@@ -584,9 +584,16 @@ let selectedCiv='francs';
 function pickCiv(key){
   if(!CIVS[key]) return;
   selectedCiv=key;
-  document.querySelectorAll('#civrow .diffbtn').forEach(b=>b.classList.toggle('sel', b.dataset.c===key));
-  const ct=document.getElementById('civtip');
-  if(ct) ct.textContent=`${CIVS[key].nom} — ${CIVS[key].desc}`;
+  // `.civbtn` et non `#civrow .diffbtn` : le sélecteur existe à DEUX endroits
+  // — l'écran-titre et le salon multijoueur, qui le recouvre — et les deux
+  // doivent se surligner ensemble, sans quoi le joueur qui choisit dans le
+  // salon verrait l'écran-titre le contredire en refermant le panneau.
+  document.querySelectorAll('.civbtn').forEach(b=>b.classList.toggle('sel', b.dataset.c===key));
+  const texte=`${CIVS[key].nom} — ${CIVS[key].desc}`;
+  for(const id of ['civtip','mpcivtip']){
+    const ct=document.getElementById(id);
+    if(ct) ct.textContent=texte;
+  }
   try{ localStorage.setItem('adc_civ',key); }catch(e){}
   // En ligne, ce choix doit remonter au salon : c'est l'hôte qui crée l'état
   // de partie, il ne peut donner à l'invité que ce qu'il connaît de lui.

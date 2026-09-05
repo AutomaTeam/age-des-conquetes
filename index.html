@@ -823,6 +823,20 @@ html.reduce-motion #ico-start {
 .mpbtn-ghost {
   background:transparent;color:#8a7454;border-color:#4a3a20;font-size:12px;padding:7px 12px;
 }
+/* Intitulé de section dans une carte du salon (« Votre civilisation ») :
+   assez discret pour ne pas concurrencer le <h3> numéroté de l'étape, assez
+   présent pour que la rangée de boutons qui suit se lise comme un choix. */
+.mpciv-titre {
+  font-family:'Cinzel',serif;font-size:11.5px;color:var(--parch2);
+  letter-spacing:.06em;text-transform:uppercase;text-align:center;
+  margin-top:2px;
+}
+/* Les boutons de civilisation sont plus serrés ici que sur l'écran-titre :
+   la carte du salon fait 360px et doit en aligner quatre sans les casser. */
+#mpcivrow .diffbtn { padding:7px 6px;min-width:0; }
+#mpcivrow .dico { font-size:17px; }
+#mpcivrow .dlabel { font-size:10px; }
+#mpcivtip { margin:0;font-size:11px; }
 .mpin {
   padding:8px 10px;font:inherit;font-size:13px;text-align:center;
   background:rgba(20,12,0,.75);color:var(--gold-l);
@@ -1550,11 +1564,14 @@ html.reduce-motion #ico-start {
         <button class="diffbtn" data-d="brutal" onclick="pickDifficulty('brutal')"><span class="dico">💀</span><span class="dlabel">Brutal</span></button>
       </div>
       <p class="tip" id="difftip">Normal — Moins de répit avant la 1ère vague, constructions +15% plus chères.</p>
+      <!-- `civbtn` : la MÊME classe que le sélecteur du salon multijoueur
+           (#mpcivrow), pour que pickCiv() surligne les deux rangées d'un coup
+           quel que soit l'endroit où le joueur a cliqué. -->
       <div class="diffrow" id="civrow">
-        <button class="diffbtn" data-c="francs"    onclick="pickCiv('francs')"><span class="dico">🐴</span><span class="dlabel">Francs</span></button>
-        <button class="diffbtn" data-c="byzantins" onclick="pickCiv('byzantins')"><span class="dico">🛡️</span><span class="dlabel">Byzantins</span></button>
-        <button class="diffbtn" data-c="chinois"   onclick="pickCiv('chinois')"><span class="dico">🌾</span><span class="dlabel">Chinois</span></button>
-        <button class="diffbtn" data-c="mongols"   onclick="pickCiv('mongols')"><span class="dico">🏹</span><span class="dlabel">Mongols</span></button>
+        <button class="diffbtn civbtn" data-c="francs"    onclick="pickCiv('francs')"><span class="dico">🐴</span><span class="dlabel">Francs</span></button>
+        <button class="diffbtn civbtn" data-c="byzantins" onclick="pickCiv('byzantins')"><span class="dico">🛡️</span><span class="dlabel">Byzantins</span></button>
+        <button class="diffbtn civbtn" data-c="chinois"   onclick="pickCiv('chinois')"><span class="dico">🌾</span><span class="dlabel">Chinois</span></button>
+        <button class="diffbtn civbtn" data-c="mongols"   onclick="pickCiv('mongols')"><span class="dico">🏹</span><span class="dlabel">Mongols</span></button>
       </div>
       <p class="tip" id="civtip">Francs — +20% PV à la Cavalerie (Chevaliers, Paladins, Éclaireurs)</p>
       <div class="diffrow" id="carterow">
@@ -1626,6 +1643,20 @@ html.reduce-motion #ico-start {
   <div class="mpcard mpcard-lobby" id="mpcard-lobbyactif" style="display:none;">
     <h3><span class="mpstep">3</span>Salon</h3>
     <div id="mpcode"></div>
+    <!-- Sélecteur de civilisation DANS le salon. Il existe aussi sur
+         l'écran-titre, mais ce panneau le recouvre : un invité devait fermer
+         le salon, déplier le résumé de configuration, choisir, puis rouvrir —
+         personne ne devine ce parcours. Les deux rangées partagent la classe
+         `civbtn` et pickCiv() les met à jour toutes les deux, donc l'endroit
+         où l'on choisit n'a plus d'importance. -->
+    <div class="mpciv-titre">Votre civilisation</div>
+    <div class="diffrow" id="mpcivrow">
+      <button class="diffbtn civbtn" data-c="francs"    onclick="pickCiv('francs')"><span class="dico">🐴</span><span class="dlabel">Francs</span></button>
+      <button class="diffbtn civbtn" data-c="byzantins" onclick="pickCiv('byzantins')"><span class="dico">🛡️</span><span class="dlabel">Byzantins</span></button>
+      <button class="diffbtn civbtn" data-c="chinois"   onclick="pickCiv('chinois')"><span class="dico">🌾</span><span class="dlabel">Chinois</span></button>
+      <button class="diffbtn civbtn" data-c="mongols"   onclick="pickCiv('mongols')"><span class="dico">🏹</span><span class="dlabel">Mongols</span></button>
+    </div>
+    <p class="tip" id="mpcivtip"></p>
     <button class="mpbtn mpbtn-primary" id="mpbtn-copier" style="display:none;" onclick="mpCopierLien()">🔗 Partager l'invitation</button>
     <button class="mpbtn mpbtn-primary mpbtn-launch" id="mpbtn-lancer" onclick="mpLancer()" style="display:none;">⚔️ Lancer la partie</button>
     <button class="mpbtn mpbtn-ghost" id="mpbtn-quitter" onclick="mpQuitter()">Quitter le salon</button>

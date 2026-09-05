@@ -1418,11 +1418,9 @@ function mpRafraichir(){
   // cette fonctionnalite : l'hote lui en attribuera une (voir initState), et on
   // n'annonce alors rien plutot que d'annoncer faux.
   const nomCiv=(k)=>(CIVS[k]&&`${CIVS[k].ico} ${CIVS[k].nom}`)||null;
-  const maCiv=nomCiv(e.civ||selectedCiv);
-  // Dire OÙ se change ce choix : le sélecteur de civilisation est sur
-  // l'écran-titre, que ce panneau recouvre — sans ce rappel, un invité voit
-  // sa civilisation sans deviner qu'elle lui appartient encore.
-  if(e.code&&maCiv) parts.push(`Vous jouez <b>${maCiv}</b> <span style="opacity:.65">(pour changer : fermez ce panneau)</span>`);
+  // Notre propre civilisation n'a plus besoin d'être répétée ici : le
+  // sélecteur est juste au-dessus, dans la carte du salon (#mpcivrow), avec
+  // le bouton choisi en surbrillance. Seule celle d'EN FACE mérite une ligne.
   if(e.adversaire){
     const sonCiv=nomCiv(e.adversaire.civ);
     parts.push(`<span class="ok">${labelAutre} connecté : <b>${e.adversaire.nom||'…'}</b>${sonCiv?` — <b>${sonCiv}</b>`:''}</span>`);

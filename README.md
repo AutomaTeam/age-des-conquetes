@@ -51,7 +51,7 @@ préservent.
 node tests/run.js
 ```
 
-151 tests, 15 groupes, ~40 s, sans dépendance ni build — comme le jeu. Ils
+152 tests, 15 groupes, ~40 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, et des
@@ -228,8 +228,21 @@ partie ne pourrait pas se terminer).
   - elles **réparent** leurs bâtiments (au plus trois villageois à la fois),
     là où les dégâts de siège leur étaient définitifs quand les vôtres ne le
     sont pas ;
-  - elles forment l'**unité unique de leur civilisation** à leur Château :
-    trois civs sur quatre jouaient jusque-là comme des Francs ;
+  - elles forment l'**unité unique de leur civilisation** à leur Château —
+    une **escouade signature de trois**, seule dépense que leur épargne de
+    montée d'âge laisse passer. La table les y autorisait depuis longtemps,
+    mais la caisse gardée pour le palier suivant rendait impayable jusqu'au
+    Cataphractaire, et le Château — qui ne produit rien d'autre à cet âge —
+    restait muet du jour de son achèvement : sur les neuf parties simulées où
+    l'IA bâtit vraiment un Château, six voyaient sortir une unité unique, 83 à
+    221 s après lui — contre 19 à 55 s aujourd'hui, le temps de la former.
+    Les trois autres sont byzantines, et c'est le cas révélateur : leur
+    Cataphractaire est le seul à ne coûter que des ressources réservées, là où
+    les trois autres unités uniques ont une part en bois qui échappe à
+    l'épargne. Elles n'en alignaient aucune en vingt minutes ; elles en
+    alignent trois, 24 s après le Château. Au-delà de trois, l'épargne reprend
+    ses droits : sept de ces neuf parties montent d'âge aux mêmes secondes
+    qu'avant, les deux autres perdent 10 s et 174 s sur l'Âge Impérial ;
   - elles **troquent au Marché** pour dénouer un blocage de caisse, au lieu
     de rester à sec d'or avec trois mille bois dormants ;
   - elles bâtissent des **Immeubles** quand il manque beaucoup de places d'un

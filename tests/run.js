@@ -2045,6 +2045,35 @@ groupe('finpartie', () => {
     }
   });
 
+  test('une attente de reconnexion ne se fait pas dégeler par la pause', () => {
+    // La reprise automatique de la pause en ligne est armée pour 90 s, la
+    // fenêtre de reconnexion dure 60 s : si la connexion tombe pendant qu'un
+    // joueur a son menu ouvert, le minuteur se déclenche APRÈS l'escalade.
+    // closePause() levait alors la pause sans condition — l'hôte voyait sa
+    // simulation repartir seule pendant qu'on lui demandait encore s'il
+    // voulait continuer. L'attente DÉTIENT la pause : elle seule la lève.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 5 });
+    j.RESEAU.actif = true; j.RESEAU.role = 'hote';
+    j.RESEAU.adversaire = { id: j.FAC.P2, nom: 'Ami' };
+
+    j.entrerAttenteReconnexion();
+    egal(j.G.paused, true, 'l\'attente de reconnexion ne gèle pas la partie (sinon ce test ne prouve rien)');
+
+    j.closePause(); // la reprise automatique de la pause
+    egal(j.G.paused, true, 'la partie a été dégelée alors que l\'attente de reconnexion court toujours');
+    egal(j.RESEAU.enAttenteReconnexion, true, 'l\'attente de reconnexion a été annulée par la pause');
+
+    // Et la reconnexion, elle, dégèle bien : la garde ne bloque pas la sortie.
+    j.sortirAttenteReconnexion();
+    egal(j.G.paused, false, 'la reconnexion réussie ne dégèle plus la partie');
+
+    // Hors attente, closePause() reprend normalement — la garde ne doit pas
+    // transformer la pause manuelle en aller simple.
+    j.G.paused = true;
+    j.closePause();
+    egal(j.G.paused, false, 'la garde empêche désormais toute reprise manuelle');
+  });
+
   test('quitter APRÈS un écran de fin ne laisse pas le joueur sans écran-titre', () => {
     // showVictory/showGameOver réécrivent tout #overlay : la carte-titre
     // n'existe plus. quitGame() se contentait de réafficher #overlay, donc

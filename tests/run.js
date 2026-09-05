@@ -1176,6 +1176,39 @@ groupe('tailles', () => {
 // vérifie pas est exploitable : l'interface, elle, ne verrouille que
 // l'affichage. Ces tests visent donc les REFUS, pas les cas nominaux.
 groupe('ordres', () => {
+  test('un refus de recherche dit LE bon motif, pas « ressources »', () => {
+    // Le panneau de recherche annonçait « Ressources insuffisantes ! » pour
+    // les six motifs de refus d'ORD.RECHERCHE. Le cas qui ment vraiment :
+    // la Forge détruite pendant que le panneau est ouvert — on disait au
+    // joueur qu'il était pauvre, en faisant clignoter des ressources qu'il
+    // avait. Ici on épingle les motifs eux-mêmes, puis on vérifie que le
+    // panneau les distingue.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 5 });
+    riche(j, j.G.me);
+    const p = caseLibre(j, 60, 60, 2, 2);
+    const forge = batir(j, j.BT.FORGE, p.tx, p.ty);
+
+    // Avec la Forge : la recherche part.
+    egal(ordreDe(j, j.G.me, j.ORD.RECHERCHE, { cle: 'iron_sword' }).ok, true,
+      'la recherche est refusée alors que la Forge est debout et la caisse pleine');
+
+    // Sans la Forge : motif `cible`, et surtout PAS `ressources` — la caisse
+    // est pleine, c'est tout l'intérêt du test.
+    forge.hp = 0;
+    for (let k = 0; k < 5; k++) j.update(j.SIM_DT);
+    const refus = ordreDe(j, j.G.me, j.ORD.RECHERCHE, { cle: 'bow_craft' });
+    egal(refus.ok, false, 'une recherche passe sans Forge');
+    egal(refus.raison, 'cible', 'le motif du refus n\'est pas celui du bâtiment manquant');
+    ok(j.resPool(j.G.me).gold > 1000, 'la caisse doit être pleine pour que ce test prouve quelque chose');
+
+    // Et le panneau doit brancher sur le motif, pas tout ramener aux
+    // ressources (même découpage que trainUnit, js/10-ordres.js).
+    const ui = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '11-interface.js'), 'utf8');
+    const bloc = ui.slice(ui.indexOf('function openRP'), ui.indexOf('function closeRP'));
+    ok(/raison==='cible'/.test(bloc),
+      'le panneau de recherche ne distingue pas le bâtiment détruit : il annonce « Ressources insuffisantes » à tort');
+  });
+
   // ── Les douze ordres que rien n'eprouvait ────────────────
   // Le groupe vise les REFUS : c'est ce que l'interface ne verrouille pas.
   // Ces douze-la n'avaient ni test de refus ni test nominal, alors que chacun

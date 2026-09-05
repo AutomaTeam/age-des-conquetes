@@ -297,19 +297,27 @@ redemanderait toutes dans la même.
 
 Un deuxième niveau de rendu, purement additif : au démarrage, le jeu tente de
 charger des sprites illustrés depuis le dossier `assets/` (`assets/ressources/`,
-`assets/batiments/`, à terme `assets/unites/` et `assets/effets/`) et les
-substitue au dessin procédural correspondant une fois chargés et détourés
+`assets/batiments/`, `assets/unites/`) et les substitue au dessin procédural
+correspondant une fois chargés et détourés
 (flood fill du fond quasi-blanc, recadré sur le contenu). **Aucune régression
 possible** : tant qu'un fichier est absent, le sprite procédural déjà en place
 reste utilisé tel quel — le jeu fonctionne à l'identique sans le dossier
 `assets/`.
 
-**Couverture complète** à ce jour : les 4 icônes de ressources, les 21
-bâtiments, les 18 unités, les 6 gisements de la carte (arbre, pierre, or,
-baies, poisson, viande), la faune (cerf, sanglier) et les objets uniques
-(relique, caravane). Seuls les effets ponctuels (particules, projectiles)
-restent volontairement procéduraux : trop brefs pour justifier une
-illustration. Voir [`assets/README.md`](assets/README.md) pour la convention
+**Couverture** à ce jour : les 4 icônes de ressources, les 21 bâtiments (plus
+94 variantes par civilisation), les 22 unités, les 6 gisements de la carte
+(arbre, pierre, or, baies, poisson, viande), la faune (cerf, sanglier) et les
+objets uniques (relique, caravane). Il manque **deux** planches, le Camp
+Forestier et le Camp Minier des Gitanos — qui gardent d'ici là le décor franc
+plus leur livrée, sans régression. `assets/effets/` reste volontairement vide :
+les effets ponctuels (particules, projectiles) sont trop brefs à l'écran pour
+qu'une illustration s'y voie.
+
+Compter les fichiers ne dit rien de la couverture : c'est
+`BLD_CIV_SPRITE_FILES` qu'il faut recouper avec `CIVS`, et `UNIT_SPRITE_FILES`
+avec `UT`. Un type absent d'une de ces tables retombe **en silence** sur le
+rendu procédural, et un nom de fichier fautif fait pareil — d'où le test
+« toute planche nommée dans le code existe vraiment sur le disque ». Voir [`assets/README.md`](assets/README.md) pour la convention
 de nommage, le format attendu et les pièges de détourage — et
 [`outils/`](outils/README.md) pour le script qui prépare une planche générée
 (détourage, recadrage, WebP au bon gabarit).

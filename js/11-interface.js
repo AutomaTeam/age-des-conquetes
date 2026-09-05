@@ -383,7 +383,13 @@ function drawUnitAct(bar,u){
       // difficulté — le bouton doit toujours afficher ce montant final,
       // jamais le tarif de base.
       const realCost=scaleCost(cost);
-      mkBtn(bar,ico,nom+'\n'+fmtCost(realCost),()=>enterBuild(bt),false,realCost);
+      // Places de population apportées — le seul chiffre sur lequel se
+      // décide « une Maison ou un Immeuble ? », et il n'était affiché nulle
+      // part : le joueur ne pouvait pas savoir que l'Immeuble en vaut 25
+      // quand la Maison en vaut 5 à 8 selon l'âge. Même source que le calcul
+      // réel (popGain, js/04-entites.js), pour qu'ils ne puissent pas diverger.
+      const pop=popGain(bt,G.me);
+      mkBtn(bar,ico,nom+'\n'+fmtCost(realCost)+(pop?` · +${pop}👥`:''),()=>enterBuild(bt),false,realCost);
     }
     if(u.state!=='idle') mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:[u.id]})));
   } else if(u.type===UT.MONK){

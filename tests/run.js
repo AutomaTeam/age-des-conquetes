@@ -2045,6 +2045,32 @@ groupe('finpartie', () => {
     }
   });
 
+  test('une unité qui résiste aux contres le dit à l\'écran', () => {
+    const j = charger();
+    // `resistBonus` divise les bonus de contre reçus (voir degatsContre) :
+    // c'est la mécanique la plus distinctive du jeu, et elle est INVISIBLE
+    // si l'affichage de sélection ne la mentionne pas — ni pour celui qui
+    // possède l'unité, ni pour l'adversaire dont les contres sous-performent.
+    const porteuses = Object.entries(j.UDEF).filter(([, d]) => d.resistBonus != null && d.resistBonus !== 1);
+    ok(porteuses.length, 'plus aucune unité ne porte resistBonus : ce test est à revoir');
+    const ui = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '11-interface.js'), 'utf8');
+    const bloc = ui.slice(ui.indexOf('const stateLabels'), ui.indexOf('// ── PANNEAU RECHERCHE'));
+    ok(/resistBonus/.test(bloc),
+      'l\'affichage de sélection ne mentionne jamais resistBonus : la résistance aux contres reste invisible');
+    // Et la mécanique fait bien ce que l'affichage annoncera : le bonus reçu
+    // est réduit dans cette proportion exacte, pas l'attaque de base.
+    for (const [type, d] of porteuses) {
+      const cible = { type, owner: j.G.me };
+      const contre = Object.entries(j.BONUS).find(([, b]) => b[d.cls] > 0);
+      if (!contre) continue;
+      const [tAtt, bonus] = contre;
+      const attaquant = { type: tAtt, atk: 10 };
+      const attendu = Math.max(1, Math.round(10 + Math.round(bonus[d.cls] * d.resistBonus) - (d.armor[j.UDEF[tAtt].atkType] || 0)));
+      egal(j.degatsContre(attaquant, cible), attendu,
+        `resistBonus de ${d.nom} n'est pas appliqué comme annoncé`);
+    }
+  });
+
   test('une civilisation n\'annonce que ce qui lui est propre', () => {
     const j = charger();
     // Le Paladin s'obtient par une recherche ouverte à tous (RDEF.faith, sans

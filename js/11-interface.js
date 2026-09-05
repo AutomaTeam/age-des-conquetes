@@ -845,6 +845,16 @@ function updateSelInfo(e){
   if(isUnit){
     const cb=BONUS[e.type];
     if(cb) desc.push('⚔ +'+Object.entries(cb).map(([c,v])=>`${v} vs ${CLS_NOM[c]||c}`).join(', '));
+    // Résistance aux contres (voir degatsContre : `resistBonus` atténue la
+    // part de BONUS reçue). C'est toute la niche du Cataphractaire — « la
+    // seule cavalerie qui ne fond pas sous les Piquiers » — et elle
+    // n'apparaissait NULLE PART : ni son propriétaire ne savait ce qu'il
+    // achetait, ni l'adversaire ne comprenait pourquoi ses Piquiers, qui
+    // annoncent +25 contre la cavalerie, n'en plaçaient que la moitié.
+    // Exactement le défaut que le commentaire d'à-côté dénonce déjà : « un
+    // système de contre invisible ne sert à rien ».
+    const rb=UDEF[e.type]&&UDEF[e.type].resistBonus;
+    if(rb!=null&&rb!==1) desc.push(`🪖 contres reçus −${Math.round((1-rb)*100)}%`);
   }
   document.getElementById('seldesc').textContent=desc.join(' | ');
   // Le détail tient rarement sur une ligne dans le bandeau : l'info-bulle
@@ -854,7 +864,10 @@ function updateSelInfo(e){
     const d=UDEF[e.type];
     sd.title=`${name} — ${CLS_NOM[d.cls]||d.cls}\n`+
       `Attaque ${e.atk} (${d.atkType==='m'?'mêlée':'perforant'})\n`+
-      `Armure ${arm.m} mêlée / ${arm.p} perforant`;
+      `Armure ${arm.m} mêlée / ${arm.p} perforant`+
+      (d.resistBonus!=null&&d.resistBonus!==1
+        ? `\nRésiste aux bonus de contre : −${Math.round((1-d.resistBonus)*100)}%`
+        : '');
   } else sd.title=`${name}\nArmure ${arm.m} mêlée / ${arm.p} perforant`;
 }
 

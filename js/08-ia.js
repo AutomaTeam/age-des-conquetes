@@ -1132,9 +1132,33 @@ function updateUneIA(dt,a){
 
   // ── Héros ── une seule fois par partie (voir HEROES), dès que le Château
   // le permet — même garde-fou que côté joueur (f.heroTrained).
+  //
+  // Exempté de l'épargne de montée d'âge (`null` et non `saving`), même
+  // mécanisme et même symptôme que l'unité unique un peu plus haut : le
+  // Héros ne coûte que 250🍖+200💰, une seule fois par partie, mais l'épargne
+  // — 800 à 1200🍖 selon l'âge — le rendait impayable aussi longtemps
+  // qu'elle restait armée. Sur les 10 parties de 20 minutes où l'IA bâtit un
+  // Château (RNG semé, donc reproductible), AUCUNE ne formait de Héros ;
+  // toutes les ticks où l'épargne était armée et le Héros pas encore en
+  // file étaient bloquées par elle seule. Après correctif : 9 sur 10, entre
+  // 79 et 174 s après le Château (la dixième le met en chantier tout aussi
+  // vite mais n'a plus le temps de finir les 60 s de formation avant la fin
+  // de la fenêtre de mesure).
+  //
+  // Ici pas besoin de plafond façon AI_UNIQUE_FREE : `heroTrained` interdit
+  // déjà tout second Héros, une exemption pleine ne peut donc jamais être
+  // répétée. Vérifié sans effet de bord sur l'unité unique qui partage la
+  // même file à 3 places : sur les 9 parties ci-dessus, sa PREMIÈRE
+  // formation tombe à l'identique à la seconde près, avec ou sans cette
+  // exemption — seul le compte total sur 20 minutes varie de ±1 à ±5, du
+  // même ordre que la dérive attendue d'une partie à l'autre. Impact sur les
+  // montées d'âge : nul dans 10 parties sur 12, +4 s dans une, et une
+  // troisième atteint l'Âge Impérial qu'elle n'atteignait pas avant — dans
+  // les deux cas l'écart tient à la divergence normale d'une simulation
+  // dont l'état a changé, pas à un coût systématique.
   if(!a.heroTrained){
     const castle=G.buildings.find(b=>b.owner===a.id&&b.type===BT.CASTLE&&!b.constructing);
-    if(castle&&castle.trainQ.length<3&&a.pop<a.maxPop&&aiAfford(TCOST[UT.HERO],saving,a)){
+    if(castle&&castle.trainQ.length<3&&a.pop<a.maxPop&&aiAfford(TCOST[UT.HERO],null,a)){
       aiSpend(TCOST[UT.HERO],a);
       castle.trainQ.push(UT.HERO);
       if(castle.trainQ.length===1) castle.trainTimer=trainTime(UT.HERO);

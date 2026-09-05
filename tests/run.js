@@ -2684,6 +2684,12 @@ groupe('ia', () => {
       a.civ = civ;
       a.age = 2;
       a.vilTarget = 1;             // l'IA ne cherche plus de villageois : le Centre Ville ne mange pas la caisse
+      // Le Héros aussi échappe désormais à l'épargne (même défaut, corrigé
+      // juste après ce test) et partage la même file de 3 places au
+      // Château : le laisser se former ici viendrait grignoter et la caisse
+      // et une place sur l'escouade signature, sans rapport avec ce que ce
+      // test vérifie. `heroTrained` avant tout ordre l'écarte proprement.
+      a.heroTrained = true;
       // Cinq militaires : c'est le seuil au-dessus duquel l'épargne s'arme
       // (voir `saving`). Sans eux le test passerait sans rien prouver.
       for (let i = 0; i < 5; i++) j.G.units.push(j.mkUnit(j.UT.ENEMI, a.baseX, a.baseY, a.id));
@@ -2741,6 +2747,39 @@ groupe('ia', () => {
       ok(j.lire('aiAfford')(cout, null, a),
         civ + " : la caisse est à sec en fin de scénario — rien ne prouve que le plafond ait servi");
     }
+  });
+
+  test("l'IA forme son Héros malgré l'épargne de montée d'âge", () => {
+    // Même mécanisme, même symptôme que l'unité unique deux tests plus haut :
+    // le Héros (250🍖+200💰, une seule fois par partie) restait impayable
+    // aussi longtemps que l'épargne de montée d'âge (800 à 1200🍖 selon
+    // l'âge) était armée. Pas de plafond à vérifier ici — `heroTrained`
+    // interdit déjà tout second Héros — donc une simple exemption pleine.
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    a.age = 2;
+    a.vilTarget = 1;
+    for (let i = 0; i < 5; i++) j.G.units.push(j.mkUnit(j.UT.ENEMI, a.baseX, a.baseY, a.id));
+    const bx = Math.round(a.baseX / j.BASE_TILE), by = Math.round(a.baseY / j.BASE_TILE);
+    const dh = j.BDEF[j.BT.HOUSE];
+    for (let i = 0; i < 5; i++) {
+      const ph = caseLibre(j, bx + 3 + i * (dh.w + 1), by + 3, dh.w, dh.h);
+      batir(j, j.BT.HOUSE, ph.tx, ph.ty, a.id);
+    }
+    const d = j.BDEF[j.BT.CASTLE];
+    const p = caseLibre(j, bx + 5, by + 8, d.w, d.h);
+    const ch = batir(j, j.BT.CASTLE, p.tx, p.ty, a.id);
+    // Caisse calibrée : paie le Héros, pas le palier suivant.
+    Object.assign(a.res, { food: 900, gold: 400, wood: 0, stone: 0 });
+    const cout = j.TCOST[j.UT.HERO];
+    const reserve = j.AGES[a.age + 1].cost;
+    ok(j.lire('aiAfford')(cout, null, a),
+      'la caisse du scénario ne paie même pas le Héros — le test ne prouve rien');
+    ok(!j.lire('aiAfford')(cout, reserve, a),
+      "l'épargne ne bloque pas le Héros dans ce scénario — le test ne prouve rien");
+    const forme = () => a.heroTrained || ch.trainQ.includes(j.UT.HERO);
+    for (let k = 0; k < 40 && !forme(); k++) { a.think = 0; j.updateUneIA(0.5, a); }
+    ok(forme(), "Château debout à l'Âge des Châteaux, et toujours aucun Héros en file");
   });
 
   test("l'IA bâtit un Immeuble quand il manque beaucoup de places d'un coup", () => {

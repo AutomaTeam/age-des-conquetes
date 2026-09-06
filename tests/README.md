@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**152 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
+**154 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -142,7 +142,18 @@ qui **ne se voit pas** :
   reconnexion ne se fait pas dégeler par la reprise de pause ; et quitter
   après un écran de fin ne laisse pas le joueur sans écran-titre.
 - **`ia`** — plafond des Moines, atelier de siège au roster, et l'assaut qui
-  passe bien par un rassemblement.
+  passe bien par un rassemblement. S'y ajoute une leçon : un test de TABLE ne
+  vaut pas un test de COMPORTEMENT. « l'IA forme l'unité unique de SA
+  civilisation » interrogeait `aiUniteUnique()` en isolation et restait vert
+  pendant que, en partie réelle, l'épargne de montée d'âge rendait le Château
+  impayable — une unité unique en tout sur vingt parties simulées de quinze
+  minutes, et zéro chez les Byzantins même en poussant à vingt. Le test qui le
+  suit rejoue donc la scène — Château debout, Âge des Châteaux, caisse
+  au-dessous du palier — et vérifie d'abord que l'épargne mord VRAIMENT dans
+  ce scénario, sans quoi il ne pourrait pas échouer. Le Héros de l'IA subissait
+  exactement le même défaut (0 sur 10 parties où un Château se bâtit), corrigé
+  et testé de la même façon juste après — sans plafond cette fois, puisque
+  `heroTrained` borne déjà la dépense à une seule fois par partie.
 - **`charge`** — des invariants de COÛT, pas de résultat. Ce sont les seuls
   défauts qui ne se voient pas du tout en petite partie et qui rendent une
   grosse partie injouable. Le BUDGET de balayage du

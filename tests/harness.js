@@ -65,7 +65,7 @@ const EXPORTS = [
   // Correctifs « l'IA joue aux mêmes règles » : chacun a son test de
   // non-régression dans le groupe `ia`.
   'cibleMerveille', 'nearPlayerBuildingSmart', 'majPhaseAssaut', 'aiMerveilleHostile',
-  'aiRepare', 'AI_REPAIR_MAX', 'aiUniteUnique', 'aiLogement', 'AI_HLM_DEFICIT',
+  'aiRepare', 'AI_REPAIR_MAX', 'aiUniteUnique', 'AI_UNIQUE_FREE', 'aiLogement', 'AI_HLM_DEFICIT',
   'aiTroquer', 'aiCout', 'AI_BOAT_MAX', 'aiCount',
 ];
 

@@ -146,6 +146,58 @@ function aiUniteUnique(a){
   return null;
 }
 
+// Combien d'unités uniques le Château peut former MALGRÉ l'épargne de montée
+// d'âge (voir `saving` dans la boucle de production).
+//
+// Sans cette exemption, le chemin de code existait sans jamais être
+// atteignable : aiUniteUnique() rendait bien 'CT' pour les Byzantins, mais
+// aiAfford() refusait la dépense à tous les coups. Instrumenté RNG SEMÉ, donc
+// reproductible — byzantins, graine 99, Château fini à t=1158s : sur les
+// 1253 pas de simulation (30 Hz) où un Château fini a coexisté avec une
+// épargne armée, 1253 refusés PAR ELLE SEULE, et ZÉRO par manque réel de
+// caisse. Sur 20 parties simulées de 15 minutes (4 civs × 5 graines) : UNE
+// unité unique en tout.
+//
+// Le Château ne se taisait pas pour toujours — l'épargne retombe pendant la
+// montée d'âge. Mais elle retombe à l'instant précis où aiSpend() vient de
+// vider la caisse pour payer le palier : les deux fenêtres ne se recouvrent
+// jamais utilement. Sur les 9 parties de 20 minutes où l'IA bâtit vraiment un
+// Château, SIX voyaient sortir une unité unique, 83 à 221 s après son
+// achèvement ; elles sortent 19 à 55 s après depuis, le temps de la former.
+//
+// Les trois autres parties sont byzantines, et c'est le cas révélateur : le
+// Cataphractaire est le SEUL à ne coûter que des ressources réservées
+// (70🍖 + 75💰). Les trois autres unités uniques ont une part en BOIS, que
+// l'épargne ne touche pas — elles ne butent donc que sur l'or, et finissent
+// par passer. Chez les Byzantins il n'en sortait AUCUNE en vingt minutes,
+// sur les trois graines essayées ; il en sort trois, 24 s après le Château.
+// Toute mesure sur cette famille de défauts doit inclure les Byzantins, faute
+// de quoi le défaut se cache derrière une ressource non réservée.
+//
+// Pourquoi le Château et pas les autres bâtiments : à l'Âge des Châteaux, son
+// roster ne contient RIEN d'autre. ENEMI_BOSS demande l'Âge Impérial
+// (AI_UNIT_AGE) et le Héros ne se forme qu'une fois par partie. L'épargne y
+// laissait donc COMPLÈTEMENT à l'arrêt un bâtiment que l'IA venait de payer
+// 300 bois, 300 pierres et 100 or — là où une Caserne bloquée garde son
+// roster d'Âge Sombre et continue de produire. C'est cette asymétrie qu'on
+// corrige, pas l'épargne.
+//
+// Pourquoi un plafond et pas une exemption pleine : sans lui, l'IA
+// enchaînerait les unités uniques et ne monterait plus jamais d'âge — on
+// aurait remplacé un défaut par l'autre. Trois exemplaires coûtent 210🍖 et
+// 225💰 aux Byzantins, contre 1200🍖 et 600💰 pour l'Âge Impérial : la montée
+// d'âge est retardée, jamais annulée. Chiffré sur les mêmes 9 parties : les
+// dates de montée d'âge sont INCHANGÉES dans 7 d'entre elles ; les deux
+// autres perdent 10 s et 174 s sur l'Âge Impérial. Ce prix-là est assumé —
+// une IA qui garde son escouade signature debout la repaie quand on la lui
+// tue, et c'est justement ce qu'on lui demande.
+//
+// Le compte porte donc sur les unités VIVANTES et non sur un total à vie :
+// une escouade décimée est reformée, sans quoi une IA qui perd ses trois
+// premières n'en réaligne jamais — le défaut d'origine, en pire. Même
+// principe que le plafond de Moines par relique ou de Barques par banc.
+const AI_UNIQUE_FREE = 3;
+
 // `reserve` = ressources mises de côté et intouchables pour cette dépense.
 // Sert à l'épargne de montée d'âge : sans elle, l'IA réinvestissait chaque
 // pièce dans une unité de plus et restait bloquée à l'Âge Sombre toute la
@@ -925,14 +977,26 @@ function updateUneIA(dt,a){
     let roster=AI_TRAINERS[b.type];
     if(!roster||b.trainQ.length>=3) continue;
     if(a.pop>=a.maxPop) continue;
+    // `exempt` : le seul type que l'épargne de montée d'âge ne bloque pas,
+    // pour ce bâtiment-ci. Rien n'en profite en dehors du Château.
+    let exempt=null;
     // Château : l'unité unique de la civilisation rejoint le roster dès que
     // l'âge le permet (voir aiUniteUnique). `concat` et non un push : le
     // tableau AI_TRAINERS est partagé par TOUS les camps, y compris les deux
     // rivaux du mode « 2 rivaux » qui n'ont pas la même civilisation — le
     // muter donnerait à l'un l'unité unique de l'autre, et définitivement.
+    // Elle échappe à l'épargne tant que l'escouade signature n'est pas au
+    // complet (voir AI_UNIQUE_FREE) — la file en cours comptant dans le
+    // plafond, sinon trois tours de décision d'affilée empileraient trois
+    // unités par-dessus.
     if(b.type===BT.CASTLE){
       const uniq=aiUniteUnique(a);
-      if(uniq) roster=roster.concat(uniq);
+      if(uniq){
+        roster=roster.concat(uniq);
+        const vivantes=G.units.filter(u=>u.owner===a.id&&u.type===uniq).length
+                      +b.trainQ.filter(t=>t===uniq).length;
+        if(vivantes<AI_UNIQUE_FREE) exempt=uniq;
+      }
     }
     if(b.type===BT.TC){
       // Villageois jusqu'à l'objectif d'économie, puis on garde la place
@@ -960,7 +1024,7 @@ function updateUneIA(dt,a){
     // Mesuré avant plafond : 16 Moines pour 5 reliques.
     const monks=G.units.filter(u=>u.owner===a.id&&u.type===UT.MONK).length;
     const boats=G.units.filter(u=>u.owner===a.id&&u.type===UT.BOAT).length;
-    const avail=roster.filter(t=>(AI_UNIT_AGE[t]||0)<=a.age&&aiAfford(aiCout(t),saving,a)
+    const avail=roster.filter(t=>(AI_UNIT_AGE[t]||0)<=a.age&&aiAfford(aiCout(t),t===exempt?null:saving,a)
                                 &&!(t===UT.MONK&&monks>=RELIC_COUNT)
                                 &&!(t===UT.BOAT&&boats>=AI_BOAT_MAX));
     if(!avail.length) continue;
@@ -1068,9 +1132,33 @@ function updateUneIA(dt,a){
 
   // ── Héros ── une seule fois par partie (voir HEROES), dès que le Château
   // le permet — même garde-fou que côté joueur (f.heroTrained).
+  //
+  // Exempté de l'épargne de montée d'âge (`null` et non `saving`), même
+  // mécanisme et même symptôme que l'unité unique un peu plus haut : le
+  // Héros ne coûte que 250🍖+200💰, une seule fois par partie, mais l'épargne
+  // — 800 à 1200🍖 selon l'âge — le rendait impayable aussi longtemps
+  // qu'elle restait armée. Sur les 10 parties de 20 minutes où l'IA bâtit un
+  // Château (RNG semé, donc reproductible), AUCUNE ne formait de Héros ;
+  // toutes les ticks où l'épargne était armée et le Héros pas encore en
+  // file étaient bloquées par elle seule. Après correctif : 9 sur 10, entre
+  // 79 et 174 s après le Château (la dixième le met en chantier tout aussi
+  // vite mais n'a plus le temps de finir les 60 s de formation avant la fin
+  // de la fenêtre de mesure).
+  //
+  // Ici pas besoin de plafond façon AI_UNIQUE_FREE : `heroTrained` interdit
+  // déjà tout second Héros, une exemption pleine ne peut donc jamais être
+  // répétée. Vérifié sans effet de bord sur l'unité unique qui partage la
+  // même file à 3 places : sur les 9 parties ci-dessus, sa PREMIÈRE
+  // formation tombe à l'identique à la seconde près, avec ou sans cette
+  // exemption — seul le compte total sur 20 minutes varie de ±1 à ±5, du
+  // même ordre que la dérive attendue d'une partie à l'autre. Impact sur les
+  // montées d'âge : nul dans 10 parties sur 12, +4 s dans une, et une
+  // troisième atteint l'Âge Impérial qu'elle n'atteignait pas avant — dans
+  // les deux cas l'écart tient à la divergence normale d'une simulation
+  // dont l'état a changé, pas à un coût systématique.
   if(!a.heroTrained){
     const castle=G.buildings.find(b=>b.owner===a.id&&b.type===BT.CASTLE&&!b.constructing);
-    if(castle&&castle.trainQ.length<3&&a.pop<a.maxPop&&aiAfford(TCOST[UT.HERO],saving,a)){
+    if(castle&&castle.trainQ.length<3&&a.pop<a.maxPop&&aiAfford(TCOST[UT.HERO],null,a)){
       aiSpend(TCOST[UT.HERO],a);
       castle.trainQ.push(UT.HERO);
       if(castle.trainQ.length===1) castle.trainTimer=trainTime(UT.HERO);

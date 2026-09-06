@@ -3394,6 +3394,75 @@ groupe('charge', () => {
     ok(!sans.length, sans.length + ' sprite(s) sans boîte : ' + sans.slice(0, 8).join(', '));
   });
 
+  test('la surcouche illustrée est ÉTALÉE en tranches, jamais entassée en une étape', () => {
+    // L'atlas se reconstruit à chaque changement de zoom, une étape par IMAGE.
+    // C'est donc la PLUS LOURDE des étapes qui décide de l'à-coup ressenti, pas
+    // leur total : une étape à 24 ms coûte une image perdue à chaque geste de
+    // zoom, quel que soit le soin mis à étaler le reste.
+    // Le découpage d'origine partageait BDEF au NOMBRE de types et laissait la
+    // surcouche illustrée entière (générique 8,5 ms + par civilisation 15,7 ms)
+    // accrochée à la seconde moitié — alors que le procédural qu'elle
+    // accompagnait ne coûtait, lui, que 1,5 ms. Mesuré en jeu réel : pire image
+    // 50,7 ms avant, 21,3 ms après.
+    // Ce test ne chronomètre rien (une mesure de temps serait instable en CI) :
+    // il tient la STRUCTURE dont le temps découle — les deux surcouches sont
+    // bien appelées par tranches, ces tranches pavent exactement la liste des
+    // types, et buildBuildings passe avant elles.
+    const j = partie(charger(), { graine: 4242 });
+    const S = j.__sandbox;
+    // Les tables sont des `const` de haut niveau : elles vivent dans la portée
+    // lexicale du script, pas sur l'objet global du vm — d'où lire(), comme
+    // pour SPR ailleurs dans ce fichier. Les FONCTIONS, elles, sont bien sur
+    // l'objet global, donc remplaçables par une espionne juste en dessous.
+    const nbIll = Object.keys(j.lire('BLD_SPRITE_FILES')).length;
+    const nbCiv = Object.keys(j.lire('BLD_CIV_SPRITE_FILES')).length;
+    ok(nbIll > 4 && nbCiv > 4, 'trop peu de types illustrés : le test ne prouverait rien');
+
+    const vus = { ill: [], civ: [], bat: [] };
+    const vrais = {
+      ill: S.upgradeBuildingSprites, civ: S.upgradeCivBuildingSprites, bat: S.buildBuildings,
+    };
+    let rang = 0;
+    S.upgradeBuildingSprites = (a, b) => { vus.ill.push({ a, b, rang: rang }); };
+    S.upgradeCivBuildingSprites = (a, b) => { vus.civ.push({ a, b, rang: rang }); };
+    S.buildBuildings = () => { vus.bat.push({ rang: rang }); };
+    try {
+      const etapes = S.etapesAtlas(24);   // petit T : on veut la structure, pas des pixels
+      etapes.forEach((e, i) => { rang = i; e(); });
+    } finally {
+      S.upgradeBuildingSprites = vrais.ill;
+      S.upgradeCivBuildingSprites = vrais.civ;
+      S.buildBuildings = vrais.bat;
+    }
+
+    // Chaque surcouche est bien COUPÉE, et pas jouée d'un bloc.
+    ok(vus.ill.length >= 2, 'la surcouche générique n\'est pas découpée (' + vus.ill.length + ' étape)');
+    ok(vus.civ.length >= 2, 'la surcouche par civilisation n\'est pas découpée (' + vus.civ.length + ' étape)');
+
+    // Les tranches PAVENT la liste : aucun type oublié, aucun fait deux fois.
+    // Un type oublié, c'est un bâtiment qui repart en sprite procédural au
+    // premier zoom ; un type traité deux fois, c'est du travail payé en double.
+    const pave = (liste, n, quoi) => {
+      const tri = liste.slice().sort((x, y) => x.a - y.a);
+      let bord = 0;
+      for (const t of tri) {
+        egal(t.a, bord, quoi + ' : trou ou recouvrement à la tranche ' + JSON.stringify(t));
+        ok(t.b > t.a, quoi + ' : tranche vide ' + JSON.stringify(t));
+        bord = t.b;
+      }
+      egal(bord, n, quoi + ' : les tranches s\'arrêtent à ' + bord + ' au lieu de ' + n);
+    };
+    pave(vus.ill, nbIll, 'surcouche générique');
+    pave(vus.civ, nbCiv, 'surcouche par civilisation');
+
+    // ORDRE : buildBuildings remet SPR.bld/SPR.bldCiv à zéro, il doit donc
+    // passer AVANT toute surcouche — sinon elle serait effacée juste après.
+    const premiereSurcouche = Math.min(...vus.ill.concat(vus.civ).map((t) => t.rang));
+    ok(vus.bat.length > 0, 'buildBuildings n\'est plus appelé par etapesAtlas');
+    ok(Math.max(...vus.bat.map((t) => t.rang)) < premiereSurcouche,
+      'buildBuildings passe APRÈS une surcouche : elle serait effacée');
+  });
+
   test('une recherche de chemin qui échoue RECULE au lieu de s\'acharner', () => {
     // Une recherche qui ÉCHOUE épuise tout le budget A* (1200 cases) avant de
     // conclure, là où un chemin trouvé n'en explore que quelques dizaines.

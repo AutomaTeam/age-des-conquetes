@@ -1307,8 +1307,12 @@ function drawGitanoLivery(cx,box,liv,rng){
 // reconstruction, sans quoi le sprite procédural reprendrait le dessus. Le
 // détourage, lui, est mutualisé par withIllustration/TRIM_CACHE : il ne reste
 // ici qu'une mise à l'échelle, soit un drawImage par bâtiment.
-function upgradeBuildingSprites(){
-  for(const type in BLD_SPRITE_FILES){
+// Découpable par tranche de types (i0,i1), comme buildBuildings et
+// upgradeCivBuildingSprites, et pour la même raison — voir etapesAtlas.
+function upgradeBuildingSprites(i0,i1){
+  const typesIll=Object.keys(BLD_SPRITE_FILES);
+  if(i0==null){ i0=0; i1=typesIll.length; }
+  for(const type of typesIll.slice(i0,i1)){
     withIllustration('assets/batiments/'+BLD_SPRITE_FILES[type]+ASSET_EXT,TRIM_W_BLD,(url)=>{
       const meta=SPR.bld[type]; if(!meta) return;
       const W=meta.c.width, H=meta.c.height;
@@ -1395,8 +1399,15 @@ function upgradeBuildingSprites(){
 // retombe sur le sprite générique (illustré Francs ou procédural) — aucune
 // régression possible, exactement le même principe que le reste de la
 // surcouche illustrée.
-function upgradeCivBuildingSprites(){
-  for(const type in BLD_CIV_SPRITE_FILES){
+// Découpable par TRANCHE DE TYPES (i0,i1), comme buildBuildings : c'est de
+// loin l'étape la plus chère de la reconstruction d'atlas (mesurée à 15,7 ms
+// contre 0,3 à 2 ms pour ses voisines), et une étape est jouée par IMAGE —
+// donc une étape trop grosse se voit à l'écran, quel que soit l'étalement.
+// Voir etapesAtlas pour la répartition et les chiffres.
+function upgradeCivBuildingSprites(i0,i1){
+  const types=Object.keys(BLD_CIV_SPRITE_FILES);
+  if(i0==null){ i0=0; i1=types.length; }
+  for(const type of types.slice(i0,i1)){
     const ref=SPR.bld[type]; if(!ref) continue; // dimensions de référence
     const W=ref.c.width, H=ref.c.height;
     for(const civ in BLD_CIV_SPRITE_FILES[type]){
@@ -3585,13 +3596,58 @@ function sprTeinte(kind,key,teinte){
 // Étapes de génération de l'atlas, dans l'ordre. Partagées par la version
 // synchrone (buildSprites, au démarrage) et la version étalée (avancerAtlas,
 // au zoom) : une seule définition de « ce que contient un atlas ».
+// Le découpage est fait au COÛT MESURÉ, pas au nombre d'objets — une étape est
+// jouée par image, donc c'est la PLUS LOURDE qui décide de l'à-coup ressenti,
+// pas leur total ni leur nombre.
+//
+// Le découpage d'origine partageait BDEF en deux moitiés égales et laissait la
+// surcouche illustrée entière accrochée à la seconde. Or, mesuré à l'échelle de
+// référence : buildBuildings ne coûte que 1,5 ms pour les 21 types (le partage
+// en deux ne servait donc à rien), tandis que upgradeBuildingSprites en coûte
+// 8,5 et upgradeCivBuildingSprites 15,7 — les trois étant dans la MÊME étape.
+// Résultat : sept étapes entre 0,7 et 9,6 ms, et une à 24-28 ms, soit une image
+// perdue après chaque geste de zoom sur une machine rapide (et plusieurs sur
+// une machine lente). L'étalement fonctionnait, mais une de ses étapes tenait
+// à elle seule plus que tout le reste.
+// Les illustrations sont donc séparées du procédural et découpées en tranches
+// de types.
+//
+// COMBIEN DE TRANCHES : on vise le coût de l'étape de l'EAU (~3,6 ms), qui
+// n'est pas découpée — descendre nettement sous elle n'apporterait plus rien,
+// puisque c'est elle qui deviendrait la plus lourde. Coûts mesurés par type à
+// l'échelle de référence : ~0,34 ms pour la surcouche générique (7,1 ms les 21
+// types), ~0,76 ms pour celle par civilisation (15,9 ms). D'où deux tranches
+// pour la première, quatre pour la seconde : ~3,6 et ~4 ms l'étape.
+// Ces chiffres sont à l'échelle de RÉFÉRENCE ; au zoom maximum les sprites
+// sont ~3 fois plus larges, donc ~9 fois plus de pixels, et tout est multiplié
+// d'autant — raison de plus pour qu'aucune étape ne parte grosse.
+//
+// Le prix de ce découpage est une reconstruction plus LONGUE (une étape par
+// image, donc ~13 images au lieu de 8), pendant laquelle le rendu continue à
+// l'ancienne échelle — légèrement adouci, mais jamais figé. C'est le bon
+// échange : un à-coup se voit, un rééchantillonnage d'un quart de seconde non.
+//
+// CONTRAINTE D'ORDRE à ne pas casser : buildBuildings(T) remet SPR.bld et
+// SPR.bldCiv à zéro (voir son i0===0), donc il doit passer AVANT toutes les
+// étapes de surcouche, qui écrivent dedans.
 function etapesAtlas(T){
-  const nbBld=Object.keys(BDEF).length, moitie=nbBld>>1;
+  // Découpe une liste de types en `n` tranches contiguës et rend les étapes
+  // correspondantes — les bornes, jamais la liste, pour que chaque étape
+  // relise l'état au moment où elle s'exécute.
+  const tranches=(liste,n,fn)=>{
+    const par=Math.ceil(liste.length/n), out=[];
+    for(let i=0;i<liste.length;i+=par){
+      const a=i, b=Math.min(i+par,liste.length);
+      out.push(()=>{ fn(a,b); });
+    }
+    return out;
+  };
   return [
     ()=>{ buildTerrain(T,1); },                  // herbe + sable
     ()=>{ buildTerrain(T,2); },                  // eau (4 images d'animation)
-    ()=>{ buildBuildings(T,0,moitie); },
-    ()=>{ buildBuildings(T,moitie,nbBld); upgradeBuildingSprites(); upgradeCivBuildingSprites(); },
+    ()=>{ buildBuildings(T); },                  // 21 types procéduraux — 1,3 ms
+    ...tranches(Object.keys(BLD_SPRITE_FILES),2,upgradeBuildingSprites),
+    ...tranches(Object.keys(BLD_CIV_SPRITE_FILES),4,upgradeCivBuildingSprites),
     ()=>{ buildUnits(T); upgradeUnitSprites(); upgradeCivUnitSprites(); },
     ()=>{ buildTrees(T); buildStoneNode(T); buildGoldNode(T); buildBerry(T);
           buildFish(T); buildMeat(T);

@@ -55,15 +55,13 @@ procédural existant (aucune régression).
 ## État : couverture complète
 
 Toutes les catégories prévues sont fournies — 4 icônes de ressources, 21
-bâtiments (+ 94 variantes par civilisation), 22 unités (+ 4 variantes de
+bâtiments (+ 96 variantes par civilisation), 22 unités (+ 4 variantes de
 Héros par civilisation), 6 gisements de carte, 2 animaux, 2 objets uniques.
 
-**Presque complet pour les Gitanos** aussi, cinquième civilisation : 19 des
-21 types de bâtiment ont leur planche depuis le 2026-09-05, plus la Roulotte
-de Guerre et Zaïda la Voyageuse. Restent le **Camp Forestier** et le **Camp
-Minier**, qui gardent la livrée peinte par code (voir la section qui leur est
-consacrée plus bas). Compter les fichiers ne dit donc pas « couverture
-complète » : c'est `BLD_CIV_SPRITE_FILES` qu'il faut recouper avec `CIVS` —
+**Les cinq civilisations ont les 21 types**, Gitanos compris depuis le
+2026-09-06 (plus la Roulotte de Guerre et Zaïda la Voyageuse). Compter les
+fichiers ne suffit toujours pas à l'affirmer : c'est `BLD_CIV_SPRITE_FILES`
+qu'il faut recouper avec `CIVS` —
 et depuis le 2026-09-05 un test le fait pour de bon, en vérifiant en plus que
 **chaque nom de fichier écrit dans le code existe vraiment sur le disque**
 (groupe `civilisations`) : un nom faux ne lève rien, il repasse en silence au
@@ -262,7 +260,7 @@ moucheture claire isolée dans la marge, que le flood fill ne peut pas
 atteindre depuis les bords, gonflait la boîte de recadrage et faisait donc
 dessiner le bâtiment plus petit qu'il ne devait l'être.
 
-## Gitanos : 19 types sur 21 (2026-09-05)
+## Gitanos : les 21 types (2026-09-05 et 06)
 
 La cinquième civilisation est arrivée **sans aucune planche** : les bâtiments
 portaient une **livrée** peinte par code par-dessus le décor franc (guirlande
@@ -270,9 +268,9 @@ de fanions au faîte, lanterne, roue de roulotte au pied — voir `CIV_LIVERY` /
 `liverySprite` / `drawGitanoLivery`, `js/05-sprites.js`), et la Roulotte de
 Guerre sa propre silhouette dessinée (`drawWagonSprite`).
 
-Les planches ont été produites le 2026-09-05 : **22 fichiers de bâtiment**
-couvrant **19 des 21 types** (le Centre Ville en prend quatre, un par âge),
-plus `unites/roulotte.webp` et `unites/heros_gitanos.webp`.
+Les planches ont été produites en deux jours : **24 fichiers de bâtiment**
+couvrant les **21 types** (le Centre Ville en prend quatre, un par âge), plus
+`unites/roulotte.webp` et `unites/heros_gitanos.webp`.
 
 Direction artistique : un **campement de la route**, pas une ville. Bois peint
 en ocre, carmin, turquoise et or, bâches rayées tendues sur des arceaux, roues
@@ -280,58 +278,30 @@ de chariot, guirlandes de fanions, lanternes. Ni pierre de taille ni
 maçonnerie : tout a l'air démontable. Vérifié en jeu — un camp gitan complet
 ne partage plus aucune silhouette avec un bourg franc.
 
-Deux conséquences à ne pas défaire :
+Les deux derniers, le **Camp Forestier** et le **Camp Minier**, sont les seuls
+types **2×1** : leur sprite est large et bas, et ils ont donc été demandés en
+**PAYSAGE (3:2)** puis traités avec le gabarit `bld_wide` (640×427). Une
+planche en portrait s'y serait retrouvée réduite à la hauteur puis perdue au
+milieu d'un canevas trop large — `fitBuildingImage` fait un « contain ». C'est
+le seul endroit du dossier où le format de génération dépend de l'emprise du
+bâtiment.
 
-- la **livrée n'a pas été retirée** et ne doit pas l'être. Elle s'efface
-  d'elle-même bâtiment par bâtiment (`drawBuildings` ne l'appelle que faute de
-  planche dédiée) et c'est exactement ce qui la rend utile : elle couvre
-  encore les deux types restants, et couvrirait n'importe quelle sixième
-  civilisation le jour venu ;
+Trois conséquences à ne pas défaire :
+
+- la **livrée n'a pas été retirée** et ne doit pas l'être. Elle ne décore plus
+  rien en régime établi, mais elle n'est pas morte : le test est `!sprCiv` et
+  les illustrations se chargent de façon **asynchrone**, donc elle tient encore
+  le décor pendant les premières images d'une partie — et entièrement si ce
+  dossier est absent, le jeu devant rester jouable sans lui ;
+- la couverture d'une civilisation est désormais **tout ou rien**, et un test
+  le tient. La livrée masquerait la disparition d'une seule planche : ce
+  bâtiment-là repasserait en franc au milieu de vingt autres correctement
+  stylés. L'état intermédiaire à 19/21 était assumé le temps d'une passe, ce
+  n'est pas un état où revenir par accident ;
 - la Roulotte de Guerre est entrée dans `UNIT_SPRITE_FILES`, ce qui **remplace
   `drawWagonSprite` à l'affichage** — mais le sprite dessiné reste le repli si
   le fichier manque, et c'est lui qui fixe le cadrage de référence. Ne pas le
   supprimer.
-
-### Ce qui reste à produire : les deux camps 2×1
-
-`camp_bois_gitanos` et `camp_minier_gitanos` — chariots de grumes pour l'un,
-chariot de minerai pour l'autre, sous un long auvent rayé. Ce sont les seuls
-types **2×1** traités dans ce dossier : leur sprite est **large et bas**, et
-une planche générée en portrait s'y retrouverait réduite à la hauteur puis
-perdue au milieu d'un canevas trop large (`fitBuildingImage` fait un
-« contain »). À demander en **PAYSAGE (640×427)**, comme les six planches de
-camp déjà livrées. C'est le seul endroit du dossier où le format de
-génération dépend de l'emprise du bâtiment.
-
-Le jour où elles arrivent : ajouter `gitanos:` aux entrées `[BT.LUMBER]` et
-`[BT.MINE]` de `BLD_CIV_SPRITE_FILES` (forme `{ 0:'...' }`, ces deux types
-n'ont pas de variante de clé) et retirer le commentaire qui les précède.
-
-**Les deux prompts, mot pour mot** — proportions **3:2 (Horizontal)**, et
-traiter la planche avec le gabarit `bld_wide` (640×427) et non `bld` :
-
-> Isometric 2.5D game sprite, one building centered, 3/4 top view, cel-shaded
-> painted art, bold dark outlines, soft shadow at the base, pure white
-> background, no scenery, no text, no people. **Two carts loaded with logs, a
-> sawhorse and two-man saw, axes in a stump, stacked timber under a long low
-> striped awning. Wide low composition.** Nomad wagon-camp style: painted wood
-> in ochre, crimson, turquoise and gold, striped canvas, cartwheels, bunting;
-> no stone.
-
-> (idem, en remplaçant la partie en gras par) **An ore cart, pickaxes and
-> shovels, baskets of raw stone and gold ore under a long low striped awning on
-> poles. Wide low composition.**
-
-454 et 444 caractères : sous le plafond de 480, mais de peu — ne pas rallonger
-la description sans raccourcir ailleurs, le bouton « Générer » se désactive
-au-delà **sans le dire**.
-
-**L'échange de points Rewards ne marche pas** (essayé le 2026-09-05, trois
-fois) : le bouton « Utiliser 100 points Rewards » (10 créations) répond
-« Nous n'avons pas pu échanger vos créations — veuillez réessayer
-ultérieurement ». Panne côté Bing : **aucun point n'est débité**, le solde
-reste intact après chaque tentative. Ne pas s'acharner — passer par le quota
-quotidien (15 générations + le cadeau gratuit de 10).
 
 ### Comment ces planches ont été faites
 
@@ -349,7 +319,12 @@ prochaine fois :
   page. Elles tiennent d'une génération à l'autre, mais pas d'un chargement
   au suivant : à revérifier, sinon un bâtiment sort en paysage ;
 - le quota quotidien est de quinze générations, plus un **cadeau quotidien**
-  gratuit de dix. C'est ce qui a arrêté la passe à 24 planches sur 26.
+  gratuit de dix — 25 en tout. C'est ce qui a coupé la passe à 24 planches sur
+  26 ; les deux dernières ont été faites le lendemain, au rechargement.
+  **L'échange de points Rewards, lui, est en panne** : le bouton « Utiliser
+  100 points Rewards » répond « Nous n'avons pas pu échanger vos créations »
+  et ne débite jamais le solde (vérifié trois fois). Ne pas compter dessus,
+  attendre le quota.
 
 Détourage : le fond blanc est enlevé **à pleine résolution** avec exactement
 le test de `computeStripBgTrimmed` (`r,g,b > 230` et écarts < 12), flood fill

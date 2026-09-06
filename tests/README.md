@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**152 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
+**153 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -168,6 +168,20 @@ qui **ne se voit pas** :
   où le repli disparaîtrait. Ils comptent les appels plutôt que de les rendre
   fatals : `_contentBox` avale l'échec dans un `try/catch` (canevas « taint »),
   un test par exception ne prouverait rien.
+  Enfin l'ÉTALEMENT de la reconstruction d'atlas : elle est découpée en étapes
+  jouées une par image, donc c'est la PLUS LOURDE qui décide de l'à-coup
+  ressenti au zoom, pas leur total. Le découpage d'origine partageait les
+  bâtiments au NOMBRE de types et laissait toute la surcouche illustrée
+  (générique 8,5 ms + par civilisation 15,7 ms) accrochée à une seule d'entre
+  elles, à côté d'un procédural qui n'en coûtait que 1,5 : sept étapes entre
+  0,7 et 9,6 ms, et une à 24-28 ms. Mesuré en jeu réel, pire image d'une
+  session de molette : 50,7 ms avant, 21,3 ms après. Le test ne chronomètre
+  rien — une mesure de temps serait instable en CI — il tient la STRUCTURE
+  dont le temps découle : les deux surcouches sont appelées par tranches, ces
+  tranches PAVENT exactement la liste des types (un type oublié, c'est un
+  bâtiment qui repart en procédural au premier zoom ; un type traité deux
+  fois, c'est du travail payé en double), et `buildBuildings` passe avant
+  elles puisqu'il remet `SPR.bld`/`SPR.bldCiv` à zéro.
 
 Le **rendu n'est pas testé** et ne doit pas l'être ici : les bouchons ne
 dessinent rien — ces deux tests-là mesurent des APPELS, pas des pixels.

@@ -908,22 +908,17 @@ const BLD_CIV_SPRITE_FILES={
   // demandées en PAYSAGE, comme les planches d'origine — 640×427 et non
   // 640×960. C'est le seul endroit où le format de génération dépend de
   // l'emprise du bâtiment.
-  // Gitanos : ces DEUX types sont les seuls à ne pas avoir leur planche —
-  // ce sont justement les deux qui la veulent en PAYSAGE (voir juste au-dessus
-  // et assets/README.md). Manque assumé, pas oubli : ils gardent le décor
-  // franc plus la LIVRÉE peinte par code (CIV_LIVERY), exactement comme les
-  // 21 types avant cette passe. Le repli est silencieux par construction —
-  // c'est tout l'intérêt de la table, et c'est ce qui permet à la livrée de
-  // s'effacer bâtiment par bâtiment plutôt qu'en tout ou rien.
   [BT.LUMBER]: {
     byzantins: { 0:'camp_bois_byzantins' },  // hangar ouvert à toit de tuiles sur piliers de pierre
     chinois:   { 0:'camp_bois_chinois' },    // toit de tuiles grises relevé, poteaux laqués, bambou
     mongols:   { 0:'camp_bois_mongols' },    // auvent de feutre, grumes empilées, chariot
+    gitanos:   { 0:'camp_bois_gitanos' },    // long auvent rayé sur grumes empilées, chariot, chevalet de sciage
   },
   [BT.MINE]: {
     byzantins: { 0:'camp_minier_byzantins' },// entrée voûtée de pierre, auvent de tuiles, wagonnet
     chinois:   { 0:'camp_minier_chinois' },  // charpente sous auvent relevé, paniers, brouette
     mongols:   { 0:'camp_minier_mongols' },  // auvent de feutre contre un front de taille, chariot
+    gitanos:   { 0:'camp_minier_gitanos' },  // long auvent rayé sur un chariot de minerai, pioches et paniers
   },
   // L'Université dit ce que la civilisation SAIT : scriptorium à coupole,
   // académie à stèle gravée, ou pavillon de feutre avec sphère armillaire.
@@ -1121,13 +1116,22 @@ function damagedSprite(spr,stage){
 //     est décorée, pas le sprite procédural figé d'avant.
 //
 // Dès que `<type>_gitanos.webp` existe, drawBuildings prend la planche dédiée
-// et n'appelle plus la livrée : rien à retirer ici, elle s'efface D'ELLE-MÊME
-// bâtiment par bâtiment. C'est exactement ce qui s'est produit le 2026-09-05 —
-// 19 des 21 types ont reçu leur planche, et il ne reste sous livrée que le
-// Camp Forestier et le Camp Minier (les deux seuls types 2×1, qui demandent
-// une planche en paysage). Garder ce bloc : c'est lui qui rend l'arrivée des
-// planches progressive au lieu d'un tout ou rien, et il resservira tel quel à
-// une sixième civilisation.
+// et n'appelle plus la livrée : elle s'efface D'ELLE-MÊME, bâtiment par
+// bâtiment. C'est ce qui s'est produit les 5 et 6 septembre 2026 — les 21
+// types ont maintenant leur planche, et la livrée ne décore donc plus rien en
+// régime établi.
+//
+// NE PAS la supprimer pour autant, elle n'est pas morte : le test est
+// `!sprCiv`, or les illustrations se chargent de façon ASYNCHRONE. Elle tient
+// donc encore le décor pendant les premières images d'une partie, et
+// entièrement si le dossier `assets/` est absent — le jeu doit rester jouable
+// sans lui (voir README.md). C'est aussi elle qui rendra l'arrivée des
+// planches d'une sixième civilisation progressive au lieu d'un tout ou rien.
+//
+// Ce que le test « aucune civilisation ne joue dans le décor d'une autre »
+// interdit désormais, c'est la couverture PARTIELLE : la livrée masquerait la
+// disparition d'une seule planche, et ce bâtiment-là repasserait en FRANC au
+// milieu de vingt autres correctement stylés.
 const CIV_LIVERY={
   gitanos:{
     // Couleurs de fanion : les teintes d'une bâche de roulotte peinte —

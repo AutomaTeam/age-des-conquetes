@@ -1049,19 +1049,32 @@ groupe('civilisations', () => {
     // à-dire sur le style FRANC. Un camp gitan sortait en bourg à colombages.
     // Chaque civ non-franque doit donc avoir, pour chaque type de bâtiment,
     // soit une planche dédiée, soit une livrée (voir CIV_LIVERY).
+    //
+    // Et la couverture doit être TOUT ou RIEN. La livrée couvre tous les types
+    // d'un coup, donc une civ qui en a une passe ce test quoi qu'il arrive :
+    // si on lui retirait une seule de ses planches, la livrée reprendrait le
+    // décor FRANC pour ce bâtiment-là, en silence, au milieu de vingt autres
+    // correctement stylés. C'est exactement l'état intermédiaire qu'ont connu
+    // les Gitanos entre leurs 19 premières planches et les 2 dernières —
+    // assumé le temps d'une passe, pas un état où revenir par accident.
     const j = charger();
-    const manques = [];
+    const manques = [], partielles = [];
     for (const c of civs) {
       if (c === 'francs') continue;               // son style EST la planche de base
-      if (j.CIV_LIVERY[c]) continue;              // livrée : couvre TOUS les types d'un coup
-      for (const bt of Object.keys(j.BDEF)) {
+      const sans = Object.keys(j.BDEF).filter((bt) => {
         const tbl = j.BLD_CIV_SPRITE_FILES[bt];
-        if (!tbl || !tbl[c]) manques.push(c + '/' + bt);
-      }
+        return !tbl || !tbl[c];
+      });
+      const avec = Object.keys(j.BDEF).length - sans.length;
+      if (!sans.length) continue;                 // couverture complète
+      if (avec) partielles.push(c + ' (' + avec + ' planches, ' + sans.length + ' manquantes : ' + sans.join(', ') + ')');
+      else if (!j.CIV_LIVERY[c]) manques.push(c); // aucune planche ET aucune livrée
     }
     ok(!manques.length,
-      manques.length + ' bâtiment(s) sans style de civilisation, ils sortiraient en francs :\n        ' +
-      manques.slice(0, 10).join(', '));
+      'civilisation(s) sans planches NI livrée, tout leur bâti sortirait en francs : ' + manques.join(', '));
+    ok(!partielles.length,
+      'couverture de civilisation PARTIELLE — les bâtiments manquants sortiraient en francs sous la livrée, ' +
+      'au milieu des autres correctement stylés :\n        ' + partielles.join('\n        '));
   });
 
   test('toute planche nommée dans le code existe vraiment sur le disque', () => {

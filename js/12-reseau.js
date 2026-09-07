@@ -724,7 +724,7 @@ function recevoirReseau(m){
     case 'REPRISE':appliquerPauseDistante(false,m.par,m.nom); break;
     case 'ABANDON':traiterAbandon(m); break;
     case 'EMOTE':  afficherEmote(m.par,m.code,false); break;
-    case 'FIN':    RESEAU.finRecue=m; break;
+    case 'FIN':    RESEAU.finRecue=m; appliquerBilanFin(m); break;
     case 'RESYNC': traiterResync(); break;
     case 'RESYNC_ECHEC':
       notify('🔌 Impossible de reprendre : '+(m.raison||'la partie est terminée'),'#e74c3c');
@@ -1298,6 +1298,36 @@ function bilanDeuxColonnes(){
   };
   return '<div class="statsec">📊 Bilan des deux camps</div>'+
     '<div style="display:flex;gap:10px;width:100%;max-width:400px;flex-wrap:wrap;">'+colonne(FAC.P1)+colonne(FAC.P2)+'</div>';
+}
+
+// Le bilan ('FIN') est le SEUL canal par lequel `f.stats` voyage jamais
+// jusqu'ici : serialiserFaction() ne l'inclut pas dans le flux régulier —
+// voir le commentaire de construireDelta, cet objet pesait à lui seul 2,1
+// Ko sur les 2,2 Ko d'un delta au repos avant le passage au différentiel,
+// et il bouge à quasiment CHAQUE image (peakPop, récolte...) : il n'a pas
+// sa place dans un flux qui, lui, doit rester silencieux au repos.
+//
+// Jusqu'ici, bilanDeuxColonnes() lisait ce bilan pour l'AFFICHER, mais rien
+// ne le recopiait dans G.factions[id].stats — la SOURCE que lit
+// checkAchievements() (via le shim G.stats -> moi().stats). Le client ne
+// recevait donc JAMAIS ses propres pics de population/armée/fermes, son
+// compteur de Seigneurs abattus, etc : même une fois ces compteurs corrigés
+// côté hôte (2026-09-07, voir le groupe `delta`), les succès qui en
+// dépendent restaient hors d'atteinte pour lui, faute de les avoir jamais
+// reçus.
+function appliquerBilanFin(m){
+  if(!m||!m.bilan) return;
+  for(const id of [FAC.P1,FAC.P2]){
+    const b=m.bilan[id], f=G.factions[id];
+    if(b&&f&&b.stats) f.stats=b.stats;
+  }
+  // finishGame() a pu tourner AVANT l'arrivée de ce message (détection
+  // locale de victoire/défaite dans updateVisuel, indépendante du réseau) :
+  // checkAchievements() n'aurait alors vu que des stats encore à zéro. Un
+  // second passage, maintenant que les vraies valeurs sont en place, est
+  // sans risque — PROFILE.unlocked le rend idempotent — et rattrape
+  // exactement ce cas.
+  if(typeof checkAchievements==='function') checkAchievements();
 }
 
 let _mpEtat={dispo:false};

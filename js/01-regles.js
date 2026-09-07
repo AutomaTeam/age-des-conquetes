@@ -127,7 +127,16 @@ const UDEF = {
   [UT.PALADIN]: { nom:'Paladin',       hp:150, spd:2.5, atk:20, rng:1.5, atkSpd:1.1, cls:CLS.CAV,   atkType:'m', armor:{m:3,p:3} },
   [UT.PIKE]:    { nom:'Piquier',       hp:70,  spd:2.0, atk:13, rng:1.5, atkSpd:1.1, cls:CLS.INF,   atkType:'m', armor:{m:0,p:0} },
   [UT.XBOW]:    { nom:'Arbalétrier',   hp:45,  spd:1.9, atk:11, rng:5.2, atkSpd:1.1, cls:CLS.ARC,   atkType:'p', armor:{m:0,p:1} },
-  [UT.TREB]:    { nom:'Trébuchet',     hp:60,  spd:0.8, atk:55, rng:8.0, atkSpd:0.25, siege:true, cls:CLS.SIEGE, atkType:'p', armor:{m:1,p:5} },
+  // Portée 9,5 — et pas 8, comme on pourrait s'y attendre d'« une case de
+  // plus qu'un Arbalétrier ». Le Château tire à 9 cases (voir updateBuildings,
+  // js/07-simulation.js) : à 8, le Trébuchet — la seule unité du jeu pensée
+  // pour raser des fortifications, +28 de bonus contre les bâtiments — se
+  // faisait tuer par le Château en 2,9 s sans jamais pouvoir tirer, quand il
+  // lui fallait 140 s pour le raser en retour. Un siège qui ne peut pas
+  // approcher sa propre cible sans mourir n'en est pas un. 9,5 lui donne la
+  // demi-case de marge qui manquait ; il reste sans defense rapprochee
+  // (armor.m:1) si une escorte ne le protège pas du corps à corps.
+  [UT.TREB]:    { nom:'Trébuchet',     hp:60,  spd:0.8, atk:55, rng:9.5, atkSpd:0.25, siege:true, cls:CLS.SIEGE, atkType:'p', armor:{m:1,p:5} },
   [UT.RAM]:     { nom:'Bélier',        hp:220, spd:1.4, atk:35, rng:1.2, atkSpd:0.5,  siege:true, cls:CLS.SIEGE, atkType:'m', armor:{m:0,p:8} }, // quasi immunisé au trait, fondu en mêlée : c'est sa signature
   [UT.SCOUT]:   { nom:'Éclaireur',     hp:40,  spd:3.3, atk:5,  rng:1.2, atkSpd:0.9, cls:CLS.CAV,   atkType:'m', armor:{m:0,p:2} },
   [UT.HERO]:    { nom:'Héros',         hp:220, spd:2.6, atk:20, rng:1.4, atkSpd:1.2, cls:CLS.CAV,   atkType:'m', armor:{m:3,p:3} }, // nom/stats de combat identiques pour les 4 civs ; seuls le nom et l'icône affichés varient (voir HEROES)

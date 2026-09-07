@@ -71,19 +71,36 @@ function update(dt){
   // Pics et jalons de la partie (bilan de fin + succès). Échantillonnés à
   // chaque image plutôt que recalculés en fin de partie : un pic de
   // population ou de fermes ne laisse aucune trace une fois redescendu.
-  G.stats.peakPop=Math.max(G.stats.peakPop,G.pop);
+  //
+  // PAR FACTION HUMAINE, pas seulement moi()/G.stats (qui ne visent QUE
+  // G.me) : ce bloc ne suivait que l'hôte, qui est TOUJOURS G.me pendant
+  // update() (elle seule l'exécute) quelle que soit la faction réellement
+  // en train de jouer. Un second joueur humain (coop 2v1, 2 rivaux en
+  // ligne) voyait donc son propre pic de population/armée/fermes rester
+  // bloqué à 0 pour toujours, et les succès qui en dépendent (Métropole,
+  // Grenier Plein, Chef de Guerre, Nettoyeur) hors d'atteinte quoi qu'il
+  // construise réellement — `checkAchievements()`, lui, lit bien G.stats
+  // (donc SA propre faction) sur CHAQUE machine séparément, à la fin de
+  // partie (voir finishGame) : c'est la SOURCE qui manquait, pas la
+  // lecture. Voir aussi bossKilled plus bas (même défaut, sur le kill).
+  for(const f of factionsHumaines()) f.stats.peakPop=Math.max(f.stats.peakPop,f.pop);
   G.statsTick=(G.statsTick||0)-dt;
   if(G.statsTick<=0){
     G.statsTick=1;
-    let mil=0, farms=0;
-    for(const u of G.units) if(estLocal(u)&&isMilitary(u.type)) mil++;
-    for(const b of G.buildings) if(estLocal(b)&&b.type===BT.FARM&&!b.constructing) farms++;
-    G.stats.peakMil=Math.max(G.stats.peakMil,mil);
-    G.stats.peakFarms=Math.max(G.stats.peakFarms,farms);
-    // Camps de points d'intérêt entièrement nettoyés (numérotés à la genèse)
+    // Camps de points d'intérêt entièrement nettoyés (numérotés à la
+    // genèse) : un fait du MONDE, pas d'un camp en particulier — les deux
+    // joueurs d'une partie à deux se le partagent, comme au combat.
     const alive=new Set();
     for(const u of G.units) if(u.camp&&u.camp!=='ai') alive.add(u.camp);
-    G.stats.campsCleared=Math.max(G.stats.campsCleared,(G.campTotal||0)-alive.size);
+    const campsCleared=(G.campTotal||0)-alive.size;
+    for(const f of factionsHumaines()){
+      let mil=0, farms=0;
+      for(const u of G.units) if(u.owner===f.id&&isMilitary(u.type)) mil++;
+      for(const b of G.buildings) if(b.owner===f.id&&b.type===BT.FARM&&!b.constructing) farms++;
+      f.stats.peakMil=Math.max(f.stats.peakMil,mil);
+      f.stats.peakFarms=Math.max(f.stats.peakFarms,farms);
+      f.stats.campsCleared=Math.max(f.stats.campsCleared,campsCleared);
+    }
     checkAchievements();
   }
 
@@ -95,6 +112,19 @@ function update(dt){
     if(!G.buildings.find(b=>b.type===BT.TC&&b.owner===f.id)){
       f.vaincu=true;
       if(f.id!==G.me) notify(`💀 ${f.nom} a été éliminé`,'#f0c040');
+      // Un second joueur humain éliminé PENDANT que l'hôte continue (coop
+      // 2v1, 2 rivaux en ligne : chacun a son propre Centre Ville, l'un
+      // peut tomber sans que la partie de l'autre s'arrête) ne recevait
+      // son bilan qu'à la toute fin de la partie de L'HÔTE — envoyerBilanReseau()
+      // n'était appelée que depuis showVictory/showGameOver, donc seulement
+      // quand G.me (l'hôte) lui-même gagne ou perd. Un invité éliminé tôt
+      // pouvait donc quitter son propre écran de défaite bien avant que
+      // l'hôte ne termine sa partie, sans jamais recevoir ses stats — voir
+      // appliquerBilanFin (js/12-reseau.js). On l'envoie tout de suite, dès
+      // qu'on sait qu'un joueur en a besoin ; renvoyé une seconde fois à la
+      // fin réelle de la partie, ce qui ne coûte rien (idempotent, voir
+      // PROFILE.unlocked).
+      if(f.genre==='humain'&&f.id!==G.me&&typeof envoyerBilanReseau==='function') envoyerBilanReseau();
     }
   }
   // Défaite locale
@@ -213,20 +243,47 @@ function updateUnits(dt){
     // champ part sur le réseau, et un compteur qui bouge sans arrêt fait
     // réexpédier la faction à chaque delta (voir le différentiel d.fac).
     const fm=fac(u); if(fm&&fm.genre!=='neutre') fm.pop--;
-    if(estLocal(u)){ moi().stats.lost++; }
-    else {
-      // Le kill est crédité à la faction qui a porté le coup fatal.
-      const tueur=fac(u.dernierAgresseur);
-      if(tueur) tueur.stats.killed++;
-      if(u.type===UT.ENEMI_BOSS) G.stats.bossKilled++;
-      // Une unité de l'IA de Conquête appartient à une économie réelle : elle
-      // compte dans SA population, et ne verse pas de prime au joueur (sans
-      // quoi harceler l'adversaire financerait la partie à sa place).
-      // (population deja decrementee plus haut, par faction)
-      else { // récompense or à la mort d'un pillard de vague
+    // Perte : compte pour la faction VICTIME elle-même si elle est humaine
+    // — pas seulement G.me/estLocal(u). Sans ce filtre par PROPRIÉTAIRE, un
+    // second joueur humain (coop 2v1, 2 rivaux en ligne — où l'ami peut
+    // être un ADVERSAIRE hostile, pas seulement un allié) voyait son propre
+    // compteur "Unités perdues" bloqué à 0 quoi qu'il perde réellement.
+    if(fm&&fm.genre==='humain') fm.stats.lost++;
+    // Le kill est crédité à la faction qui a porté le coup fatal —
+    // TOUJOURS, pas seulement quand la victime n'est pas G.me : avant, une
+    // unité de l'hôte tuée par un second joueur humain hostile (2 rivaux en
+    // ligne) ne créditait PERSONNE, parce que ce cas tombait dans l'ancien
+    // `if(estLocal(u))` au lieu du crédit de kill.
+    const tueur=fac(u.dernierAgresseur);
+    if(tueur){
+      tueur.stats.killed++;
+      // bossKilled va au TUEUR (comme killed juste au-dessus), pas à
+      // G.stats/moi() : ça ne visait que l'hôte, donc le succès « Tueur de
+      // Seigneurs » se débloquait chez l'hôte même quand c'est un second
+      // joueur humain qui avait porté le coup — et jamais chez lui.
+      if(u.type===UT.ENEMI_BOSS) tueur.stats.bossKilled++;
+      // Prime en or à la mort d'un PILLARD DE VAGUE (FAC.PILL) uniquement —
+      // jamais pour l'armée de l'IA de Conquête, qui recycle EXACTEMENT le
+      // même roster reskinné (ENEMI/ENEMIA/ENEMI_G/ENEMI_C/ENEMI_BOSS, voir
+      // AI_TRAINERS) : le TYPE seul ne peut donc pas distinguer les deux,
+      // il faut le PROPRIÉTAIRE. Sans ce filtre, harceler l'armée de l'IA
+      // de Conquête finançait la partie du joueur à sa place — mesuré :
+      // 4💰 par Pillard-type et 8💰 par Cavalier Noir de l'IA, à chaque
+      // mort, sans limite. Une unité de l'IA de Conquête compte, elle, dans
+      // SA population (déjà décrémentée plus haut, par faction) — sans
+      // prime en échange, comme le veut le jeu.
+      //
+      // La prime va au TUEUR (`tueur.res`), pas à G.res/moi() : même raison
+      // que killed/bossKilled juste au-dessus — sinon elle revenait
+      // toujours à l'hôte, même quand c'est un second joueur humain qui
+      // avait achevé le pillard. Et le Seigneur de Guerre (200) ne payait
+      // JAMAIS avant ce correctif : cette branche entière était
+      // inatteignable pour lui (l'ancien code ne l'évaluait que dans le
+      // `else` du test « ce type EST un Seigneur de Guerre »).
+      if(u.owner===FAC.PILL){
         const bounty=u.type===UT.ENEMI_BOSS?200:u.type===UT.ENEMI_G?15:u.type===UT.ENEMI_C?8:4;
-        G.res.gold+=bounty;
-        addFText(u.x,u.y-12,`+${bounty}💰`,'#f0c040');
+        tueur.res.gold+=bounty;
+        if(tueur.id===G.me) addFText(u.x,u.y-12,`+${bounty}💰`,'#f0c040');
       }
     }
   }
@@ -260,7 +317,7 @@ function updatePlayerUnit(u,dt){
           if(ally){u.state='heal';u.target=ally.id;}
         } else if(u.type===UT.VIL){
           if(fac(u)&&fac(u).autoRepair){
-            const b=nearestDamagedBuilding(u.x,u.y);
+            const b=nearestDamagedBuilding(u.x,u.y,u.owner);
             if(b){ u.state='repair'; u.target=b.id; }
           }
         } else if(u.type===UT.BOAT){
@@ -1823,6 +1880,24 @@ function shootProj(from,tgt){
 // Les impacts s'accumulent sans jamais dépasser la plus forte secousse en cours.
 function shakeScreen(mag){ G.shake.mag=Math.max(G.shake.mag,mag); }
 
+// Remonte du COUP à l'UNITÉ qui l'a porté, pour la riposte immédiate (voir
+// plus bas dans dealDmg). Trois cas, dans l'ordre où ils se présentent :
+//   • un trait déjà résolu porte l'id de son tireur (shooterId, voir
+//     shootProj) — y compris undefined pour un tir de BÂTIMENT (Tour/
+//     Château), dont `from` n'a pas d'id : unitById(undefined) ne renvoie
+//     rien, et c'est voulu, voir plus bas.
+//   • un coup de mêlée EST porté par l'unité elle-même (le `u` de doAttack
+//     et d'updateEnemyAI, passé tel quel comme source).
+//   • tout le reste (tir de bâtiment, contre-attaque de faune avec
+//     source=null) ne renvoie personne : on ne fait pas charger une Tour à
+//     un archer qui n'a de toute façon pas la portée de l'atteindre.
+function agresseurUnite(source){
+  if(!source) return null;
+  if(source.shooterId!=null) return unitById(source.shooterId);
+  if(!estBatiment(source)&&source.type!=null) return source;
+  return null;
+}
+
 // `source` : l'entité (ou le camp) qui frappe — mémorisée sur la cible pour
 // créditer le bon camp du kill ou de la destruction.
 function dealDmg(tgt,dmg,source){
@@ -1842,6 +1917,37 @@ function dealDmg(tgt,dmg,source){
   if(dmg>=18) shakeScreen(Math.min(9,dmg*0.35)); // gros coup = secousse ressentie, pas juste un chiffre qui saute
   // alerte si un bâtiment du joueur est frappé (hors champ de vision surtout)
   if(estLocal(tgt)&&tgt.maxHp>=180&&typeof alertAttack==='function') alertAttack(tgt.x,tgt.y);
+
+  // ── RIPOSTE IMMÉDIATE ──────────────────────────────────
+  // Jusqu'ici, le SEUL moyen pour une unité de remarquer un agresseur était
+  // le balayage périodique de doIdle/doAMove/cibleAssaillant, à un rayon
+  // proportionnel à SA PROPRE portée (rng*3.5, rng*4) — jamais à celle de
+  // l'attaquant. Mesuré : un Chevalier (portée 1,3) n'engage un Archer
+  // (portée 4,5) qu'à 4,55 cases de jour, sous les 3,41 la nuit (le rayon
+  // suit visionMult) — la nuit tombée, plus un seul corps-à-corps ne
+  // remarquait un tireur avant de s'effondrer. Pire : une unité en 'moving'
+  // (en route vers un ordre) ne scanne JAMAIS — 5 Piquiers postés à 7,5
+  // cases d'un Trébuchet restaient l'arme au pied jusqu'au dernier.
+  //
+  // Se faire toucher est un signal sans ambiguïté qui ne doit RIEN à la
+  // portée : on sait qui a frappé, quelle que soit la distance qui sépare
+  // encore les deux unités (doAttack se charge ensuite de rapprocher, ou
+  // de renoncer si la posture 'hold' l'interdit — rien à dupliquer ici).
+  //
+  // `camp==null` exclut les gardes de point d'intérêt ET l'armée de l'IA de
+  // Conquête tant qu'elle est POSTÉE (rassemblement/défense, voir
+  // majPhaseAssaut/aiPoster) : leur dormance jusqu'à l'approche est un choix
+  // de conception documenté là-bas ("le camp doit rester dormant tant qu'on
+  // ne vient pas l'attaquer"), pas un oubli d'ici — se faire toucher EST
+  // qu'on vient les attaquer, mais la machine à phases garde la main sur le
+  // moment où elles rompent le poste.
+  // `state!=='attack'` laisse un combat déjà engagé tranquille : un tireur
+  // qui harcèle par accident une unité déjà occupée ailleurs (mêlée, siège)
+  // ne doit pas lui faire lâcher sa cible à chaque flèche reçue.
+  if(!estBatiment(tgt)&&isMilitary(tgt.type)&&tgt.hp>0&&tgt.state!=='attack'&&tgt.state!=='garrison'&&tgt.camp==null){
+    const attaquant=agresseurUnite(source);
+    if(attaquant&&attaquant.hp>0&&estHostile(tgt,attaquant)){ tgt.target=attaquant.id; tgt.state='attack'; }
+  }
 }
 
 function updateProjs(dt){

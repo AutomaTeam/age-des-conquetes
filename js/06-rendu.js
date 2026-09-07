@@ -1336,7 +1336,23 @@ function drawGhost(){
   ctx.globalAlpha=.30;
   ctx.fillStyle=col; ctx.fillRect(sx,sy,pw,ph);
   ctx.globalAlpha=1;
-  const spr=SPR.bld[G.buildType];
+  // Même sélection de sprite que le bâtiment une fois RÉELLEMENT posé (voir
+  // drawBuildings) — sans elle, l'aperçu montrait TOUJOURS la planche
+  // générique, jamais l'illustration de la civilisation du joueur ni sa
+  // teinte d'équipe, ni l'habillage d'âge (Caserne/Mur après l'Âge Sombre) :
+  // un Byzantin posant sa 3e Caserne voyait un aperçu franc non teinté, puis
+  // un bâtiment byzantin teinté une fois posé — l'aperçu mentait sur ce
+  // qu'il allait réellement obtenir. On construit ici pour SOI (G.me), donc
+  // pas besoin de lire le propriétaire d'un bâtiment existant.
+  const bt=G.buildType;
+  const teinte=(fac(G.me)||{}).teinte||'rouge';
+  const civ=civKeyOf(G.me);
+  const lvlSuffix=((bt===BT.TC||bt===BT.BARRACKS||bt===BT.WALL)&&ageOf(G.me)>0)?'_A'+ageOf(G.me):'';
+  const suf=(teinte==='bleu')?'':'_E';
+  const civDispo=civ!=='francs'&&BLD_CIV_SPRITE_FILES[bt]&&BLD_CIV_SPRITE_FILES[bt][civ];
+  const sprCiv=civDispo&&sprTeinte('bldCiv',bt+'_'+civ+lvlSuffix+suf,teinte);
+  const sprBase=sprCiv||sprTeinte('bld',bt+lvlSuffix+suf,teinte)||sprTeinte('bld',bt+suf,teinte);
+  const spr=(!sprCiv&&CIV_LIVERY[civ])?liverySprite(sprBase,civ,bt,bt+lvlSuffix):sprBase;
   if(spr){
     ctx.globalAlpha=.72;
     const kg=TILE/(SPR.refT||TILE);

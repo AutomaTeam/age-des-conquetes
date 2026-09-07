@@ -32,6 +32,7 @@ const EXPORTS = [
   'findPath', 'tileBlocked', 'wallAt', 'losClear', 'nearestBy', 'forNearby',
   'construireSnap', 'appliquerSnap', 'construireDelta', 'appliquerDelta',
   'buildSaveData', 'migrerSauvegarde', 'RESEAU', 'PROTO_VERSION',
+  'envoyerBilanReseau', 'appliquerBilanFin', 'checkAchievements', 'PROFILE',
   'UT', 'BT', 'RT', 'UDEF', 'BDEF', 'FAC', 'CIVS', 'AGES', 'RDEF',
   'COLS', 'ROWS', 'BASE_TILE', 'MODES', 'DIFFS', 'modeDispo', 'pickPlayTab',
   'diffDesc', 'EMOTES', 'indexEmoteDepuisTouche', 'ACH', 'popGain', 'updatePopCap',
@@ -60,7 +61,7 @@ const EXPORTS = [
   'MERVEILLE_WIN_TIME', 'canAfford', 'spend', 'resPool', 'updatePopCap',
   'aiNextBuild', 'AI_TRAINERS', 'trainTime', 'possedeBatiment', 'appliquerDemolition',
   'tryAutoReseed', 'hasAdjacentWater', 'updateUneIA', 'aiVilTarget', 'updateVisuel',
-  'awardKillXP', 'veterancyRank', 'RANK_THRESHOLDS',
+  'awardKillXP', 'veterancyRank', 'RANK_THRESHOLDS', 'dealDmg', 'nearestDamagedBuilding',
   'cibleAssaillant', 'prochainHostileUnite', 'prochainHostileToute', 'updateEnemyAI',
   // Correctifs « l'IA joue aux mêmes règles » : chacun a son test de
   // non-régression dans le groupe `ia`.

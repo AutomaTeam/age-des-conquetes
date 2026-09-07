@@ -176,6 +176,13 @@ function updatePopCap(){
   for(const f of factionsJouantes()) cap[f.id]=0;
   for(const b of G.buildings){
     if(cap[b.owner]==null) continue;
+    // Un chantier À PEINE POSÉ (progress:0) logeait déjà tout le monde : une
+    // fondation de Maison faisait sauter le plafond de 5 à 10 AVANT le
+    // premier coup de marteau. doBuild rappelle déjà updatePopCap() au
+    // moment où b.constructing PASSE à false (voir plus haut) — la place
+    // n'est donc jamais perdue, seulement rendue au bon instant : quand le
+    // bâtiment existe réellement.
+    if(b.constructing) continue;
     cap[b.owner]+=popGain(b.type,b.owner);
   }
   // Bonus de population de civilisation. Les Chinois démarrent avec deux

@@ -68,6 +68,7 @@ const EXPORTS = [
   'cibleMerveille', 'nearPlayerBuildingSmart', 'majPhaseAssaut', 'aiMerveilleHostile',
   'aiRepare', 'AI_REPAIR_MAX', 'aiUniteUnique', 'aiLogement', 'AI_HLM_DEFICIT',
   'aiTroquer', 'aiCout', 'AI_BOAT_MAX', 'aiCount',
+  'aiFortify', 'AI_WALL_R', 'AI_WALL_SPAN', 'AI_WALL_MAX_SITES', 'aiCibleBase',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

@@ -512,6 +512,92 @@ function aiRepare(vils,a){
   }
 }
 
+// ── FORTIFICATION ────────────────────────────────────────
+// Chantier délibérément écarté à l'audit du 2026-08-28 (voir
+// age-des-conquetes-roadmap-ameliorations) : « une palissade qui enferme
+// risque de couper les villageois de l'IA de leurs gisements ». Portée
+// réduite au strict nécessaire pour écarter ce risque STRUCTURELLEMENT,
+// plutôt que de le valider après coup par du pathfinding :
+//
+//   • Une seule LIGNE de palissade, tournée vers la base hostile la plus
+//     proche (`aiCibleBase`, la MÊME fonction qui choisit la cible de
+//     l'assaut) — jamais un anneau fermé. `AI_WALL_SPAN` ne couvre que 90°
+//     du pourtour ; les 270° restants sont grand ouverts en permanence, quel
+//     que soit l'endroit où l'IA récolte. Aucun gisement ne peut donc se
+//     retrouver enfermé.
+//   • `AI_WALL_R` dépasse largement le rayon de pose des bâtiments
+//     eux-mêmes (`aiSpot`, maxR=16) : la ligne encercle la base sans jamais
+//     la recouper.
+//   • Une case déjà occupée — bâtiment, eau, ET gisement — est simplement
+//     SAUTÉE, jamais dégagée comme le fait `poserMursArene` pour la
+//     palissade de départ de l'Arène (avant toute économie, donc sans
+//     rien à perdre). Ça laisse une brèche locale plutôt que de raser une
+//     ressource que l'IA exploite peut-être déjà.
+//   • Un unique PORTAIL s'ouvre au milieu de l'arc, sur la ligne directe
+//     vers la cible : le goulot que ses Tours/Château voisins peuvent
+//     défendre, et le point que l'IA elle-même emprunte pour partir à
+//     l'assaut. Il reste TOUJOURS ouvert (`b.open=true`, jamais refermé) —
+//     fermer un portail est un geste de joueur (voir `appliquerPortail`),
+//     et une IA qui l'oublierait fermé se couperait elle-même de sa propre
+//     armée en pleine sortie. Un chokepoint qui laisse passer l'ennemi
+//     n'est pas un défaut : les PV de la palissade (450/400) retardent
+//     l'assaut le temps que la défense (`majPhaseAssaut`) réagisse.
+//
+// Construite comme n'importe quel autre bâtiment (voir `aiBuild`) : un
+// villageois marche, paie, construit — les mêmes règles que pour un joueur,
+// pas posée d'un coup comme `poserMursArene`. `aiAbortSite` (le garde-fou
+// anti-blocage générique de `updateUneIA`) couvre donc ces chantiers sans
+// rien y ajouter, et une case déjà bâtie ou définitivement bloquée (eau,
+// gisement) est simplement re-sautée aux passages suivants — pas besoin de
+// mémoriser où en est l'arc, l'état vivant de `G.bmap` suffit.
+const AI_WALL_R = 20;            // hors du rayon de pose des bâtiments (aiSpot, maxR=16)
+const AI_WALL_SPAN = Math.PI/2;  // 90° : les 270° restants du pourtour ne sont jamais touchés
+const AI_WALL_STEP = 0.9;        // pas angulaire visé, en tuiles d'arc — sous 1 pour ne sauter aucune case
+const AI_WALL_MAX_SITES = 2;     // chantiers de palissade menés de front — deux villageois dédiés, pas plus
+function aiFortify(a){
+  if(a.age<1) return;            // pas de palissade avant l'Âge Féodal, comme les premières Tours
+  const cible=aiCibleBase(a);
+  if(!cible) return;             // plus d'ennemi : rien à orienter
+  // Un PORTAIL OUVERT marque sa case `bmap=0` (voir placeBuilding, qui lit
+  // b.open) — EXACTEMENT comme une case libre. Sans ce recensement à part,
+  // le portail déjà posé aurait semblé toujours vacant : chaque passage en
+  // reposait un nouveau par-dessus, indéfiniment (mesuré : 53 portails
+  // empilés sur la même case en une seule partie de test). D'où un
+  // recensement par POSITION, pas par l'état du terrain.
+  const existant=new Set(); let enChantier=0;
+  for(const b of G.buildings){
+    if(b.owner!==a.id||(b.type!==BT.WALL&&b.type!==BT.GATE)) continue;
+    existant.add(b.tx+','+b.ty);
+    if(b.constructing) enChantier++;
+  }
+  if(enChantier>=AI_WALL_MAX_SITES) return;
+  const cx=Math.round(a.baseX/BASE_TILE), cy=Math.round(a.baseY/BASE_TILE);
+  const ang0=Math.atan2(cible.y-a.baseY,cible.x-a.baseX);
+  const steps=Math.max(2,Math.round(AI_WALL_R*AI_WALL_SPAN/AI_WALL_STEP));
+  const mid=Math.round(steps/2);   // case la plus proche de la ligne directe vers la cible : le portail
+  let poses=0;
+  for(let i=0;i<=steps&&poses<AI_WALL_MAX_SITES-enChantier;i++){
+    const ang=ang0-AI_WALL_SPAN/2+i*(AI_WALL_SPAN/steps);
+    const tx=Math.round(cx+Math.cos(ang)*AI_WALL_R), ty=Math.round(cy+Math.sin(ang)*AI_WALL_R);
+    if(tx<1||ty<1||tx>=COLS-1||ty>=ROWS-1) continue;
+    if(existant.has(tx+','+ty)) continue; // déjà une section ici — portail ouvert compris
+    if(G.bmap[ty][tx]!==0) continue; // bâtiment, eau OU gisement : on saute, jamais on ne dégage
+    const estPortail=i===mid;
+    const type=estPortail?BT.GATE:BT.WALL;
+    const d=BDEF[type];
+    if(!aiAfford(d.cost,null,a)) continue; // pas assez maintenant : cette case attend le prochain passage
+    aiSpend(d.cost,a);
+    const b=mkBuilding(type,tx,ty,a.id);
+    if(estPortail) b.open=true;
+    b.ai=true; b.constructing=true; b.progress=0;
+    b.aiStartT=G.gameTime; b.aiCost=d.cost;
+    placeBuilding(b);
+    const v=G.units.find(u=>u.owner===a.id&&u.type===UT.VIL&&u.state!=='build');
+    if(v){ quitterPoste(v); v.state='build'; v.buildTarget=b.id; v.target=null; }
+    poses++;
+  }
+}
+
 // Barque de l'IA au repos : elle repart pêcher d'elle-même.
 //
 // Appelée depuis la branche 'idle' d'updatePlayerUnit, et UNIQUEMENT pour un
@@ -906,6 +992,11 @@ function updateUneIA(dt,a){
   // n'est là que pour les blocages que la récolte ne résout plus.
   a.trocCd=(a.trocCd||0)-AI_THINK;
   if(a.trocCd<=0){ a.trocCd=8; aiTroquer(a); }
+  // Fortification : la plus lente des décisions périodiques — un chantier de
+  // palissade, une fois lancé, occupe déjà un villageois pendant plusieurs
+  // secondes ; inutile de re-tenter à chaque respiration de l'IA.
+  a.fortCd=(a.fortCd||0)-AI_THINK;
+  if(a.fortCd<=0){ a.fortCd=15; aiFortify(a); }
 
   // Épargne de montée d'âge : dès que l'économie tient debout, le coût du
   // prochain âge devient intouchable pour la production militaire. L'IA

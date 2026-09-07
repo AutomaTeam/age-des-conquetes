@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**166 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
+**168 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -211,7 +211,26 @@ qui **ne se voit pas** :
   reconnexion ne se fait pas dégeler par la reprise de pause ; et quitter
   après un écran de fin ne laisse pas le joueur sans écran-titre.
 - **`ia`** — plafond des Moines, atelier de siège au roster, et l'assaut qui
-  passe bien par un rassemblement.
+  passe bien par un rassemblement. **2026-09-07 : la fortification de l'IA**
+  (`aiFortify`, chantier « murs de l'IA » écarté à l'audit du 2026-08-28,
+  repris sous une forme volontairement bornée) — une LIGNE de palissade
+  tournée vers l'ennemi le plus proche, jamais un anneau fermé (les 270°
+  restants du pourtour ne sont jamais murés, quel que soit l'endroit où l'IA
+  récolte), avec un unique portail resté OUVERT sur la ligne directe vers la
+  cible. Un test garde qu'aucune section ne se pose au DOS de la base ; un
+  autre — le plus important — qu'un gisement pris sur le tracé est SAUTÉ,
+  jamais rasé comme le fait `poserMursArene` pour la palissade de départ de
+  l'Arène (qui, elle, n'a rien à perdre : posée avant toute économie). C'est
+  ce second test qui a trouvé le vrai bug de la première version : un
+  portail OUVERT marque sa case `bmap=0`, exactement comme une case libre —
+  sans un recensement à part par POSITION (pas par l'état du terrain),
+  chaque passage en reposait un nouveau par-dessus, indéfiniment (53
+  portails empilés sur la même case en une seule partie de test). Vérifié
+  aussi hors suite automatisée par une partie de 40 minutes simulée
+  (joueur increvable) : l'IA construit ses 32 sections, relance 7 assauts
+  au travers de son propre portail sans jamais s'y bloquer, et ses
+  villageois ne connaissent aucune image où ils sont tous inactifs faute de
+  chemin vers un gisement.
 - **`charge`** — des invariants de COÛT, pas de résultat. Ce sont les seuls
   défauts qui ne se voient pas du tout en petite partie et qui rendent une
   grosse partie injouable. Le BUDGET de balayage du

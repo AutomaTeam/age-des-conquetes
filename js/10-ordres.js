@@ -244,6 +244,16 @@ function applyCommand(cmd){
   // ── Production et économie ──────────────────────────────
   case ORD.BATIR: {
     const d=BDEF[cmd.type]; if(!d) return KO('invalide');
+    // Le Centre Ville n'est JAMAIS constructible par ce chemin : il n'existe
+    // qu'au départ (departsHumains/genMap), et BDEF[BT.TC].cost vaut {} —
+    // vide exprès, pour que BDEF reste une table complète, PAS une invite à
+    // le bâtir gratuitement. Sans ce refus explicite, un ordre BATIR forgé
+    // (ou une future entrée de menu mal filtrée) passait tous les contrôles
+    // suivants — coût nul, juste une case libre — et posait un second
+    // Centre Ville gratuit : plafond de population doublé d'un coup, et
+    // l'élimination (voir update(), "une faction sans Centre Ville est hors
+    // jeu") rendue impossible puisqu'il en restait toujours un.
+    if(cmd.type===BT.TC) return KO('invalide');
     // L'âge requis VOYAGE avec le refus : deux exigences différentes se
     // cachent derrière le même motif, et l'appelant annonçait « Âge des
     // Châteaux » pour les deux — faux pour la Merveille, qui demande
@@ -433,10 +443,6 @@ function applyCommand(cmd){
     return OK({});
   }
 
-  // Chasse : n'importe quelle unité (villageois compris, à ses risques) peut
-  // être envoyée sur un animal — plusieurs chasseurs peuvent viser la même
-  // proie, pas d'exclusivité comme pour les reliques (pas de risque de
-  // blocage : un animal mort disparaît simplement de G.wildlife).
   case ORD.NAVIGUER: {
     const us=_unitesDe(cmd).filter(u=>u.type===UT.BOAT); if(!us.length) return KO('aucune');
     for(const u of us){ u.state='sailing'; u.destX=cmd.x; u.destY=cmd.y; u.target=null; }
@@ -451,6 +457,10 @@ function applyCommand(cmd){
     return OK({n:us.length});
   }
 
+  // Chasse : n'importe quelle unité (villageois compris, à ses risques) peut
+  // être envoyée sur un animal — plusieurs chasseurs peuvent viser la même
+  // proie, pas d'exclusivité comme pour les reliques (pas de risque de
+  // blocage : un animal mort disparaît simplement de G.wildlife).
   case ORD.CHASSER: {
     const us=_unitesDe(cmd); if(!us.length) return KO('aucune');
     const w=(G.wildlife||[]).find(x=>x.id===cmd.wildlifeId);

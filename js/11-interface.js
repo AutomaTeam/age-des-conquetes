@@ -1224,13 +1224,28 @@ function syncShelterBtn(){
   el.classList.toggle('active', G.units.some(u=>u.state==='garrison'&&u.type===UT.VIL&&estLocal(u)));
 }
 
-// Trouve le bâtiment du joueur endommagé le plus proche (hors chantier en
-// cours, déjà géré par l'état 'build') — portée illimitée : un villageois
-// inactif n'a par définition rien de mieux à faire ailleurs sur la carte.
-function nearestDamagedBuilding(x,y){
+// Trouve le bâtiment endommagé le plus proche APPARTENANT À `owner` (hors
+// chantier en cours, déjà géré par l'état 'build') — portée illimitée : un
+// villageois inactif n'a par définition rien de mieux à faire ailleurs sur
+// la carte.
+//
+// `owner` par défaut à G.me : le SEUL appel de cette fonction (la relance
+// idle du villageois, voir doIdle/updatePlayerUnit) tournait sur `estLocal`
+// AVANT — c'est-à-dire "appartient à G.me", jamais "appartient à ce
+// villageois". Or update() ne s'exécute QUE côté hôte, et G.me y vaut
+// TOUJOURS la faction de l'hôte, quelle que soit l'unité en cours de
+// traitement dans la boucle. Un second joueur humain (coop2v1, 2 rivaux en
+// ligne) dont les villageois se réparaient tout seuls activait donc une
+// fonctionnalité qui cherchait les bâtiments endommagés DE L'HÔTE — jamais
+// les siens : ni erreur, ni notification, le réglage restait silencieusement
+// mort pour tout le monde sauf l'hôte lui-même (doRepair rejette ensuite la
+// cible trouvée par erreur, voir `_b.owner===u.owner`, donc pas d'exploit —
+// juste une fonctionnalité qui ne faisait jamais rien).
+function nearestDamagedBuilding(x,y,owner){
+  if(owner==null) owner=G.me;
   let best=null,bd=Infinity;
   for(const b of G.buildings){
-    if(!estLocal(b)||b.constructing||b.hp>=b.maxHp) continue;
+    if(b.owner!==owner||b.constructing||b.hp>=b.maxHp) continue;
     const dx=b.x-x,dy=b.y-y,d2=dx*dx+dy*dy;
     if(d2<bd){bd=d2;best=b;}
   }

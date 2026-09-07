@@ -627,6 +627,56 @@ groupe('combat', () => {
     ok(assaillant.target !== abrite.id, 'l\'assaillant a fini par verrouiller l\'unité en garnison comme cible');
   });
 
+  test('une unité qui se fait tirer dessus riposte, sans attendre son propre balayage', () => {
+    // Avant ce correctif, le SEUL moyen pour une unité de remarquer un
+    // agresseur était le balayage périodique (doIdle/doAMove), à un rayon
+    // proportionnel à SA PROPRE portée — jamais à celle du tireur. Une
+    // unité en 'moving' ne scannait même pas du tout. dealDmg() doit donc
+    // faire riposter la cible dès le premier coup reçu, sans attendre.
+    const j = partie(charger(), { graine: 4242 });
+    const mk = j.__sandbox.mkFaction;
+    j.G.factions.tA = mk('tA', { genre: 'neutre', equipe: 91, hostileATous: true, civ: 'francs', nom: 'Cible' });
+    j.G.factions.tB = mk('tB', { genre: 'neutre', equipe: 92, hostileATous: true, civ: 'francs', nom: 'Tireur' });
+    j.G.units.length = 0;
+    // Chevalier en ROUTE vers un point lointain (jamais 'idle') : sans la
+    // riposte, moveTo() ne scanne jamais et il encaisse sans jamais réagir.
+    const cible = j.mkUnit(j.UT.KNIGHT, 0, 0, 'tA');
+    cible.state = 'moving'; cible.destX = 5000; cible.destY = 0;
+    j.G.units.push(cible);
+    const tireur = j.mkUnit(j.UT.ARC, 6 * j.BASE_TILE, 0, 'tB');
+    j.G.units.push(tireur);
+    j.rebuildIndex();
+    j.dealDmg(cible, 5, tireur);
+    egal(cible.state, 'attack', 'la cible encaisse sans riposter');
+    egal(cible.target, tireur.id, 'la cible riposte contre la mauvaise unité');
+  });
+
+  test('la riposte ne s\'applique ni aux gardes postés ni à un combat déjà engagé', () => {
+    const j = partie(charger(), { graine: 4242 });
+    const mk = j.__sandbox.mkFaction;
+    j.G.factions.tA = mk('tA', { genre: 'neutre', equipe: 91, hostileATous: true, civ: 'francs', nom: 'Cible' });
+    j.G.factions.tB = mk('tB', { genre: 'neutre', equipe: 92, hostileATous: true, civ: 'francs', nom: 'Tireur' });
+    j.G.units.length = 0;
+    // Gardé (camp non nul) : sa dormance jusqu'à l'approche est un choix de
+    // conception (voir majPhaseAssaut/updateEnemyAI), pas un oubli d'ici.
+    const garde = j.mkUnit(j.UT.PIKE, 0, 0, 'tA');
+    garde.state = 'idle'; garde.camp = 'campX';
+    j.G.units.push(garde);
+    // Déjà engagée contre une autre cible : une flèche perdue ne doit pas
+    // lui faire lâcher son adversaire du moment.
+    const engagee = j.mkUnit(j.UT.PIKE, 100, 0, 'tA');
+    const cibleActuelle = j.mkUnit(j.UT.MIL, 105, 0, 'tB');
+    engagee.state = 'attack'; engagee.target = cibleActuelle.id;
+    j.G.units.push(engagee, cibleActuelle);
+    const tireur = j.mkUnit(j.UT.ARC, 200, 0, 'tB');
+    j.G.units.push(tireur);
+    j.rebuildIndex();
+    j.dealDmg(garde, 5, tireur);
+    egal(garde.state, 'idle', 'un garde posté riposte alors que sa dormance est volontaire');
+    j.dealDmg(engagee, 5, tireur);
+    egal(engagee.target, cibleActuelle.id, 'une flèche perdue a fait lâcher le combat en cours');
+  });
+
   test('un bâtiment abîmé fume, un bâtiment sain jamais', () => {
     // L'état de dégât lui-même (lavis de suie sur le sprite) est du rendu et
     // n'est délibérément pas testé ici (voir l'en-tête du fichier). La fumée,
@@ -1106,6 +1156,27 @@ groupe('civilisations', () => {
       'le jeu retomberait EN SILENCE sur le rendu procédural :\n        ' +
       absents.slice(0, 10).join(', '));
   });
+
+  test('l\'aperçu de construction (drawGhost) montre la planche de LA civilisation, pas la générique', () => {
+    // drawGhost() faisait `SPR.bld[G.buildType]` — une simple table plate,
+    // sans passer par civKeyOf/BLD_CIV_SPRITE_FILES comme drawBuildings().
+    // Résultat : l'aperçu affiché avant de poser un bâtiment montrait
+    // TOUJOURS la planche générique (non teintée, non habillée à l'âge),
+    // puis le bâtiment RÉEL — byzantin, gitan, etc. — apparaissait une fois
+    // posé. L'aperçu mentait sur ce que le joueur allait réellement obtenir.
+    // Pas de rendu ici (voir la note en tête de fichier) : on vérifie que
+    // la fonction consulte bien la même table que le bâtiment réel, comme
+    // le fait déjà le test sur popGain pour le menu de construction.
+    const fs = require('fs'), path = require('path');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'js', '06-rendu.js'), 'utf8');
+    const debut = source.indexOf('function drawGhost(');
+    ok(debut >= 0, 'drawGhost() introuvable dans 06-rendu.js');
+    const corps = source.slice(debut, source.indexOf('\nfunction ', debut + 10));
+    ok(/BLD_CIV_SPRITE_FILES/.test(corps),
+      'drawGhost() ne consulte pas BLD_CIV_SPRITE_FILES : l\'aperçu retombe sur la planche générique');
+    ok(/civKeyOf\(G\.me\)/.test(corps),
+      'drawGhost() ne lit pas la civilisation du joueur (civKeyOf(G.me))');
+  });
 });
 
 // ════════════════════════════════════════════════════════════
@@ -1471,6 +1542,22 @@ groupe('ordres', () => {
     const corps = entree.slice(entree.indexOf('function confirmBuild'), entree.indexOf('function confirmBuild') + 1400);
     ok(/AGES\[r\.reqAge/.test(corps),
       'confirmBuild écrit le nom de l\'âge en dur : il ne peut pas être juste pour les deux exigences');
+  });
+
+  test('BATIR refuse le Centre Ville : il ne coûte rien et n\'est jamais dans le menu', () => {
+    // Le Centre Ville n'existe QUE via departsHumains/genMap. BDEF[BT.TC].cost
+    // vaut {} (juste pour que la table reste complète) — sans un refus
+    // explicite, un ordre BATIR forgé passait tous les contrôles restants
+    // (coût nul, case libre) et posait un second Centre Ville gratuit.
+    const j = partie(charger(), { graine: 4242, mode: 'conquest', pas: 5 });
+    const p = caseLibre(j, 70, 70, 2, 2);
+    const avantRes = { ...j.G.res };
+    const avantN = j.G.buildings.filter((b) => b.owner === j.G.me && b.type === j.BT.TC).length;
+    const r = ordreDe(j, j.G.me, j.ORD.BATIR, { type: j.BT.TC, tx: p.tx, ty: p.ty, batisseurs: [] });
+    egal(r.ok, false, 'un Centre Ville gratuit passe l\'ordre BATIR');
+    const apresN = j.G.buildings.filter((b) => b.owner === j.G.me && b.type === j.BT.TC).length;
+    egal(apresN, avantN, 'un second Centre Ville a été posé malgré le refus');
+    egalJSON(j.G.res, avantRes, 'des ressources ont bougé alors que l\'ordre est refusé');
   });
 
   test('un refus de recherche dit LE bon motif, pas « ressources »', () => {
@@ -2153,6 +2240,45 @@ groupe('economie', () => {
     for (let k = 0; k < 1800; k++) j.update(j.SIM_DT);   // 60 s
     ok(j.moi().res.gold > or0, 'une relique à l\'abri ne rapporte rien');
   });
+
+  test('tuer l\'armée de l\'IA de Conquête ne rapporte pas de prime — seuls les pillards de vague payent', () => {
+    // L'IA de Conquête RECYCLE exactement le roster reskinné des pillards de
+    // vague (ENEMI/ENEMIA/ENEMI_G/ENEMI_C/ENEMI_BOSS, voir AI_TRAINERS) : le
+    // TYPE seul ne peut donc pas distinguer un Cavalier Noir de l'IA d'un
+    // Cavalier Noir de vague — le code ne regardait QUE le type, jamais le
+    // propriétaire. Résultat mesuré : harceler l'armée de l'IA rapportait
+    // 4 à 15💰 par mort, sans limite, contredisant le commentaire du code
+    // lui-même ("ne verse pas de prime au joueur").
+    const j = partie(charger(), { graine: 4242, mode: 'conquest' });
+    const or0 = j.G.res.gold;
+    const u = j.mkUnit(j.UT.ENEMI_C, 500, 500, j.FAC.IA); // vrai roster de l'IA — voir AI_TRAINERS[BT.STABLE]
+    j.G.units.push(u); j.rebuildIndex();
+    u.hp = 0; u.dernierAgresseur = j.G.me;
+    for (let k = 0; k < 3; k++) j.update(j.SIM_DT);
+    egal(j.G.res.gold, or0, 'une unité de l\'IA de Conquête a versé une prime en or');
+
+    // Le même type, propriété d'un pillard de vague, DOIT payer.
+    const p = j.mkUnit(j.UT.ENEMI_C, 500, 500, j.FAC.PILL);
+    j.G.units.push(p); j.rebuildIndex();
+    p.hp = 0; p.dernierAgresseur = j.G.me;
+    for (let k = 0; k < 3; k++) j.update(j.SIM_DT);
+    egal(j.G.res.gold, or0 + 8, 'le même type de pillard, lui, ne paye plus rien');
+  });
+
+  test('le Seigneur de Guerre rapporte bien ses 200 pièces d\'or promises', () => {
+    // La formule de prime listait `ENEMI_BOSS?200:...`, mais cette branche
+    // était INATTEIGNABLE : elle vivait dans le `else` du test « ce type
+    // EST un Seigneur de Guerre », qui ne fait que compter bossKilled.
+    // Le Seigneur de Guerre — la mort la plus dure à obtenir du jeu — ne
+    // payait donc jamais rien.
+    const j = partie(charger(), { graine: 4242 });
+    const or0 = j.G.res.gold;
+    const boss = j.mkUnit(j.UT.ENEMI_BOSS, 500, 500, j.FAC.PILL);
+    j.G.units.push(boss); j.rebuildIndex();
+    boss.hp = 0; boss.dernierAgresseur = j.G.me;
+    for (let k = 0; k < 3; k++) j.update(j.SIM_DT);
+    egal(j.G.res.gold, or0 + 200, 'le Seigneur de Guerre ne paie pas les 200💰 promis par la formule');
+  });
 });
 
 // ════════════════════════════════════════════════════════════
@@ -2197,6 +2323,29 @@ groupe('ages', () => {
     batir(j, j.BT.HOUSE, p.tx, p.ty);
     j.updatePopCap();
     egal(f.maxPop, avant + j.AGE_BONUS[f.age].housePop, 'une Maison n\'ajoute pas la bonne population');
+  });
+
+  test('un chantier à peine posé ne loge encore personne', () => {
+    // batir() (l'helper ci-dessus) simule un bâtiment déjà FINI — ce test-ci
+    // pose la fondation elle-même (constructing:true, progress:0), le cas
+    // qu'un simple ordre BATIR produit réellement. Sans le garde-fou de
+    // updatePopCap, le plafond sautait AVANT le premier coup de marteau ;
+    // doBuild rappelle updatePopCap() au moment où constructing passe à
+    // false (voir 07-simulation.js), donc la place reste due, juste rendue
+    // plus tard.
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const f = j.moi();
+    const avant = f.maxPop;
+    const p = caseLibre(j, 60, 60, 1, 1);
+    const maison = j.mkBuilding(j.BT.HOUSE, p.tx, p.ty, j.G.me);
+    maison.constructing = true; maison.progress = 0;
+    j.placeBuilding(maison);
+    j.updatePopCap();
+    egal(f.maxPop, avant, 'une fondation à 0% loge déjà des villageois');
+    maison.constructing = false; maison.progress = 1;
+    j.updatePopCap();
+    egal(f.maxPop, avant + j.AGE_BONUS[f.age].housePop, 'le chantier achevé ne loge personne à son tour');
   });
 });
 
@@ -3167,6 +3316,151 @@ groupe('delta', () => {
     hote.applyCommand({ seq: 2, f: P2, t: hote.ORD.AUTO_REPARE, actif: false });
     for (let k = 0; k < 20; k++) { hote.update(hote.SIM_DT); if (k % 10 === 9) { pousser(); tourner(5); } }
     egal(client.G.factions[P2].autoRepair, false, 'l extinction n est pas revenue chez le client');
+  });
+
+  test('la reparation automatique repare les batiments de l INVITE, pas ceux de l hote', () => {
+    // Le test ci-dessus garde que le RÉGLAGE voyage. Celui-ci garde que la
+    // FONCTIONNALITÉ marche une fois allumée : nearestDamagedBuilding()
+    // tournait sur estLocal() — "appartient à G.me" — jamais sur le
+    // propriétaire du villageois qui scanne. update() ne s'exécute que côté
+    // hôte, où G.me vaut TOUJOURS la faction de l'hôte, quelle que soit
+    // l'unité en cours de traitement dans la boucle : un villageois de P2 au
+    // repos cherchait donc des bâtiments endommagés DE L'HÔTE, jamais les
+    // siens. Aucune erreur, aucun exploit (doRepair rejette ensuite la cible
+    // mal assignée via `_b.owner===u.owner`) — juste un réglage qui restait
+    // silencieusement mort pour l'invité, quoi qu'il fasse.
+    const { hote } = paireEnLigne();
+    const P2 = hote.FAC.P2;
+    hote.G.factions[P2].autoRepair = true;
+    const tcP2 = hote.G.buildings.find((b) => b.type === hote.BT.TC && b.owner === P2);
+    tcP2.hp = Math.round(tcP2.maxHp * 0.3);
+    const vilP2 = hote.G.units.find((u) => u.owner === P2 && u.type === hote.UT.VIL);
+    vilP2.state = 'idle'; vilP2.target = null;
+    const hpAvant = tcP2.hp;
+    for (let k = 0; k < 300; k++) hote.update(hote.SIM_DT); // 10 s simulées
+    ok(tcP2.hp > hpAvant, `le Centre Ville de l'invité n'a jamais été réparé : ${hpAvant} → ${tcP2.hp}`);
+  });
+
+  test('les pics (population, armée) de l INVITE sont suivis, pas seulement ceux de l hote', () => {
+    // Même défaut, sur les succès : `G.stats.peakMil=Math.max(...)` ne
+    // visait que G.stats, un SHIM vers moi() — donc toujours l'hôte pendant
+    // update(). Un second joueur humain qui lève une armée voyait son
+    // propre peakMil rester bloqué à 0, et les succès qui en dépendent
+    // (Métropole, Grenier Plein, Chef de Guerre, Nettoyeur) hors d'atteinte
+    // quoi qu'il construise réellement — checkAchievements(), lui, lit bien
+    // G.stats (donc SA faction) sur chaque machine séparément : la SOURCE
+    // manquait, pas la lecture.
+    const { hote } = paireEnLigne();
+    const P2 = hote.FAC.P2;
+    for (let i = 0; i < 45; i++) hote.G.units.push(hote.mkUnit(hote.UT.MIL, 2000 + i * 5, 2000, P2));
+    hote.rebuildIndex();
+    for (let k = 0; k < 40; k++) hote.update(hote.SIM_DT); // laisse le statsTick (1/s) tourner
+    egal(hote.G.factions[hote.G.me].stats.peakMil, 0, "l'hôte, qui n'a rien levé, ne doit rien avoir de plus");
+    ok(hote.G.factions[P2].stats.peakMil >= 45, `l'armée de l'invité n'a jamais été comptée : ${hote.G.factions[P2].stats.peakMil}`);
+  });
+
+  test('le Seigneur de Guerre tué par l INVITE lui revient, pas à l hote', () => {
+    // Juste au-dessus de `tueur.stats.killed++` (qui, lui, ciblait déjà la
+    // bonne faction), `G.stats.bossKilled++` retombait sur G.stats — encore
+    // l'hôte. Le succès « Tueur de Seigneurs » se débloquait donc chez
+    // l'hôte même quand c'est l'invité qui avait porté le coup fatal, et
+    // jamais chez lui.
+    const { hote } = paireEnLigne();
+    const P2 = hote.FAC.P2;
+    const boss = hote.mkUnit(hote.UT.ENEMI_BOSS, 2100, 2100, hote.FAC.PILL);
+    boss.hp = 1;
+    hote.G.units.push(boss);
+    const tueurP2 = hote.mkUnit(hote.UT.MIL, 2100, 2098, P2);
+    hote.G.units.push(tueurP2);
+    hote.rebuildIndex();
+    hote.dealDmg(boss, 5, tueurP2);
+    for (let k = 0; k < 3; k++) hote.update(hote.SIM_DT); // laisse le nettoyage des morts tourner
+    egal(hote.G.factions[hote.G.me].stats.bossKilled, 0, "l'hôte, qui n'a rien tué, se voit crédité du kill");
+    egal(hote.G.factions[P2].stats.bossKilled, 1, "le kill de l'invité ne lui est jamais revenu");
+  });
+
+  test('une unité de l HOTE tuée par l INVITE crédite bien le kill à l INVITE', () => {
+    // `if(estLocal(u)){ moi().stats.lost++; } else { ... tueur.stats.killed++ ... }`
+    // : quand la victime ÉTAIT G.me (l'hôte), tout le crédit de kill était
+    // sauté — ce cas tombait dans le premier `if`, jamais dans le `else` qui
+    // seul créditait le tueur. Sans effet en coop (les alliés ne
+    // s'entretuent pas), mais bien réel en « 2 rivaux » en ligne, où l'ami
+    // rejoint comme ADVERSAIRE hostile : ses kills sur l'hôte ne comptaient
+    // jamais, bloquant Premier Sang/Boucher pour lui quoi qu'il fasse.
+    const { hote } = paireEnLigne();
+    const P2 = hote.FAC.P2;
+    const victimeHote = hote.mkUnit(hote.UT.MIL, 500, 500, hote.G.me);
+    hote.G.units.push(victimeHote);
+    hote.rebuildIndex();
+    victimeHote.hp = 0; victimeHote.dernierAgresseur = P2;
+    for (let k = 0; k < 3; k++) hote.update(hote.SIM_DT);
+    egal(hote.G.factions[P2].stats.killed, 1, "le kill de l'invité sur l'hôte ne lui a jamais été crédité");
+    egal(hote.G.factions[hote.G.me].stats.lost, 1, "la perte de l'hôte n'est plus comptée");
+  });
+
+  test('le bilan de fin de partie livre enfin les stats au CLIENT — sans lui, tous les correctifs ci-dessus restaient invisibles pour lui', () => {
+    // Toutes les corrections qui précèdent (peakMil, bossKilled, killed,
+    // lost) rendent le calcul CÔTÉ HÔTE correct pour chaque faction. Mais
+    // serialiserFaction() n'inclut jamais `stats` dans le flux régulier
+    // (2,1 Ko à lui seul, et ça bouge à quasi chaque image — voir le
+    // commentaire de construireDelta) : sans un canal dédié, le CLIENT ne
+    // recevait ces valeurs par AUCUN moyen, et voyait donc pour toujours
+    // stats.peakMil=0 sur SA PROPRE machine, quoi que l'hôte ait
+    // correctement calculé de son côté. Le bilan de fin de partie ('FIN')
+    // est ce canal — encore fallait-il qu'il RECOPIE les valeurs reçues
+    // dans G.factions[id].stats (pas seulement les afficher), et relance
+    // checkAchievements() pour rattraper ce qu'une détection locale trop
+    // précoce (avant l'arrivée du message) aurait manqué.
+    const { hote, client } = paireEnLigne();
+    const P2 = hote.FAC.P2;
+    for (let i = 0; i < 45; i++) hote.G.units.push(hote.mkUnit(hote.UT.MIL, 2000 + i * 5, 2000, P2));
+    hote.rebuildIndex();
+    for (let k = 0; k < 40; k++) hote.update(hote.SIM_DT); // laisse le statsTick (1/s) tourner
+    egal(client.G.factions[P2].stats.peakMil, 0, 'le client aurait déjà ces stats sans le bilan : le témoin ne prouve plus rien');
+
+    let capture = null;
+    hote.RESEAU.envoi = (m) => { capture = m; return true; };
+    hote.envoyerBilanReseau();
+    ok(capture && capture.t === 'FIN', 'envoyerBilanReseau() n\'a rien envoyé');
+    client.G.me = P2; // le client, c'est l'invité — comme dans toute vraie partie en ligne
+    client.appliquerBilanFin(capture);
+
+    ok(client.G.factions[P2].stats.peakMil >= 45, `le bilan n'a pas livré peakMil au client : ${client.G.factions[P2].stats.peakMil}`);
+    ok(client.PROFILE.unlocked.includes('warlord'), 'le succès Chef de Guerre ne s\'est jamais débloqué chez le client malgré 45 unités');
+  });
+
+  test('un second joueur éliminé TÔT reçoit son bilan sans attendre la fin de la partie de l HOTE', () => {
+    // envoyerBilanReseau() n'était appelée QUE depuis showVictory/
+    // showGameOver — donc seulement quand G.me (l'hôte LUI-MÊME) gagne ou
+    // perd. En coop 2v1 ou 2 rivaux en ligne, chaque camp a son propre
+    // Centre Ville : un invité éliminé tôt tombait sur son écran de défaite
+    // (stats encore à zéro) bien avant que l'hôte ne termine SA partie —
+    // parfois jamais, s'il quitte après sa défaite. La boucle d'élimination
+    // envoie maintenant le bilan dès qu'un joueur HUMAIN (pas l'IA) tombe,
+    // sans attendre l'hôte.
+    const hote = charger();
+    hote.RESEAU.actif = true; hote.RESEAU.role = 'hote';
+    hote.RESEAU.adversaire = { id: hote.FAC.P2, nom: 'Invité' };
+    partie(hote, { graine: 4242, mode: 'conquest2' });
+    const P2 = hote.FAC.P2;
+
+    let capture = null;
+    hote.RESEAU.envoi = (m) => { capture = m; return true; };
+    const tcP2 = hote.G.buildings.find((b) => b.type === hote.BT.TC && b.owner === P2);
+    hote.G.buildings = hote.G.buildings.filter((b) => b !== tcP2);
+    hote.update(hote.SIM_DT);
+
+    egal(hote.G.factions[P2].vaincu, true, "l'invité n'a pas été éliminé");
+    egal(hote.G.gameOver, false, "la partie de l'hôte s'arrête alors qu'il n'a ni gagné ni perdu");
+    ok(capture && capture.t === 'FIN', "aucun bilan envoyé alors que l'invité vient d'être éliminé");
+
+    // Et ça ne doit PAS se déclencher pour l'élimination d'une IA — bruit
+    // réseau inutile, elle n'a ni PROFILE ni succès.
+    capture = null;
+    const tcIA = hote.G.buildings.find((b) => b.type === hote.BT.TC && hote.G.factions[b.owner] && hote.G.factions[b.owner].genre === 'ia');
+    hote.G.buildings = hote.G.buildings.filter((b) => b !== tcIA);
+    hote.update(hote.SIM_DT);
+    egal(capture, null, "l'élimination d'une IA a déclenché un envoi de bilan");
   });
 
   test('RECONNEXION : un client qui revient repart d un etat COMPLET', () => {

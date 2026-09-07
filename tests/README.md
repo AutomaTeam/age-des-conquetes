@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**153 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
+**166 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -33,7 +33,11 @@ qui **ne se voit pas** :
   DANS `G.bmap` et pas seulement sur `b.open` — une porte qui s'ouvre sans
   libérer sa case laisse le pathfinding la contourner ; et `AMELIORER_TOUR`
   garde le fait que les dégâts déjà subis ne soient pas effacés par une
-  amélioration, ce qui en ferait un soin gratuit.
+  amélioration, ce qui en ferait un soin gratuit. **BATIR refuse le Centre
+  Ville** (2026-09-07) : `BDEF[BT.TC].cost` vaut `{}` — juste pour que la
+  table reste complète — et sans ce refus explicite, un ordre BATIR forgé
+  posait un second Centre Ville gratuit, plafond de population doublé et
+  élimination devenue impossible.
 - **`delta`** — le flux différentiel hôte → client, la partie la plus
   fragile du jeu. Une paire hôte/client réellement reliée (même graine,
   SNAP puis deltas) doit CONVERGER, y compris sous le feu : 80 unités qui se
@@ -49,7 +53,42 @@ qui **ne se voit pas** :
   partie, si bien que le client voyait son propre allié en rouge) et
   `autoRepair` en étaient. Et la **RECONNEXION** : un client qui recharge sa
   page en pleine partie repart d'un SALUT + SNAP au milieu du jeu, jamais
-  testé jusque-là.
+  testé jusque-là. **2026-09-07** : le réglage `autoRepair` voyageait
+  correctement (test ci-dessus), mais ne faisait jamais rien pour l'invité —
+  `nearestDamagedBuilding()` cherchait un bâtiment endommagé appartenant à
+  `G.me`, jamais à `u.owner` ; comme `update()` ne tourne que côté hôte,
+  G.me y vaut toujours SA faction, quelle que soit l'unité traitée dans la
+  boucle. Aucune erreur, aucun exploit (`doRepair` rejette la cible mal
+  assignée) — juste une fonctionnalité silencieusement morte pour le second
+  joueur humain. Un test dédié garde qu'un Centre Ville d'invité endommagé
+  finit RÉPARÉ, pas seulement que l'interrupteur est sur ON. Même défaut sur
+  les PICS de partie (`peakPop`/`peakMil`/`peakFarms`/`campsCleared`,
+  échantillonnés chaque image ou chaque seconde) et sur `bossKilled` : les
+  deux ne visaient que `G.stats`/`moi()`, donc toujours l'hôte, jamais
+  l'invité — cinq succès (Métropole, Grenier Plein, Chef de Guerre,
+  Nettoyeur, Tueur de Seigneurs) restaient hors d'atteinte pour lui quoi
+  qu'il construise ou tue réellement. Et `stats.killed`/`stats.lost`
+  souffraient d'une AUTRE asymétrie : `if(estLocal(u)){lost++} else
+  {tueur.killed++}` sautait le crédit de kill dès que la VICTIME était
+  l'hôte — sans effet en coop, mais réel en « 2 rivaux » en ligne (l'ami y
+  rejoint comme ADVERSAIRE hostile, pas seulement en allié) : les kills de
+  l'invité SUR l'hôte ne comptaient jamais pour lui. Enfin, même une fois
+  ces compteurs correctement attribués CÔTÉ HÔTE, ils ne voyageaient par
+  AUCUN canal : `serialiserFaction` n'inclut jamais `stats` dans le flux
+  régulier (2,1 Ko à lui seul, et ça bouge à quasi chaque image — voir le
+  commentaire de `construireDelta`). `appliquerBilanFin` recopie donc
+  désormais le bilan de fin de partie ('FIN', déjà envoyé pour l'écran à
+  deux colonnes) dans `G.factions[id].stats`, et relance
+  `checkAchievements()` pour rattraper une détection locale de fin de
+  partie trop précoce. Restait un dernier trou : `envoyerBilanReseau()`
+  n'était appelée que depuis showVictory/showGameOver, donc seulement
+  quand G.me — L'HÔTE LUI-MÊME — gagne ou perd. En coop 2v1 ou 2 rivaux en
+  ligne, chaque camp a son propre Centre Ville : un invité éliminé tôt
+  tombait sur son écran de défaite (stats encore à zéro) bien avant que
+  l'hôte ne termine sa PROPRE partie — parfois jamais, s'il quitte après
+  sa défaite. La boucle d'élimination envoie maintenant le bilan dès qu'un
+  joueur HUMAIN (jamais l'IA — bruit réseau inutile, elle n'a pas de
+  succès) tombe, sans attendre l'hôte.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du
@@ -76,7 +115,15 @@ qui **ne se voit pas** :
   simplement chaque entite est ailleurs.
 - **`chemin`** — contournement d'obstacle et ligne de vue.
 - **`combat`** — le triangle de contres (Piquier > Chevalier > Archer >
-  Piquier) et les invariants de `degatsContre`.
+  Piquier) et les invariants de `degatsContre`. Garde aussi la RIPOSTE
+  (2026-09-07) : jusque-là, une unité ne remarquait un agresseur QUE par le
+  balayage périodique de doIdle/doAMove, à un rayon proportionnel à SA
+  PROPRE portée — jamais à celle de l'attaquant, et JAMAIS en 'moving'. Le
+  triangle lui-même en souffrait par intermittence (un Chevalier qui
+  n'engageait pas toujours l'Archer à temps, surtout la nuit ou loin du
+  Centre Ville). `dealDmg()` fait maintenant riposter la cible dès le
+  premier coup reçu, sauf garde posté (`camp` non nul, dormance
+  volontaire — voir `majPhaseAssaut`) ou combat déjà engagé.
 - **`civilisations`** — unité unique et recherche exclusive refusées aux
   autres camps, même par ordre réseau forgé ; bonus économiques réels. Plus
   l'INTÉGRITÉ des tables (`PRODUCTION`, `TCOST`, `CIVS`, `BONUS`), écrites à
@@ -105,7 +152,17 @@ qui **ne se voit pas** :
   lue sur la civ du PROPRIÉTAIRE du Marché, pas du joueur local) et la vitesse
   d'un civil — et « Roues Cerclées », dont le libellé nomme trois unités : le
   test vérifie que ce sont EXACTEMENT celles qui accélèrent, ni plus (un bonus
-  caché sur toute l'armée) ni moins (une des trois oubliée).
+  caché sur toute l'armée) ni moins (une des trois oubliée). **2026-09-07** :
+  l'aperçu de construction (`drawGhost`, avant de poser un bâtiment) faisait
+  `SPR.bld[G.buildType]` — une table plate, sans passer par
+  `civKeyOf`/`BLD_CIV_SPRITE_FILES` comme `drawBuildings`. L'aperçu montrait
+  donc TOUJOURS la planche générique non teintée, et le bâtiment de la
+  civilisation du joueur n'apparaissait qu'une fois RÉELLEMENT posé —
+  signalé par l'utilisateur, vérifié en jeu (Gitanos : la Caserne prévisualisée
+  et celle posée sont maintenant le même sprite, confirmé par comparaison
+  d'identité d'objet). Pas de rendu dans ce test (voir la note en tête de
+  fichier) : il vérifie par lecture de source que `drawGhost` consulte bien
+  la même table que le bâtiment réel.
 - **`cartes`** — les cinq presets, et surtout : aucun n'enferme un camp (un
   `findPath` réel entre les deux Centres Ville). Plus la table des SOLS :
   chaque carte doit décrire une matière complète, aucune ne doit partager le
@@ -122,9 +179,21 @@ qui **ne se voit pas** :
   dans l'eau, jamais sur un gisement.
 - **`economie`** — la récolte crédite le BON camp, le re-semis d'une ferme
   est facturé à SON propriétaire (le piège que documente `tryAutoReseed`).
+  Garde aussi la prime en or à la mort d'une unité (2026-09-07) : le code ne
+  distinguait le pillard de vague de l'armée de l'IA de Conquête QUE par le
+  TYPE d'unité — or l'IA recycle EXACTEMENT le même roster reskinné
+  (`AI_TRAINERS`), donc harceler son armée finançait la partie du joueur à
+  sa place (4 à 15💰 par mort, sans limite). Et le Seigneur de Guerre, la
+  mort la plus dure du jeu, ne payait JAMAIS les 200💰 promis par sa propre
+  formule : cette branche était inatteignable, coincée dans le `else` du
+  test « ce type EST un Seigneur de Guerre », qui ne fait que compter
+  `bossKilled`.
 - **`ages`** — les bonus de montee d'age s'appliquent rétroactivement, et
   une unité formée APRÈS a exactement les mêmes statistiques qu'une unité
-  relevée. C'est l'invariant qui casse le plus discrètement.
+  relevée. C'est l'invariant qui casse le plus discrètement. Garde aussi
+  qu'un chantier tout juste posé (progress:0) ne loge PERSONNE : `updatePopCap`
+  ignorait `constructing`, et une simple fondation de Maison faisait sauter
+  le plafond de population avant le premier coup de marteau (2026-09-07).
 - **`finpartie`** — élimination, victoire, défaite, et la Merveille qui ne
   doit PAS donner la victoire avant son délai. Ce groupe garde aussi une
   famille à part : **ce que l'interface PROMET doit être ce que le code

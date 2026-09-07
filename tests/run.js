@@ -2909,6 +2909,75 @@ groupe('ia', () => {
     ok(i > 0, 'aucun assaut lancé en 15 minutes');
     egal(phases[i - 1], 'rassemble', `l'assaut n'a pas été précédé d'un rassemblement : ${JSON.stringify(phases)}`);
   });
+
+  // ══ FORTIFICATION (chantier « murs de l'IA », écarté à l'audit du
+  // 2026-08-28, repris le 2026-09-07 sous une forme volontairement bornée :
+  // une LIGNE tournée vers l'ennemi, jamais un anneau) ══════════════
+
+  test("l'IA fortifie sa base d'une ligne de palissade tournée vers l'ennemi, jamais un anneau fermé", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    a.age = 1;
+    riche(j, a.id);
+    for (let i = 0; i < 6; i++) j.G.units.push(j.mkUnit(j.UT.VIL, a.baseX, a.baseY, a.id));
+    j.rebuildIndex();
+    // aiFortify plafonne les chantiers SIMULTANÉS (AI_WALL_MAX_SITES), pas le
+    // total : chaque passage termine aussitôt ce qui est en cours (comme le
+    // ferait le temps réel) pour laisser l'arc progresser jusqu'à épuisement
+    // des cases plaçables.
+    for (let k = 0; k < 60; k++) {
+      j.aiFortify(a);
+      for (const b of j.G.buildings)
+        if (b.owner === a.id && b.constructing && (b.type === j.BT.WALL || b.type === j.BT.GATE)) { b.constructing = false; b.progress = 1; }
+    }
+    const murs = j.G.buildings.filter((b) => b.owner === a.id && (b.type === j.BT.WALL || b.type === j.BT.GATE));
+    ok(murs.length >= 10, `l'IA n'a posé que ${murs.length} section(s) de palissade`);
+    const portails = murs.filter((b) => b.type === j.BT.GATE);
+    egal(portails.length, 1, `l'IA pose ${portails.length} portail(s) au lieu d'un seul`);
+    ok(portails[0].open === true, "le portail de l'IA n'est pas ouvert — elle se couperait elle-même de sa propre armée");
+    // Jamais un anneau fermé : aucune section ne doit se trouver au DOS de la
+    // base (à plus de 135° de la direction de l'ennemi) — sans quoi un
+    // gisement de ce côté pourrait s'y retrouver enfermé.
+    const cible = j.aiCibleBase(a);
+    const ang0 = Math.atan2(cible.y - a.baseY, cible.x - a.baseX);
+    const auDos = murs.some((b) => {
+      let diff = Math.abs(Math.atan2(b.y - a.baseY, b.x - a.baseX) - ang0);
+      if (diff > Math.PI) diff = 2 * Math.PI - diff;
+      return diff > Math.PI * 0.75;
+    });
+    ok(!auDos, "une section de palissade se trouve au DOS de la base : ce n'est plus une ligne, c'est un anneau");
+  });
+
+  test("la palissade de l'IA saute un gisement plutôt que de le recouvrir ou le vider", () => {
+    // `poserMursArene` (palissade de DÉPART, avant toute économie) dégage les
+    // gisements pris sur son tracé — sans rien à perdre, à ce moment-là.
+    // `aiFortify` tourne en pleine partie : recopier ce geste raserait une
+    // ressource que l'IA exploite peut-être déjà. Elle doit SAUTER la case.
+    const j = partie(charger(), { graine: 4242 });
+    const a = j.G.factions.ia;
+    a.age = 1;
+    riche(j, a.id);
+    const cible = j.aiCibleBase(a);
+    ok(!!cible, 'aucune base hostile trouvée : le test ne prouve rien');
+    const ang0 = Math.atan2(cible.y - a.baseY, cible.x - a.baseX);
+    const cx = Math.round(a.baseX / j.BASE_TILE), cy = Math.round(a.baseY / j.BASE_TILE);
+    // Première case de l'arc (même formule que dans aiFortify, i=0) : un
+    // gisement y est planté AVANT le premier passage.
+    const ang = ang0 - j.AI_WALL_SPAN / 2;
+    const gx = Math.round(cx + Math.cos(ang) * j.AI_WALL_R), gy = Math.round(cy + Math.sin(ang) * j.AI_WALL_R);
+    j.G.bmap[gy][gx] = 2;
+    j.G.nodes.push({ id: j.G.nid++, type: j.RT.TREE, tx: gx, ty: gy,
+      x: (gx + 0.5) * j.BASE_TILE, y: (gy + 0.5) * j.BASE_TILE, amt: 100, max: 100, gatherers: [] });
+    j.rebuildIndex();
+    for (let k = 0; k < 60; k++) {
+      j.aiFortify(a);
+      for (const b of j.G.buildings)
+        if (b.owner === a.id && b.constructing && (b.type === j.BT.WALL || b.type === j.BT.GATE)) { b.constructing = false; b.progress = 1; }
+    }
+    egal(j.G.bmap[gy][gx], 2, "l'IA a recouvert le gisement d'un mur au lieu de sauter la case");
+    const survivant = j.G.nodes.find((n) => n.tx === gx && n.ty === gy);
+    ok(survivant && survivant.amt === 100, "le gisement a été rasé pour faire de la place — acceptable au tout début de partie, pas en pleine économie");
+  });
 });
 
 // ════════════════════════════════════════════════════════════

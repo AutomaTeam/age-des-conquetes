@@ -44,3 +44,19 @@ sujet) et les poches de fond fermées, qui sortiraient en voile blanc opaque.
   python outils/comble-poches-livrees.py --dry assets/batiments/*.webp assets/unites/*.webp   # aperçu
   python outils/comble-poches-livrees.py assets/batiments/mur_mongols.webp                     # applique
   ```
+
+- `reboucher-transparence.py` — remplace le RGB caché sous les pixels déjà
+  transparents d'une planche livrée par la couleur du pixel opaque le plus
+  proche (même « rebouchage » que la première précaution de
+  `detourer-planche.py`, appliqué après coup). Sans effet visuel direct — ces
+  pixels sont invisibles avant comme après — mais évite qu'un futur
+  redimensionnement fasse baver ce blanc résiduel dans le contour. **Ne
+  résout PAS**, à lui seul, un mur qui rend plus court que son propre
+  portail (Byzantins : 94 px contre 126 px, vérifié le 2026-09-08) — cet
+  écart-là vient de la composition même des deux planches, pas d'un défaut
+  de détourage ; seule une nouvelle génération le corrigerait proprement.
+
+  ```bash
+  python outils/reboucher-transparence.py --dry assets/batiments/*.webp   # aperçu
+  python outils/reboucher-transparence.py assets/batiments/mur_byzantins.webp
+  ```

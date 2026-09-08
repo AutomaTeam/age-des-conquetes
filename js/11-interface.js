@@ -1583,6 +1583,7 @@ const CONTROLES = [
   { key:'Clic droit / Échap', desc:'Annule la construction ou la marche d’attaque en cours, sinon désélectionne.' },
   { key:'Molette / pincement', desc:'Zoom avant/arrière.' },
   { key:'Glisser le fond', desc:'Déplace la caméra (sauf en pose de bâtiment, voir Construction ci-dessous).' },
+  { key:'Bord de l’écran', desc:'Approchez le curseur d’un bord de l’écran : la caméra défile dans cette direction (souris uniquement).' },
   { sec:'Construction' },
   { key:'Tapez',   desc:'Positionne l’aperçu. À la souris, ce même geste construit directement (le survol l’a déjà montré avant le clic) ; au doigt, retouchez le même endroit ou validez avec ✓.' },
   { key:'Glissez',  desc:'Déplace l’aperçu sans faire bouger la caméra — pour un Mur, trace toute une ligne (droite ou en diagonale) en un seul geste.' },

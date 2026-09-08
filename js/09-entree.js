@@ -307,6 +307,49 @@ function updateCamClavier(dt){
   clampCam();
 }
 
+// ── Caméra par les bords de l'écran (souris uniquement) ──
+// Convention du genre depuis toujours (AoE2 compris) : approcher le curseur
+// d'un bord de l'écran fait défiler la caméra dans cette direction, sans
+// bouton enfoncé. Seuls les flèches et le glissé existaient jusqu'ici.
+// Réutilise la même vitesse que le clavier (CAM_TILES_PAR_S) plutôt que
+// d'en inventer une seconde.
+const EDGE_SCROLL_PX = 18;   // marge depuis le bord, en pixels écran
+// `_mqFinePointer` suit le même garde-fou que `_mqCompact` (js/11-interface.js)
+// pour le harnais de test, dont le DOM factice ne fournit qu'un matchMedia
+// minimal. Sans lui : pas de défilement par les bords au doigt (le tactile
+// ne produit de toute façon quasiment jamais de mousemove), et surtout pas
+// sur un pavé tactile qu'on frôle sans intention de faire défiler quoi que
+// ce soit.
+const _mqFinePointer=(typeof window!=='undefined'&&typeof window.matchMedia==='function')
+  ? window.matchMedia('(hover:hover) and (pointer:fine)') : null;
+let _edgeMouseX=-1, _edgeMouseY=-1, _edgeMouseActive=false;
+window.addEventListener('mousemove',e=>{ _edgeMouseX=e.clientX; _edgeMouseY=e.clientY; _edgeMouseActive=true; });
+// Le curseur qui QUITTE vraiment la fenêtre (alt-tab, autre application)
+// doit couper le défilement, sinon il continue indéfiniment sur la
+// dernière position connue, restée collée au bord. `mouseleave` sur <html>
+// est le seul évènement fiable pour une sortie de fenêtre — contrairement
+// à `mouseout`, qui se déclenche aussi en passant d'un élément interne à
+// un autre.
+if(typeof document!=='undefined'&&document.documentElement)
+  document.documentElement.addEventListener('mouseleave',()=>{ _edgeMouseActive=false; });
+window.addEventListener('blur',()=>{ _edgeMouseActive=false; });
+
+function updateCamBords(dt){
+  if(!_edgeMouseActive||mouseDown||pinching) return;
+  if(!G.running||G.paused) return;
+  if(!_mqFinePointer||!_mqFinePointer.matches) return;
+  let dx=0, dy=0;
+  if(_edgeMouseX<EDGE_SCROLL_PX) dx=-1;
+  else if(_edgeMouseX>innerWidth-EDGE_SCROLL_PX) dx=1;
+  if(_edgeMouseY<EDGE_SCROLL_PX) dy=-1;
+  else if(_edgeMouseY>innerHeight-EDGE_SCROLL_PX) dy=1;
+  if(!dx&&!dy) return;
+  const n=Math.hypot(dx,dy)||1;
+  const p=CAM_TILES_PAR_S*TILE*dt;
+  G.cam.x+=dx/n*p; G.cam.y+=dy/n*p;
+  clampCam();
+}
+
 // ── Prochain villageois inactif ──
 // Le badge 👷 de la barre du haut promettait « cliquez pour les
 // sélectionner » depuis toujours... sans le moindre gestionnaire de clic.

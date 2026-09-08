@@ -37,10 +37,12 @@ function loop(ts){
   }
   if(steps>=SIM_MAX_STEPS) _simAccum=0; // décroche plutôt que de spiraler si la machine rame
   const dt=frameDt; // pour le rafraîchissement UI ci-dessous (cadence réelle, pas simulée)
-  // Caméra au clavier : à la cadence d'AFFICHAGE et non au pas de simulation
-  // (voir updateCamClavier) — sinon elle irait deux fois plus vite en ×2, et
-  // ne bougerait plus du tout chez le client d'une partie en ligne.
+  // Caméra au clavier et par les bords de l'écran : à la cadence
+  // d'AFFICHAGE et non au pas de simulation (voir updateCamClavier) —
+  // sinon elle irait deux fois plus vite en ×2, et ne bougerait plus du
+  // tout chez le client d'une partie en ligne.
   updateCamClavier(dt);
+  updateCamBords(dt);
   render();
   updateHUD();
   _uiRefreshCd-=dt;

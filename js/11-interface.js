@@ -281,12 +281,22 @@ function exitRoute(){
 
 function updateActBar(){
   const bar=document.getElementById('actbar');
+  // Signature de ce qui va etre affiche : identite de la selection + onglet
+  // de construction (le seul sous-etat qui change SANS changer la selection,
+  // via les onglets Economie/Militaire/Defense/Amelioration du Villageois).
+  // #actbar peut desormais defiler (voir sa regle CSS, index.html) — et
+  // cette fonction est rappelee toutes les 0.5s meme sans rien de nouveau a
+  // montrer (throttle de loop(), js/14-demarrage.js). Remettre `scrollTop`
+  // a 0 a CHAQUE appel annulerait donc un defilement en cours toutes les
+  // demi-secondes : on ne le fait que quand la signature change reellement.
+  const e=G.sel.length===1?(G.units.find(u=>u.id===G.sel[0])||G.buildings.find(b=>b.id===G.sel[0])):null;
+  const sig=e?`${e.id}:${e.type===UT.VIL?G.buildTab:''}`:(G.sel.length>1?'multi':'none');
+  if(bar.dataset.sig!==sig){ bar.scrollTop=0; bar.dataset.sig=sig; }
   bar.innerHTML='';
   if(G.sel.length===0){
     bar.innerHTML='<div class="tip">Tapez une unité ou un bâtiment pour le sélectionner</div>';
     return;
   }
-  const e=G.sel.length===1?(G.units.find(u=>u.id===G.sel[0])||G.buildings.find(b=>b.id===G.sel[0])):null;
   if(!e&&G.sel.length>1){
     // Multi-sélection
     mkBtn(bar,'🛑','Stop',()=>emettreOrdre(ordre(ORD.STOP,{ids:G.units.filter(u=>estSel(u.id)&&estLocal(u)).map(u=>u.id)})));

@@ -232,7 +232,31 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
      ou un seul batiment depassait ses voisins. Etirees, chaque rangee est
      d'une seule hauteur — celle de son element le plus haut — et les
      boutons redeviennent une grille. */
-  align-items:stretch;align-content:center;
+  align-items:stretch;align-content:flex-start;
+  /* Sur telephone, cette barre grandit avec son contenu (4 onglets +
+     jusqu'a 8 batiments pour le Villageois/Economie) et pouvait a elle
+     seule manger 230px sur un ecran de 812px de haut - #botpanel entier
+     montait a 38% de l'ecran, juste apres avoir tape une unite, au moment
+     ou le joueur a justement besoin de voir la carte. Rien ne la limitait.
+     Plafond + defilement interne : le contenu court (Militaire, Chateau
+     Fort...) garde sa taille naturelle (max-height ne force rien vers le
+     bas - d'ou align-content:flex-start ci-dessus, sans quoi le contenu
+     court se retrouvait centre dans l'espace vide et flottait loin du
+     haut du panneau), le contenu long defile au lieu de pousser le
+     panneau plus bas - et ca vaut aussi pour un batiment ou une civ
+     ajoutee plus tard, sans qu'on ait besoin d'y repenser.
+     `touch-action:pan-y` est necessaire MALGRE overflow-y:auto : le jeu
+     verrouille tous les gestes tactiles par defaut
+     (html,body{touch-action:none}) - meme raison que #overlay plus bas. */
+  max-height:min(150px,22vh);
+  overflow-y:auto;
+  touch-action:pan-y;
+  overscroll-behavior:contain;
+}
+@media (min-width:760px) {
+  /* Le plafond ci-dessus vise l'ecran de telephone : sur tablette/bureau,
+     la hauteur ne manque pas et rien ne justifie un defilement interne. */
+  #actbar { max-height:none;overflow-y:visible; }
 }
 
 /* ── MISE EN PAGE LARGE (ordinateur / tablette) ──

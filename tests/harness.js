@@ -30,7 +30,7 @@ const EXPORTS = [
   'pickMode', 'pickDifficulty', 'mkUnit', 'mkBuilding', 'placeBuilding',
   'rebuildGrid', 'rebuildIndex', 'unitById', 'bldById', 'nodeById',
   'findPath', 'tileBlocked', 'wallAt', 'losClear', 'nearestBy', 'forNearby',
-  'construireSnap', 'appliquerSnap', 'construireDelta', 'appliquerDelta',
+  'construireSnap', 'appliquerSnap', 'construireDelta', 'appliquerDelta', 'appliquerFaction',
   'buildSaveData', 'migrerSauvegarde', 'RESEAU', 'PROTO_VERSION',
   'envoyerBilanReseau', 'appliquerBilanFin', 'checkAchievements', 'PROFILE',
   'UT', 'BT', 'RT', 'UDEF', 'BDEF', 'FAC', 'CIVS', 'AGES', 'RDEF',

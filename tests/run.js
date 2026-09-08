@@ -3148,6 +3148,39 @@ groupe('delta', () => {
     }
   });
 
+  test('M_OWNER : une conversion (Wololo) traverse le delta — le client voit le NOUVEAU propriétaire', () => {
+    const { hote, client, pousser, tourner } = paireEnLigne();
+    const ia = hote.G.factions.ia;
+    const cible = hote.mkUnit(hote.UT.MIL, hote.COLS * hote.BASE_TILE / 2, hote.ROWS * hote.BASE_TILE / 2, ia.id);
+    hote.G.units.push(cible); hote.rebuildIndex();
+    pousser(); tourner(1);
+    const avant = client.G.units.find((u) => u.id === cible.id);
+    ok(!!avant, "le client ne connaît pas encore l'unité, avant même toute conversion");
+    egal(avant.owner, ia.id, "le client devrait d'abord voir l'unité chez l'IA");
+
+    hote.convertirUnite(cible, hote.FAC.P1);
+    pousser(); tourner(1);
+    const apres = client.G.units.find((u) => u.id === cible.id);
+    ok(!!apres, "l'unité a disparu chez le client après sa conversion");
+    egal(apres.owner, hote.FAC.P1, "le client n'a pas reçu le changement de propriétaire (bit M_OWNER)");
+  });
+
+  test('le petit logo de triche ne s\'affiche PAS sur la toute première valeur reçue (SNAP/reconnexion), seulement sur un VRAI changement', () => {
+    const j = partie(charger());
+    const notifEl = j.__sandbox.document.getElementById('notif');
+    // Simule un client qui rejoint une partie où un code a DÉJÀ servi avant
+    // sa connexion : la faction adverse arrive avec un `tr` déjà rempli.
+    const d1 = { i: 'p9', g: 'humain', e: 0, t: 'bleu', n: 'Rival', a: 0, p: 0, mp: 5, tr: ['fortune', 12.5] };
+    j.appliquerFaction(d1);
+    egal(notifEl.children.length, 0, "un badge est apparu à la connexion, pour un code déjà utilisé avant même de rejoindre");
+    // Un VRAI nouveau code (horodatage différent), lui, doit avertir.
+    j.appliquerFaction(Object.assign({}, d1, { tr: ['polo', 40] }));
+    egal(notifEl.children.length, 1, "aucun badge n'est apparu pour un nouveau code, après la connexion");
+    // Rejouer le MÊME tr ne doit pas réafficher un second badge.
+    j.appliquerFaction(Object.assign({}, d1, { tr: ['polo', 40] }));
+    egal(notifEl.children.length, 1, 'le même tr (rejoué, ex. un SNAP de reconnexion) a déclenché un second badge');
+  });
+
   test('convergence SOUS LE FEU : 80 unités qui se battent et qui meurent', () => {
     // La partie calme ne prouve pas grand-chose : c'est en bataille que les
     // désyncs apparaissent — retraits en rafale, PV qui changent à chaque
@@ -3993,41 +4026,79 @@ groupe('triche', () => {
     egal(vil.state, 'idle', "l'unité convertie devrait repartir idle, pas dans son ancien état");
   });
 
-  test('CHEATS.fortune ajoute 1000 à chaque ressource', () => {
+  test('CHEATS.fortune ajoute 1000 à chaque ressource DU CAMP PASSÉ EN PARAMÈTRE', () => {
     const j = partie(charger(), { mode: 'conquest' });
-    const avant = Object.assign({}, j.G.res);
-    j.CHEATS.fortune.run();
+    const ia = j.G.factions.ia;
+    const avantMoi = Object.assign({}, j.G.res);
+    const avantIa = Object.assign({}, j.resPool(ia.id));
+    j.CHEATS.fortune.run(ia.id);
     for (const r of ['food', 'wood', 'stone', 'gold']) {
-      egal(j.G.res[r], avant[r] + 1000, `${r} n'a pas reçu +1000`);
+      egal(j.resPool(ia.id)[r], avantIa[r] + 1000, `${r} de l'IA n'a pas reçu +1000`);
+      egal(j.G.res[r], avantMoi[r], `fortune(ia.id) a modifié MES ressources au lieu de celles de l'IA`);
     }
   });
 
-  test('CHEATS.polo révèle le brouillard sans jamais rétrograder une case déjà visible', () => {
+  test('CHEATS.polo révèle le brouillard DU CAMP PASSÉ EN PARAMÈTRE, sans jamais rétrograder une case déjà visible', () => {
     const j = partie(charger(), { mode: 'conquest' });
-    const fog = j.G.fog;
-    fog[5][5] = 0; fog[6][6] = 2;
-    j.CHEATS.polo.run();
-    egal(fog[5][5], 1, 'une case inexplorée devrait passer à 1 (explorée)');
-    egal(fog[6][6], 2, 'une case déjà VISIBLE (2) ne doit jamais redescendre à 1');
+    j.G.fog[5][5] = 0; j.G.fog[6][6] = 2;
+    j.CHEATS.polo.run(j.G.me);
+    egal(j.G.fog[5][5], 1, 'une case inexplorée devrait passer à 1 (explorée)');
+    egal(j.G.fog[6][6], 2, 'une case déjà VISIBLE (2) ne doit jamais redescendre à 1');
   });
 
-  test('le terminal refuse tout code en ligne (reseauActif)', () => {
+  test('CHEATS.polo est sans effet mais ne plante pas pour un camp SANS brouillard (l\'IA voit déjà tout)', () => {
+    // L'IA et les pillards n'ont pas de calque de brouillard du tout
+    // (initFog, js/02-etat.js — ils voient toute la carte par construction) :
+    // .fog reste [] à vie pour eux. run() doit le détecter proprement plutôt
+    // que de lever en indexant un tableau vide.
     const j = partie(charger(), { mode: 'conquest' });
-    const nAvant = j.G.units.length;
-    j.RESEAU.actif = true;
-    j.__sandbox.document.getElementById('cheatinput').value = 'wololo';
-    j.soumettreCheat({ preventDefault() {} });
-    egal(j.G.units.length, nAvant, "le Wololo a été invoqué alors que RESEAU.actif valait true");
-    j.RESEAU.actif = false;
+    const ia = j.G.factions.ia;
+    ok(!ia.fog.length, "prérequis du test invalide : l'IA a un vrai calque de brouillard");
+    const r = j.CHEATS.polo.run(ia.id);
+    ok(typeof r === 'string' && r.length > 0, 'run() aurait dû renvoyer un message, pas planter');
   });
 
-  test('un code inconnu ne fait planter ni la partie ni le terminal', () => {
+  test('ORD.TRICHE fonctionne aussi en HÉBERGEANT une partie en ligne, pas seulement en solo', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    j.RESEAU.actif = true; j.RESEAU.role = 'hote'; // « j'héberge », pas « je suis solo »
+    const nAvant = j.G.units.filter((u) => u.type === j.UT.WOLOLO).length;
+    const r = ordreDe(j, j.G.me, 'TRICHE', { code: 'wololo' });
+    ok(r.ok, `le code aurait dû être accepté en ligne : ${JSON.stringify(r)}`);
+    egal(j.G.units.filter((u) => u.type === j.UT.WOLOLO).length, nAvant + 1, 'aucun Wololo supplémentaire malgré RESEAU.actif');
+  });
+
+  test('ORD.TRICHE crédite le camp qui a VRAIMENT tapé le code (cmd.f), jamais G.me en dur', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const ia = j.G.factions.ia;
+    const avantMoi = Object.assign({}, j.G.res), avantIa = Object.assign({}, j.resPool(ia.id));
+    const r = ordreDe(j, ia.id, 'TRICHE', { code: 'fortune' });
+    ok(r.ok, `refusé : ${JSON.stringify(r)}`);
+    egal(j.resPool(ia.id).food, avantIa.food + 1000, "l'IA (émettrice réelle de l'ordre) n'a pas reçu la fortune");
+    egal(j.G.res.food, avantMoi.food, "G.me a reçu la fortune alors que c'est l'IA qui a émis l'ordre");
+  });
+
+  test('ORD.TRICHE avec un code inconnu est refusé proprement', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    egal(ordreDe(j, j.G.me, 'TRICHE', { code: 'ceci-nexiste-pas' }).ok, false, 'un code inconnu aurait dû être refusé');
+  });
+
+  test('ORD.TRICHE pose f.dernierTriche et affiche le petit logo localement (annoncerTriche)', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const notifEl = j.__sandbox.document.getElementById('notif');
+    const avant = notifEl.children.length;
+    ordreDe(j, j.G.me, 'TRICHE', { code: 'fortune' });
+    ok(!!j.moi().dernierTriche, 'f.dernierTriche aurait dû être posé après un code accepté');
+    egal(j.moi().dernierTriche[0], 'fortune', 'dernierTriche ne porte pas le bon code');
+    egal(notifEl.children.length, avant + 1, "aucun badge (notify) n'est apparu après le code");
+  });
+
+  test('un code inconnu tapé dans le terminal ne fait planter ni la partie ni le terminal', () => {
     const j = partie(charger(), { mode: 'conquest' });
     j.__sandbox.document.getElementById('cheatinput').value = 'ceci-nexiste-pas';
     ok(j.soumettreCheat({ preventDefault() {} }) === false, 'soumettreCheat devrait retourner false (bloque le submit du <form>)');
   });
 
-  test('le code wololo invoque bien une unité UT.WOLOLO appartenant au joueur local', () => {
+  test('le code wololo tapé dans le terminal invoque une unité UT.WOLOLO appartenant au joueur local', () => {
     const j = partie(charger(), { mode: 'conquest' });
     const nAvant = j.G.units.filter((u) => u.type === j.UT.WOLOLO).length;
     j.__sandbox.document.getElementById('cheatinput').value = 'WOLOLO'; // insensible à la casse

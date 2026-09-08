@@ -34,6 +34,7 @@ const ORD = {
   TROC:'TROC', ANNULER_FORMATION:'ANNULER_FORMATION', AMELIORER_CAMP:'AMELIORER_CAMP',
   GARNIR:'GARNIR', DEGARNIR:'DEGARNIR', ROUTE_COMMERCIALE:'ROUTE_COMMERCIALE',
   RELIQUE:'RELIQUE', CHASSER:'CHASSER', DIPLOMATIE:'DIPLOMATIE', PECHER:'PECHER', NAVIGUER:'NAVIGUER',
+  TRICHE:'TRICHE',
 };
 
 let _ordSeq=0;
@@ -538,6 +539,29 @@ function applyCommand(cmd){
     p[t.recoit]=(p[t.recoit]||0)+t.rend;
     f.stats.tradesDone++;
     return OK();
+  }
+
+  // Terminal de triche (js/11-interface.js) : passe par applyCommand comme
+  // n'importe quel autre ordre, donc fonctionne aussi bien en solo qu'en
+  // ligne — un CLIENT qui tape un code l'envoie ici via emettreOrdre,
+  // exactement comme il le ferait pour ORD.BATIR ou ORD.FORMER. C'est ce qui
+  // rend la conversion (CHEATS.wololo) et les autres mutations AUTORITAIRES
+  // au lieu de locales : elles s'appliquent toujours chez l'HÔTE, qui les
+  // diffuse ensuite normalement (voir M_OWNER et le champ `tr`,
+  // js/12-reseau.js).
+  case ORD.TRICHE: {
+    const cheat=CHEATS[cmd.code];
+    if(!cheat) return KO('inconnu');
+    let msg;
+    try{ msg=cheat.run(cmd.f); }
+    catch(err){ return KO('erreur',{detail:err.message}); }
+    f.dernierTriche=[cmd.code,+G.gameTime.toFixed(2)];
+    // Averti localement ICI, pas seulement via le delta : c'est ce qui
+    // couvre l'HÔTE lui-même (appliquerFaction, qui déclenche l'annonce
+    // chez un CLIENT, ne tourne jamais côté hôte — il ne s'applique jamais
+    // son propre delta). `f` porte déjà le `dernierTriche` à jour ci-dessus.
+    annoncerTriche(f,cmd.code);
+    return OK({msg});
   }
 
   }

@@ -58,7 +58,12 @@ window.transportLocal=transportLocal;
 // nouveaux, ne les dépile pas, et tout ce qui suit dans SA lecture tombe à
 // côté. Un écart de version doit donc refuser la connexion, pas la
 // dégrader — d'où le bump.
-const PROTO_VERSION = 4;   // v4 : equipe suivie en cours de partie, autoRepair emis
+// v5 : le masque d'unité gagne M_OWNER (conversion, voir CHEATS.wololo) et
+// la faction gagne le champ public `tr` (dernier code de triche utilisé,
+// voir serialiserFaction/annoncerTriche) — même raison que le bump v3 :
+// un client v4 ne connaît pas M_OWNER, ne le dépile pas, et tout ce qui
+// suit dans SA lecture du masque tombe à côté.
+const PROTO_VERSION = 5;   // v4 : equipe suivie en cours de partie, autoRepair emis
 const DELTA_HZ      = 10;
 const DELTA_PERIODE = 1/DELTA_HZ;
 const SEUIL_POS     = 1;    // unites-monde : en deca, on ne renvoie pas la position
@@ -201,7 +206,13 @@ function deserialiserBatiment(d){
 function serialiserFaction(f,prive){
   const d={i:f.id, g:f.genre, e:f.equipe, t:f.teinte, n:f.nom, cv:f.civ,
            ht:f.hostileATous?1:0, a:f.age,
-           p:f.pop, mp:f.maxPop, v:f.vaincu?1:0, mv:f.merveilleAchevee?1:0, hr:f.heroTrained?1:0};
+           p:f.pop, mp:f.maxPop, v:f.vaincu?1:0, mv:f.merveilleAchevee?1:0, hr:f.heroTrained?1:0,
+           // Dernier code de triche utilisé par CE camp — PUBLIC et non privé
+           // (contrairement à `r`/`rc` juste en dessous) : c'est justement le
+           // « petit logo qui s'affiche à tout le monde », y compris à un
+           // adversaire hors équipe. Voir CHEATS/annoncerTriche,
+           // js/11-interface.js, et le case ORD.TRICHE d'applyCommand.
+           tr:f.dernierTriche||null};
   // La reparation automatique est decidee par l'HOTE (applyCommand pose
   // f.autoRepair), mais l'interface du client lit G.autoRepair — un shim vers
   // sa propre faction. Sans ce champ, le client basculait le reglage, l'hote
@@ -250,6 +261,17 @@ function appliquerFaction(d){
   if(d.cv) f.civ=d.cv;
   f.merveilleAchevee=!!d.mv;
   f.heroTrained=!!d.hr;
+  // Petit logo de triche, visible de TOUT LE MONDE (voir serialiserFaction) :
+  // ne s'affiche que sur un vrai CHANGEMENT, jamais à la toute première
+  // valeur reçue pour cette faction (SALUT de connexion, ou SNAP après une
+  // reconnexion) — sinon rejoindre une partie où un code a déjà servi il y a
+  // dix minutes ferait croire qu'il vient d'être tapé à l'instant.
+  if(d.tr){
+    const dejaConnu=f.dernierTriche!=null;
+    const change=!f.dernierTriche||f.dernierTriche[1]!==d.tr[1];
+    f.dernierTriche=d.tr;
+    if(dejaConnu&&change) annoncerTriche(f,d.tr[0]);
+  }
   return f;
 }
 
@@ -323,7 +345,15 @@ function construireSnap(){
 // client : c'est la meme regle que pour `constructing` — un champ que l'hote
 // decide ne se redevine pas chez le destinataire.
 const M_X=1, M_Y=2, M_HP=4, M_ETAT=8, M_CIBLE=16, M_DIR=32, M_MAXHP=64,
-      M_ATK=128, M_XP=256;
+      M_ATK=128, M_XP=256,
+      // M_OWNER : ferme le MEME trou que M_ATK/M_XP ci-dessus, pour un
+      // champ que rien ne pouvait faire bouger avant le terminal de triche
+      // (voir CHEATS.wololo, js/11-interface.js) — aucun autre mecanisme du
+      // jeu ne change le proprietaire d'une unite deja creee. Sans ce bit,
+      // une unite convertie restait affichee sous son ANCIEN camp chez le
+      // client a vie : mauvaise couleur, inselectionnable pour son nouveau
+      // proprietaire, toujours comptee comme hostile par son estHostile().
+      M_OWNER=512;
 
 // Brouillard d'une faction ARBITRAIRE (pas forcement la locale, contrairement
 // a fogTileAt/G.fog) : sert a filtrer ce que l'hote envoie a l'adversaire.
@@ -367,7 +397,7 @@ function construireDelta(){
     if(!av){                                   // nouvelle unite : complete
       (d.newU||(d.newU=[])).push(serialiserUnite(u));
       RESEAU.dernier.set(cle,{x:u.x,y:u.y,h:u.hp,mh:u.maxHp,s:u.state,g:u.target,d:u.dir,
-                             a:u.atk,e:u.xp||0,rk:u.rank||0});
+                             a:u.atk,e:u.xp||0,rk:u.rank||0,o:u.owner});
       continue;
     }
     let masque=0; const ch=[];
@@ -383,6 +413,13 @@ function construireDelta(){
     if((u.xp||0)!==av.e||(u.rank||0)!==av.rk){
       masque|=M_XP; ch.push(u.xp||0,u.rank||0); av.e=u.xp||0; av.rk=u.rank||0;
     }
+    // Conversion (voir CHEATS.wololo/convertirUnite, js/07-simulation.js) :
+    // le seul mecanisme du jeu qui change le proprietaire d'une unite deja
+    // creee. `av.o` manque legitimement pour toute unite deja connue avant
+    // ce chantier (construireSnap n'amorce pas ce champ) : elle voyage donc
+    // une fois de plus que necessaire au premier delta suivant une reprise,
+    // jamais moins — meme comportement assume que M_ATK/M_XP juste au-dessus.
+    if(u.owner!==av.o){ masque|=M_OWNER; ch.push(u.owner); av.o=u.owner; }
     if(masque) d.u.push([u.id,masque].concat(ch));
   }
   for(const id of RESEAU.connusU) if(!vus.has(id)){ d.rm.push(id); RESEAU.dernier.delete('u'+id); }
@@ -589,6 +626,9 @@ function appliquerDelta(m){
     if(masque&M_MAXHP) u.maxHp=e[k++];
     if(masque&M_ATK)   u.atk=e[k++];
     if(masque&M_XP)    { u.xp=e[k++]; u.rank=e[k++]; }
+    // Conversion : changement de camp, instantane (pas de champ _net a
+    // interpoler, contrairement a la position) — voir M_OWNER plus haut.
+    if(masque&M_OWNER) u.owner=e[k++];
   }
   for(const e of paires(m.b)){
     const b=bldById(e[0]); if(!b) continue;

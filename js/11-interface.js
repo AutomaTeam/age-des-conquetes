@@ -1617,7 +1617,7 @@ const CONTROLES = [
   { key:'1-9',         desc:'Rappelle ce groupe de contrôle. Un second appui rapide sur le même chiffre recentre la caméra dessus. Au doigt : touchez simplement la case.' },
   { key:'Alt + 1-4',   desc:'En partie en ligne : envoie une émotion rapide à votre allié ou adversaire.' },
   { sec:'Terminal' },
-  { key:'`  (accent grave)', desc:'Ouvre le terminal de triche — parties solo uniquement. Tapez « aide » une fois ouvert pour la liste des codes.' },
+  { key:'`  (accent grave)', desc:'Ouvre le terminal de triche. Tapez « aide » une fois ouvert pour la liste des codes — un petit signal prévient tout le monde à chaque code utilisé.' },
 ];
 function openControls(){
   const list=document.getElementById('ctrllist');
@@ -1632,46 +1632,67 @@ function closeControls(){ document.getElementById('controlspanel').style.display
 window.openControls=openControls; window.closeControls=closeControls;
 
 // ── TERMINAL DE TRICHE ────────────────────────────────────
-// Réservé aux parties SOLO (jamais reseauActif()) : convertir une unité,
-// injecter des ressources ou lever le brouillard sont des mutations d'état
-// qui ne voyagent PAS sur le réseau (voir le 6e invariant multijoueur,
-// [[age-des-conquetes-mp-invariants]]) — les autoriser en ligne
-// désynchroniserait l'hôte et le client en silence, sans qu'aucune erreur
-// ne le signale. D'où la garde à CHAQUE point d'entrée (ouverture du
-// panneau, soumission d'un code), pas une seule fois à l'ouverture : le
-// statut réseau peut changer PENDANT que le panneau reste ouvert (perte de
-// connexion, reprise) si jamais il l'était.
+// Disponible en ligne comme en solo : chaque `run(owner)` passe par
+// ORD.TRICHE (js/10-ordres.js), donc par applyCommand — LE point de
+// passage autorisé pour muter l'état d'un camp, exactement comme
+// ORD.BATIR ou ORD.FORMER. C'est ce qui rend la conversion (wololo)
+// AUTORITAIRE (toujours décidée par l'hôte, jamais par le client qui
+// l'a demandée) plutôt que locale, et donc synchronisable — voir le
+// bit M_OWNER et le champ public `tr` ajoutés à js/12-reseau.js pour ce
+// chantier. `owner` est TOUJOURS la faction qui a tapé le code (cmd.f),
+// jamais G.me en dur : côté hôte, ce même code s'exécute aussi pour les
+// commandes reçues d'un client.
 const CHEATS = {
   wololo:{
     desc:'Invoque un Moine géant : HP énorme, très lent, convertit les unités ennemies proches.',
-    run(){
-      const tc=G.buildings.find(b=>b.type===BT.TC&&estLocal(b));
+    run(owner){
+      const tc=G.buildings.find(b=>b.type===BT.TC&&b.owner===owner);
       let sx,sy;
       if(tc){ sx=tc.x+BASE_TILE*2; sy=tc.y; }
       else { const c=sw(innerWidth/2,innerHeight/2); sx=c.x; sy=c.y; }
-      const u=mkUnit(UT.WOLOLO,sx,sy,G.me);
+      const u=mkUnit(UT.WOLOLO,sx,sy,owner);
       G.units.push(u);
       rebuildIndex(); rebuildGrid();
-      camCenterOn(u.x,u.y);
+      // Ne recentre QUE la caméra de celui qui a réellement tapé le code sur
+      // CETTE machine (owner===G.me) : applyCommand tourne aussi côté hôte
+      // pour un ordre reçu D'UN CLIENT (owner!==G.me dans ce cas précis) —
+      // sans cette garde, l'hôte aurait vu sa propre vue sauter ailleurs
+      // chaque fois qu'un client invoque son Wololo.
+      if(owner===G.me) camCenterOn(u.x,u.y);
       return `🌀 Un Moine géant apparaît ! Il convertit toute unité ennemie à moins de ${Math.round(WOLOLO_RADIUS/BASE_TILE)} cases, toutes les ${WOLOLO_TICK}s.`;
     }
   },
   fortune:{
     desc:'+1000 de chaque ressource.',
-    run(){
-      G.res.food+=1000; G.res.wood+=1000; G.res.stone+=1000; G.res.gold+=1000;
+    run(owner){
+      const p=resPool(owner); if(!p) return '❌ Aucune faction.';
+      p.food+=1000; p.wood+=1000; p.stone+=1000; p.gold+=1000;
       return '💰 +1000 nourriture, bois, pierre, or.';
     }
   },
   polo:{
     desc:'Révèle toute la carte (comme déjà explorée).',
-    run(){
-      if(!G.fog||!G.fog.length) return '❌ Pas de brouillard à lever.';
-      for(let y=0;y<G.fog.length;y++) for(let x=0;x<G.fog[y].length;x++) if(G.fog[y][x]<1) G.fog[y][x]=1;
+    run(owner){
+      const f=fac(owner);
+      if(!f||!f.fog||!f.fog.length) return '❌ Pas de brouillard à lever.';
+      for(let y=0;y<f.fog.length;y++) for(let x=0;x<f.fog[y].length;x++) if(f.fog[y][x]<1) f.fog[y][x]=1;
       return '🗺️ La carte est révélée.';
     }
   },
 };
+
+// Petit logo de triche affiché à TOUT LE MONDE (voir serialiserFaction/
+// appliquerFaction, js/12-reseau.js, pour le trajet réseau). Un simple
+// notify() distinctif plutôt qu'un nouvel élément persistant : le jeu a
+// déjà ce vocabulaire pour « quelque chose vient de se produire ».
+// Tournure SANS verbe conjugué sur `f.nom` : ce nom vaut « Vous » pour le
+// joueur local (voir mkFaction, js/02-etat.js) — « Vous utilise » est un
+// accord faux, trouvé en testant le message en jeu (pas en le relisant).
+// « utilisé par Vous » reste correct dans les deux cas : pour SOI (2e
+// personne) comme pour tout le monde D'AUTRE, qui lit le nom à la 3e.
+function annoncerTriche(f,code){
+  notify(`🖥️ Code de triche utilisé par ${(f&&f.nom)||'un joueur'} : ${code}`,'#e91e63');
+}
 
 function cheatLog(texte,cls){
   const log=document.getElementById('cheatlog');
@@ -1691,7 +1712,6 @@ function cheatLog(texte,cls){
 
 function openCheatTerminal(){
   if(!G.running) return;
-  if(reseauActif()){ notify('🖥️ Terminal indisponible en ligne','#e67e22'); return; }
   const panel=document.getElementById('cheatpanel');
   panel.style.display='flex';
   const inp=document.getElementById('cheatinput');
@@ -1717,20 +1737,22 @@ function soumettreCheat(ev){
   const texte=brut.trim();
   if(!texte) return false;
   cheatLog('> '+brut,'echo');
-  if(reseauActif()){ cheatLog('Indisponible en ligne.','err'); return false; }
   const code=texte.toLowerCase();
   if(code==='aide'||code==='help'){
     for(const[nom,c] of Object.entries(CHEATS)) cheatLog(nom+' — '+c.desc,'ok');
     return false;
   }
-  const cheat=CHEATS[code];
-  if(!cheat){ cheatLog('Code inconnu : « '+texte+' ». Tapez « aide » pour la liste.','err'); return false; }
-  try{
-    cheatLog(cheat.run()||'✅ Fait.','ok');
-    buzz(8); sfx('tap');
-  }catch(err){
-    cheatLog('Erreur : '+err.message,'err');
-  }
+  if(!CHEATS[code]){ cheatLog('Code inconnu : « '+texte+' ». Tapez « aide » pour la liste.','err'); return false; }
+  // ORD.TRICHE (js/10-ordres.js) : en solo/hôte, applyCommand tourne tout de
+  // suite et r.msg porte le VRAI texte de CHEATS[code].run(). Chez un
+  // client, emettreOrdre renvoie une réponse OPTIMISTE immédiate (r.msg
+  // absent) le temps que l'hôte confirme — le résultat réel (nouvelle
+  // unité, ressources, brouillard) arrive ensuite par le delta normal,
+  // sans repasser par ce journal.
+  const r=emettreOrdre(ordre(ORD.TRICHE,{code}));
+  if(!r.ok){ cheatLog('Refusé : '+(r.raison||'inconnu'),'err'); return false; }
+  cheatLog(r.msg||'✅ Envoyé…','ok');
+  buzz(8); sfx('tap');
   return false;
 }
 window.openCheatTerminal=openCheatTerminal;
@@ -2242,7 +2264,9 @@ function openPause(){
   document.getElementById('savebtn-pause').style.display=enLigne?'none':'block';
   document.getElementById('loadbtn-pause').style.display=enLigne?'none':'block';
   document.getElementById('mp-save-note').style.display=enLigne?'block':'none';
-  document.getElementById('cheatbtn-pause').style.display=enLigne?'none':'block';
+  // Le terminal de triche reste accessible en ligne (voir ORD.TRICHE,
+  // js/10-ordres.js) — contrairement à Sauvegarder/Charger juste au-dessus,
+  // ce n'est pas une mutation locale directe mais un ordre réseau normal.
   if(enLigne) document.getElementById('autoloadbtn').style.display='none';
   updateDiploBtn();
   if(!enLigne) refreshSaveInfo();

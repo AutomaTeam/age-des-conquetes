@@ -630,6 +630,10 @@ function drawShore(g,x,y,px2,py2,dw,dh){
   if(e)  ecume(false,X1,-1, y*RIVE_ONDUL+DEC.e+51);
 }
 
+// Teintes de la feuille qui tombe parfois d'un arbre (voir drawNodes) —
+// table figée une fois pour toutes plutôt que recréée à chaque arbre et à
+// chaque image.
+const FEUILLE_TEINTES=['rgba(196,140,58,.7)','rgba(210,170,60,.7)','rgba(176,90,48,.7)'];
 function drawNodes(){
   for(const n of G.nodes){
     if(n.amt<=0) continue;
@@ -654,6 +658,22 @@ function drawNodes(){
         groundShadow(sx+w*0.12, sy+h*(tall?0.05:0.03), w*(tall?0.38:0.30), w*(tall?0.17:0.13), tall?0.65:0.5);
       }
       ctx.drawImage(spr.c, Math.round(sx-w/2), Math.round(sy-h*0.78), Math.round(w), Math.round(h));
+      // Feuille qui tombe, de temps en temps, d'un arbre À L'ÉCRAN — le
+      // filtre hors-champ juste au-dessus fait déjà tout le travail de
+      // portée, jamais un balayage à part sur les centaines d'arbres de la
+      // carte. Posée ici, côté RENDU, et pas dans update() : aucun
+      // Math.random() de plus dans la simulation, donc aucun risque de
+      // décaler la séquence dont dépend le ciblage au combat (voir le
+      // correctif du 08/09 sur la fumée/poussière, qui a dû revenir en
+      // arrière sur exactement ce piège). Coordonnées MONDE comme le reste
+      // de G.parts (voir drawParts/updateParts) : un décalage en pixels
+      // écran ne suivrait pas le zoom.
+      if(n.type===RT.TREE&&Math.random()<0.0004){
+        const teintes=FEUILLE_TEINTES;
+        G.parts.push({x:n.x+(Math.random()-.5)*BASE_TILE*0.5, y:n.y-BASE_TILE*0.5,
+          vx:(Math.random()-.5)*10, vy:14+Math.random()*8,
+          col:teintes[(Math.random()*teintes.length)|0], r:1.5+Math.random()*1.2, life:2.2});
+      }
     }
     // points de récolteurs
     if(n.gatherers.length>0){
@@ -757,6 +777,26 @@ function drawBuildings(){
       }
     } else {
       ctx.fillStyle=(teinte==='bleu')?'#8a6a3a':couleurMinimap(b,false); ctx.fillRect(bx,by,pw,ph);
+    }
+    // Bannière qui flotte sur les bâtiments qui comptent (Château, Centre
+    // Ville) — jamais sur les dizaines d'autres d'une base, donc un coût
+    // négligeable même en pleine ville. Un petit fanion secoué par un sinus
+    // (déphasé par b.id, sans quoi toutes les bannières d'un camp
+    // battraient au même instant) plutôt qu'un sprite de plus à générer et
+    // à mettre en cache.
+    if((b.type===BT.CASTLE||b.type===BT.TC)&&!b.constructing){
+      const bcol=(COUL_FACTION[teinte]||COUL_FACTION.rouge)[0];
+      const matX=Math.round(bx+pw*0.5), matTop=by-ph*0.10, matBot=matTop+ph*0.30;
+      ctx.strokeStyle='rgba(70,55,35,.9)'; ctx.lineWidth=Math.max(1,pw*0.012);
+      ctx.beginPath(); ctx.moveTo(matX,matBot); ctx.lineTo(matX,matTop); ctx.stroke();
+      const flutter=Math.sin(G.gameTime*2.6+b.id*0.9)*pw*0.05;
+      const flagW=pw*0.16;
+      ctx.fillStyle=bcol;
+      ctx.beginPath();
+      ctx.moveTo(matX,matTop);
+      ctx.lineTo(matX+flagW+flutter,matTop+ph*0.045);
+      ctx.lineTo(matX,matTop+ph*0.10);
+      ctx.closePath(); ctx.fill();
     }
     // Contour de sélection : quatre équerres d'angle plutôt qu'un rectangle
     // plein. Un cadre continu autour d'un bâtiment de 2×2 cases masque le

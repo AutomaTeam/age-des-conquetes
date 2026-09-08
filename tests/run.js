@@ -709,18 +709,25 @@ groupe('combat', () => {
     const sain = j.mkBuilding(j.BT.BARRACKS, tc.tx + 5, tc.ty, j.G.me);
     sain.constructing = false; sain.progress = 1;
     j.placeBuilding(sain);
-    j.G.parts.length = 0;
-    let vuesSain = 0;
-    for (let k = 0; k < 300; k++) { j.update(j.SIM_DT); vuesSain = Math.max(vuesSain, j.G.parts.length); }
-    ok(vuesSain === 0, `un bâtiment à PV pleins ne doit jamais fumer : ${vuesSain} particule(s)`);
+    // La fumée D'AMBIANCE (2026-09-08) rend maintenant fumants les bâtiments
+    // HABITÉS (Centre Ville, Maison, Immeuble) même à pleine santé — les deux
+    // Centre Ville déjà sur la carte (le joueur ET l'IA) en émettent
+    // légitimement pendant les 10 s du test. Une Caserne, elle, n'en fait PAS
+    // partie (ni popGain ni file de formation) : la question posée par CE
+    // test reste « cette Caserne-ci fume-t-elle ? », pas « existe-t-il la
+    // moindre particule sur toute la carte ? » — d'où le filtre de proximité.
+    const pres = (b) => j.G.parts.some((p) => Math.hypot(p.x - b.x, p.y - b.y) < j.BASE_TILE * 2);
+    let vuesSain = false;
+    for (let k = 0; k < 300; k++) { j.update(j.SIM_DT); if (pres(sain)) vuesSain = true; }
+    ok(!vuesSain, 'une Caserne à PV pleins ne doit jamais fumer');
 
     const ruine = j.mkBuilding(j.BT.BARRACKS, tc.tx + 5, tc.ty + 3, j.G.me);
     ruine.constructing = false; ruine.progress = 1; ruine.hp = Math.round(ruine.maxHp * 0.2);
     j.placeBuilding(ruine);
     j.G.parts.length = 0;
-    let vuesRuine = 0;
-    for (let k = 0; k < 300; k++) { j.update(j.SIM_DT); vuesRuine = Math.max(vuesRuine, j.G.parts.length); }
-    ok(vuesRuine > 0, 'un bâtiment à 20% PV doit dégager de la fumée sur 10 s simulées');
+    let vuesRuine = false;
+    for (let k = 0; k < 300; k++) { j.update(j.SIM_DT); if (pres(ruine)) vuesRuine = true; }
+    ok(vuesRuine, 'un bâtiment à 20% PV doit dégager de la fumée sur 10 s simulées');
   });
 });
 

@@ -212,6 +212,29 @@ function updateUnits(dt){
     if(fu&&(fu.genre==='humain'||(fu.genre==='ia'&&(u.type===UT.MONK||u.type===UT.BOAT)))) updatePlayerUnit(u,dt);
     else if(fu&&fu.genre==='ia'&&u.type===UT.VIL) updateAIVillager(u,dt);
     if(u.moving) u.animT+=dt; // anim de marche uniquement en mouvement
+    // Poussière sous les pas d'une armée en marche — MILITAIRES seulement
+    // (jamais les villageois, sans quoi la moindre corvée soulèverait un
+    // nuage). Minuteur PAR UNITÉ, comme scanCd/atkCd juste au-dessus — pas
+    // un tirage à chaque image : un premier essai en faisait un par image et
+    // par unité en mouvement, soit des centaines de Math.random() de plus
+    // par seconde en pleine bataille. Or c'est LE MÊME flux que le ciblage
+    // de l'IA y pioche : décaler sa séquence changeait l'issue de duels
+    // déjà verrouillés par graine (voir le groupe `combat`, qui l'a détecté
+    // aussitôt). Un minuteur ne coûte qu'un tirage toutes les ~1,5 s par
+    // unité au lieu d'un par image, sans rien perdre au résultat visuel — le
+    // nuage suit toujours la taille de l'armée. Cosmétique pur (G.parts ne
+    // voyage pas sur le réseau) : même limite au côté HÔTE seul que la
+    // fumée de dégât/chantier ci-dessus, updateUnits n'étant appelée que
+    // par update().
+    if(u.moving&&isMilitary(u.type)){
+      u.dustCd=(u.dustCd||0)-dt;
+      if(u.dustCd<=0){
+        u.dustCd=1+Math.random();
+        G.parts.push({x:u.x+(Math.random()-.5)*BASE_TILE*0.5, y:u.y+BASE_TILE*0.12,
+          vx:(Math.random()-.5)*8, vy:-3-Math.random()*3,
+          col:'rgba(168,148,110,.30)', r:2+Math.random()*2, life:0.9});
+      }
+    }
   }
   // Mort. On regarde d'abord s'il y a QUELQUE CHOSE à faire : le chemin
   // d'avant allouait DEUX tableaux de la taille de G.units à chaque image —
@@ -1339,6 +1362,28 @@ function updateBuildings(dt){
           G.parts.push({x:b.x+(Math.random()-.5)*b.w*BASE_TILE*.5, y:b.y-b.h*BASE_TILE*0.3,
             vx:(Math.random()-.5)*6, vy:-18-Math.random()*12,
             col:'rgba(55,50,46,.7)', r:2+Math.random()*2.5, life:1.3});
+        }
+      // Fumée D'AMBIANCE : un bâtiment habité (popGain>0 — TC, Maison,
+      // Immeuble) ou au travail (une file de formation en cours) respire
+      // même à pleine santé — jusqu'ici seul un bâtiment ABÎMÉ fumait, et
+      // une cité en pleine santé restait une maquette silencieuse. Même
+      // geste, mêmes particules, même budget MAX_PARTS que la fumée de
+      // dégât juste au-dessus — un filet clair et rare plutôt qu'un
+      // panache sombre et pressé, et plus dense la nuit (foyer allumé)
+      // qu'en plein jour. `hpFrac>=0.66` : jamais en même temps que la
+      // fumée de dégât, les deux se lisent comme deux états différents.
+      // Minuteur PAR BÂTIMENT plutôt qu'un tirage à chaque image — même
+      // raison que la poussière de marche dans updateUnits juste à côté :
+      // Math.random() alimente aussi le ciblage de l'IA, et le consommer
+      // à chaque image pour chaque bâtiment décalait sa séquence assez
+      // pour changer l'issue de duels verrouillés par graine.
+      } else if(popGain(b.type,b.owner)>0||b.trainQ.length>0){
+        b.smokeCd=(b.smokeCd||0)-dt;
+        if(b.smokeCd<=0){
+          b.smokeCd=Math.max(1.5,4-nightFactor()*1.5+Math.random()*3);
+          G.parts.push({x:b.x+(Math.random()-.5)*b.w*BASE_TILE*.3, y:b.y-b.h*BASE_TILE*0.42,
+            vx:(Math.random()-.5)*3, vy:-14-Math.random()*8,
+            col:'rgba(212,206,196,.42)', r:1.6+Math.random()*1.6, life:1.6});
         }
       }
     }

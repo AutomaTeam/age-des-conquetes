@@ -3824,9 +3824,16 @@ function buildShadow(){
   SPR.shadow={c,cx};
 }
 // rx/ry = demi-largeur / demi-hauteur au sol ; a = opacité globale.
+// L'ombre s'adoucit avec la nuit plutôt que de rester un disque à pleine
+// opacité sur un sol déjà assombri (voir drawNightTint, même courbe
+// nightFactor() — pas une seconde horloge à maintenir en synchro). Pas de
+// ROTATION en revanche : la source de lumière est fixe en haut-à-gauche
+// dans le reste de l'art (biseau des murs, reflets des sprites, tous
+// peints une fois pour toutes) — la faire tourner ici contredirait cette
+// convention plutôt que de l'habiller.
 function groundShadow(sx,sy,rx,ry,a){
   if(!SPR.shadow) return;
-  ctx.globalAlpha=a;
+  ctx.globalAlpha=a*(1-nightFactor()*0.45);
   ctx.drawImage(SPR.shadow.c,sx-rx,sy-ry,rx*2,ry*2);
   ctx.globalAlpha=1;
 }

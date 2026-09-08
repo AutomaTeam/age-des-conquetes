@@ -46,7 +46,8 @@ const BT = { TC:'TC', HOUSE:'HO', LUMBER:'LU', MINE:'MI', FARM:'FA',
              FORGE:'FO', BARRACKS:'BA', TOWER:'TW',
              MILL:'ML', MARKET:'MK', STABLE:'ST', CASTLE:'CS',
              MONASTERY:'MO', WALL:'WL', UNIV:'UV',
-             SIEGE:'SG', OUTPOST:'OP', GATE:'GT', HLM:'HL', WONDER:'WD', DOCK:'DK' };
+             SIEGE:'SG', OUTPOST:'OP', GATE:'GT', HLM:'HL', WONDER:'WD', DOCK:'DK',
+             HOSPICE:'HP' };
 
 // Définitions bâtiments
 const BDEF = {
@@ -76,6 +77,16 @@ const BDEF = {
   [BT.GATE]:     { nom:'Portail',        w:1,h:1, hp:400,  cost:{wood:40,stone:20},           col:'#7a5a34',cld:'#4a3620' },
   [BT.WONDER]:   { nom:'Merveille',      w:3,h:3, hp:3500, cost:{wood:800,stone:800,gold:400},col:'#d8c078',cld:'#8a7838', popBonus:10 },
   [BT.DOCK]:     { nom:'Quai',           w:2,h:2, hp:300,  cost:{wood:100},                   col:'#6a5030',cld:'#3a2810', drops:true },
+  // Hospice : soin PASSIF de zone (voir HOSPICE_HEAL_RADIUS/RATE et
+  // updateBuildings, js/07-simulation.js), sans monteur à risquer — mais
+  // beaucoup plus lent que le Moine actif du Monastère (2 PV/s contre
+  // 3 à 5), qui reste le choix pour soigner vite ou suivre une armée en
+  // mouvement. Aucune entrée dans BLD_SPRITE_FILES/BLD_CIV_SPRITE_FILES
+  // (js/05-sprites.js) : reste PROCÉDURAL pour toutes les civs, y compris
+  // francs — un bâtiment tout neuf sans planche n'est pas une couverture
+  // PARTIELLE (voir le test « aucune civilisation ne joue dans le décor
+  // d'une autre », tests/run.js), juste pas encore illustré nulle part.
+  [BT.HOSPICE]:  { nom:'Hospice',        w:2,h:2, hp:280,  cost:{wood:100,stone:40},          col:'#c8d0b8',cld:'#8a9470' },
 };
 
 // Types unités
@@ -670,6 +681,16 @@ const HEROES = {
 };
 const HERO_AURA_RADIUS = BASE_TILE*6;
 const HERO_AURA_MULT = 1.15;
+
+// ── HOSPICE : soin passif de zone ─────────────────────────
+// Rayon d'effet et cadence de l'Hospice (voir BDEF[BT.HOSPICE] et
+// updateBuildings, js/07-simulation.js). Volontairement plus faible que
+// le Moine (doHeal, js/07-simulation.js : 3, 5 avec Foi Divine) — un
+// bâtiment immobile et gratuit ne doit pas remplacer l'investissement
+// d'un Moine, seulement offrir un point de ralliement où une armée en
+// retraite regagne lentement des PV sans rien produire ni suivre personne.
+const HOSPICE_HEAL_RADIUS = BASE_TILE*5;
+const HOSPICE_HEAL_RATE = 2;
 // Multiplicateur d'ATK pour une unité militaire à portée d'un héros allié
 // vivant (le héros lui-même en profite aussi : rien ne l'exclut du calcul).
 // Héros vivants, recensés UNE FOIS par pas de simulation (voir update).

@@ -326,6 +326,7 @@ const BICO_ECO = [
   [BT.MINE,     '⛏️','Minier',        {wood:80}],
   [BT.MARKET,   '🏪','Marché',        {wood:150,gold:50}],
   [BT.DOCK,     '⛵','Quai',          {wood:100}],
+  [BT.HOSPICE,  '🏥','Hospice',       {wood:100,stone:40}],
 ];
 const BICO_MIL = [
   [BT.BARRACKS, '⚔️','Caserne',       {wood:200,stone:80}],
@@ -605,6 +606,14 @@ function drawBuildAct(bar,b){
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:4px 6px;line-height:1.5;';
     info.textContent='🚩 Petit poste de garde peu coûteux : étend votre champ de vision.';
+    bar.appendChild(info);
+  }
+
+  // ── Hospice (info + soin passif) ──
+  if(b.type===BT.HOSPICE){
+    const info=document.createElement('div');
+    info.style.cssText='color:#8fbc8f;font-family:Cinzel,serif;font-size:12px;padding:5px 8px;text-align:center;';
+    info.innerHTML=`🏥 Hospice<br><span style="color:#999;font-size:10px;">Soigne +${HOSPICE_HEAL_RATE} PV/s aux unités alliées à moins de ${Math.round(HOSPICE_HEAL_RADIUS/BASE_TILE)} cases</span>`;
     bar.appendChild(info);
   }
 

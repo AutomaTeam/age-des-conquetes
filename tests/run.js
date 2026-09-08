@@ -1116,13 +1116,23 @@ groupe('civilisations', () => {
     // assumé le temps d'une passe, pas un état où revenir par accident.
     const j = charger();
     const manques = [], partielles = [];
+    // Ne compter que les types qui ont DÉJÀ une planche de base (francs,
+    // BLD_SPRITE_FILES) : la divergence stylistique que ce test traque n'a
+    // de sens que par rapport à un style de référence existant. Un type
+    // tout neuf, sans planche nulle part (pas même en francs), rend le
+    // MÊME sprite procédural pour toutes les civs — ce n'est pas un cas
+    // « une civ dans le décor d'une autre », juste un bâtiment pas encore
+    // illustré (voir BDEF[BT.HOSPICE]). Sans ce filtre, en ajouter un
+    // ferait échouer ce test pour les 4 civs déjà à 100% de couverture,
+    // sur un manque qui n'a rien d'une régression.
+    const typesIllustres = Object.keys(j.BDEF).filter((bt) => j.BLD_SPRITE_FILES[bt]);
     for (const c of civs) {
       if (c === 'francs') continue;               // son style EST la planche de base
-      const sans = Object.keys(j.BDEF).filter((bt) => {
+      const sans = typesIllustres.filter((bt) => {
         const tbl = j.BLD_CIV_SPRITE_FILES[bt];
         return !tbl || !tbl[c];
       });
-      const avec = Object.keys(j.BDEF).length - sans.length;
+      const avec = typesIllustres.length - sans.length;
       if (!sans.length) continue;                 // couverture complète
       if (avec) partielles.push(c + ' (' + avec + ' planches, ' + sans.length + ' manquantes : ' + sans.join(', ') + ')');
       else if (!j.CIV_LIVERY[c]) manques.push(c); // aucune planche ET aucune livrée

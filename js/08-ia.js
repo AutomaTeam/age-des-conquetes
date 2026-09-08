@@ -395,6 +395,9 @@ function aiNextBuild(vilCount,a){
   if(a.age>=1&&n(BT.MARKET)<2) return {type:BT.MARKET};
   if(a.age>=1&&!n(BT.MONASTERY)) return {type:BT.MONASTERY};
   if(a.age>=1&&!n(BT.UNIV)) return {type:BT.UNIV};
+  // Hospice : confort tardif, une fois l'essentiel bâti — soigne l'armée
+  // que l'IA a déjà, ne l'aide en rien à en avoir une (voir BDEF[BT.HOSPICE]).
+  if(a.age>=1&&!n(BT.HOSPICE)) return {type:BT.HOSPICE};
   if(a.age>=2&&!n(BT.CASTLE)) return {type:BT.CASTLE};
   if(n(BT.FARM)<farmTarget) return {type:BT.FARM}; // en dernier recours, jamais bloquant
   // Maisons de confort : seulement une MARGE au-dessus de la population

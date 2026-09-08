@@ -1460,6 +1460,24 @@ function updateBuildings(dt){
         else b.atkCd=0.2+(b.id*0.618034%1)*0.12;
       }
     }
+    // Hospice — soin PASSIF de zone, aux unités du même camp qui stationnent
+    // à proximité (HOSPICE_HEAL_RADIUS/RATE, js/01-regles.js). Réutilise
+    // `atkCd` comme minuteur — jamais en conflit avec la Tour/le Château
+    // ci-dessus, un bâtiment n'étant jamais les deux à la fois. Même geste
+    // que le Moine (doHeal, plus haut : +N vert flottant), en plus lent et
+    // sans rien à déplacer ni à risquer — voir la note de BDEF[BT.HOSPICE]
+    // pour pourquoi le Moine reste malgré tout le choix pour soigner vite.
+    if(b.type===BT.HOSPICE){
+      b.atkCd-=dt;
+      if(b.atkCd<=0){
+        b.atkCd=1.0;
+        forNearby(b.x,b.y,HOSPICE_HEAL_RADIUS,u=>{
+          if(u.owner!==b.owner||u.hp<=0||u.hp>=u.maxHp) return;
+          u.hp=Math.min(u.maxHp,u.hp+HOSPICE_HEAL_RATE);
+          addFText(u.x,u.y-14,`+${HOSPICE_HEAL_RATE}`,'#2ecc71');
+        });
+      }
+    }
   }
   // Destruction — même raisonnement que pour la mort des unités : pas de
   // tableau intermédiaire tant que rien n'est tombé.

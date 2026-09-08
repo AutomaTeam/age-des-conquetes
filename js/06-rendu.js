@@ -860,6 +860,7 @@ const UCOL={
   [UT.CATA]:'#6c3483',[UT.CAVARC]:'#117a65',[UT.ARBRAP]:'#148f77',[UT.ROUL]:'#b7472a',
   [UT.ENEMI]:'#e74c3c',[UT.ENEMIA]:'#c0392b',[UT.ENEMI_G]:'#7b241c',
   [UT.ENEMI_C]:'#a93226',[UT.ENEMI_BOSS]:'#641e16',
+  [UT.WOLOLO]:'#e91e63',
 };
 
 // Petit chariot animé sur chaque route commerciale active — purement

@@ -75,6 +75,9 @@ const EXPORTS = [
   // traverser le code qui s'exécute AU MOMENT de la bascule (notify,
   // bigBanner, hintOnce...). Voir le groupe `ages`.
   'doBuild',
+  // Terminal de triche (voir le groupe `triche`).
+  'WOLOLO_RADIUS', 'WOLOLO_TICK', 'convertirUnite', 'updateWololo',
+  'CHEATS', 'soumettreCheat', 'quitterPoste',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

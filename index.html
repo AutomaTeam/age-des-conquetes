@@ -1140,6 +1140,37 @@ html.reduce-motion #ico-start {
 }
 .classub { font-family:'Crimson Text',serif;font-size:11.5px;color:#9a8a6a;text-align:center;max-width:340px; }
 
+/* ── PANNEAU TERMINAL (codes de triche) ── (même gabarit que #achpanel) */
+#cheatpanel {
+  /* z-index au-dessus de #pausemenu (600) : ouvert depuis un bouton DANS
+     #pausemenu (openCheatTerminal()), qui ne se ferme pas avant — même
+     raison que #achpanel/#controlspanel/#optionspanel. */
+  position:fixed;inset:0;z-index:610;display:none;
+  background:rgba(0,0,0,.92);
+  flex-direction:column;align-items:center;gap:10px;
+  padding:20px 14px;overflow-y:auto;touch-action:pan-y;
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);
+}
+#cheatpanel h2 { font-family:'Cinzel',serif;color:var(--gold-l);font-size:19px; }
+#cheatlog {
+  width:100%;max-width:400px;display:flex;flex-direction:column;gap:4px;
+  max-height:38vh;overflow-y:auto;touch-action:pan-y;
+}
+.cheatline {
+  font-family:'Crimson Text',serif;font-size:12.5px;padding:5px 10px;
+  border-radius:6px;background:rgba(42,22,0,.85);line-height:1.4;
+  border-left:3px solid transparent;word-break:break-word;
+}
+.cheatline.ok   { color:#7fd8a0;border-left-color:#2ecc71; }
+.cheatline.err  { color:#e8a0a0;border-left-color:#e74c3c; }
+.cheatline.echo { color:#8a7a5a;font-style:italic; }
+#cheatinput {
+  flex:1;min-width:0;background:rgba(20,12,0,.85);border:1.5px solid var(--gold-d);
+  border-radius:8px;color:var(--parch);font-family:'Cinzel',serif;font-size:13px;
+  padding:10px 12px;
+}
+#cheatinput:focus { outline:none;border-color:var(--gold-l); }
+
 /* ── PANNEAU DIPLOMATIE ── (même gabarit que #achpanel) */
 #diplopanel {
   /* z-index au-dessus de #pausemenu (600) : comme les autres panneaux du
@@ -1462,6 +1493,7 @@ html.reduce-motion #ico-start {
   <button class="pmenu-btn" id="diplobtn" style="display:none;background:rgba(46,204,113,.1);color:#7fd8a0;border-color:#2ecc71;" onclick="openDiplo()">🤝 Diplomatie</button>
   <button class="pmenu-btn" style="background:rgba(127,184,232,.1);color:#7fb8e8;border-color:#2a6a9a;" onclick="openControls()">🎮 Contrôles</button>
   <button class="pmenu-btn" style="background:rgba(255,255,255,.06);color:#c9c9c9;border-color:#6a6a6a;" onclick="openOptions()">⚙️ Options</button>
+  <button class="pmenu-btn" id="cheatbtn-pause" style="background:rgba(233,30,99,.1);color:#f06a92;border-color:#e91e63;" onclick="openCheatTerminal()">🖥️ Terminal</button>
   <button class="pmenu-btn pmenu-google" id="gauthbtn" onclick="googleAuthClick()" style="display:none;">☁️ Connexion Google</button>
   <button class="pmenu-btn pmenu-save"   id="savebtn-pause" onclick="saveGame()">💾 Sauvegarder</button>
   <button class="pmenu-btn pmenu-load"   id="loadbtn-pause" onclick="loadGame()">📂 Charger</button>
@@ -1760,6 +1792,18 @@ html.reduce-motion #ico-start {
   <h2>📊 Banc d'essai</h2>
   <div id="benchcorps" style="display:flex;flex-direction:column;gap:10px;width:100%;align-items:center;max-width:400px;"></div>
   <button class="rclose" onclick="fermerBenchmark()">Fermer</button>
+</div>
+
+<!-- ── PANNEAU TERMINAL (codes de triche, solo uniquement) ── -->
+<div id="cheatpanel">
+  <h2>🖥️ Terminal</h2>
+  <div class="tip" style="max-width:400px;">Codes de triche — parties solo uniquement. Tapez « aide » pour la liste.</div>
+  <div id="cheatlog"></div>
+  <form id="cheatform" onsubmit="return soumettreCheat(event)" style="width:100%;max-width:400px;display:flex;gap:8px;">
+    <input id="cheatinput" type="text" placeholder="wololo…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button type="submit" class="rbtn" style="align-self:auto;">Entrée</button>
+  </form>
+  <button class="rclose" onclick="closeCheatTerminal()">Fermer</button>
 </div>
 
 <!-- ── PANNEAU DU CLASSEMENT ── -->

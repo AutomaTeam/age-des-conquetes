@@ -424,7 +424,8 @@ function drawUnitAct(bar,u){
     // alors que `mult` est là. Dérivé de la table, donc il ne peut pas mentir.
     const rk=u.rank>0?RANK_THRESHOLDS[u.rank-1]:null;
     const rankLine=rk?`${rk.ico} <strong style="color:#f0c040">${rk.nom}</strong> (${u.xp||0} victoires) — +${Math.round((rk.mult-1)*100)}% ATK et PV<br>`:'';
-    info.innerHTML=`${heroLine}${rankLine}ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
+    const wololoLine=u.type===UT.WOLOLO?`🌀 <strong style="color:#e91e63">Wololo</strong> — convertit toute unité ennemie à moins de ${Math.round(WOLOLO_RADIUS/BASE_TILE)} cases, toutes les ${WOLOLO_TICK}s<br>`:'';
+    info.innerHTML=`${heroLine}${rankLine}${wololoLine}ATK: ${u.atk} | ${u.rng>BASE_TILE*1.5?'🏹 Distance':'⚔️ Corps à corps'}<br>PV: ${u.hp}/${u.maxHp}`;
     bar.appendChild(info);
   }
 }
@@ -1615,6 +1616,8 @@ const CONTROLES = [
   { key:'Ctrl + 1-9',  desc:'Assigne la sélection courante au groupe de contrôle correspondant. Au doigt : maintenez la case numérotée correspondante (bas de l’écran) avec une sélection active.' },
   { key:'1-9',         desc:'Rappelle ce groupe de contrôle. Un second appui rapide sur le même chiffre recentre la caméra dessus. Au doigt : touchez simplement la case.' },
   { key:'Alt + 1-4',   desc:'En partie en ligne : envoie une émotion rapide à votre allié ou adversaire.' },
+  { sec:'Terminal' },
+  { key:'`  (accent grave)', desc:'Ouvre le terminal de triche — parties solo uniquement. Tapez « aide » une fois ouvert pour la liste des codes.' },
 ];
 function openControls(){
   const list=document.getElementById('ctrllist');
@@ -1627,6 +1630,123 @@ function openControls(){
 }
 function closeControls(){ document.getElementById('controlspanel').style.display='none'; }
 window.openControls=openControls; window.closeControls=closeControls;
+
+// ── TERMINAL DE TRICHE ────────────────────────────────────
+// Réservé aux parties SOLO (jamais reseauActif()) : convertir une unité,
+// injecter des ressources ou lever le brouillard sont des mutations d'état
+// qui ne voyagent PAS sur le réseau (voir le 6e invariant multijoueur,
+// [[age-des-conquetes-mp-invariants]]) — les autoriser en ligne
+// désynchroniserait l'hôte et le client en silence, sans qu'aucune erreur
+// ne le signale. D'où la garde à CHAQUE point d'entrée (ouverture du
+// panneau, soumission d'un code), pas une seule fois à l'ouverture : le
+// statut réseau peut changer PENDANT que le panneau reste ouvert (perte de
+// connexion, reprise) si jamais il l'était.
+const CHEATS = {
+  wololo:{
+    desc:'Invoque un Moine géant : HP énorme, très lent, convertit les unités ennemies proches.',
+    run(){
+      const tc=G.buildings.find(b=>b.type===BT.TC&&estLocal(b));
+      let sx,sy;
+      if(tc){ sx=tc.x+BASE_TILE*2; sy=tc.y; }
+      else { const c=sw(innerWidth/2,innerHeight/2); sx=c.x; sy=c.y; }
+      const u=mkUnit(UT.WOLOLO,sx,sy,G.me);
+      G.units.push(u);
+      rebuildIndex(); rebuildGrid();
+      camCenterOn(u.x,u.y);
+      return `🌀 Un Moine géant apparaît ! Il convertit toute unité ennemie à moins de ${Math.round(WOLOLO_RADIUS/BASE_TILE)} cases, toutes les ${WOLOLO_TICK}s.`;
+    }
+  },
+  fortune:{
+    desc:'+1000 de chaque ressource.',
+    run(){
+      G.res.food+=1000; G.res.wood+=1000; G.res.stone+=1000; G.res.gold+=1000;
+      return '💰 +1000 nourriture, bois, pierre, or.';
+    }
+  },
+  polo:{
+    desc:'Révèle toute la carte (comme déjà explorée).',
+    run(){
+      if(!G.fog||!G.fog.length) return '❌ Pas de brouillard à lever.';
+      for(let y=0;y<G.fog.length;y++) for(let x=0;x<G.fog[y].length;x++) if(G.fog[y][x]<1) G.fog[y][x]=1;
+      return '🗺️ La carte est révélée.';
+    }
+  },
+};
+
+function cheatLog(texte,cls){
+  const log=document.getElementById('cheatlog');
+  if(!log) return;
+  const line=document.createElement('div');
+  line.className='cheatline '+cls;
+  line.textContent=texte;
+  // insertBefore(line, premier enfant) plutôt que prepend() : équivalent en
+  // navigateur réel, mais prepend() n'existe pas sur le bouchon DOM des
+  // tests (tests/stub-dom.js), qui ne mime que les méthodes réellement
+  // utilisées ailleurs dans le jeu.
+  log.insertBefore(line,log.children[0]||null);
+  // Plafonné : une session de triche prolongée ne doit pas faire grandir le
+  // DOM indéfiniment, même si le panneau reste ouvert des heures.
+  while(log.children.length>24) log.removeChild(log.children[log.children.length-1]);
+}
+
+function openCheatTerminal(){
+  if(!G.running) return;
+  if(reseauActif()){ notify('🖥️ Terminal indisponible en ligne','#e67e22'); return; }
+  const panel=document.getElementById('cheatpanel');
+  panel.style.display='flex';
+  const inp=document.getElementById('cheatinput');
+  inp.value='';
+  // Après l'affichage (display:none -> flex) : focus() sur un champ encore
+  // masqué est un no-op silencieux sur certains navigateurs mobiles, le
+  // clavier virtuel ne sort alors jamais.
+  setTimeout(()=>inp.focus(),0);
+}
+function closeCheatTerminal(){
+  document.getElementById('cheatpanel').style.display='none';
+  document.getElementById('cheatinput').blur();
+}
+function toggleCheatTerminal(){
+  const p=document.getElementById('cheatpanel');
+  if(p&&p.style.display==='flex') closeCheatTerminal(); else openCheatTerminal();
+}
+function soumettreCheat(ev){
+  if(ev&&ev.preventDefault) ev.preventDefault();
+  const inp=document.getElementById('cheatinput');
+  const brut=inp.value;
+  inp.value='';
+  const texte=brut.trim();
+  if(!texte) return false;
+  cheatLog('> '+brut,'echo');
+  if(reseauActif()){ cheatLog('Indisponible en ligne.','err'); return false; }
+  const code=texte.toLowerCase();
+  if(code==='aide'||code==='help'){
+    for(const[nom,c] of Object.entries(CHEATS)) cheatLog(nom+' — '+c.desc,'ok');
+    return false;
+  }
+  const cheat=CHEATS[code];
+  if(!cheat){ cheatLog('Code inconnu : « '+texte+' ». Tapez « aide » pour la liste.','err'); return false; }
+  try{
+    cheatLog(cheat.run()||'✅ Fait.','ok');
+    buzz(8); sfx('tap');
+  }catch(err){
+    cheatLog('Erreur : '+err.message,'err');
+  }
+  return false;
+}
+window.openCheatTerminal=openCheatTerminal;
+window.closeCheatTerminal=closeCheatTerminal;
+window.soumettreCheat=soumettreCheat;
+// Échap ou l'accent grave DANS le champ ferme le terminal. Un gestionnaire
+// GLOBAL ne suffirait pas : #cheatinput a le focus, donc saisieEnCours(e)
+// fait sortir tôt le keydown de window (js/09-entree.js) avant même d'y
+// arriver — exactement ce qui protège les autres raccourcis pendant la
+// saisie. Écouter directement sur l'élément contourne ça sans y toucher.
+(function(){
+  const inp=document.getElementById('cheatinput');
+  if(inp&&inp.addEventListener) inp.addEventListener('keydown',e=>{
+    if(e.key==='Escape'||e.code==='Backquote'){ e.preventDefault(); closeCheatTerminal(); }
+  });
+})();
 
 // ── PANNEAU DU CLASSEMENT ──────────────────────────────────
 // Lecture seule ici : l'ENVOI d'un score se fait tout seul en fin de partie
@@ -2122,6 +2242,7 @@ function openPause(){
   document.getElementById('savebtn-pause').style.display=enLigne?'none':'block';
   document.getElementById('loadbtn-pause').style.display=enLigne?'none':'block';
   document.getElementById('mp-save-note').style.display=enLigne?'block':'none';
+  document.getElementById('cheatbtn-pause').style.display=enLigne?'none':'block';
   if(enLigne) document.getElementById('autoloadbtn').style.display='none';
   updateDiploBtn();
   if(!enLigne) refreshSaveInfo();

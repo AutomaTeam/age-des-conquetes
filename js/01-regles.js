@@ -94,7 +94,11 @@ const UT = { VIL:'V', MIL:'M', ARC:'A', KNIGHT:'K', MONK:'MON', PALADIN:'P',
              PIKE:'PK', XBOW:'XB', TREB:'TR', RAM:'RM', SCOUT:'SC', HERO:'HE', BOAT:'BO',
              // Unites uniques de civilisation, formees au Chateau (voir CIVS.unique)
              CATA:'CT', CAVARC:'CA', ARBRAP:'AR', ROUL:'RL',
-             ENEMI:'E', ENEMIA:'EA', ENEMI_G:'EG', ENEMI_C:'EC', ENEMI_BOSS:'EB' };
+             ENEMI:'E', ENEMIA:'EA', ENEMI_G:'EG', ENEMI_C:'EC', ENEMI_BOSS:'EB',
+             // Unité de triche (voir CHEATS.wololo, js/11-interface.js) : jamais
+             // entraînée, jamais dans le roster de l'IA, invoquée directement par
+             // mkUnit() depuis le terminal.
+             WOLOLO:'WO' };
 
 // ── CLASSES D'ARMURE ET TYPES D'ATTAQUE ────────────────────
 // Chaque unité n'avait qu'UN chiffre d'attaque, et les deux seuls contres du
@@ -176,6 +180,14 @@ const UDEF = {
   [UT.ENEMI_G]: { nom:'Géant',         hp:160, spd:1.2, atk:20, rng:1.2, atkSpd:0.7, cls:CLS.INF,   atkType:'m', armor:{m:2,p:2} },
   [UT.ENEMI_C]: { nom:'Cavalier Noir', hp:90,  spd:3.0, atk:14, rng:1.3, atkSpd:1.1, cls:CLS.CAV,   atkType:'m', armor:{m:2,p:2} },
   [UT.ENEMI_BOSS]:{nom:'Seigneur de Guerre',hp:900,spd:1.4,atk:40,rng:1.5,atkSpd:0.9, cls:CLS.INF,  atkType:'m', armor:{m:4,p:4} },
+  // Wololo — unité de triche (CHEATS.wololo, js/11-interface.js). Pas dans
+  // MIL_TYPES (js/04-entites.js) : ni comptée dans l'armée par l'IA, ni
+  // affectée par les recherches d'attaque/armure — un objet de démo doit
+  // garder des chiffres FIXES, pas dériver avec la partie. Attaque quasi
+  // nulle à dessein (comme le Moine dont il reprend le silhouette, voir
+  // sizeMult/UT.WOLOLO dans js/05-sprites.js) : sa menace, c'est la
+  // conversion de zone (voir updateWololo, js/07-simulation.js), pas le combat.
+  [UT.WOLOLO]:  { nom:'Wololo',        hp:9999, spd:0.5, atk:1,  rng:1.4, atkSpd:0.5, cls:CLS.MOINE, atkType:'m', armor:{m:5,p:5} },
 };
 
 // Bonus PLAT par type d'attaquant, contre la CLASSE de la cible. Table de
@@ -691,6 +703,14 @@ const HERO_AURA_MULT = 1.15;
 // retraite regagne lentement des PV sans rien produire ni suivre personne.
 const HOSPICE_HEAL_RADIUS = BASE_TILE*5;
 const HOSPICE_HEAL_RATE = 2;
+
+// ── WOLOLO : conversion passive de zone (unité de triche) ──
+// Toutes les WOLOLO_TICK secondes, un Wololo convertit TOUTES les unités
+// hostiles à moins de WOLOLO_RADIUS (voir updateWololo, js/07-simulation.js)
+// — instantané et sans jet de résistance, contrairement au Moine d'un vrai
+// AoE2 : c'est un code de triche, pas une unité du roster normal.
+const WOLOLO_RADIUS = BASE_TILE*3.5;
+const WOLOLO_TICK = 1.5;
 // Multiplicateur d'ATK pour une unité militaire à portée d'un héros allié
 // vivant (le héros lui-même en profite aussi : rien ne l'exclut du calcul).
 // Héros vivants, recensés UNE FOIS par pas de simulation (voir update).

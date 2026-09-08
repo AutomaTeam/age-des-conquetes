@@ -4,7 +4,8 @@
 //   node tests/run.js ordres     un seul groupe — lui seul TOURNE
 //
 // Groupes : carte, reseau, sauvegarde, chemin, combat, civilisations,
-// cartes, tailles, ordres, economie, ages, finpartie, ia, delta, charge.
+// cartes, tailles, ordres, economie, ages, finpartie, ia, delta, charge,
+// triche.
 // Les groupes `delta` et `ia` pèsent à eux deux la moitié du temps total :
 // ils simulent de vraies parties, c'est le prix pour observer des
 // comportements qui n'existent qu'apres plusieurs minutes de jeu.
@@ -3926,6 +3927,114 @@ groupe('charge', () => {
     j.__sandbox.requestPath(u);
     ok((u.pathEchecs || 0) === 0 && u.pathCd <= 1,
       `un ordre neuf doit repartir sans recul (compteur ${u.pathEchecs}, délai ${u.pathCd})`);
+  });
+});
+
+groupe('triche', () => {
+  test('le Wololo a des PV énormes et une vitesse très inférieure à toute autre unité', () => {
+    const j = charger();
+    const w = j.UDEF[j.UT.WOLOLO];
+    const autres = Object.keys(j.UDEF).filter((t) => t !== j.UT.WOLOLO).map((t) => j.UDEF[t]);
+    ok(w.hp > Math.max(...autres.map((d) => d.hp)),
+      `le Wololo (${w.hp} PV) devrait dépasser toute autre unité (max ${Math.max(...autres.map((d) => d.hp))})`);
+    ok(w.spd < Math.min(...autres.map((d) => d.spd)),
+      `le Wololo (vitesse ${w.spd}) devrait être plus lent que toute autre unité (min ${Math.min(...autres.map((d) => d.spd))})`);
+  });
+
+  test('convertit une unité hostile À PORTÉE, pas une hors de portée', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const wo = j.mkUnit(j.UT.WOLOLO, tc.x, tc.y, j.G.me);
+    j.G.units.push(wo);
+    const proche = j.mkUnit(j.UT.ENEMI_C, tc.x + j.WOLOLO_RADIUS * 0.5, tc.y, j.G.factions.ia.id);
+    const loin = j.mkUnit(j.UT.ENEMI_C, tc.x + j.WOLOLO_RADIUS * 3, tc.y, j.G.factions.ia.id);
+    j.G.units.push(proche, loin);
+    j.rebuildIndex(); j.rebuildGrid();
+    // WOLOLO_TICK + marge, en plusieurs pas (comme le ferait update() via loop()).
+    for (let i = 0; i < 20; i++) j.updateWololo(j.WOLOLO_TICK / 10);
+    egal(proche.owner, j.G.me, "l'unité à portée n'a pas été convertie");
+    egal(loin.owner, j.G.factions.ia.id, "l'unité hors de portée a été convertie à tort");
+  });
+
+  test('ne touche pas une unité déjà alliée', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    const wo = j.mkUnit(j.UT.WOLOLO, tc.x, tc.y, j.G.me);
+    const allie = j.mkUnit(j.UT.MIL, tc.x + j.BASE_TILE, tc.y, j.G.me);
+    j.G.units.push(wo, allie);
+    j.rebuildIndex(); j.rebuildGrid();
+    for (let i = 0; i < 20; i++) j.updateWololo(j.WOLOLO_TICK / 10);
+    egal(allie.owner, j.G.me, 'un allié a été « converti » par son propre camp');
+  });
+
+  test('la conversion ajuste la population des DEUX factions', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const ia = j.G.factions.ia;
+    const cible = j.mkUnit(j.UT.MIL, 0, 0, ia.id);
+    j.G.units.push(cible); j.rebuildIndex();
+    const popIaAvant = ia.pop, popMoiAvant = j.moi().pop;
+    j.convertirUnite(cible, j.G.me);
+    egal(ia.pop, popIaAvant - 1, "la population de l'ancien propriétaire n'a pas baissé");
+    egal(j.moi().pop, popMoiAvant + 1, "la population du nouveau propriétaire n'a pas monté");
+    egal(cible.owner, j.G.me, "convertirUnite n'a pas changé le propriétaire");
+  });
+
+  test('un villageois converti quitte le gisement où il récoltait', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const ia = j.G.factions.ia;
+    const node = j.G.nodes.find((n) => n.type === j.RT.TREE && n.amt > 0);
+    const vil = j.mkUnit(j.UT.VIL, node.x, node.y, ia.id);
+    vil.homeNode = node.id;
+    node.gatherers.push(vil.id);
+    j.G.units.push(vil); j.rebuildIndex();
+    j.convertirUnite(vil, j.G.me);
+    ok(!node.gatherers.includes(vil.id), "le villageois converti est resté dans la liste des récolteurs de l'ancien camp");
+    egal(vil.homeNode, null, 'homeNode aurait dû être libéré par quitterPoste');
+    egal(vil.state, 'idle', "l'unité convertie devrait repartir idle, pas dans son ancien état");
+  });
+
+  test('CHEATS.fortune ajoute 1000 à chaque ressource', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const avant = Object.assign({}, j.G.res);
+    j.CHEATS.fortune.run();
+    for (const r of ['food', 'wood', 'stone', 'gold']) {
+      egal(j.G.res[r], avant[r] + 1000, `${r} n'a pas reçu +1000`);
+    }
+  });
+
+  test('CHEATS.polo révèle le brouillard sans jamais rétrograder une case déjà visible', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const fog = j.G.fog;
+    fog[5][5] = 0; fog[6][6] = 2;
+    j.CHEATS.polo.run();
+    egal(fog[5][5], 1, 'une case inexplorée devrait passer à 1 (explorée)');
+    egal(fog[6][6], 2, 'une case déjà VISIBLE (2) ne doit jamais redescendre à 1');
+  });
+
+  test('le terminal refuse tout code en ligne (reseauActif)', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const nAvant = j.G.units.length;
+    j.RESEAU.actif = true;
+    j.__sandbox.document.getElementById('cheatinput').value = 'wololo';
+    j.soumettreCheat({ preventDefault() {} });
+    egal(j.G.units.length, nAvant, "le Wololo a été invoqué alors que RESEAU.actif valait true");
+    j.RESEAU.actif = false;
+  });
+
+  test('un code inconnu ne fait planter ni la partie ni le terminal', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    j.__sandbox.document.getElementById('cheatinput').value = 'ceci-nexiste-pas';
+    ok(j.soumettreCheat({ preventDefault() {} }) === false, 'soumettreCheat devrait retourner false (bloque le submit du <form>)');
+  });
+
+  test('le code wololo invoque bien une unité UT.WOLOLO appartenant au joueur local', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const nAvant = j.G.units.filter((u) => u.type === j.UT.WOLOLO).length;
+    j.__sandbox.document.getElementById('cheatinput').value = 'WOLOLO'; // insensible à la casse
+    j.soumettreCheat({ preventDefault() {} });
+    const wolos = j.G.units.filter((u) => u.type === j.UT.WOLOLO);
+    egal(wolos.length, nAvant + 1, 'aucun Wololo supplémentaire trouvé après le code');
+    ok(wolos[wolos.length - 1].owner === j.G.me, "le Wololo invoqué n'appartient pas au joueur local");
   });
 });
 

@@ -22,6 +22,7 @@ function update(dt){
   majHeros();               // recensement unique des héros (voir heroAuraMult)
   updateUnits(dt);
   updateBuildings(dt);
+  updateWololo(dt);        // avant l'IA : une unité convertie CE pas doit déjà changer de camp à ses yeux
   updateEnemyAI(dt);
   updateAI(dt);           // adversaire du mode Conquête (économie, chantiers, armée)
   // APRÈS tous les déplacements, et pas dans updateUnits : les unités du
@@ -930,6 +931,54 @@ function quitterPoste(u){
     const f=bldById(u.homeFarm);
     if(f&&f.farmers&&f.farmers.length) f.farmers=f.farmers.filter(id=>id!==u.id);
     u.homeFarm=null;
+  }
+}
+
+// Change le propriétaire d'une unité VIVANTE (conversion — voir updateWololo
+// plus bas). N'existait nulle part avant le Wololo : aucun autre mécanisme du
+// jeu ne fait changer de camp une unité déjà créée.
+// - `quitterPoste` avant le changement de camp : un récolteur ou un fermier
+//   converti doit lâcher son poste chez l'ANCIEN propriétaire (gatherers/
+//   farmers y sont indexés par id de camp implicite via le bâtiment/nœud).
+// - `state='idle'` : une unité qui attaquait son (désormais nouvel) allié la
+//   frame d'avant ne doit pas continuer à lui taper dessus.
+// - `inv=0` : ce qu'elle portait ne suit pas la conversion — ni volé ni
+//   crédité à personne, pour éviter un tour de passe-passe de ressources
+//   via la conversion répétée d'un même villageois chargé.
+// - `.pop` des DEUX factions est ajusté à la main : c'est un compteur
+//   incrémental (spawnUnit/mort), pas recalculé depuis G.units à chaque
+//   image (voir popDe) — sans ce geste, la population désynchronise du
+//   nombre réel d'unités dès la première conversion.
+function convertirUnite(u,nouveauOwner){
+  if(u.owner===nouveauOwner) return;
+  quitterPoste(u);
+  u.state='idle'; u.target=null; u.amove=null; u.inv=0;
+  const fAvant=fac(u.owner), fApres=fac(nouveauOwner);
+  if(fAvant&&fAvant.genre!=='neutre') fAvant.pop--;
+  u.owner=nouveauOwner;
+  if(fApres&&fApres.genre!=='neutre') fApres.pop++;
+}
+
+// Wololo — conversion passive de zone (WOLOLO_RADIUS/TICK, js/01-regles.js).
+// Chaque Wololo vivant recense, à sa propre cadence (champ `atkCd` réutilisé
+// comme minuteur, même schéma que l'Hospice), toutes les unités hostiles à
+// portée et les convertit d'un coup — pas de résistance, pas de jet : c'est
+// un code de triche, pas le Moine du roster normal.
+function updateWololo(dt){
+  for(const u of G.units){
+    if(u.type!==UT.WOLOLO||u.hp<=0) continue;
+    u.atkCd-=dt;
+    if(u.atkCd>0) continue;
+    u.atkCd=WOLOLO_TICK;
+    const cibles=[];
+    forNearby(u.x,u.y,WOLOLO_RADIUS,cible=>{
+      if(cible.hp>0&&estHostile(u,cible)) cibles.push(cible);
+    });
+    for(const cible of cibles){
+      convertirUnite(cible,u.owner);
+      addFText(cible.x,cible.y-16,'WOLOLO !','#e91e63');
+      spawnParts(cible.x,cible.y,'#e91e63',12);
+    }
   }
 }
 

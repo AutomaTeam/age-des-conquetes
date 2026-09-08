@@ -428,6 +428,7 @@ window.addEventListener('keydown',e=>{
       emettreOrdre(ordre(ORD.STOP,{ids})); sfx('tap');
       break;
     }
+    case 'Backquote':     toggleCheatTerminal(); break;
     default: return;
   }
   e.preventDefault();

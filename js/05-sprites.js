@@ -2776,7 +2776,9 @@ function buildUnitSprite(type,T,legPhase){
   // lire avant même le premier coup d'épée (convention AoE2 : plus gros
   // = plus dangereux). Comme tous les traits sont des fractions de S, ce
   // seul facteur redimensionne l'ensemble du dessin proportionnellement.
-  const sizeMult = type===UT.ENEMI_BOSS?1.5 : type===UT.ENEMI_G?1.26 : 1;
+  // Le Wololo (unité de triche, voir CHEATS.wololo) pousse le principe plus
+  // loin que n'importe quelle unité du roster normal : « gigantesque » l'exige.
+  const sizeMult = type===UT.WOLOLO?1.9 : type===UT.ENEMI_BOSS?1.5 : type===UT.ENEMI_G?1.26 : 1;
   // 0,95 et non 0,85 : les unités illustrées se lisaient un peu petites face
   // aux bâtiments. Ce seul facteur commande toute leur taille à l'écran —
   // drawUnits, les anneaux de sélection et l'ellipse de survol lisent tous
@@ -2889,16 +2891,20 @@ function buildUnitSprite(type,T,legPhase){
     cx.strokeStyle='#caa060'; cx.lineWidth=Math.max(1.5,ln*0.6);
     cx.beginPath(); cx.moveTo(cxp+S*0.27,S*0.21); cx.lineTo(cxp+S*0.27,S*0.45); cx.stroke();
     px(cx,cxp-S*0.2,S*0.4,S*0.1,S*0.1,'#4a3018');      // étui à carreaux à la ceinture
-  } else if(type===UT.MONK){
+  } else if(type===UT.MONK||type===UT.WOLOLO){
     px(cx,cxp-S*0.16,S*0.3,S*0.32,S*0.34,'#d8cba0');   // robe claire
     px(cx,cxp-S*0.17,S*0.14,S*0.34,S*0.08,'#c0b18a');  // capuchon rabattu sur les épaules
     px(cx,cxp-S*0.16,S*0.5,S*0.32,Math.max(2,S*0.03),'#8a6a3a'); // corde de ceinture nouée
     // Étole colorée sur la robe : la teinte de camp est appliquée par rotation
     // de teinte (voir sprTeinte), or une bure quasi blanche n'a presque pas de
     // saturation à faire tourner — le Moine adverse ressortait identique au
-    // nôtre. Cette bande, elle, prend la couleur du camp.
-    px(cx,cxp-S*0.08,S*0.3,S*0.05,S*0.28,enemy?'#8b1a1a':'#2c5aa0');
-    px(cx,cxp+S*0.05,S*0.3,S*0.05,S*0.28,enemy?'#8b1a1a':'#2c5aa0');
+    // nôtre. Cette bande, elle, prend la couleur du camp — SAUF le Wololo,
+    // dont l'étole reste magenta quel que soit le camp : c'est la signature
+    // de la conversion (même teinte que WOLOLO ! et les particules qu'il
+    // laisse, voir updateWololo), pas un habillage de faction.
+    const etole=type===UT.WOLOLO?'#e91e63':(enemy?'#8b1a1a':'#2c5aa0');
+    px(cx,cxp-S*0.08,S*0.3,S*0.05,S*0.28,etole);
+    px(cx,cxp+S*0.05,S*0.3,S*0.05,S*0.28,etole);
     px(cx,cxp-S*0.02,S*0.16,ln,S*0.12,'#caa83a');       // croix
     px(cx,cxp-S*0.06,S*0.2,S*0.12,ln,'#caa83a');
   } else if(type===UT.PIKE){

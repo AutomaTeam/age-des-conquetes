@@ -2354,6 +2354,49 @@ groupe('ages', () => {
     j.updatePopCap();
     egal(f.maxPop, avant + j.AGE_BONUS[f.age].housePop, 'le chantier achevé ne loge personne à son tour');
   });
+
+  test('la bannière plein écran ne marque que la PREMIÈRE fois qu\'un type de bâtiment est achevé', () => {
+    // Signalé le 2026-09-08, capture d'écran à l'appui (iPhone/Chrome) : une
+    // simple Maison achevée en pleine partie faisait s'afficher le même
+    // aplat à 30px plein centre qu'une montée d'âge ou une Merveille — alors
+    // qu'un joueur en pose des dizaines par partie. Recouvrait littéralement
+    // la carte sur un petit écran. Le petit toast (notify()) continue de
+    // confirmer CHAQUE bâtiment ; seule bigBanner() devient un événement
+    // rare, une fois par TYPE de bâtiment et par partie (voir doBuild,
+    // js/07-simulation.js).
+    //
+    // Passe par doBuild() plutôt que de forcer constructing/progress à la
+    // main (comme le test précédent) : le code à vérifier ici s'exécute au
+    // moment même de la bascule, pas après.
+    const j = partie(charger(), { graine: 4242 });
+    riche(j);
+    const banniere = j.__sandbox.document.getElementById('bigbanner');
+    const toasts = j.__sandbox.document.getElementById('notif');
+
+    function batirEtAcheverUneMaison(tx, ty) {
+      const p = caseLibre(j, tx, ty, 1, 1);
+      ok(p, 'aucune case libre pour poser la Maison');
+      const b = j.mkBuilding(j.BT.HOUSE, p.tx, p.ty, j.G.me);
+      b.constructing = true; b.progress = 0.999999;
+      j.placeBuilding(b);
+      j.rebuildIndex(); // bldById (lu par doBuild) s'appuie sur l'index, jamais à jour hors update()
+      const vil = j.mkUnit(j.UT.VIL, b.x, b.y, j.G.me);
+      vil.buildTarget = b.id;
+      j.doBuild(vil, 1); // au contact (distance 0) : franchit 1 en un pas
+      ok(!b.constructing, 'le chantier ne se termine pas');
+    }
+
+    banniere.textContent = '';
+    const avantToasts = toasts.children.length;
+    batirEtAcheverUneMaison(20, 20);
+    ok(banniere.textContent.includes('Maison'), 'la première Maison ne déclenche pas la bannière plein écran');
+    egal(toasts.children.length, avantToasts + 1, 'le petit toast ne confirme pas la première Maison');
+
+    banniere.textContent = ''; // l'animation précédente est retombée
+    batirEtAcheverUneMaison(30, 30);
+    egal(banniere.textContent, '', 'une SECONDE Maison redéclenche la bannière plein écran');
+    egal(toasts.children.length, avantToasts + 2, 'le petit toast, lui, doit confirmer la seconde Maison aussi');
+  });
 });
 
 // ════════════════════════════════════════════════════════════

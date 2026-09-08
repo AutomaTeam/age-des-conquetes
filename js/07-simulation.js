@@ -1276,7 +1276,20 @@ function doBuild(u,dt){
     if(estLocal(b)){
       sfx('build');
       notify(`${BDEF[b.type].nom} construite !`,'#2ecc71');
-      bigBanner(`✅ ${BDEF[b.type].nom}`);
+      // La bannière plein écran, elle, ne doit marquer que la PREMIÈRE fois
+      // qu'un type de bâtiment est achevé dans la partie — un Mur ou une
+      // Maison qu'on pose vingt fois ne mérite pas le même traitement qu'une
+      // Merveille, et sur un écran de téléphone (signalé le 2026-09-08,
+      // capture à l'appui) un aplat à 30px en plein centre toutes les
+      // quelques secondes recouvre littéralement la carte. Réutilise G.hints
+      // (même compteur que hintOnce, remis à zéro à chaque partie) sous une
+      // clé distincte pour ne jamais entrer en collision avec ses indices.
+      if(!G.hints) G.hints=new Set();
+      const bannerKey='bannerBld:'+b.type;
+      if(!G.hints.has(bannerKey)){
+        G.hints.add(bannerKey);
+        bigBanner(`✅ ${BDEF[b.type].nom}`);
+      }
       // Indices contextuels : signalés une seule fois par partie, au moment
       // où ils deviennent concrètement utiles — plus efficace qu'un tutoriel
       // qui les évoquerait tous d'un coup avant même le premier villageois.

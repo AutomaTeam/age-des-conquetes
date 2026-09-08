@@ -69,6 +69,12 @@ const EXPORTS = [
   'aiRepare', 'AI_REPAIR_MAX', 'aiUniteUnique', 'aiLogement', 'AI_HLM_DEFICIT',
   'aiTroquer', 'aiCout', 'AI_BOAT_MAX', 'aiCount',
   'aiFortify', 'AI_WALL_R', 'AI_WALL_SPAN', 'AI_WALL_MAX_SITES', 'aiCibleBase',
+  // doBuild : seul point d'entrée qui fait vraiment progresser un chantier
+  // (un villageois au contact) — sans lui, un test de fin de chantier ne
+  // peut que forcer constructing/progress directement, sans jamais
+  // traverser le code qui s'exécute AU MOMENT de la bascule (notify,
+  // bigBanner, hintOnce...). Voir le groupe `ages`.
+  'doBuild',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

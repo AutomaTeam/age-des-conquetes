@@ -2707,13 +2707,21 @@ groupe('finpartie', () => {
     riche(j);
     const f = j.moi(); f.age = 3;
     const p = caseLibre(j, 60, 60, 3, 3);
-    batir(j, j.BT.WONDER, p.tx, p.ty);
-    // À peine achevée : rien ne doit se produire.
+    const w = batir(j, j.BT.WONDER, p.tx, p.ty);
+    // Phase 1, BOUT EN BOUT : le vrai update() doit faire tourner le compte à
+    // rebours, et ne rien accorder tant qu'il n'est pas échu.
     for (let k = 0; k < 300; k++) j.update(j.SIM_DT);
     egal(j.G.victory, false, `la Merveille donne la victoire avant les ${j.MERVEILLE_WIN_TIME} s réglementaires`);
-    // Puis on laisse filer le compte à rebours.
-    for (let k = 0; k < 30 * (j.MERVEILLE_WIN_TIME + 20); k++) { j.update(j.SIM_DT); if (j.G.victory) break; }
-    egal(j.G.victory, true, 'la Merveille achevée et tenue ne donne pas la victoire');
+    ok(w.wonderTimer > 0, "update() ne fait pas avancer wonderTimer : la phase 2 ne prouverait plus que la règle est branchée");
+    // Phase 2 : on pousse le seul minuteur, sans faire tourner dix minutes de
+    // partie complète. Ce test simulait auparavant le délai entier avec
+    // update() ; à 600 s (contre 300), l'IA rase la base d'un joueur qui ne
+    // fait RIEN d'autre que poser sa Merveille, et le test échouait sur une
+    // défaite — vrai fait de jeu, mais qui n'est pas ce qu'il garde.
+    for (let k = 0; k < 30 * (j.MERVEILLE_WIN_TIME + 20) && !f.merveilleAchevee; k++) j.updateWonders(j.SIM_DT);
+    egal(f.merveilleAchevee, true, "le seuil de la Merveille n'est jamais franchi");
+    egal(j.checkMerveilleVictory(), true, 'la Merveille achevée et tenue ne donne pas la victoire');
+    egal(j.G.victory, true, "la victoire par Merveille n'est pas affichée");
   });
 });
 
@@ -2786,7 +2794,7 @@ groupe('ia', () => {
     j.rebuildIndex();
     const cible = j.nearPlayerBuildingSmart(src.x, src.y, src);
     egal(cible.type, j.BT.WONDER,
-      "l'IA vise " + j.BDEF[cible.type].nom + " au lieu de la Merveille, qui gagne la partie en 5 min");
+      "l'IA vise " + j.BDEF[cible.type].nom + " au lieu de la Merveille, qui gagne la partie en " + Math.round(j.MERVEILLE_WIN_TIME / 60) + " min");
   });
 
   test("la Merveille achevée prime, le CHANTIER de Merveille non", () => {
@@ -3681,6 +3689,61 @@ groupe('delta', () => {
       'la caisse du revenant');
   });
 
+  // ══ INVARIANT N° 6, v6 : TROIS ÉTATS QUE L'HÔTE FAIT AVANCER ══
+  // Ils n'avaient aucun effet sur la simulation — seulement sur ce que
+  // l'invité LIT — et c'est pour ça qu'ils avaient échappé aux tests de
+  // convergence : deux états peuvent converger parfaitement sur tout ce qui
+  // bouge et laisser l'interface du client mentir.
+
+  test("le décompte de la Merveille arrive chez l'invité (il restait figé jusqu'à la victoire)", () => {
+    const { hote, client, pousser, tourner } = paireEnLigne();
+    const p = caseLibre(hote, 60, 60, 3, 3);
+    const w = batir(hote, hote.BT.WONDER, p.tx, p.ty, hote.FAC.P2);
+    pousser();
+    for (let k = 0; k < 200; k++) { hote.update(hote.SIM_DT); tourner(1); if (k % 10 === 9) pousser(); }
+    const wc = client.bldById(w.id);
+    ok(!!wc, "la Merveille n'est jamais arrivée chez le client");
+    ok(w.wonderTimer > 1, "le décompte n'a pas tourné côté hôte : le test ne prouverait rien");
+    ok(Math.abs((wc.wonderTimer || 0) - w.wonderTimer) <= 1.5,
+      `décompte figé chez l'invité : ${wc.wonderTimer} contre ${Math.round(w.wonderTimer)} chez l'hôte`);
+  });
+
+  test("la route commerciale d'un Marché arrive chez l'invité, et sa suppression aussi", () => {
+    const { hote, client, pousser } = paireEnLigne();
+    const p1 = caseLibre(hote, 55, 55, 2, 2), m1 = batir(hote, hote.BT.MARKET, p1.tx, p1.ty, hote.FAC.P2);
+    const p2 = caseLibre(hote, 70, 70, 2, 2), m2 = batir(hote, hote.BT.MARKET, p2.tx, p2.ty, hote.FAC.P2);
+    pousser();
+    egal(ordreDe(hote, hote.FAC.P2, 'ROUTE_COMMERCIALE', { bId: m1.id, toId: m2.id }).ok, true, 'la route a été refusée');
+    pousser();
+    const c1 = client.bldById(m1.id);
+    ok(!!c1.tradeRoute, "le panneau de l'invité propose encore « Envoyer une caravane » alors que la route tourne");
+    egal(c1.tradeRoute.toId, m2.id, 'la route reçue ne désigne pas le bon Marché');
+    ok(Math.abs(c1.tradeRoute.dist - m1.tradeRoute.dist) <= 1, 'la distance reçue est fausse');
+    // L'or annoncé par le panneau doit être celui que l'hôte verse.
+    egal(client.gainCaravane(c1), hote.gainCaravane(m1), "l'or par trajet diffère entre l'hôte et l'invité");
+    // Et l'annulation doit voyager aussi, sinon la route reste affichée à vie.
+    egal(ordreDe(hote, hote.FAC.P2, 'ROUTE_COMMERCIALE', { bId: m1.id, toId: null }).ok, true, "l'annulation a été refusée");
+    pousser();
+    egal(!!client.bldById(m1.id).tradeRoute, false, "la route annulée reste affichée chez l'invité");
+  });
+
+  test("le nombre de fermiers d'une Ferme arrive chez l'invité", () => {
+    const { hote, client, pousser } = paireEnLigne();
+    const p = caseLibre(hote, 58, 58, 2, 2);
+    const f = batir(hote, hote.BT.FARM, p.tx, p.ty, hote.FAC.P2);
+    const vils = [];
+    for (let i = 0; i < 3; i++) { const u = hote.mkUnit(hote.UT.VIL, f.x, f.y, hote.FAC.P2); hote.G.units.push(u); vils.push(u.id); }
+    hote.rebuildGrid();
+    pousser();
+    egal(ordreDe(hote, hote.FAC.P2, 'FERME', { ids: vils, bId: f.id }).ok, true, "l'ordre FERME a été refusé");
+    // `b.farmers` n'est pas rempli par l'ordre mais par doFarm, quand le
+    // villageois est ARRIVÉ au champ : il faut faire tourner la simulation.
+    for (let k = 0; k < 30; k++) hote.update(hote.SIM_DT);
+    pousser();
+    egal(hote.fermiersDe(f), 3, "l'hôte lui-même ne compte pas 3 fermiers : le test ne prouverait rien");
+    egal(client.fermiersDe(client.bldById(f.id)), 3, "le « 👷×N » du panneau de Ferme reste vide chez l'invité");
+  });
+
   test('le delta reste sérialisable et modeste au repos', () => {
     const { hote, client, pousser, tourner } = paireEnLigne();
     for (let k = 0; k < 600; k++) {
@@ -4278,6 +4341,141 @@ groupe('promesses', () => {
     const tirs = (j.G.projs || []).slice(avant);
     ok(tirs.length > 0, "la Tour n'a pas tiré : le test ne prouve rien");
     egal(tirs[0].atk, j.bldAtk(tour, 0), "le projectile de la Tour n'a pas l'ATK annoncée par bldAtk");
+  });
+
+  // ── 6. L'invité en ligne lit les mêmes messages que l'hôte ──
+  // Chez un client, emettreOrdre ne peut pas connaître le résultat de l'hôte :
+  // il rend une réponse OPTIMISTE. Sans les champs prédits, onze messages
+  // d'interface interpolaient `undefined` ou choisissaient la mauvaise
+  // branche — dont « Production continue arrêtée » au moment de l'ACTIVER.
+  const enClient = (j) => {
+    j.RESEAU.actif = true; j.RESEAU.role = 'client';
+    j.RESEAU.envoi = () => true;
+    j.RESEAU.attente = new Map();
+    j.RESEAU.adversaire = { id: j.FAC.P2 };
+    return j;
+  };
+
+  test("un client reçoit les champs qu'il a lui-même prédits, pas `undefined`", () => {
+    const j = enClient(partie(charger(), { mode: 'conquest' }));
+    const ids = j.G.units.filter((u) => u.owner === j.G.me).slice(0, 3).map((u) => u.id);
+    const r = j.emettreOrdre(j.ordre(j.ORD.AMOVE, { ids, x: 1000, y: 1000 }), { n: ids.length });
+    egal(r.ok, true, "l'ordre optimiste devrait être accepté");
+    egal(r.optimiste, true, "le résultat devrait être marqué optimiste");
+    egal(r.n, ids.length, '« ⚔️ ${r.n} unité(s) en marche d\'attaque » affiche encore undefined');
+  });
+
+  test("sans champ prédit, un client n'a toujours que ok/optimiste (le défaut d'origine)", () => {
+    const j = enClient(partie(charger(), { mode: 'conquest' }));
+    const r = j.emettreOrdre(j.ordre(j.ORD.AMOVE, { ids: [], x: 1, y: 1 }));
+    egal(r.n, undefined, 'un appel SANS prédiction ne doit rien inventer');
+  });
+
+  test("une bascule booléenne prédite annonce le bon sens chez un client", () => {
+    const j = enClient(partie(charger(), { mode: 'conquest' }));
+    // On ACTIVE la production continue : le message doit dire « activée ».
+    const r = j.emettreOrdre(j.ordre(j.ORD.AUTO_FORMATION, { bId: 1, actif: true }), { actif: true });
+    egal(r.actif, true, "le client annonçait « ⏹ Production continue arrêtée » en l'ACTIVANT");
+  });
+
+  test('tout appelant qui LIT un champ du résultat doit le PRÉDIRE', () => {
+    // Garde-fou mécanique : c'est ce balayage qui a trouvé les onze sites.
+    // Il relit les sources et exige qu'un `emettreOrdre` dont le résultat est
+    // interrogé (au-delà de .ok / .raison / .optimiste) passe un second
+    // argument. Sans lui, la prochaine commande ajoutée refera la même faute.
+    const fs = require('fs'), path = require('path');
+    const racine = path.join(__dirname, '..');
+    const manquants = [];
+    for (const f of ['js/09-entree.js', 'js/11-interface.js', 'js/14-demarrage.js']) {
+      const lignes = fs.readFileSync(path.join(racine, f), 'utf8').split('\n');
+      for (let i = 0; i < lignes.length; i++) {
+        const m = /\b(?:const|let|var)\s+(\w+)\s*=\s*emettreOrdre\(/.exec(lignes[i]);
+        if (!m) continue;
+        const v = m[1];
+        // L'appel peut tenir sur plusieurs lignes : on cherche la prédiction
+        // dans la fenêtre d'appel, et les lectures dans la fenêtre d'usage.
+        const appel = lignes.slice(i, i + 4).join(' ');
+        const usage = lignes.slice(i, i + 12).join('\n');
+        const champs = new Set();
+        const re = new RegExp('\\b' + v + '\\.(\\w+)', 'g');
+        let x;
+        while ((x = re.exec(usage))) {
+          if (['ok', 'raison', 'optimiste'].includes(x[1])) continue;
+          // Une lecture sur une ligne qui REDÉCLARE le même nom dans une
+          // lambda (`G.relics.find(r=>…r.x…)`) ne parle pas du résultat.
+          const avant = usage.slice(0, x.index).split('\n').pop();
+          const apres = usage.slice(x.index).split('\n')[0];
+          if (new RegExp('\\b' + v + '\\s*=>').test(avant + apres)) continue;
+          // Un repli explicite (`r.msg || '…'`) est une réponse VALIDE : c'est
+          // ce que fait le terminal de triche, dont le résultat réel ne peut
+          // pas se prédire côté client.
+          if (new RegExp('\\b' + v + '\\.' + x[1] + '\\s*\\|\\|').test(usage)) continue;
+          champs.add(x[1]);
+        }
+        if (!champs.size) continue;
+        if (!/\)\s*,\s*\{/.test(appel)) manquants.push(`${f}:${i + 1} lit ${[...champs].join('/')} sans prédiction ni repli`);
+      }
+    }
+    egal(manquants.length, 0, 'sites sans prédiction optimiste :\n      ' + manquants.join('\n      '));
+  });
+
+  // ── 7. Deux formules écrites deux fois, réunies ─────────
+  test("l'or d'une caravane est le même au panneau et à la caisse, Gitanos compris", () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    riche(j);
+    const p1 = caseLibre(j, 55, 55, 2, 2), m1 = batir(j, j.BT.MARKET, p1.tx, p1.ty);
+    const p2 = caseLibre(j, 72, 72, 2, 2), m2 = batir(j, j.BT.MARKET, p2.tx, p2.ty);
+    egal(ordreDe(j, j.G.me, 'ROUTE_COMMERCIALE', { bId: m1.id, toId: m2.id }).ok, true, 'route refusée');
+    const base = j.gainCaravane(m1);
+    ok(base > 0, "la caravane ne rapporte rien : le test ne prouverait rien");
+    // Le bonus de civilisation DOIT se voir dans le chiffre annoncé : c'est
+    // l'argument n° 1 des Gitanos, et le panneau l'ignorait.
+    j.moi().civ = 'gitanos';
+    const attendu = Math.round(base * j.CIVS.gitanos.tradeMult);
+    egal(j.gainCaravane(m1), attendu,
+      "le chiffre annoncé au Gitanos n'inclut pas ses +50% : il lisait 22 et touchait 33");
+    // Et la caisse doit recevoir EXACTEMENT ce chiffre.
+    const or = j.moi().res.gold;
+    m1.tradeRoute.t = m1.tradeRoute.dur;      // la caravane arrive
+    j.updateBuildings(0.001);
+    j.lire('updateTradeRoutes')(0.001);
+    egal(Math.round(j.moi().res.gold - or), attendu, "la caisse ne reçoit pas le chiffre annoncé");
+  });
+
+  test("le PANNEAU du Marché affiche bien ce chiffre-là, pas une formule recopiée", () => {
+    // Le test précédent tient `gainCaravane` ; celui-ci tient le fait que
+    // l'interface le LISE. Sans lui, remettre la formule recopiée dans le
+    // panneau ne faisait tomber aucun test — vérifié par mutation.
+    const j = partie(charger(), { mode: 'conquest' });
+    riche(j);
+    j.moi().civ = 'gitanos';
+    const p1 = caseLibre(j, 55, 55, 2, 2), m1 = batir(j, j.BT.MARKET, p1.tx, p1.ty);
+    const p2 = caseLibre(j, 72, 72, 2, 2), m2 = batir(j, j.BT.MARKET, p2.tx, p2.ty);
+    egal(ordreDe(j, j.G.me, 'ROUTE_COMMERCIALE', { bId: m1.id, toId: m2.id }).ok, true, 'route refusée');
+    j.G.sel = [m1.id];
+    j.updateActBar();
+    const bar = j.__sandbox.document.getElementById('actbar');
+    const textes = [];
+    const lire = (n) => { if (n.textContent) textes.push(String(n.textContent)); (n.children || []).forEach(lire); };
+    (bar.children || []).forEach(lire);
+    const ligne = textes.find((t) => /par trajet/.test(t)) || '';
+    ok(ligne.includes(String(j.gainCaravane(m1))),
+      `le panneau annonce « ${ligne} » alors que la caisse reçoit ${j.gainCaravane(m1)}`);
+  });
+
+  test("la barre de formation sait mesurer un bâtiment de l'IA (elle valait NaN)", () => {
+    const j = charger();
+    // TTIME ne contient AUCUN type du roster de l'IA — ils sont dans AI_TTIME,
+    // et seul trainTime() interroge les deux. Le rendu lisait TTIME en direct :
+    // `1 - timer/undefined` vaut NaN, et fillRect avale une largeur NaN sans
+    // un mot, donc la barre au-dessus d'une Caserne adverse ne se remplissait
+    // jamais.
+    for (const t of [j.UT.ENEMI, j.UT.ENEMIA, j.UT.ENEMI_C, j.UT.ENEMI_G, j.UT.ENEMI_BOSS, j.UT.WOLOLO]) {
+      ok(j.TTIME[t] === undefined, `TTIME connaît ${t} : ce test ne garde plus rien`);
+      const duree = j.trainTime(t);
+      ok(Number.isFinite(duree) && duree > 0, `trainTime(${t}) ne rend pas une durée utilisable : ${duree}`);
+      ok(Number.isFinite(1 - 10 / duree), `la barre de formation vaut encore NaN pour ${t}`);
+    }
   });
 
   // ── 5. Le message de re-semis ne facture plus les Francs ───

@@ -85,6 +85,8 @@ const EXPORTS = [
   'MELEE_BONUS_TYPES', 'RANGED_BONUS_TYPES', 'CAV_BONUS_TYPES', 'SIEGE_BONUS_TYPES',
   'updateResearchFaction', 'aiResemer', 'bldAtk', 'CASTLE_ATK', 'TOWER_LEVELS', 'garnBonusCap',
   'garnisonsArcheres', 'updateBuildings', 'HOSPICE_HEAL_RATE', 'HOSPICE_HEAL_RADIUS',
+  'updateWonders', 'checkMerveilleVictory', 'emettreOrdre', 'ordre', 'garnisonDe',
+  'gainCaravane', 'trainTime', 'TTIME', 'fermiersDe', 'updateTradeRoutes', 'updateActBar',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

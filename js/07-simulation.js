@@ -172,7 +172,9 @@ function updateAgeUpFaction(dt,f){ // (auto-sauvegarde déclenchée à la fin du
     notify(`${a.ico} ${a.nom} atteint !`,'#f0c040');
     notify(`Apporte : ${a.bonus}`,'#e8d5a0',true);
     bigBanner(`${a.ico} ${a.nom}`);
-    if(f.age>=3) hintOnce('wonder',"🏛️ Âge Impérial atteint : vous pouvez désormais bâtir une Merveille — la garder debout 5 minutes une fois achevée gagne la partie.",'#d8c078');
+    // Durée DÉRIVÉE de la constante : elle disait « 5 minutes » et est restée
+    // fausse le jour où MERVEILLE_WIN_TIME est passé à 10.
+    if(f.age>=3) hintOnce('wonder',`🏛️ Âge Impérial atteint : vous pouvez désormais bâtir une Merveille — la garder debout ${Math.round(MERVEILLE_WIN_TIME/60)} minutes une fois achevée gagne la partie.`,'#d8c078');
   }
 
   // Recalcule proportionnellement les PV des bâtiments et des unités
@@ -1579,10 +1581,7 @@ function updateTradeRoutes(dt){
     tr.t+=dt;
     if(tr.t>=tr.dur){
       tr.t=0; tr.dir*=-1;
-      // civOf(b.owner) et non civOf(G.me) : cette boucle tourne cote HOTE pour
-      // les marches des DEUX camps (meme raison que tryAutoReseed), et les
-      // deux n'ont pas la meme civilisation. Gitanos : +50%.
-      const gold=Math.round((10+(tr.dist/BASE_TILE)*0.6)*(civOf(b.owner).tradeMult||1));
+      const gold=gainCaravane(b);   // point unique, lu aussi par le panneau du Marché
       const pool=resPool(b.owner);
       if(pool){
         pool.gold+=gold;

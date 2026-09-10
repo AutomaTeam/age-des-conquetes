@@ -63,7 +63,16 @@ window.transportLocal=transportLocal;
 // voir serialiserFaction/annoncerTriche) — même raison que le bump v3 :
 // un client v4 ne connaît pas M_OWNER, ne le dépile pas, et tout ce qui
 // suit dans SA lecture du masque tombe à côté.
-const PROTO_VERSION = 5;   // v4 : equipe suivie en cours de partie, autoRepair emis
+// v6 : la ligne de batiment gagne TROIS cases -- `wonderTimer`, le NOMBRE de
+// fermiers, et la route commerciale compacte. Les trois etaient des etats
+// decides par l'HOTE et lus par l'interface du CLIENT, qui n'en recevait
+// rien : decompte de Merveille fige a 10:00 jusqu'a la victoire, compteur de
+// fermiers toujours absent d'une Ferme, et surtout un Marche dont le panneau
+// proposait « Envoyer une caravane » alors que la route tournait deja et
+// versait l'or -- sans aucun moyen de l'annuler. C'est l'invariant n^o 6 du
+// protocole : ce que l'hote decide doit voyager. Meme raison de bump qu'en
+// v3/v5 -- un client v5 ne depile pas les nouvelles cases.
+const PROTO_VERSION = 6;   // v4 : equipe suivie en cours de partie, autoRepair emis
 const DELTA_HZ      = 10;
 const DELTA_PERIODE = 1/DELTA_HZ;
 const SEUIL_POS     = 1;    // unites-monde : en deca, on ne renvoie pas la position
@@ -184,7 +193,31 @@ function serialiserBatiment(b){
           h:b.hp, m:b.maxHp, c:b.constructing?1:0, p:+(b.progress||0).toFixed(3),
           q:b.trainQ||[], r:b.trainTimer||0, l:b.level||1,
           g:b.open?1:0, f:b.foodLeft||0, a:b.autoTrain?1:0,
-          y2:b.rally?[Math.round(b.rally.x),Math.round(b.rally.y)]:null};
+          y2:b.rally?[Math.round(b.rally.x),Math.round(b.rally.y)]:null,
+          // v6 — trois etats decides par l'hote que le client AFFICHE :
+          // decompte de Merveille, nombre de fermiers, route commerciale.
+          wt:Math.round(b.wonderTimer||0), nf:(b.farmers||[]).length,
+          tr2:routeCompacte(b)};
+}
+// Route commerciale reduite a ce que le CLIENT en fait : le panneau du Marche
+// affiche la destination et l'or par trajet (deduit de la distance), et
+// drawCaravans anime le chariot. `t` (avancement dans le trajet) n'est PAS
+// transmis : il changerait a chaque image et rendrait le batiment sale a
+// chaque delta pour une animation purement cosmetique. Le client le fait
+// avancer lui-meme (voir updateVisuel) et se recale sur `dir`, qui bascule a
+// chaque arrivee et voyage, lui.
+function routeCompacte(b){
+  const tr=b.tradeRoute;
+  return tr?[tr.toId,Math.round(tr.dist),tr.dir||1]:null;
+}
+// Pose une route recue sur un batiment client. `dur` se recalcule au lieu de
+// voyager : c'est exactement la meme formule que ORD.ROUTE_COMMERCIALE, et
+// une valeur de moins sur le fil.
+function poserRouteCompacte(b,c){
+  if(!c){ b.tradeRoute=null; return; }
+  const dist=c[1], av=b.tradeRoute;
+  b.tradeRoute={toId:c[0], dist, dur:Math.max(20,dist/CARAVAN_SPEED),
+                t:(av&&av.toId===c[0])?av.t:0, dir:c[2]};
 }
 function deserialiserBatiment(d){
   const b=mkBuilding(d.t, d.x, d.y, d.o);
@@ -193,6 +226,8 @@ function deserialiserBatiment(d){
   b.trainQ=d.q||[]; b.trainTimer=d.r; b.level=d.l;
   b.open=!!d.g; b.foodLeft=d.f; b.autoTrain=!!d.a;
   b.rally=d.y2?{x:d.y2[0],y:d.y2[1]}:null;
+  b.wonderTimer=d.wt||0; b.nFarmers=d.nf||0;
+  poserRouteCompacte(b,d.tr2);
   return b;
 }
 // `prive` : joint ou non ce que le brouillard de guerre est cense cacher —
@@ -440,24 +475,34 @@ function construireDelta(){
     if(!av){
       (d.newB||(d.newB=[])).push(serialiserBatiment(b));
       RESEAU.dernier.set(cle,{h:b.hp,mh:b.maxHp,p:b.progress,q:JSON.stringify(b.trainQ),f:b.foodLeft,l:b.level,g:b.open,c:!!b.constructing,
-                             a:!!b.autoTrain,ry:cleRalliement(b)});
+                             a:!!b.autoTrain,ry:cleRalliement(b),
+                             wt:Math.round(b.wonderTimer||0),nf:(b.farmers||[]).length,
+                             tr:JSON.stringify(routeCompacte(b))});
       continue;
     }
     const q=JSON.stringify(b.trainQ);
     const ry=cleRalliement(b);
+    // Arrondis a la seconde / a la route : sans ca, `wonderTimer` salirait la
+    // Merveille a CHAQUE delta (10 Hz) pour un chiffre que l'interface
+    // n'affiche qu'a la seconde pres.
+    const wt=Math.round(b.wonderTimer||0), nf=(b.farmers||[]).length;
+    const tr=JSON.stringify(routeCompacte(b));
     // `constructing` et `maxHp` voyagent EXPLICITEMENT. Les deduire cote
     // client (progress>=1) etait un piege : le dernier pas de chantier fait
     // moins que le seuil de progression, aucun delta n'etait emis, et le
     // batiment restait "en travaux" a jamais chez le client.
     if(b.hp!==av.h||b.maxHp!==av.mh||Math.abs(b.progress-av.p)>0.004||q!==av.q
        ||b.foodLeft!==av.f||b.level!==av.l||b.open!==av.g||(!!b.constructing)!==av.c
-       ||(!!b.autoTrain)!==av.a||ry!==av.ry){
+       ||(!!b.autoTrain)!==av.a||ry!==av.ry
+       ||wt!==av.wt||nf!==av.nf||tr!==av.tr){
       d.b.push([b.id,b.hp,+b.progress.toFixed(3),b.trainQ,b.foodLeft,b.level,
                 b.open?1:0,b.constructing?1:0,b.maxHp,
-                b.autoTrain?1:0,b.rally?[Math.round(b.rally.x),Math.round(b.rally.y)]:null]);
+                b.autoTrain?1:0,b.rally?[Math.round(b.rally.x),Math.round(b.rally.y)]:null,
+                wt,nf,routeCompacte(b)]);
       av.h=b.hp; av.mh=b.maxHp; av.p=b.progress; av.q=q;
       av.f=b.foodLeft; av.l=b.level; av.g=b.open; av.c=!!b.constructing;
       av.a=!!b.autoTrain; av.ry=ry;
+      av.wt=wt; av.nf=nf; av.tr=tr;
     }
   }
   for(const id of RESEAU.connusB) if(!vusB.has(id)){ d.rmb.push(id); RESEAU.dernier.delete('b'+id); }
@@ -644,6 +689,11 @@ function appliquerDelta(m){
     // l'eteindre. Et son drapeau de ralliement ne s'affichait jamais.
     if(e[9]!=null) b.autoTrain=!!e[9];
     if(e[10]!==undefined) b.rally=e[10]?{x:e[10][0],y:e[10][1]}:null;
+    // v6 — voir PROTO_VERSION : trois etats que seul l'hote fait avancer et
+    // que l'interface du client lisait a vide.
+    if(e[11]!=null) b.wonderTimer=e[11];
+    if(e[12]!=null) b.nFarmers=e[12];
+    if(e[13]!==undefined) poserRouteCompacte(b,e[13]);
     if(b.hp<avHp) b.hitFlash=0.15;
     // Un portail qui s'ouvre ou se ferme change la grille de blocage : sans
     // ca le pathfinding local du client diverge de celui de l'hote.
@@ -720,7 +770,15 @@ function updateVisuel(dt){
     if(u.hitFlash) u.hitFlash=Math.max(0,u.hitFlash-dt);
     if(u.atkCd) u.atkCd=Math.max(0,u.atkCd-dt);
   }
-  for(const b of G.buildings) if(b.hitFlash) b.hitFlash=Math.max(0,b.hitFlash-dt);
+  for(const b of G.buildings){
+    if(b.hitFlash) b.hitFlash=Math.max(0,b.hitFlash-dt);
+    // Animation de caravane : purement cosmetique, donc entretenue LOCALEMENT
+    // plutot que transmise dix fois par seconde (voir routeCompacte). L'or,
+    // lui, reste verse par l'hote. `dir` arrive avec le delta a chaque
+    // demi-tour et recale l'animation si elle a derive.
+    const tr=b.tradeRoute;
+    if(tr){ tr.t=(tr.t||0)+dt; if(tr.t>=tr.dur){ tr.t=0; tr.dir=-(tr.dir||1); } }
+  }
 
   updateProjs(dt); updateParts(dt); updateFTexts(dt); updateDeathFx(dt);
   if(G.shake.mag>0) G.shake.mag=Math.max(0,G.shake.mag-dt*14);

@@ -652,7 +652,9 @@ function handleTap(sx,sy){
     G.mode='select';
     document.getElementById('bcancel').style.display='none';
     if(us.length){
-      const r=emettreOrdre(ordre(ORD.AMOVE,{ids:us.map(u=>u.id), x:wx, y:wy}));
+      // `{n}` : ce que l'appelant sait déjà. Sans lui, un client lit
+      // « ⚔️ undefined unité(s) » — voir emettreOrdre, js/10-ordres.js.
+      const r=emettreOrdre(ordre(ORD.AMOVE,{ids:us.map(u=>u.id), x:wx, y:wy}),{n:us.length});
       if(r.ok){
         G.moveTarget={x:wx,y:wy}; G.mtTimer=1.5;
         notify(`⚔️ ${r.n} unité(s) en marche d'attaque`,'#e74c3c'); buzz(10);
@@ -714,7 +716,12 @@ function handleTap(sx,sy){
       notify('Choisissez un autre Marché pour établir la route','#e74c3c');
       return;
     }
-    const r=emettreOrdre(ordre(ORD.ROUTE_COMMERCIALE,{bId:fromId, toId:target.id}));
+    // La distance se calcule ici exactement comme dans l'ordre (js/10-ordres.js) :
+    // c'est la seule information que le message annonce, et un client ne la
+    // recevrait jamais autrement.
+    const depart=bldById(fromId);
+    const distPred=depart?Math.round(Math.hypot(target.x-depart.x,target.y-depart.y)/BASE_TILE):0;
+    const r=emettreOrdre(ordre(ORD.ROUTE_COMMERCIALE,{bId:fromId, toId:target.id}),{dist:distPred});
     if(r.ok){ notify(`🐫 Route commerciale établie (~${r.dist} tuiles)`,'#f0c040'); buzz(10); }
     else notify('Route impossible (marché adverse)','#e74c3c');
     return;
@@ -739,7 +746,8 @@ function handleTap(sx,sy){
       if(tBuilding.type===BT.FARM && !tBuilding.constructing){
         const vils=G.units.filter(u=>estSel(u.id)&&u.type===UT.VIL);
         if(vils.length>0){
-          const r=emettreOrdre(ordre(ORD.FERME,{ids:vils.map(u=>u.id), bId:tBuilding.id}));
+          const r=emettreOrdre(ordre(ORD.FERME,{ids:vils.map(u=>u.id), bId:tBuilding.id}),
+                               {n:vils.length, vide:tBuilding.foodLeft<=0});
           if(r.ok){
             G.moveTarget={x:tBuilding.x,y:tBuilding.y}; G.mtTimer=1.5;
             notify(r.vide?'Villageois affectés — en attente de re-semis':'Villageois aux champs…','#8fbc44');
@@ -752,7 +760,7 @@ function handleTap(sx,sy){
       if(tBuilding.constructing){
         const vb=G.units.filter(u=>estSel(u.id)&&u.type===UT.VIL);
         if(vb.length>0){
-          const r=emettreOrdre(ordre(ORD.CHANTIER,{ids:vb.map(u=>u.id), bId:tBuilding.id}));
+          const r=emettreOrdre(ordre(ORD.CHANTIER,{ids:vb.map(u=>u.id), bId:tBuilding.id}),{n:vb.length});
           if(r.ok){
             notify(`🔨 ${r.n} villageois sur le chantier…`,'#3498db'); buzz(6);
             G.moveTarget={x:tBuilding.x,y:tBuilding.y}; G.mtTimer=1.5;
@@ -788,7 +796,13 @@ function handleTap(sx,sy){
         const gArmy=G.units.filter(u=>estSel(u.id)&&u.state!=='garrison'&&u.type!==UT.TREB&&u.type!==UT.RAM
           &&!(tBuilding.type===BT.TC&&u.type===UT.VIL));
         if(gArmy.length>0){
-          const r=emettreOrdre(ordre(ORD.GARNIR,{ids:gArmy.map(u=>u.id), bId:tBuilding.id}));
+          // Prédiction bornée par la place restante, comme le fait l'ordre :
+          // annoncer `gArmy.length` tout rond mentirait sur une garnison
+          // presque pleine.
+          const placeRestante=Math.max(0,BDEF[tBuilding.type].garrisonCap-garnisonDe(tBuilding));
+          const r=emettreOrdre(ordre(ORD.GARNIR,{ids:gArmy.map(u=>u.id), bId:tBuilding.id}),
+                               {n:Math.min(gArmy.length,placeRestante),
+                                refuses:Math.max(0,gArmy.length-placeRestante)});
           if(r.ok){
             notify(r.refuses>0?`🏰 ${r.n} unité(s) en garnison (garnison pleine, ${r.refuses} refusée(s))`:`🏰 ${r.n} unité(s) en garnison`,'#3498db');
             buzz(6); clearSelection();
@@ -808,11 +822,17 @@ function handleTap(sx,sy){
   if(tNode){
     const vils=G.units.filter(u=>estSel(u.id)&&u.type===UT.VIL);
     if(vils.length>0){
-      const r=emettreOrdre(ordre(ORD.RECOLTE,{ids:vils.map(u=>u.id), nodeId:tNode.id}));
+      // `placed` vaut toujours le nombre de villageois envoyés, donc il se
+      // prédit ; `spread` (le nombre de gisements réellement utilisés) sort de
+      // bestNodeFor côté hôte et ne se devine PAS — le message le tait alors,
+      // plutôt que d'annoncer « → undefined gisement ». Même parti pris que
+      // `r.msg||'✅ Envoyé…'` dans le terminal de triche.
+      const r=emettreOrdre(ordre(ORD.RECOLTE,{ids:vils.map(u=>u.id), nodeId:tNode.id}),{placed:vils.length});
       if(r.ok){
         G.moveTarget={x:tNode.x,y:tNode.y}; G.mtTimer=1.5;
         notify(r.placed>1
-          ? `${r.placed} villageois → ${r.spread} gisement${r.spread>1?'s':''}`
+          ? (r.spread?`${r.placed} villageois → ${r.spread} gisement${r.spread>1?'s':''}`
+                     : `${r.placed} villageois en route récolter…`)
           : 'Villageois en route récolter…','#f1c40f');
       }
       return;
@@ -997,7 +1017,7 @@ let _buildPin=false;
 function confirmBuild(tx,ty){
   const type=G.buildType, d=BDEF[type];
   const batisseurs=G.units.filter(u=>estSel(u.id)&&estLocal(u)&&u.type===UT.VIL).map(u=>u.id);
-  const r=emettreOrdre(ordre(ORD.BATIR,{type, tx, ty, batisseurs}));
+  const r=emettreOrdre(ordre(ORD.BATIR,{type, tx, ty, batisseurs}),{nom:d.nom});
   if(!r.ok){
     // Le nom de l'âge vient du refus (r.reqAge), pas d'une chaîne écrite ici :
     // BATIR refuse pour DEUX exigences distinctes — Château/Atelier à l'Âge

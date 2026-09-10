@@ -285,10 +285,26 @@ const GRATE = { [RT.TREE]:1.0, [RT.STONE]:0.9, [RT.GOLD]:0.8, [RT.BERRY]:1.15, [
 // Vitesse de la caravane commerciale (unités-monde/s) — un peu plus rapide
 // qu'un villageois, pour que la route se sente vivante sans dominer l'écran.
 const CARAVAN_SPEED = BASE_TILE*2.4;
+// Or versé par une caravane à chaque arrivée. La formule était écrite DEUX
+// FOIS — dans updateTradeRoutes (js/07-simulation.js) et dans le panneau du
+// Marché (js/11-interface.js) — et la seconde avait oublié `tradeMult` : un
+// joueur Gitanos lisait « +22💰 par trajet » et en touchait 33, c'est-à-dire
+// que le bonus signature de sa civilisation (« +50% d'or des routes
+// commerciales ») était invisible précisément là où il allait le chercher.
+// `civOf(b.owner)` et non `civOf(G.me)` : cette fonction sert aussi côté
+// HÔTE pour les marchés du client (même raison que tryAutoReseed).
+function gainCaravane(b){
+  const tr=b&&b.tradeRoute; if(!tr) return 0;
+  return Math.round((10+(tr.dist/BASE_TILE)*0.6)*(civOf(b.owner).tradeMult||1));
+}
 // Reliques : revenu passif en or, par relique mise à l'abri au Monastère.
 const RELIC_GOLD_RATE = 0.15; // or/s/relique (≈9/min — comparable à un mineur)
 // Merveille : temps qu'elle doit tenir debout, achevée, avant la victoire.
-const MERVEILLE_WIN_TIME = 300; // 5 minutes — le temps pour l'adversaire de réagir
+// 10 minutes. Tout texte qui annonce cette durée doit la DÉRIVER d'ici
+// (`MERVEILLE_WIN_TIME/60`) et jamais l'écrire en toutes lettres : le passage
+// de 5 à 10 minutes a justement trouvé un indice de jeu qui disait encore
+// « 5 minutes » — voir hintOnce('wonder'), js/07-simulation.js.
+const MERVEILLE_WIN_TIME = 600; // le temps laissé à l'adversaire pour réagir
 const GCAP  = 22;            // capacité inventaire villageois (moins d'allers-retours)
 // Capacité réelle, par camp : la Brouette (recherche économique) l'augmente.
 // GCAP restait une constante GLOBALE, donc impossible à faire dépendre d'une

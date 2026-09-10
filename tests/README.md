@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**200 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**210 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -305,6 +305,45 @@ qui **ne se voit pas** :
      l'affichage — même raison d'être que `towerMaxHp` juste à côté.
   5. Le **message de re-semis** facturait 30🪵 au joueur franc, démentant son
      bonus de civilisation au moment même où celui-ci jouait.
+
+  **Deuxième passe (2026-09-10), même angle élargi — « et si on jouait en
+  INVITÉ ? ».** Six écarts de plus, tous invisibles en solo :
+  6. **`emettreOrdre` rendait « ça part » et rien d'autre à un client.** Son
+     paramètre de prédiction existait mais aucun des 41 appels ne le passait,
+     et onze sites lisaient `r.n`, `r.nom`, `r.dist`, `r.actif`… L'invité
+     lisait « ⚔️ undefined unité(s) », « Construction de undefined lancée ! »,
+     un cumul à **NaN** sur le bouton d'abri, et surtout « ⏹ Production
+     continue **arrêtée** » au moment où il l'ACTIVAIT. Le paramètre est
+     devenu un simple objet de champs prédits. **Un test mécanique relit les
+     sources** et refuse tout `emettreOrdre` dont le résultat est interrogé
+     sans prédiction ni repli explicite — c'est lui qui avait trouvé les onze.
+  7. **`tradeRoute`, `wonderTimer` et le nombre de fermiers ne voyageaient
+     pas** alors que l'interface du client les lit : Marché proposant
+     « Envoyer une caravane » pendant que la route tournait déjà (sans moyen
+     de l'annuler), décompte de Merveille figé jusqu'à la victoire, « 👷×N »
+     jamais affiché. **PROTO_VERSION 6.** L'animation de caravane, elle, reste
+     locale (`routeCompacte` ne transmet ni `t` ni `dur`) : la transmettre
+     salirait le Marché à chaque delta pour du cosmétique.
+  8. **L'or d'une caravane était calculé deux fois**, et le panneau avait
+     oublié `tradeMult` : un Gitanos lisait « +22💰 » et touchait 33 — le
+     bonus signature de sa civilisation, invisible là où il le cherche.
+     `gainCaravane` est le point unique. **Deux tests, pas un** : celui qui
+     tient la fonction ne tient PAS le fait que le panneau la lise (vérifié
+     par mutation — remettre la formule recopiée dans l'interface ne faisait
+     tomber aucun test), d'où un second test qui REND le panneau.
+  9. **La barre de formation d'un bâtiment de l'IA valait NaN** : le rendu
+     lisait `TTIME[type]` alors que le roster de l'IA est dans `AI_TTIME`, et
+     que `trainTime()` existe pour interroger les deux. `fillRect` avale une
+     largeur NaN sans un mot, donc la barre ne se remplissait jamais.
+
+  À la même occasion, **MERVEILLE_WIN_TIME est passé de 300 à 600 s**. Deux
+  conséquences à connaître : un indice de jeu annonçait encore « 5 minutes »
+  en dur (désormais dérivé de la constante), et le test de victoire par
+  Merveille ne peut plus simuler le délai entier avec `update()` — à 600 s,
+  l'IA rase la base d'un joueur qui ne fait RIEN d'autre que poser sa
+  Merveille, et le test échouait sur une défaite. Il garde maintenant une
+  phase bout-en-bout courte (le vrai `update()` fait bien avancer le minuteur)
+  puis pousse `updateWonders` seul.
 
   Chacun de ces tests a été vérifié par MUTATION : on remet le comportement
   d'avant, et le test doit tomber. Deux pièges d'outillage ont été payés en

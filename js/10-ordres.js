@@ -44,7 +44,22 @@ function ordre(t,charge){ return Object.assign({seq:++_ordSeq, f:G.me, t}, charg
 
 // Route un ordre. En solo (et chez l'hôte) il s'applique immédiatement ;
 // c'est ici que le client multijoueur l'enverra sur le réseau (P6).
-function emettreOrdre(cmd,predire){
+// `predit` : les champs que l'appelant SAIT déjà, pour que le résultat rendu
+// à un client ait la même forme que celui d'un hôte.
+//
+// Sans lui, un client recevait `{ok:true, optimiste:true}` et RIEN d'autre,
+// pendant que onze sites d'interface lisaient `r.n`, `r.nom`, `r.dist`,
+// `r.actif`… : l'invité d'une partie en ligne lisait « ⚔️ undefined unité(s)
+// en marche d'attaque », « Construction de undefined lancée ! », et voyait
+// « ⏹ Production continue arrêtée » au moment même où il l'ACTIVAIT (branche
+// choisie sur un `undefined` toujours faux). Le terminal de triche était le
+// seul endroit protégé, et son commentaire décrivait déjà le piège.
+// Le paramètre existait — sous forme de fonction, jamais appelée nulle part.
+// Objet plutôt que fonction : ce que l'appelant sait, il le sait DÉJÀ (il
+// vient de compter les unités qu'il envoie), il n'a rien à recalculer.
+// `predit.annuler`, s'il est fourni, reste la fonction de repli appelée par
+// traiterRejet (js/12-reseau.js) quand l'hôte refuse l'ordre.
+function emettreOrdre(cmd,predit){
   if(_journalOrdres) _journalOrdres.push({at:+G.gameTime.toFixed(3), cmd:JSON.parse(JSON.stringify(cmd))});
   // Solo, ou hôte : on applique tout de suite, c'est nous qui faisons foi.
   if(estHote()) return applyCommand(cmd);
@@ -52,7 +67,7 @@ function emettreOrdre(cmd,predire){
   // répond localement (prédiction optimiste) pour que l'interface ne donne
   // pas l'impression d'être morte pendant un aller-retour réseau.
   if(!envoyerReseau({t:'ORDRE',cmd})) return {ok:false,raison:'reseau'};
-  const pred=predire?predire():null;
+  const pred=predit?{resultat:Object.assign({ok:true,optimiste:true},predit),annuler:predit.annuler}:null;
   // Seul un REJ retire une entree, or l'ecrasante majorite des ordres sont
   // acceptes : la table grossissait donc pendant toute la partie. Un rejet
   // revient en un aller-retour ; passe dix secondes, l'ordre est forcement
@@ -395,7 +410,7 @@ function applyCommand(cmd){
     const cap=BDEF[b.type].garrisonCap; if(!cap) return KO('invalide');
     const us=_unitesDe(cmd).filter(u=>u.state!=='garrison'&&u.type!==UT.TREB&&u.type!==UT.RAM);
     if(!us.length) return KO('aucune');
-    const cur=G.units.filter(u=>u.state==='garrison'&&u.target===b.id).length;
+    const cur=garnisonDe(b);
     const room=Math.max(0,cap-cur);
     if(room<=0) return KO('plein');
     const admis=us.slice(0,room);

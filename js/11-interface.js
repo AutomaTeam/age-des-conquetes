@@ -228,7 +228,7 @@ function drawCampUpgrade(bar,b,ico,resLabel){
 // l'affectation à une ferme ou à un chantier.
 function drawGarrisonInfo(bar,b){
   const cap=BDEF[b.type].garrisonCap; if(!cap) return;
-  const n=G.units.filter(u=>u.state==='garrison'&&u.target===b.id).length;
+  const n=garnisonDe(b);
   const info=document.createElement('div');
   info.style.cssText='color:#9fc9e8;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
   // Le CV n'accepte plus les villageois par simple clic (voir handleTap,
@@ -243,7 +243,7 @@ function drawGarrisonInfo(bar,b){
   if(n>0) mkBtn(bar,'🚪','Sortir\nla garnison',()=>degarrirTous(b));
 }
 function degarrirTous(b){
-  const r=emettreOrdre(ordre(ORD.DEGARNIR,{bId:b.id}));
+  const r=emettreOrdre(ordre(ORD.DEGARNIR,{bId:b.id}),{n:garnisonDe(b)});
   if(!r.ok) return;
   notify(`🚪 ${r.n} unité(s) sortie(s) de garnison`,'#3498db'); buzz(6);
   refreshUI();
@@ -256,7 +256,7 @@ function drawTradeRoute(bar,b){
     const to=bldById(b.tradeRoute.toId);
     const info=document.createElement('div');
     info.style.cssText='color:#f0c040;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
-    const gold=Math.round(10+(b.tradeRoute.dist/BASE_TILE)*0.6);
+    const gold=gainCaravane(b);   // et non la formule recopiee : elle oubliait tradeMult
     info.textContent=to?`🐫 Route vers ${BDEF[to.type].nom} — +${gold}💰 par trajet`:'🐫 Route commerciale';
     bar.appendChild(info);
     mkBtn(bar,'✖️','Annuler\nla route',()=>{
@@ -470,7 +470,7 @@ function drawBuildAct(bar,b){
   if(b.type===BT.FARM){
     const info=document.createElement('div');
     info.style.cssText='color:#8fbc44;font-family:Cinzel,serif;font-size:12px;padding:6px 8px;width:100%;text-align:center;';
-    const nb=(b.farmers||[]).length;
+    const nb=fermiersDe(b);
     info.innerHTML=`🌾 Nourriture: ${b.foodLeft|0}/${FARM_FOOD}`+(nb>0?` · 👷×${nb}`:'');
     bar.appendChild(info);
     const tip=document.createElement('div');
@@ -493,7 +493,9 @@ function drawBuildAct(bar,b){
   if(b.type===BT.TC){
     mkBtn(bar,'👷','Villageois\n'+costLabel(TCOST[UT.VIL]),()=>trainUnit(b,UT.VIL),false,TCOST[UT.VIL]);
     mkBtn(bar,b.autoTrain?'♾️':'🔁',(b.autoTrain?'Auto ON':'Auto OFF')+'\nVillageois',()=>{
-      const r=emettreOrdre(ordre(ORD.AUTO_FORMATION,{bId:b.id, actif:!b.autoTrain}));
+      // L'état visé est connu ici même : sans la prédiction, un client lisait
+      // « ⏹ Production continue arrêtée » au moment où il l'ACTIVAIT.
+      const r=emettreOrdre(ordre(ORD.AUTO_FORMATION,{bId:b.id, actif:!b.autoTrain}),{actif:!b.autoTrain});
       if(!r.ok) return;
       notify(r.actif?'♾️ Production continue activée':'⏹ Production continue arrêtée',
              r.actif?'#2ecc71':'#95a5a6'); buzz(6);
@@ -1213,8 +1215,8 @@ function toggleVillageoisAbri(){
   if(dedans.length>0){
     let n=0;
     for(const b of tcs){
-      const r=emettreOrdre(ordre(ORD.DEGARNIR,{bId:b.id}));
-      if(r.ok) n+=r.n;
+      const r=emettreOrdre(ordre(ORD.DEGARNIR,{bId:b.id}),{n:garnisonDe(b)});
+      if(r.ok) n+=r.n;   // sans prédiction, ce cumul valait NaN chez un client
     }
     notify(`🔔 ${n} villageois sorti(s) du Centre Ville`,'#3498db'); buzz(8);
     syncShelterBtn(); return;
@@ -1224,7 +1226,7 @@ function toggleVillageoisAbri(){
   // Chaque villageois rejoint le CV le plus proche ENCORE DISPONIBLE : avec
   // plusieurs Centres Ville, ils se répartissent par proximité plutôt que
   // de tous viser le premier trouvé et laisser les autres vides.
-  const restant=new Map(tcs.map(b=>[b.id, BDEF[b.type].garrisonCap-G.units.filter(u=>u.state==='garrison'&&u.target===b.id).length]));
+  const restant=new Map(tcs.map(b=>[b.id, BDEF[b.type].garrisonCap-garnisonDe(b)]));
   const parCV=new Map();
   for(const v of vils){
     let best=null,bd=Infinity;
@@ -1240,7 +1242,9 @@ function toggleVillageoisAbri(){
   }
   let n=0,refuses=0;
   for(const[bId,ids] of parCV){
-    const r=emettreOrdre(ordre(ORD.GARNIR,{ids,bId}));
+    // `ids` a déjà été borné par `restant` ci-dessus : la prédiction est donc
+    // exacte, et `refuses` vaut 0 tant que l'hôte voit la même garnison.
+    const r=emettreOrdre(ordre(ORD.GARNIR,{ids,bId}),{n:ids.length, refuses:0});
     if(r.ok){ n+=r.n; refuses+=r.refuses||0; }
   }
   if(n===0){ notify('🏰 Garnison pleine !','#e74c3c'); return; }
@@ -1574,7 +1578,8 @@ function closeDiplo(){ document.getElementById('diplopanel').style.display='none
 window.openDiplo=openDiplo; window.closeDiplo=closeDiplo;
 
 function diplomatieAction(cibleId,action){
-  const r=emettreOrdre(ordre(ORD.DIPLOMATIE,{cibleId,action}));
+  const r=emettreOrdre(ordre(ORD.DIPLOMATIE,{cibleId,action}),
+                       {nom:(G.factions[cibleId]||{}).nom||'Le rival'});
   if(!r.ok){
     if(r.raison==='refuse') notify(`🤝 ${r.nom||'Le rival'} refuse votre alliance — trop confiant en ses propres forces.`,'#e67e22');
     else notify('Action diplomatique impossible.','#e74c3c');

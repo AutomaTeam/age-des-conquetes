@@ -228,6 +228,23 @@ function libererFileFormation(b){
   if(f) f.heroTrained=false;
 }
 
+// Nombre d'unités actuellement en garnison dans un bâtiment. Écrit à trois
+// endroits (panneau de garnison, bouton d'abri, décompte de place restante)
+// et désormais à un quatrième — les PRÉDICTIONS optimistes des ordres de
+// garnison (voir emettreOrdre, js/10-ordres.js), seule façon pour un client
+// d'annoncer un compte juste sans attendre la réponse de l'hôte.
+// Nombre de villageois aux champs d'une Ferme. L'HÔTE tient la liste des ids
+// (`b.farmers`, mutée par doFarm) ; le CLIENT n'en reçoit que le compte
+// (`b.nFarmers`, v6 du protocole) — la liste elle-même ne lui servirait à
+// rien. Un seul point de lecture pour que le panneau n'ait pas à savoir de
+// quel côté du fil il tourne.
+// `nFarmers` d'ABORD : mkBuilding initialise `farmers` à un tableau VIDE, qui
+// est truthy — tester `b.farmers` en premier faisait donc toujours répondre 0
+// chez le client, réplication ou pas. Le champ n'existe que chez lui ; côté
+// hôte on retombe sur la vraie liste.
+function fermiersDe(b){ return b.nFarmers!=null?b.nFarmers:(b.farmers||[]).length; }
+function garnisonDe(b){ return G.units.filter(u=>u.state==='garrison'&&u.target===b.id).length; }
+
 // ── AMÉLIORATION DES TOURS DÉFENSIVES ──────────────────────
 // Trois paliers façon AoE2 (Tour de Guet → Tour de Garde → Donjon) : chaque
 // palier coûte des ressources et améliore PV, dégâts, portée et cadence.

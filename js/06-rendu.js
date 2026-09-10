@@ -842,7 +842,11 @@ function drawBuildings(){
     }
     // File de formation
     if(b.trainQ.length>0){
-      const tr=1-b.trainTimer/TTIME[b.trainQ[0]];
+      // trainTime() et non TTIME[...] : TTIME ne contient AUCUN type du roster
+      // de l'IA (ils sont dans AI_TTIME), si bien que la barre valait NaN
+      // au-dessus de toute Caserne adverse en production — fillRect avale une
+      // largeur NaN sans un mot, la barre ne se remplissait donc jamais.
+      const tr=1-b.trainTimer/trainTime(b.trainQ[0]);
       ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(bx,by+ph+7,pw,4);
       ctx.fillStyle='#f1c40f'; ctx.fillRect(bx,by+ph+7,pw*tr,4);
       ctx.font='9px Cinzel,serif'; ctx.fillStyle='#f1c40f';

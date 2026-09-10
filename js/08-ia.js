@@ -943,12 +943,7 @@ function updateUneIA(dt,a){
     }
   }
 
-  // Re-semis des champs adverses, payé sur sa propre caisse
-  for(const b of G.buildings){
-    if(b.owner===a.id&&b.type===BT.FARM&&!b.constructing&&b.foodLeft<=0&&aiAfford(FARM_RESEED_COST,null,a)){
-      aiSpend(FARM_RESEED_COST,a); b.foodLeft=FARM_FOOD;
-    }
-  }
+  aiResemer(a);   // re-semis des champs, payé sur sa propre caisse (gratuit chez les Francs)
 
   // Assauts : le compte à rebours tourne en continu, la décision se prend
   // quand l'armée est assez fournie. Le seuil monte à chaque raid, donc les
@@ -1276,6 +1271,25 @@ function refreshConquestBar(){
   el.innerHTML=`🏴 Ennemi ${AGES[a.age].ico} &nbsp;|&nbsp; ⚔️ ${army} &nbsp;|&nbsp; ${etat}`;
 }
 
+// Re-semis des champs de l'IA, paye sur sa propre caisse -- et GRATUIT pour
+// les Francs, exactement comme pour un joueur franc (voir tryAutoReseed,
+// js/01-regles.js). L'IA a son propre chemin de re-semis, updateBuildings ne
+// faisant passer par tryAutoReseed que les fermes des factions HUMAINES ; ce
+// chemin-la ignorait le bonus de civilisation, et une IA franque (elle l'est
+// des que le joueur ne l'est pas, sa civ etant tiree hors de la sienne) payait
+// 30 bois par champ que le joueur franc, lui, ne paie jamais.
+// Fonction a part plutot qu'une boucle noyee dans updateUneIA : c'est la
+// seule facon d'observer ce qu'elle depense sans que les achats de l'IA du
+// meme tic (batiments, unites, recherches) brouillent la mesure.
+function aiResemer(a){
+  const gratuit=!!civOf(a.id).fermeGratuite;
+  for(const b of G.buildings){
+    if(b.owner!==a.id||b.type!==BT.FARM||b.constructing||b.foodLeft>0) continue;
+    if(gratuit){ b.foodLeft=FARM_FOOD; }
+    else if(aiAfford(FARM_RESEED_COST,null,a)){ aiSpend(FARM_RESEED_COST,a); b.foodLeft=FARM_FOOD; }
+  }
+}
+
 // Chaque camp fait avancer sa propre file : en 1v1, les deux joueurs
 // cherchent en parallèle, et les effets rétroactifs ne touchent que les
 // unités de celui qui a payé la recherche.
@@ -1311,18 +1325,25 @@ function updateResearchFaction(dt,f){
       if(local) notify('⚔️ +20% ATK sur toutes vos unités militaires !','#f0c040');
     }
     if(r.type==='iron_sword'){
-      for(const u of G.units) if(u.owner===owner&&[UT.MIL,UT.PIKE].includes(u.type)) u.atk=Math.round(u.atk*1.25);
+      for(const u of G.units) if(u.owner===owner&&MELEE_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.25);
       if(local) notify('⚔️ Miliciens et Piquiers renforcés !','#e74c3c');
     }
     if(r.type==='bow_craft'){
-      for(const u of G.units) if(u.owner===owner&&[UT.ARC,UT.XBOW].includes(u.type)) u.atk=Math.round(u.atk*1.25);
+      // RANGED_BONUS_TYPES et non [ARC,XBOW] : l'Arbalétrier à Répétition et
+      // le Cavalier-Archer reçoivent bien ce bonus dans mkUnit, et ne le
+      // recevaient PAS ici — un exemplaire déjà sur la carte restait
+      // définitivement plus faible que le suivant formé au Château.
+      for(const u of G.units) if(u.owner===owner&&RANGED_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.25);
       if(local) notify('🏹 Archers renforcés !','#e67e22');
     }
     if(r.type==='cavalry'){
       // Éclaireur inclus : c'est de la cavalerie légère, et mkUnit lui
       // applique déjà ce bonus à la création (voir CAV dans mkUnit) — sans
       // ça, un Éclaireur déjà formé avant la recherche ne recevait rien.
-      for(const u of G.units) if(u.owner===owner&&[UT.KNIGHT,UT.PALADIN,UT.SCOUT].includes(u.type)){
+      // CAV_BONUS_TYPES : Cataphractaire et Cavalier-Archer inclus, pour la
+      // même raison que l'Éclaireur l'avait été avant eux — mkUnit les compte
+      // comme cavalerie, ce rattrapage doit en faire autant.
+      for(const u of G.units) if(u.owner===owner&&CAV_BONUS_TYPES.includes(u.type)){
         u.maxHp=Math.round(u.maxHp*1.2); u.hp=Math.min(u.hp+15,u.maxHp);
       }
       if(local) notify('🐴 Cavalerie renforcée !','#9b59b6');
@@ -1347,11 +1368,11 @@ function updateResearchFaction(dt,f){
       if(local) notify('🔧 Tours et Château renforcés !','#95a5a6');
     }
     if(r.type==='siege_smithing'){
-      for(const u of G.units) if(u.owner===owner&&[UT.RAM,UT.TREB].includes(u.type)) u.atk=Math.round(u.atk*1.25);
+      for(const u of G.units) if(u.owner===owner&&SIEGE_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.25);
       if(local) notify('🐏 Machines de siège renforcées !','#c0392b');
     }
     if(r.type==='cavalry_lance'){
-      for(const u of G.units) if(u.owner===owner&&[UT.KNIGHT,UT.PALADIN,UT.SCOUT].includes(u.type)) u.atk=Math.round(u.atk*1.2);
+      for(const u of G.units) if(u.owner===owner&&CAV_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.2);
       if(local) notify('🗡️ Cavalerie plus offensive !','#9b59b6');
     }
     if(r.type==='fortification'){
@@ -1371,11 +1392,11 @@ function updateResearchFaction(dt,f){
     // déjà en jeu, sinon deux unités du même type n'ont pas les mêmes
     // statistiques selon qu'elles sont nées avant ou après.
     if(r.type==='chevalerie'){
-      for(const u of G.units) if(u.owner===owner&&CAV_TYPES.includes(u.type)&&isMilitary(u.type)) u.atk=Math.round(u.atk*1.15);
+      for(const u of G.units) if(u.owner===owner&&CAV_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.15);
       if(local) notify('🏇 Votre cavalerie frappe plus fort !','#9b59b6');
     }
     if(r.type==='etriers'){
-      for(const u of G.units) if(u.owner===owner&&CAV_TYPES.includes(u.type)&&isMilitary(u.type)) u.spd*=1.15;
+      for(const u of G.units) if(u.owner===owner&&CAV_BONUS_TYPES.includes(u.type)) u.spd*=1.15;
       if(local) notify('👟 Votre cavalerie se déplace plus vite !','#3498db');
     }
     if(r.type==='arc_composite'){

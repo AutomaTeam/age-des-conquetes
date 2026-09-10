@@ -1483,17 +1483,13 @@ function updateBuildings(dt){
     // ennemies postées sur un point d'intérêt (ciblent les unités du joueur).
     if(b.type===BT.TOWER||b.type===BT.CASTLE){
       b.atkCd-=dt;
-      let range,atk,cd;
-      if(b.type===BT.CASTLE){ range=9*BASE_TILE; atk=30; cd=1.2; }
-      else { const lv=TOWER_LEVELS[b.level||1]; range=lv.range*BASE_TILE; atk=lv.atk; cd=lv.cd; }
-      // Garnison d'archers/arbalétriers : chacun ajoute un peu de dégâts à
-      // l'attaque automatique du bâtiment (façon AoE2), plafonné pour ne pas
-      // transformer une Tour en artillerie à elle seule.
-      const garnAtk=garnisons.get(b.id)||0;
-      if(garnAtk) atk+=Math.min(garnAtk,garnBonusCap(b))*4;
-      // Feu Grégeois (byzantins) : applique APRÈS la garnison, donc il
-      // multiplie aussi l'apport des archers postés.
-      if(rechercheDe(b.owner).feu_gregeois) atk=Math.round(atk*1.3);
+      let range,cd;
+      if(b.type===BT.CASTLE){ range=CASTLE_RANGE*BASE_TILE; cd=CASTLE_CD; }
+      else { const lv=TOWER_LEVELS[b.level||1]; range=lv.range*BASE_TILE; cd=lv.cd; }
+      // Garnison d'archers/arbalétriers (chacun ajoute un peu de dégâts,
+      // plafonné) puis Feu Grégeois : tout est dans bldAtk (js/04-entites.js),
+      // que le panneau de sélection lit désormais aussi.
+      const atk=bldAtk(b,garnisons.get(b.id)||0);
       if(b.atkCd<=0){
         const e=prochainHostileToute(b.x,b.y,range,b);
         if(e){ b.atkCd=cd; shootProj({x:b.x,y:b.y,atk,owner:b.owner},e); }
@@ -1521,7 +1517,13 @@ function updateBuildings(dt){
       if(b.atkCd<=0){
         b.atkCd=1.0;
         forNearby(b.x,b.y,HOSPICE_HEAL_RADIUS,u=>{
-          if(u.owner!==b.owner||u.hp<=0||u.hp>=u.maxHp) return;
+          // Portée d'ÉQUIPE, comme l'aura du Héros (heroAuraMult,
+          // js/01-regles.js) : le panneau annonce « aux unités ALLIÉES »,
+          // et en mode coopératif un coéquipier posté sous l'Hospice ne
+          // recevait rien. Le Moine, lui, reste volontairement sur ses
+          // seules unités : c'est un soin CIBLÉ qu'on donne à qui l'on veut,
+          // pas un effet de zone qui s'applique tout seul.
+          if(u.hp<=0||u.hp>=u.maxHp||estHostile(u,b)) return;
           u.hp=Math.min(u.maxHp,u.hp+HOSPICE_HEAL_RATE);
           addFText(u.x,u.y-14,`+${HOSPICE_HEAL_RATE}`,'#2ecc71');
         });

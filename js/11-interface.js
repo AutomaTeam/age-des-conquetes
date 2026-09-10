@@ -683,8 +683,14 @@ function drawBuildAct(bar,b){
     const lv=b.level||1, cfg=TOWER_LEVELS[lv], next=TOWER_LEVELS[lv+1];
     const info=document.createElement('div');
     info.style.cssText='color:#e8d5a0;font-family:Cinzel,serif;font-size:12px;padding:4px 8px;width:100%;text-align:center;';
+    // ATK RÉELLE (bldAtk : palier + garnison + Feu Grégeois), pas le chiffre
+    // brut du palier — voir la note de bldAtk, js/04-entites.js. L'écart est
+    // annoncé quand il existe, sinon le joueur ne saurait pas d'où vient un
+    // nombre qui ne correspond à aucune table.
+    const garn=garnisonsArcheres().get(b.id)||0;
+    const atkReel=bldAtk(b,garn), ecart=atkReel-cfg.atk;
     info.innerHTML=`🗼 ${cfg.nom} (Niv.${lv}/3)<br>`+
-      `<span style="color:#999;font-size:10px;">ATK ${cfg.atk} · Portée ${cfg.range.toFixed(1)} · Cadence ${cfg.cd}s</span>`;
+      `<span style="color:#999;font-size:10px;">ATK ${atkReel}${ecart>0?` <span style="color:#8fbc44">(${cfg.atk} +${ecart})</span>`:''} · Portée ${cfg.range.toFixed(1)} · Cadence ${cfg.cd}s</span>`;
     bar.appendChild(info);
     if(next){
       const locked=next.reqAge!=null&&G.age<next.reqAge;
@@ -694,7 +700,12 @@ function drawBuildAct(bar,b){
       const hpGain=Math.round((towerMaxHp(lv+1)/b.maxHp-1)*100);
       const preview=document.createElement('div');
       preview.style.cssText='color:#8fbc44;font-size:9px;padding:0 4px 3px;width:100%;text-align:center;';
-      preview.textContent=`→ ${next.nom} : ATK ${next.atk} · Portée ${next.range.toFixed(1)} · +${hpGain}% PV`;
+      // Comparable à l'ATK affichée juste au-dessus : même garnison, mêmes
+      // recherches, seul le palier change. Annoncer `next.atk` brut à côté
+      // d'une ATK réelle aurait donné une amélioration en apparence NÉGATIVE
+      // sur une tour bien garnie.
+      const atkSuiv=bldAtk({type:b.type,owner:b.owner,level:lv+1},garn);
+      preview.textContent=`→ ${next.nom} : ATK ${atkSuiv} · Portée ${next.range.toFixed(1)} · +${hpGain}% PV`;
       bar.appendChild(preview);
     } else {
       const maxed=document.createElement('div');

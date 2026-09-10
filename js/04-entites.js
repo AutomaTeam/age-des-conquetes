@@ -31,6 +31,22 @@ const CAV_TYPES=[UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.ENEMI_C,UT.CATA,UT.CAVARC];
 // annonce « Beliers et Trebuchets » et ne doit PAS se mettre a toucher la
 // Roulotte dans le dos du libelle.
 const ROUES_TYPES=[UT.RAM,UT.TREB,UT.ROUL];
+// Cibles des bonus de RECHERCHE, par famille. Ces quatre listes vivaient en
+// `const` LOCALES a mkUnit, et les effets retroactifs (updateResearchFaction,
+// js/08-ia.js) en recopiaient a la main des versions PLUS COURTES : une unite
+// unique de civilisation (Cataphractaire, Cavalier-Archer, Arbaletrier a
+// Repetition) recevait donc Arc Renforce / Cavalerie / Lance de Cavalerie a sa
+// NAISSANCE, mais jamais si elle etait deja sur la carte au moment de la
+// recherche. Deux unites du meme type n'avaient plus les memes statistiques
+// selon leur date de naissance -- exactement ce que les notes de `tactics` et
+// de `chevalerie` disaient avoir voulu eviter. Meme raison d'etre que
+// CAV_TYPES/ROUES_TYPES ci-dessus : un seul endroit a tenir.
+// Volontairement sans les archetypes ennemis (UT.ENEMI*) : les recherches ne
+// concernent que le roster jouable.
+const MELEE_BONUS_TYPES  = [UT.MIL,UT.PIKE];
+const RANGED_BONUS_TYPES = [UT.ARC,UT.XBOW,UT.ARBRAP,UT.CAVARC];
+const CAV_BONUS_TYPES    = [UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.CATA,UT.CAVARC];
+const SIEGE_BONUS_TYPES  = [UT.RAM,UT.TREB];
 // Set, pas Array.includes : isMilitary est appelé DANS des balayages de
 // toute l'armée (selMilitary, heroAuraMult, les statistiques par seconde,
 // les effets rétroactifs de recherche…), et chaque appel reparcourait les
@@ -54,10 +70,11 @@ function mkUnit(type, wx, wy, owner=FAC.P1){
   let rng=d.rng*BASE_TILE; // portée en unités-monde (BASE_TILE), fixe : ne dépend pas du zoom
   if(rech.longbow&&(type===UT.ARC||type===UT.XBOW)) rng*=1.5;
   if(rech.arc_composite&&UDEF[type].atkType==='p'&&!UDEF[type].siege) rng+=BASE_TILE;   // Arc Composite (chinois)
-  // CAV_TYPES moins les archetypes ennemis : les bonus de recherche et de
-  // civilisation ne concernent que le roster du joueur.
-  const MELEE=[UT.MIL,UT.PIKE], RANGED=[UT.ARC,UT.XBOW,UT.ARBRAP,UT.CAVARC],
-        CAV=[UT.KNIGHT,UT.PALADIN,UT.SCOUT,UT.CATA,UT.CAVARC], SIEGE=[UT.RAM,UT.TREB];
+  // Listes PARTAGEES avec les effets retroactifs (voir *_BONUS_TYPES en tete
+  // de fichier) : ce que mkUnit pose a la creation et ce que la recherche
+  // rattrape sur les unites deja en jeu doivent viser exactement les memes.
+  const MELEE=MELEE_BONUS_TYPES, RANGED=RANGED_BONUS_TYPES,
+        CAV=CAV_BONUS_TYPES, SIEGE=SIEGE_BONUS_TYPES;
   if(rech.cavalry&&CAV.includes(type)) mhp=Math.round(mhp*1.2);
   if(civ.cavHpMult&&CAV.includes(type)) mhp=Math.round(mhp*civ.cavHpMult); // bonus de civilisation (Francs)
   let atk=d.atk;
@@ -232,6 +249,22 @@ function towerMaxHp(level,owner){
   const civBldMult=civOf(owner).bldHpMult; if(civBldMult) hp*=civBldMult; // bonus de civilisation (Byzantins) — voir mkBuilding
   return Math.round(hp);
 }
+// ATK réellement tirée par une Tour ou un Château, garnison et Feu Grégeois
+// compris. Le panneau de sélection (js/11-interface.js) affichait le chiffre
+// BRUT du palier pendant que updateBuildings tirait avec celui-ci : une Tour
+// de Guet byzantine garnie de cinq archers annonçait « ATK 14 » et tirait à
+// 44. Même raison d'être que towerMaxHp juste au-dessus — un seul point de
+// vérité, pour que l'affichage ne puisse plus diverger du tir.
+const CASTLE_ATK = 30, CASTLE_RANGE = 9, CASTLE_CD = 1.2;
+function bldAtk(b, garnAtk=0){
+  let atk = b.type===BT.CASTLE ? CASTLE_ATK : (TOWER_LEVELS[b.level||1]||TOWER_LEVELS[1]).atk;
+  // La garnison s'ajoute AVANT le Feu Grégeois, qui multiplie donc aussi
+  // l'apport des archers postés (comportement d'origine, conservé tel quel).
+  if(garnAtk) atk += Math.min(garnAtk, garnBonusCap(b))*4;
+  if(rechercheDe(b.owner).feu_gregeois) atk = Math.round(atk*1.3);
+  return atk;
+}
+
 // Mutation pure — valide et applique, sans toucher à l'interface.
 function appliquerUpgradeTour(b,owner){
   if(b.constructing) return {ok:false,raison:'cible'};

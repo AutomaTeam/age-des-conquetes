@@ -1,11 +1,11 @@
 // Harnais de test du jeu — sans navigateur, sans dépendance, sans build.
 //
-//   node tests/run.js            tout (103 tests, ~30 s)
+//   node tests/run.js            tout (200 tests, ~45 s)
 //   node tests/run.js ordres     un seul groupe — lui seul TOURNE
 //
 // Groupes : carte, reseau, sauvegarde, chemin, combat, civilisations,
 // cartes, tailles, ordres, economie, ages, finpartie, ia, delta, charge,
-// triche.
+// triche, promesses.
 // Les groupes `delta` et `ia` pèsent à eux deux la moitié du temps total :
 // ils simulent de vraies parties, c'est le prix pour observer des
 // comportements qui n'existent qu'apres plusieurs minutes de jeu.
@@ -4106,6 +4106,202 @@ groupe('triche', () => {
     const wolos = j.G.units.filter((u) => u.type === j.UT.WOLOLO);
     egal(wolos.length, nAvant + 1, 'aucun Wololo supplémentaire trouvé après le code');
     ok(wolos[wolos.length - 1].owner === j.G.me, "le Wololo invoqué n'appartient pas au joueur local");
+  });
+});
+
+// ══ PASSE DE CONTRÔLE « L'INTERFACE PROMET X » ═════════════
+// Même famille que le groupe `finpartie` : on ne vérifie pas qu'un mécanisme
+// marche, on vérifie qu'il fait ce que le jeu ANNONCE au joueur. Les cinq
+// écarts ci-dessous ont tous été trouvés à la lecture, aucun n'était attrapé
+// par la suite d'avant — et aucun ne fait planter quoi que ce soit, ce qui
+// est précisément pourquoi ils avaient survécu.
+groupe('promesses', () => {
+
+  // ── 1. Recherches rétroactives ──────────────────────
+  // `mkUnit` pose les bonus à la NAISSANCE, updateResearchFaction les
+  // rattrape sur les unités DÉJÀ en jeu. Les deux doivent viser exactement
+  // les mêmes types, sans quoi deux exemplaires du même type n'ont pas les
+  // mêmes statistiques selon leur date de naissance.
+  const chercher = (j, owner, type) => {
+    const f = j.fac(owner);
+    f.researchQ = [{ type, timer: 0.01 }];
+    j.updateResearchFaction(1, f);
+    egal(f.research[type], true, `la recherche ${type} n'est pas terminée`);
+  };
+
+  // Une unité posée AVANT la recherche, puis une posée APRÈS : à la fin,
+  // elles doivent être identiques. Cette formulation attrape les deux sens
+  // de l'erreur (liste trop courte d'un côté ou de l'autre).
+  const memeStatAvantApres = (j, type, tech, champ) => {
+    const avant = j.mkUnit(type, 100, 100, j.G.me);
+    j.G.units.push(avant);
+    chercher(j, j.G.me, tech);
+    const apres = j.mkUnit(type, 100, 100, j.G.me);
+    return { avant: avant[champ], apres: apres[champ] };
+  };
+
+  for (const [tech, champ, types] of [
+    ['bow_craft', 'atk', ['ARBRAP', 'CAVARC']],
+    ['cavalry', 'maxHp', ['CATA', 'CAVARC']],
+    ['cavalry_lance', 'atk', ['CATA', 'CAVARC']],
+  ]) {
+    for (const nom of types) {
+      test(`${tech} : un ${nom} déjà sur la carte reçoit le même bonus qu'un ${nom} formé après`, () => {
+        const j = partie(charger(), { mode: 'conquest' });
+        const r = memeStatAvantApres(j, j.UT[nom], tech, champ);
+        egal(r.avant, r.apres,
+          `${champ} d'un ${nom} né avant la recherche ≠ né après — la liste rétroactive de ${tech} ne couvre pas ce type`);
+      });
+    }
+  }
+
+  test('les listes de bonus de recherche sont PARTAGÉES, pas recopiées', () => {
+    const j = charger();
+    ok(j.RANGED_BONUS_TYPES.includes(j.UT.ARBRAP) && j.RANGED_BONUS_TYPES.includes(j.UT.CAVARC),
+      'RANGED_BONUS_TYPES a perdu une unité unique de tir');
+    ok(j.CAV_BONUS_TYPES.includes(j.UT.CATA) && j.CAV_BONUS_TYPES.includes(j.UT.CAVARC),
+      'CAV_BONUS_TYPES a perdu une unité unique de cavalerie');
+    // Les archétypes des vagues ennemies n'ont rien à faire là : ce sont les
+    // recherches du roster JOUABLE.
+    for (const t of [j.UT.ENEMI, j.UT.ENEMIA, j.UT.ENEMI_C, j.UT.ENEMI_BOSS])
+      ok(!j.CAV_BONUS_TYPES.includes(t) && !j.RANGED_BONUS_TYPES.includes(t) && !j.MELEE_BONUS_TYPES.includes(t),
+        'un archétype ennemi est entré dans une liste de bonus de recherche');
+    // Roulotte : `siege_smithing` annonce « Béliers et Trébuchets ».
+    ok(!j.SIEGE_BONUS_TYPES.includes(j.UT.ROUL),
+      'la Roulotte est entrée dans SIEGE_BONUS_TYPES, dans le dos du libellé de Forge de Siège');
+  });
+
+  // ── 2. Re-semis gratuit des Francs, IA comprise ─────────
+  // aiResemer et non updateUneIA : au meme tic l'IA achete aussi des
+  // batiments, des unites et des recherches, et sa depense totale ne dit plus
+  // rien du re-semis. C'est ce qui a rendu la premiere version de ce test
+  // illisible (150 bois depenses pour un re-semis a 30).
+  const semisIA = (civ) => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const a = j.G.factions.ia;
+    a.civ = civ;
+    riche(j, a.id);
+    const p = caseLibre(j, Math.round(a.baseX / j.BASE_TILE) + 4, Math.round(a.baseY / j.BASE_TILE) + 4, 2, 2);
+    const ferme = batir(j, j.BT.FARM, p.tx, p.ty, a.id);
+    ferme.foodLeft = 0;
+    const bois = a.res.wood;
+    j.aiResemer(a);
+    return { j, ferme, depense: bois - a.res.wood };
+  };
+
+  test('une IA franque ne paie pas son re-semis, comme le joueur franc', () => {
+    const r = semisIA('francs');
+    egal(r.ferme.foodLeft, r.j.FARM_FOOD, "le champ de l'IA n'a pas été re-semé");
+    egal(r.depense, 0, "l'IA franque a payé son re-semis alors que sa civilisation l'en dispense");
+  });
+
+  test("une IA NON franque paie bien son re-semis (sans quoi le test précédent ne prouverait rien)", () => {
+    const r = semisIA('mongols');
+    egal(r.ferme.foodLeft, r.j.FARM_FOOD, "le champ de l'IA n'a pas été re-semé");
+    egal(r.depense, r.j.FARM_RESEED_COST.wood, "l'IA mongole n'a pas payé son re-semis");
+  });
+
+  // ── 3. « Allié » veut dire ÉQUIPE ────────────────────
+  // Le cercle du Héros est dessiné en doré pour un coéquipier (drawHeroAuras)
+  // et la fiche annonce « aux alliés proches » : l'aura doit donc porter à
+  // l'échelle de l'équipe, pas du seul propriétaire.
+  const coop = () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    j.G.factions.allie = j.mkFaction('allie', { genre: 'humain', equipe: j.moi().equipe, nom: 'Allié' });
+    return j;
+  };
+
+  test("l'aura du Héros porte sur les unités d'un COÉQUIPIER, comme la fiche le promet", () => {
+    const j = coop();
+    const hero = j.mkUnit(j.UT.HERO, 500, 500, 'allie');
+    const mien = j.mkUnit(j.UT.MIL, 505, 505, j.G.me);
+    j.G.units.push(hero, mien);
+    j.majHeros();
+    ok(j.heroAuraMult(mien) > 1,
+      'le Héros du coéquipier dessine un cercle doré sous mes troupes et ne leur donne rien');
+  });
+
+  test("l'aura d'un Héros HOSTILE ne profite toujours pas à mes unités", () => {
+    const j = coop();
+    const hero = j.mkUnit(j.UT.HERO, 500, 500, j.G.factions.ia.id);
+    const mien = j.mkUnit(j.UT.MIL, 505, 505, j.G.me);
+    j.G.units.push(hero, mien);
+    j.majHeros();
+    egal(j.heroAuraMult(mien), 1, 'un Héros ennemi galvanise mes troupes');
+  });
+
+  test("l'Hospice soigne les unités d'un coéquipier, et jamais celles d'un ennemi", () => {
+    const j = coop();
+    const p = caseLibre(j, 40, 40, 2, 2);
+    const h = batir(j, j.BT.HOSPICE, p.tx, p.ty, j.G.me);
+    h.atkCd = 0;
+    const dedans = (owner) => {
+      const u = j.mkUnit(j.UT.MIL, h.x + 4, h.y + 4, owner);
+      u.hp = 10;
+      j.G.units.push(u);
+      return u;
+    };
+    const ami = dedans('allie'), ennemi = dedans(j.G.factions.ia.id), mien = dedans(j.G.me);
+    j.rebuildGrid();   // et non rebuildIndex : forNearby lit la GRILLE spatiale
+    j.updateBuildings(1);
+    egal(mien.hp, 10 + j.HOSPICE_HEAL_RATE, "l'Hospice ne soigne même plus mes propres unités");
+    egal(ami.hp, 10 + j.HOSPICE_HEAL_RATE, "l'Hospice annonce « unités alliées » et ignore le coéquipier");
+    egal(ennemi.hp, 10, "l'Hospice soigne une unité ENNEMIE postée à côté");
+  });
+
+  // ── 4. L'ATK affichée d'une Tour est celle qui tire ────────
+  test("le panneau d'une Tour ne peut plus annoncer une ATK que la Tour ne tire pas", () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const p = caseLibre(j, 40, 40, 1, 2);
+    const tour = batir(j, j.BT.TOWER, p.tx, p.ty, j.G.me);
+    const brut = j.TOWER_LEVELS[1].atk;
+    egal(j.bldAtk(tour, 0), brut, 'une Tour nue ne tire pas le chiffre de son palier');
+    const cap = j.garnBonusCap(tour);
+    egal(j.bldAtk(tour, 2), brut + 8, 'la garnison de la Tour ne compte pas dans son ATK');
+    egal(j.bldAtk(tour, cap + 5), brut + cap * 4, 'le plafond de garnison ne tient plus');
+    // Feu Grégeois : APRÈS la garnison, donc il multiplie aussi son apport.
+    j.moi().research.feu_gregeois = true;
+    egal(j.bldAtk(tour, 2), Math.round((brut + 8) * 1.3), "le Feu Grégeois ne s'applique plus à la Tour");
+  });
+
+  test("le tir réel d'une Tour passe bien par bldAtk (sinon l'affichage corrigé mentirait à l'envers)", () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const p = caseLibre(j, 40, 40, 1, 2);
+    const tour = batir(j, j.BT.TOWER, p.tx, p.ty, j.G.me);
+    tour.atkCd = 0;
+    j.moi().research.feu_gregeois = true;
+    const cible = j.mkUnit(j.UT.ENEMI, tour.x + j.BASE_TILE * 2, tour.y, j.G.factions.ia.id);
+    j.G.units.push(cible);
+    j.rebuildGrid();   // idem : sans la grille, la Tour ne voit personne
+    const avant = (j.G.projs || []).length;
+    j.updateBuildings(0.1);
+    const tirs = (j.G.projs || []).slice(avant);
+    ok(tirs.length > 0, "la Tour n'a pas tiré : le test ne prouve rien");
+    egal(tirs[0].atk, j.bldAtk(tour, 0), "le projectile de la Tour n'a pas l'ATK annoncée par bldAtk");
+  });
+
+  // ── 5. Le message de re-semis ne facture plus les Francs ───
+  test("le message de re-semis n'annonce un coût que s'il a été prélevé", () => {
+    const semer = (civ) => {
+      const j = partie(charger(), { mode: 'conquest' });
+      j.moi().civ = civ;
+      riche(j);
+      const p = caseLibre(j, 40, 40, 2, 2);
+      const f = batir(j, j.BT.FARM, p.tx, p.ty, j.G.me);
+      f.foodLeft = 0;
+      j.G.gameTime = (j.G.gameTime || 0) + 100; // dépasse l'anti-spam de 3 s
+      j.tryAutoReseed(f);
+      egal(f.foodLeft, j.FARM_FOOD, 'le champ n\'a pas été re-semé');
+      // `children`, pas `lastChild` : le bouchon DOM des tests ne fournit pas
+      // le second (meme piege que dans le groupe `triche`).
+      const n = j.__sandbox.document.getElementById('notif');
+      const dernier = n.children[n.children.length - 1];
+      return dernier ? (dernier.textContent || '') : '';
+    };
+    const cout = String(charger().FARM_RESEED_COST.wood);
+    ok(semer('mongols').includes(cout), "le re-semis payant n'annonce plus son coût");
+    ok(!semer('francs').includes(cout),
+      'le message facture le bois au joueur franc, dont la civilisation le dispense de payer');
   });
 });
 

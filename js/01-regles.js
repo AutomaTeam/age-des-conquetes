@@ -320,7 +320,13 @@ function tryAutoReseed(b){
     b.foodLeft=FARM_FOOD; b._reseedWarned=false;
     spawnParts(b.x,b.y,'#8fbc44',6);
     addFText(b.x,b.y-18,'🌱','#8fbc44');
-    if(estLocal(b)&&t-_lastFarmNotify>3){ _lastFarmNotify=t; notify(`🌱 Ferme re-semée (-${FARM_RESEED_COST.wood}🪵)`,'#8fbc44'); }
+    // Le coût n'est annoncé QUE s'il a vraiment été prélevé : le message
+    // facturait 30🪵 au joueur franc à chaque champ, c'est-à-dire qu'il
+    // démentait le bonus de civilisation au moment même où celui-ci jouait.
+    if(estLocal(b)&&t-_lastFarmNotify>3){
+      _lastFarmNotify=t;
+      notify(gratuit?'🌱 Ferme re-semée (gratuit)':`🌱 Ferme re-semée (-${FARM_RESEED_COST.wood}🪵)`,'#8fbc44');
+    }
   } else if(!b._reseedWarned){
     b._reseedWarned=true;
     if(estLocal(b)&&t-_lastFarmNotify>3){ _lastFarmNotify=t; notify('🪵 Bois insuffisant pour re-semer une ferme','#e67e22'); }
@@ -728,7 +734,17 @@ function heroAuraMult(u){
   // sur la carte. Avant, ce cas coûtait quand même un balayage complet.
   if(!_heros.length||!isMilitary(u.type)) return 1;
   for(const h of _heros){
-    if(h.hp<=0||h.owner!==u.owner) continue;   // un héros peut mourir dans le pas courant
+    if(h.hp<=0) continue;   // un héros peut mourir dans le pas courant
+    // Portée d'ÉQUIPE, pas de propriétaire. La fiche d'unité promet « +15%
+    // ATK aux alliés proches » et drawHeroAuras (js/06-rendu.js) dessine
+    // déjà le cercle du héros d'un COÉQUIPIER en doré, couleur alliée : en
+    // mode coopératif, on massait donc son armée dans un cercle qui ne
+    // donnait rien. Les routes commerciales (ORD.ROUTE_COMMERCIALE)
+    // raisonnaient déjà par équipe ; l'aura le fait maintenant aussi.
+    // Le test `h.owner!==u.owner` d'abord : c'est le cas de très loin le
+    // plus fréquent et il coûte une comparaison, là où estHostile lit deux
+    // entrées de table (voir la note de performance ci-dessus).
+    if(h.owner!==u.owner&&estHostile(h,u)) continue;
     // Un héros à l'abri (ORD.GARNIR) est retiré du champ de bataille comme
     // n'importe quelle autre unité garnie (voir doAttack/updateProjs) — sans
     // cette garde, un héros caché continuait de galvaniser les troupes à

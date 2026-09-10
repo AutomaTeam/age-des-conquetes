@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**168 tests, 15 groupes, ~40 s.** Les groupes `ia` et `delta` comptent pour
+**200 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -270,6 +270,47 @@ qui **ne se voit pas** :
   bâtiment qui repart en procédural au premier zoom ; un type traité deux
   fois, c'est du travail payé en double), et `buildBuildings` passe avant
   elles puisqu'il remet `SPR.bld`/`SPR.bldCiv` à zéro.
+
+- **`promesses`** — « l'interface promet X, le code fait-il X ? ». Même
+  famille que la fin du groupe `finpartie`, mais sur les mécaniques : ces
+  défauts-là ne font planter RIEN, ne cassent aucun invariant, et sont
+  invisibles à l'œil — c'est exactement pourquoi ils survivent. Cinq écarts
+  trouvés à la lecture le 2026-09-10 :
+  1. Les effets **rétroactifs de recherche** (`updateResearchFaction`)
+     recopiaient à la main des listes de types PLUS COURTES que celles de
+     `mkUnit` : Arc Renforcé, Cavalerie et Lance de Cavalerie ne rattrapaient
+     pas les unités uniques de civilisation (Cataphractaire, Cavalier-Archer,
+     Arbalétrier à Répétition). Un exemplaire déjà sur la carte restait
+     définitivement plus faible que le suivant formé au Château. Les quatre
+     listes vivent maintenant en `*_BONUS_TYPES` (js/04-entites.js) et sont
+     LUES des deux côtés. Les tests comparent une unité née AVANT à une née
+     APRÈS : cette formulation attrape l'erreur dans les deux sens.
+  2. Le **re-semis gratuit des Francs** ne valait que pour un joueur humain :
+     `updateBuildings` ne fait passer par `tryAutoReseed` que les fermes des
+     factions humaines, et le chemin propre à l'IA (`aiResemer`) ignorait le
+     bonus. Or l'IA est franque dès que le joueur ne l'est pas.
+  3. **« Allié » veut dire ÉQUIPE.** L'aura du Héros (`heroAuraMult`) et le
+     soin de l'Hospice ne portaient que sur le PROPRIÉTAIRE, alors que la
+     fiche d'unité annonce « aux alliés proches », que le panneau de
+     l'Hospice annonce « aux unités alliées » et que `drawHeroAuras` dessine
+     déjà le cercle d'un COÉQUIPIER en doré (couleur alliée). En coopératif
+     on massait donc son armée dans un cercle qui ne donnait rien. Les routes
+     commerciales, elles, raisonnaient déjà par équipe. **Le Moine reste
+     volontairement sur ses seules unités** : c'est un soin CIBLÉ, pas un
+     effet de zone — et son libellé ne promet rien d'autre.
+  4. Le **panneau d'une Tour** affichait l'ATK brute du palier pendant que
+     `updateBuildings` tirait avec garnison + Feu Grégeois : une Tour de Guet
+     byzantine garnie de cinq archers annonçait 14 et tirait 44. `bldAtk`
+     (js/04-entites.js) est désormais le point unique, lu par le tir ET par
+     l'affichage — même raison d'être que `towerMaxHp` juste à côté.
+  5. Le **message de re-semis** facturait 30🪵 au joueur franc, démentant son
+     bonus de civilisation au moment même où celui-ci jouait.
+
+  Chacun de ces tests a été vérifié par MUTATION : on remet le comportement
+  d'avant, et le test doit tomber. Deux pièges d'outillage ont été payés en
+  route — `forNearby` lit la GRILLE spatiale, donc c'est `rebuildGrid()` qu'il
+  faut appeler et pas `rebuildIndex()` ; et le bouchon DOM n'a pas de
+  `lastChild` (même piège que dans le groupe `triche`).
 
 Le **rendu n'est pas testé** et ne doit pas l'être ici : les bouchons ne
 dessinent rien — ces deux tests-là mesurent des APPELS, pas des pixels.

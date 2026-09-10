@@ -78,6 +78,13 @@ const EXPORTS = [
   // Terminal de triche (voir le groupe `triche`).
   'WOLOLO_RADIUS', 'WOLOLO_TICK', 'convertirUnite', 'updateWololo',
   'CHEATS', 'soumettreCheat', 'quitterPoste',
+  // Passe de controle « l'interface promet X, le code fait-il X ? » (voir le
+  // groupe `promesses`). Les quatre listes *_BONUS_TYPES sont le point de
+  // verite partage entre mkUnit et les effets retroactifs de recherche ;
+  // bldAtk celui entre le tir d'une Tour et son panneau.
+  'MELEE_BONUS_TYPES', 'RANGED_BONUS_TYPES', 'CAV_BONUS_TYPES', 'SIEGE_BONUS_TYPES',
+  'updateResearchFaction', 'aiResemer', 'bldAtk', 'CASTLE_ATK', 'TOWER_LEVELS', 'garnBonusCap',
+  'garnisonsArcheres', 'updateBuildings', 'HOSPICE_HEAL_RATE', 'HOSPICE_HEAL_RADIUS',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

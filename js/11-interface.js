@@ -1372,12 +1372,25 @@ const RETOURS = {
 // File PLAFONNÉE : sans ça, un invité déconnecté verrait déferler dix minutes
 // de messages d'un coup à sa reconnexion.
 const RETOUR_FILE_MAX = 24;
+// Retours dont SEUL LE DERNIER compte : les empiler ne dit rien de plus, et
+// les empiler CHASSE les autres. `alerte` part de dealDmg, donc à CHAQUE coup
+// reçu : quarante coups sur un Centre Ville remplissaient la file entière
+// d'alertes identiques et jetaient par-dessus bord le « Âge Féodal atteint ! »
+// qui attendait dedans — le camp sous le feu, c'est-à-dire celui qui a le plus
+// besoin d'être renseigné, était le seul à ne plus rien recevoir d'autre.
+// Le client, lui, n'en affiche de toute façon qu'une toutes les huit secondes
+// (voir alertAttack) : les vingt-trois autres étaient du pur gaspillage.
+const RETOURS_COALESCENTS = new Set(['alerte']);
 function retour(owner,code,args){
   if(owner===G.me){ const f=RETOURS[code]; if(f) f(args||{}); return; }
   if(!RESEAU.actif||RESEAU.role!=='hote') return;
   const f=fac(owner);
   if(!f||f.genre!=='humain') return;
   if(!f.evq) f.evq=[];
+  if(RETOURS_COALESCENTS.has(code)){
+    const dejaLa=f.evq.find(e=>e[0]===code);
+    if(dejaLa){ dejaLa[1]=args||{}; return; }   // on garde la POSITION la plus récente
+  }
   f.evq.push([code,args||{}]);
   if(f.evq.length>RETOUR_FILE_MAX) f.evq.shift();
 }
@@ -1649,7 +1662,10 @@ function openDiplo(){
     const allie=a.equipe===moi().equipe;
     const row=document.createElement('div');
     row.className='diprow'+(allie?' allie':'');
-    const etat=a.vaincu?'Vaincu':allie?'🤝 Allié — peut trahir si elle prend le dessus':'⚔️ Hostile';
+    // La vision PARTAGÉE est le gain le plus concret d'une alliance (voir
+    // revealFog) : elle doublait la surface visible sans qu'un seul texte le
+    // dise, et le panneau ne parlait que du risque de trahison.
+    const etat=a.vaincu?'Vaincu':allie?'🤝 Allié — vision partagée, mais peut trahir si elle prend le dessus':'⚔️ Hostile';
     row.innerHTML=`<div><div class="dipnom">${a.nom}</div><div class="dipetat">${etat}</div></div>`;
     if(!a.vaincu){
       const btn=document.createElement('button');
@@ -1673,7 +1689,7 @@ function diplomatieAction(cibleId,action){
     else notify('Action diplomatique impossible.','#e74c3c');
     return;
   }
-  notify(action==='proposer'?`🤝 Alliance conclue avec ${r.nom} !`:`⚔️ Alliance rompue avec ${r.nom}.`,
+  notify(action==='proposer'?`🤝 Alliance conclue avec ${r.nom} — vous partagez désormais votre vision`:`⚔️ Alliance rompue avec ${r.nom}.`,
          action==='proposer'?'#2ecc71':'#e67e22');
   buzz(8);
   openDiplo(); // rafraîchit la liste tout de suite plutôt qu'à la prochaine ouverture

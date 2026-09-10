@@ -1106,9 +1106,15 @@ function drawUnits(){
     // l'adversaire aligne des VILLAGEOIS — dont le sprite est identique à
     // ceux du joueur : sans ce repère au sol, impossible de distinguer un
     // ouvrier ennemi du sien au milieu d'un gisement disputé.
-    if(!estLocal(u)){
-      ctx.strokeStyle='rgba(231,76,60,.55)'; ctx.lineWidth=1.5;
+    const lisere=couleurLisere(u);
+    if(lisere){
+      ctx.save();
+      // Un allié est plus franc qu'un ennemi : c'est un repère utile, pas une
+      // alerte. L'ennemi garde EXACTEMENT l'opacité d'avant (0,55).
+      ctx.globalAlpha=estAmi(u)?0.75:0.55;
+      ctx.strokeStyle=lisere; ctx.lineWidth=1.5;
       ctx.beginPath(); ctx.ellipse(sx,sy,S*0.27,S*0.13,0,0,Math.PI*2); ctx.stroke();
+      ctx.restore();
     }
     // anneau de sélection
     if(estSel(u.id)){
@@ -1213,7 +1219,10 @@ function drawProjs(){
       const ang=Math.atan2(p.ty-p.y,p.tx-p.x)+(prog-0.5)*0.5;
       ctx.save();
       ctx.translate(sx,bsy); ctx.rotate(ang);
-      const col=(p.owner&&p.owner!==G.me)?'#e88':'#fd0'; // trait ennemi plus terne que le nôtre
+      // Les traits d'un ALLIÉ sont des miens : depuis la vision partagée, on
+      // voit ses volées, et les peindre en « terne ennemi » aurait fait lire
+      // un tir de soutien comme un tir sur soi.
+      const col=(p.owner&&!estAmi(p))?'#e88':'#fd0'; // trait ennemi plus terne que le nôtre
       ctx.strokeStyle='#8a5a2a'; ctx.lineWidth=1.6;
       ctx.beginPath(); ctx.moveTo(-6,0); ctx.lineTo(4,0); ctx.stroke();
       ctx.fillStyle=col; // pointe

@@ -4623,6 +4623,75 @@ groupe('promesses', () => {
     ok(/majDebits\(/.test(src), 'updateVisuel n\'appelle pas majDebits : le client reste à 0,0');
   });
 
+  // ── 9. CONTRECOUPS DE LA VISION PARTAGÉE ───────────
+  // Le rendu et le curseur ne connaissaient que DEUX réponses : à moi, ou
+  // ennemi. Tant qu'on ne voyait jamais son coéquipier, ça tenait. Depuis que
+  // la vision est partagée, un allié s'affichait avec le liséré ROUGE des
+  // ennemis et le curseur promettait de l'attaquer.
+  const avecAllie = () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    j.G.factions.copain = j.mkFaction('copain', { genre: 'humain', equipe: j.moi().equipe, nom: 'Copain', teinte: 'bleu' });
+    return j;
+  };
+
+  test('un coéquipier n\'est ni moi ni un ennemi : les trois cas se distinguent', () => {
+    const j = avecAllie();
+    const mien = j.G.units.find((u) => u.owner === j.G.me);
+    const ami = j.mkUnit(j.UT.MIL, 500, 500, 'copain');
+    const ennemi = j.mkUnit(j.UT.ENEMI, 520, 520, j.G.factions.ia.id);
+    j.G.units.push(ami, ennemi);
+    egal(j.estAmi(mien), true, 'je ne suis pas de mon propre camp ?');
+    egal(j.estAmi(ami), true, "mon coéquipier n'est pas reconnu comme ami");
+    egal(j.estAmi(ennemi), false, 'un ennemi passe pour un ami');
+    // Liséré : rien pour les miennes, la TEINTE du camp pour un allié, le
+    // rouge d'origine pour un hostile.
+    egal(j.couleurLisere(mien), null, 'mes unités portent un liséré d\'appartenance');
+    egal(j.couleurLisere(ennemi), '#e74c3c', "l'ennemi a perdu son liséré rouge d'origine");
+    const cAmi = j.couleurLisere(ami);
+    ok(cAmi && cAmi !== '#e74c3c', `mon coéquipier est dessiné comme un ennemi : ${cAmi}`);
+    egal(cAmi, j.couleurMinimap(ami, true), "le liséré d'un allié devrait être la teinte de son camp, comme sur la mini-carte");
+  });
+
+  test('le curseur ne promet pas d\'attaquer son propre coéquipier', () => {
+    const j = avecAllie();
+    egal(j.curseurSurvol(j.G.me), 'pointer', 'mes entités ne sont plus sélectionnables au curseur');
+    egal(j.curseurSurvol(j.G.factions.ia.id), 'crosshair', "l'ennemi n'est plus signalé comme attaquable");
+    egal(j.curseurSurvol('copain'), 'default', 'le curseur promet encore une attaque sur un allié');
+  });
+
+  test("une file de retours sous le feu ne jette pas les évènements rares", () => {
+    // `alerte` part de dealDmg, donc à CHAQUE coup reçu : quarante coups sur un
+    // Centre Ville remplissaient la file entière et chassaient le
+    // « Âge Féodal atteint ! » qui y attendait. Le camp sous le feu était le
+    // seul à ne plus rien recevoir d'autre.
+    const j = partie(charger(), { mode: 'conquest' });
+    j.RESEAU.actif = true; j.RESEAU.role = 'hote'; j.RESEAU.adversaire = { id: j.FAC.P2 };
+    const f = j.mkFaction(j.FAC.P2, { genre: 'humain', equipe: 2, nom: 'Invité' });
+    j.G.factions[j.FAC.P2] = f;
+    j.retour(f.id, 'age', { ico: 'x', nom: 'Féodal', bonus: '', n: 1 });
+    for (let k = 0; k < 40; k++) j.retour(f.id, 'alerte', { x: k, y: k });
+    ok(f.evq.some((e) => e[0] === 'age'), "l'évènement rare a été chassé par les alertes répétées");
+    egal(f.evq.filter((e) => e[0] === 'alerte').length, 1, 'les alertes ne sont pas fusionnées');
+    egalJSON(f.evq.find((e) => e[0] === 'alerte')[1], { x: 39, y: 39 },
+      "la fusion doit garder la position la PLUS RÉCENTE, pas la première");
+    // Contrôle : un code non fusionnant s'empile bien.
+    egal(j.RETOURS_COALESCENTS.has('construit'), false, 'construit ne doit PAS fusionner : deux bâtiments, deux messages');
+    for (let k = 0; k < 3; k++) j.retour(f.id, 'forme', {});
+    egal(f.evq.filter((e) => e[0] === 'forme').length, 3, 'un code ordinaire ne devrait pas fusionner');
+  });
+
+  test("l'alliance annonce désormais la vision partagée (c'est son vrai gain)", () => {
+    // Mesuré : conclure une alliance DOUBLE la surface visible (253 → 506
+    // cases sur la graine 4242). Aucun texte ne le disait.
+    const j = partie(charger(), { mode: 'conquest' });
+    const compte = () => { let n = 0; const f = j.moi().fog; for (let y = 0; y < j.ROWS; y++) for (let x = 0; x < j.COLS; x++) if (f[y][x] === 2) n++; return n; };
+    j.revealFog();
+    const avant = compte();
+    egal(ordreDe(j, j.G.me, 'DIPLOMATIE', { cibleId: j.G.factions.ia.id, action: 'proposer' }).ok, true, 'alliance refusée');
+    j.revealFog();
+    ok(compte() > avant, "l'alliance ne partage pas la vision : la promesse du panneau est fausse");
+  });
+
   // ── 7. Deux formules écrites deux fois, réunies ─────────
   test("l'or d'une caravane est le même au panneau et à la caisse, Gitanos compris", () => {
     const j = partie(charger(), { mode: 'conquest' });

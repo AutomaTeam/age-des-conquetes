@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**223 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**227 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -401,6 +401,42 @@ qui **ne se voit pas** :
   montré — le premier test passait même en la retirant. Il faut éteindre le
   calque de l'invité à la main pour l'isoler, ce qui n'est pas un cas de
   laboratoire : `revealFog` tourne à 5 Hz et le delta à 10 Hz.
+
+  **Quatrième passe (2026-09-10) — les CONTRECOUPS de la passe précédente.**
+  Partager la vision entre alliés a fait apparaître à l'écran un cas qui
+  n'existait pratiquement pas : une entité qui n'est **ni à moi ni hostile**.
+  Trois endroits ne connaissaient que deux réponses et peignaient donc le
+  coéquipier en ennemi :
+  15. Le **liséré d'appartenance** sous les unités était rouge pour tout ce qui
+      n'était pas à moi — le commentaire disait déjà « unités ENNEMIES ».
+      `couleurLisere()` rend maintenant trois réponses : `null` (les miennes),
+      la TEINTE du camp pour un allié (deux alliés restent distinguables, comme
+      sur la mini-carte), et le rouge EXACT d'avant pour un hostile.
+  16. Les **traits de flèche** d'un allié étaient peints en « terne ennemi » :
+      un tir de soutien se lisait comme un tir sur soi.
+  17. Le **curseur** promettait une attaque (`crosshair`) au survol d'un
+      coéquipier. `curseurSurvol()` est extrait du gestionnaire pour être
+      testable — les bouchons n'émettent aucun évènement souris (même raison
+      qu'`indexEmoteDepuisTouche`).
+  18. **Défaut du canal de retours lui-même**, introduit la veille : `alerte`
+      part de `dealDmg`, donc à CHAQUE coup reçu. Quarante coups sur un Centre
+      Ville remplissaient la file de 24 d'alertes identiques et **chassaient**
+      le « Âge Féodal atteint ! » qui y attendait : le camp sous le feu était
+      le seul à ne plus rien recevoir d'autre. `RETOURS_COALESCENTS` fusionne
+      les codes dont seul le dernier compte, en gardant la position la plus
+      RÉCENTE.
+  19. **L'alliance ne disait pas son vrai gain** : mesuré sur la graine 4242,
+      conclure une alliance fait passer la surface visible de 253 à 506 cases.
+      Le panneau ne parlait que du risque de trahison.
+
+  **Fausses pistes vérifiées et écartées cette fois** (ne pas les repayer) :
+  la **bascule IA** d'un joueur qui abandonne fonctionne (60 s simulées : 10
+  bâtiments, 11 unités, aucune exception, aucun NaN) ; **aucun
+  `getElementById`** ne vise un id absent d'index.html ; le balayage des
+  **champs d'entité morts** ne rend qu'un `rallyQuorum` explicitement posé
+  comme trace de débogage ; et le balayage des **anti-spam comparés à une
+  horloge partant de zéro** ne laisse que `_lastFarmNotify`, sans effet
+  pratique (une ferme ne peut pas être vide avant 3 s de jeu).
 
   Chacun de ces tests a été vérifié par MUTATION : on remet le comportement
   d'avant, et le test doit tomber. Deux pièges d'outillage ont été payés en

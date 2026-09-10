@@ -575,13 +575,25 @@ function updateHoverAt(sx,sy){
   if(tNode){ G.hover={kind:'node',id:tNode.id}; return; }
   G.hover=null;
 }
+// Curseur au-dessus d'une entité, par appartenance. Extrait d'updateCursor
+// pour être testable : les bouchons de test ne dessinent rien et n'émettent
+// aucun évènement souris, donc une décision enfermée dans le gestionnaire
+// n'est vérifiable par rien (même raison qu'indexEmoteDepuisTouche).
+function curseurSurvol(owner){
+  if(owner===G.me) return 'pointer';        // à moi : sélectionnable
+  if(memeEquipe(owner,G.me)) return 'default'; // à mon camp : rien à promettre
+  return 'crosshair';                        // hostile : attaquable
+}
 function updateCursor(){
   let cur='default';
   if(G.mode==='build'||G.mode==='amove') cur='crosshair';
   else if(isDrag) cur='grabbing';
   else if(G.hover){
     if(G.hover.kind==='node') cur='pointer';
-    else cur = G.hover.owner===G.me ? 'pointer' : 'crosshair';
+    // Trois réponses, pas deux (même correctif que couleurLisere) : depuis la
+    // vision partagée on survole aussi les entités d'un COÉQUIPIER, et le
+    // curseur leur promettait une attaque — sur ses propres troupes.
+    else cur = curseurSurvol(G.hover.owner);
   }
   canvas.style.cursor=cur;
 }

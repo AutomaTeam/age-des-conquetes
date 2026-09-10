@@ -91,6 +91,9 @@ const EXPORTS = [
   // d'interface, vision partagée, refus du tap sur un allié.
   'RETOURS', 'retour', 'retourTous', 'majDebits', 'cmdAttack',
   'memeEquipe', 'campsDeLEquipe', 'revealFog', 'fogTileDe', 'hintOnce', 'bigBanner',
+  // Contrecoups de la vision partagée : le rendu croise désormais des entités
+  // qui ne sont ni à moi ni hostiles, cas qui n'existait pratiquement pas.
+  'estAmi', 'couleurLisere', 'couleurMinimap', 'curseurSurvol', 'RETOURS_COALESCENTS',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

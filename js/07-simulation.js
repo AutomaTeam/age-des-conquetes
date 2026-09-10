@@ -1978,6 +1978,21 @@ function couleurMinimap(e,unite){
   const f=fac(e), c=COUL_FACTION[f?f.teinte:'rouge']||COUL_FACTION.rouge;
   return unite?c[1]:c[0];
 }
+// « À mon camp ? » — mes propres entités comprises. Depuis que les alliés
+// partagent leur vision (voir revealFog), le rendu CROISE des entités qui ne
+// sont ni à moi ni hostiles, cas qui n'existait pratiquement pas avant :
+// tout ce qui n'était pas à moi était dessiné en ROUGE, si bien qu'un
+// coéquipier apparaissait comme un ennemi sur le champ de bataille.
+function estAmi(e){ return !!e && memeEquipe(e.owner,G.me); }
+// Liseré d'appartenance sous une unité : TROIS réponses, pas deux.
+// `null` pour les miennes (aucun liseré — c'est la règle d'origine), la
+// teinte de son camp pour un coéquipier (deux alliés restent distinguables,
+// comme sur la mini-carte), le rouge pour un hostile — exactement la couleur
+// d'avant, pour ne rien changer au repère que le joueur connaît déjà.
+function couleurLisere(u){
+  if(estLocal(u)) return null;
+  return estAmi(u)?couleurMinimap(u,true):'#e74c3c';
+}
 
 // Le booléen `isEnemy` ne servait qu'à colorer le trait : on mémorise
 // désormais le camp tireur, qui donne la teinte ET crédite les dégâts.

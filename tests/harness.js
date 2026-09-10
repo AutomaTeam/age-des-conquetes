@@ -90,7 +90,7 @@ const EXPORTS = [
   // Passe « et si on jouait en invité / en coéquipier ? » : canal de retours
   // d'interface, vision partagée, refus du tap sur un allié.
   'RETOURS', 'retour', 'retourTous', 'majDebits', 'cmdAttack',
-  'memeEquipe', 'campsDeLEquipe', 'revealFog', 'fogTileDe',
+  'memeEquipe', 'campsDeLEquipe', 'revealFog', 'fogTileDe', 'hintOnce', 'bigBanner',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**219 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**223 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -374,6 +374,21 @@ qui **ne se voit pas** :
       `G.gameTime`, qui part de 0 : `alertAttack` ne pouvait donc rien dire
       pendant les huit premières secondes de chaque partie. Passés à
       `-Infinity`.
+
+  14. **`G.hints` n'était pas sauvegardé** — le compteur « une seule fois par
+      partie » des indices contextuels ET des bannières plein écran par type de
+      bâtiment. C'est un `Set` : il ne se sérialise pas tout seul, il serait
+      parti en `{}` **sans un mot**. Reprendre une partie rejouait donc tous
+      les indices d'ouverture et une bannière par type déjà construit —
+      précisément le déluge de bannières signalé en production sur petit écran
+      que ce compteur avait été introduit pour éteindre. Sauvegardé en tableau,
+      relu en `Set` (repli sur un Set VIDE : laisser le champ indéfini ferait
+      repartir le compteur à zéro à chaque appel, hintOnce le recréant à la
+      volée), et **déclaré dans `initState`** — un champ qu'on ne voit nulle
+      part dans l'état est un champ qu'on oublie de sauver.
+      **Piège de test** : `instanceof Set` ÉCHOUE depuis les tests — le jeu
+      tourne dans un contexte `vm`, ses `Set` ne sont pas ceux de Node. Poser
+      la question DANS le contexte (`j.lire('G.hints instanceof Set')`).
 
   **Pas de bump de protocole** pour cette passe, et c'est le critère qui
   compte : `d.ev` est une clé de premier niveau qu'un client v6 ignore

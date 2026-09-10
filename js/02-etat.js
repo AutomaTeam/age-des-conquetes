@@ -211,6 +211,12 @@ function initState() {
     paused:false,
     speed:1, // vitesse du jeu 1/2/3
     gameTime:0, // temps de jeu écoulé (s)
+    // Indices contextuels et bannières « une seule fois par partie » déjà
+    // montrés (voir hintOnce, js/11-interface.js). Déclaré ICI plutôt que
+    // créé à la volée au premier appel : c'est un champ d'état comme un
+    // autre, il part dans la sauvegarde (buildSaveData) et un champ qu'on
+    // ne voit nulle part dans initState est un champ qu'on oublie d'y mettre.
+    hints:new Set(),
     victory:false, targetWaves:MODES[mode].targetWaves, // Survie : survivre à N vagues. Conquête : 0, la victoire vient de la chute du Centre Ville adverse.
     rateAcc:{food:0,wood:0,stone:0,gold:0}, rateShow:{food:0,wood:0,stone:0,gold:0}, rateTimer:0,
     lastTime:0, dt:0,

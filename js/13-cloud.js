@@ -281,6 +281,14 @@ function buildSaveData(){
       // restent donc valides ; rappelerGroupe() purge de toute façon au
       // rappel ce qui n'existe plus.
       groupes:JSON.parse(JSON.stringify(G.groupes||{})),
+      // Indices contextuels et bannières déjà vus (voir hintOnce et
+      // RETOURS.construit). Un `Set` ne se sérialise pas tout seul en JSON —
+      // il serait parti en `{}` sans un mot — d'où le tableau. Sans lui,
+      // reprendre une partie rejouait TOUS les indices d'ouverture et une
+      // bannière plein écran par type de bâtiment déjà construit : c'est
+      // exactement le déluge de bannières signalé en production sur petit
+      // écran, que le compteur avait été introduit pour éteindre.
+      hints:[...(G.hints||[])],
     };
 }
 
@@ -555,6 +563,11 @@ async function loadGame(key=SAVE_KEY){
     // Groupes de contrôle : absents des sauvegardes d'avant ce champ, d'où
     // le repli sur {} plutôt qu'un accès direct.
     G.groupes=(data.groupes&&typeof data.groupes==='object')?data.groupes:{};
+    // Repli sur un Set VIDE et non sur l'absence de champ : une vieille
+    // sauvegarde rejouera ses indices une fois, ce qui est acceptable —
+    // laisser `G.hints` indéfini, en revanche, ferait repartir le compteur à
+    // zéro à chaque bâtiment achevé (hintOnce le recrée à la volée).
+    G.hints=new Set(Array.isArray(data.hints)?data.hints:[]);
     // Le compteur d'identifiants doit repartir AU-DESSUS de tout ce qui
     // existe déjà, sinon une unité formée après le chargement porterait l'id
     // d'une entité vivante et l'index (voir rebuildIndex) en désignerait une

@@ -304,6 +304,64 @@ groupe('reseau', () => {
 
 // ════════════════════════════════════════════════════════════
 groupe('sauvegarde', () => {
+  // ══ CE QUI A DÉJÀ ÉTÉ MONTRÉ UNE FOIS ══════════════
+  // `G.hints` retient les indices contextuels et les bannières plein écran
+  // « une seule fois par partie ». C'est un `Set` : il ne se sérialise pas tout
+  // seul en JSON, il serait parti en `{}` SANS UN MOT. Sans lui, reprendre une
+  // partie rejouait tous les indices d'ouverture et une bannière par type de
+  // bâtiment déjà construit — le déluge de bannières signalé en production sur
+  // petit écran, que ce compteur avait justement été introduit pour éteindre.
+  const notifs = (j) => (j.__sandbox.document.getElementById('notif').children || []).length;
+
+  test('les indices d\'un `Set` survivent à la sérialisation de la sauvegarde', () => {
+    const j = partie(charger());
+    j.hintOnce('hero', 'un indice', '#fff');
+    j.hintOnce('bannerBld:HO', 'une bannière', '#fff');
+    // Le passage par JSON n'est pas décoratif : c'est LUI qui transformait
+    // silencieusement le Set en `{}`.
+    const d = JSON.parse(JSON.stringify(j.buildSaveData()));
+    ok(Array.isArray(d.hints), `hints n'est pas un tableau après JSON : ${JSON.stringify(d.hints)}`);
+    ok(d.hints.includes('hero') && d.hints.includes('bannerBld:HO'),
+      `la sauvegarde a perdu les indices déjà montrés : ${JSON.stringify(d.hints)}`);
+  });
+
+  test('un indice d\'une sauvegarde reprise ne se rejoue pas, un nouveau si', () => {
+    const j = partie(charger());
+    j.hintOnce('hero', 'un indice', '#fff');
+    const d = JSON.parse(JSON.stringify(j.buildSaveData()));
+    // Ce que fait loadGame en repartant de la sauvegarde.
+    j.G.hints = new Set(Array.isArray(d.hints) ? d.hints : []);
+    const avant = notifs(j);
+    j.hintOnce('hero', 'un indice', '#fff');
+    egal(notifs(j), avant, "l'indice déjà vu s'est rejoué après la reprise");
+    j.hintOnce('relic', 'un autre', '#fff');
+    egal(notifs(j), avant + 1, "un indice JAMAIS vu ne s'affiche plus : le compteur bloque tout");
+  });
+
+  test('une VIEILLE sauvegarde sans le champ donne un Set vide, pas `undefined`', () => {
+    const j = partie(charger());
+    const d = JSON.parse(JSON.stringify(j.buildSaveData()));
+    delete d.hints;                        // sauvegarde d'avant ce champ
+    j.G.hints = new Set(Array.isArray(d.hints) ? d.hints : []);
+    const avant = notifs(j);
+    j.hintOnce('hero', 'un indice', '#fff');
+    egal(notifs(j), avant + 1, 'une vieille sauvegarde devrait rejouer ses indices UNE fois');
+    j.hintOnce('hero', 'un indice', '#fff');
+    egal(notifs(j), avant + 1, 'et une seule : le compteur doit repartir, pas rester mort');
+  });
+
+  test('initState DÉCLARE hints : un champ qu\'on ne voit pas est un champ qu\'on oublie de sauver', () => {
+    const j = partie(charger());
+    // `instanceof Set` ÉCHOUE ici : le jeu tourne dans un contexte `vm`, ses
+    // Set ne sont pas ceux de Node. On pose donc la question DANS le contexte.
+    egal(j.lire('G.hints instanceof Set'), true, "G.hints n'est pas un Set dès la création de l'état");
+    // Le vrai garde-fou : AUCUN champ de G ne doit être absent de la
+    // sauvegarde sans raison. C'est ce diff qui avait repéré `hints`.
+    const sauve = j.buildSaveData();
+    ok('hints' in sauve, 'hints est retombé hors de buildSaveData');
+  });
+
+
   test('un chargement REPART sans le drapeau de defaite', () => {
     // G.gameOver n'est pas un champ de sauvegarde (une sauvegarde decrit
     // toujours une partie EN COURS), mais loadGame ne le remettait pas a faux

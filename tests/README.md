@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**227 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**232 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -437,6 +437,39 @@ qui **ne se voit pas** :
   comme trace de débogage ; et le balayage des **anti-spam comparés à une
   horloge partant de zéro** ne laisse que `_lastFarmNotify`, sans effet
   pratique (une ferme ne peut pas être vide avant 3 s de jeu).
+
+  **Cinquième passe (2026-09-10) — les INTERACTIONS CROISÉES** : que fait le
+  code quand deux mécaniques se rencontrent dans un ordre inhabituel ?
+  L'angle mis en œuvre : pour chaque LIEN entre entités (`u.target`,
+  `u.homeNode`, `b.farmers`, `relic.carrier`, `G.sel`…), qui le nettoie quand
+  l'autre bout disparaît — ou cesse d'être à nous ?
+  20. **La sélection survivait à ce qu'elle désigne.** `G.sel` était purgé à la
+      mort d'une unité et à la destruction d'un bâtiment — quatre endroits le
+      font — mais pas dans les deux cas où une entité cesse d'être à nos ordres
+      SANS disparaître : **convertie** (Wololo : elle passe à l'ennemi et reste
+      sélectionnée) ou **mise en garnison** autrement que par le geste de tap
+      (le bouton 🔔, par exemple). Vérifié en rendant le panneau : il offrait
+      dans les deux cas le menu de construction complet, donc on pouvait poser
+      un chantier avec un « bâtisseur » enfermé dans un Centre Ville — payé,
+      posé, et abandonné à 0 % pour toujours (`ORD.BATIR` n'exige aucun
+      bâtisseur, et c'est voulu). `purgerSelection()` est appelé par
+      `updateActBar` : **un seul point de purge plutôt qu'un appel à chaque
+      cause**, pour que les causes futures soient couvertes d'avance.
+  21. **Garde-fou sur « Réduire les animations »** (aucun défaut trouvé, mais
+      le test vaut d'exister) : chaque `animation: … infinite` d'`index.html`
+      doit avoir son sélecteur dans le bloc `html.reduce-motion`. 7 sur 7
+      aujourd'hui — le test est là pour que la prochaine animation décorative
+      ne s'ajoute pas en silence à côté d'une option qui promet de les arrêter.
+
+  **Fausses pistes vérifiées cette passe** : le **compteur de population ne
+  dérive pas** (10 minutes de partie simulée avec combats : `f.pop` égale le
+  compte réel pour chaque camp à t=300 s et t=600 s, garnison détruite avec son
+  bâtiment comprise) ; **`relicHeld` ne reste jamais collé** (les deux seuls
+  chemins qui posent `state='relic'` le remettent à faux) ; les **groupes de
+  contrôle** filtrent déjà par `estLocal` au rappel ; la **démolition** éjecte
+  la garnison et libère la file de formation ; et le **menu de construction**
+  applique exactement les mêmes verrous qu'`ORD.BATIR`, l'aperçu de pose
+  couvrant en plus la règle d'eau du Quai.
 
   Chacun de ces tests a été vérifié par MUTATION : on remet le comportement
   d'avant, et le test doit tomber. Deux pièges d'outillage ont été payés en

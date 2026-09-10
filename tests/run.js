@@ -4692,6 +4692,89 @@ groupe('promesses', () => {
     ok(compte() > avant, "l'alliance ne partage pas la vision : la promesse du panneau est fausse");
   });
 
+  // ── 10. LA SÉLECTION SURVIT À CE QU'ELLE DÉSIGNE ──────
+  // `G.sel` était purgé à la mort d'une unité et à la destruction d'un bâtiment
+  // (quatre endroits le font), mais PAS dans les deux cas où une entité cesse
+  // d'être à nos ordres sans disparaître : convertie (Wololo) ou mise en
+  // garnison autrement que par le geste de tap. Le panneau continuait alors
+  // d'offrir toutes ses actions — on pouvait entrer en mode construction avec
+  // un « bâtisseur » enfermé dans un Centre Ville, et le chantier était payé,
+  // posé, puis abandonné à 0 % pour toujours.
+  test('une unité CONVERTIE quitte la sélection de son ancien propriétaire', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const mien = j.G.units.find((u) => u.owner === j.G.me && u.type === j.UT.VIL);
+    j.G.sel = [mien.id];
+    j.convertirUnite(mien, j.G.factions.ia.id);
+    egal(j.G.sel.includes(mien.id), true, 'la conversion ne devrait pas purger elle-même : le point unique est purgerSelection');
+    j.purgerSelection();
+    egal(j.G.sel.includes(mien.id), false, "une unité passée à l'ennemi reste sélectionnée");
+  });
+
+  test('une unité MISE EN GARNISON quitte la sélection', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const tc = j.G.buildings.find((b) => b.owner === j.G.me && b.type === j.BT.TC);
+    const v = j.G.units.find((u) => u.owner === j.G.me && u.type === j.UT.VIL);
+    j.G.sel = [v.id];
+    egal(ordreDe(j, j.G.me, 'GARNIR', { ids: [v.id], bId: tc.id }).ok, true, 'garnison refusée');
+    j.purgerSelection();
+    egal(j.G.sel.includes(v.id), false, "une unité à l'abri reste sélectionnée et son panneau propose encore de bâtir");
+  });
+
+  test('la purge épargne ce qui est bel et bien commandable', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const v = j.G.units.find((u) => u.owner === j.G.me && u.type === j.UT.VIL);
+    const tc = j.G.buildings.find((b) => b.owner === j.G.me && b.type === j.BT.TC);
+    j.G.sel = [v.id];
+    j.purgerSelection();
+    egal(j.G.sel.length, 1, 'la purge emporte une unité parfaitement normale');
+    j.G.sel = [tc.id];
+    j.purgerSelection();
+    egal(j.G.sel.length, 1, 'la purge emporte un BÂTIMENT à moi (elle ne doit viser que les unités hors service)');
+  });
+
+  test("le panneau d'action purge la sélection de lui-même", () => {
+    // C'est le point d'appel qui compte : la purge doit tourner sans que
+    // personne n'ait à y penser, sur toutes les causes — y compris celles
+    // qu'on n'a pas encore inventées.
+    const j = partie(charger(), { mode: 'conquest' });
+    const mien = j.G.units.find((u) => u.owner === j.G.me && u.type === j.UT.VIL);
+    j.G.sel = [mien.id];
+    j.convertirUnite(mien, j.G.factions.ia.id);
+    j.updateActBar();
+    egal(j.G.sel.length, 0, "updateActBar n'appelle pas purgerSelection");
+  });
+
+  // ── 11. « RÉDUIRE LES ANIMATIONS » COUVRE-T-IL TOUT ? ────
+  test("l'option « Réduire les animations » ne laisse échapper aucune boucle infinie", () => {
+    // Question mécanisée plutôt qu'inspectée : chaque `animation: … infinite`
+    // d'index.html doit avoir son sélecteur dans le bloc `html.reduce-motion`.
+    // Rien n'échappe aujourd'hui (7 sur 7) — ce test est là pour que la
+    // PROCHAINE animation décorative ne s'ajoute pas en silence à côté d'une
+    // option qui promet de les arrêter.
+    const fs = require('fs'), path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    // Le bloc de la bascule : du sélecteur `html.reduce-motion` jusqu'à son `}`.
+    const bloc = /((?:html\.reduce-motion[^{]*,?\s*)+)\{[^}]*animation\s*:\s*none/.exec(html);
+    ok(!!bloc, 'le bloc html.reduce-motion a disparu d\'index.html');
+    const couverts = bloc[1];
+    const manquants = [];
+    // Chaque règle CSS qui déclare une animation INFINIE.
+    const re = /([^{}]+)\{([^}]*animation\s*:[^;}]*\binfinite\b[^;}]*)/g;
+    let m;
+    while ((m = re.exec(html))) {
+      const selecteurs = m[1].split('\n').pop().trim();
+      if (!selecteurs || selecteurs.startsWith('@') || selecteurs.startsWith('/*')) continue;
+      // Un sélecteur est couvert si son dernier élément apparaît dans le bloc.
+      const couvert = selecteurs.split(',').every((sel) => {
+        const noyau = sel.trim().replace(/^html\.reduce-motion\s*/, '');
+        return couverts.includes(noyau);
+      });
+      if (!couvert) manquants.push(selecteurs);
+    }
+    egal(manquants.length, 0,
+      'boucles infinies hors de la bascule « Réduire les animations » :\n      ' + manquants.join('\n      '));
+  });
+
   // ── 7. Deux formules écrites deux fois, réunies ─────────
   test("l'or d'une caravane est le même au panneau et à la caisse, Gitanos compris", () => {
     const j = partie(charger(), { mode: 'conquest' });

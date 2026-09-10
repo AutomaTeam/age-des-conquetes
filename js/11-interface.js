@@ -279,7 +279,30 @@ function exitRoute(){
   refreshUI();
 }
 
+// Retire de la sélection tout ce qui n'est plus COMMANDABLE. `G.sel` était
+// nettoyé à la mort d'une unité et à la destruction d'un bâtiment (quatre
+// endroits le font déjà), mais pas dans les deux autres cas où une entité
+// cesse d'être à nos ordres sans disparaître :
+//   • une unité CONVERTIE (voir convertirUnite / CHEATS.wololo) change de
+//     camp mais reste dans notre sélection ;
+//   • une unité MISE EN GARNISON reste sélectionnée quand elle n'a pas été
+//     abritée par le geste de tap (le bouton 🔔, par exemple).
+// Dans les deux cas le panneau continuait d'offrir toutes ses actions : on
+// pouvait entrer en mode construction avec un « bâtisseur » enfermé dans un
+// Centre Ville — le chantier était payé, posé, et personne ne venait jamais
+// le monter. Un seul point de purge plutôt qu'un appel à chaque cause : les
+// causes futures sont couvertes d'avance.
+function purgerSelection(){
+  if(!G.sel||!G.sel.length) return;
+  G.sel=G.sel.filter(id=>{
+    const u=unitById(id);
+    if(u) return estLocal(u)&&u.state!=='garrison';
+    const b=bldById(id);
+    return !!b&&estLocal(b);
+  });
+}
 function updateActBar(){
+  purgerSelection();
   const bar=document.getElementById('actbar');
   // Signature de ce qui va etre affiche : identite de la selection + onglet
   // de construction (le seul sous-etat qui change SANS changer la selection,

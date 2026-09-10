@@ -1298,7 +1298,95 @@ function applyDifficultyBadge(){
 
 // ── NOTIFICATIONS ─────────────────────────────────────────
 // Alerte d'attaque : notification cliquable qui recentre la vue
-let _lastAlert=0;
+// -Infinity et non 0 : l'anti-spam se compare a G.gameTime, qui part de 0 --
+// initialise a 0, il bloquait TOUTE alerte pendant les huit premieres
+// secondes de chaque partie, y compris la premiere.
+let _lastAlert=-Infinity;
+
+// ── RETOURS D'INTERFACE ADRESSÉS À UN CAMP ────────────────
+// Tout ce que le jeu DIT au joueur (son, message, bannière, indice) était
+// écrit à l'intérieur de update(), derrière un `estLocal(x)` — c'est-à-dire
+// évalué sur l'HÔTE, où G.me vaut toujours l'hôte. Or update() ne tourne que
+// côté hôte : un invité en ligne ne recevait donc RIEN. Vérifié sur une vraie
+// paire : il passait à l'Âge Féodal, son état convergeait, et son écran
+// n'affichait pas une ligne. Ni son de construction, ni bannière de montée
+// d'âge, ni « base attaquée », ni même les trois indices contextuels — il ne
+// pouvait littéralement pas apprendre que le Héros et les reliques existent.
+//
+// D'où ce canal : la simulation ne joue plus un retour, elle l'ADRESSE à un
+// camp. Si c'est le mien, il part tout de suite ; si c'est celui d'un joueur
+// distant, il s'empile dans sa file et voyage avec le prochain delta (`d.ev`,
+// voir construireDelta) pour être rejoué par la MÊME table. Un seul endroit
+// décrit chaque retour, donc les deux côtés ne peuvent pas diverger.
+//
+// Les codes reçus du réseau sont de la DONNÉE : ils servent de clé dans cette
+// table et rien d'autre — jamais de fonction reconstruite depuis le message.
+const RETOURS = {
+  age:(a)=>{
+    sfx('age');
+    notify(`${a.ico} ${a.nom} atteint !`,'#f0c040');
+    notify(`Apporte : ${a.bonus}`,'#e8d5a0',true);
+    bigBanner(`${a.ico} ${a.nom}`);
+    if(a.n>=3) hintOnce('wonder',`🏛️ Âge Impérial atteint : vous pouvez désormais bâtir une Merveille — la garder debout ${Math.round(MERVEILLE_WIN_TIME/60)} minutes une fois achevée gagne la partie.`,'#d8c078');
+  },
+  // Bannière plein écran UNE SEULE FOIS par type de bâtiment et par partie :
+  // un Mur posé vingt fois ne vaut pas une Merveille, et sur un téléphone un
+  // aplat de 30 px recouvre la carte (signalé en production le 2026-09-08).
+  construit:(a)=>{
+    sfx('build');
+    notify(`${BDEF[a.type].nom} construite !`,'#2ecc71');
+    if(!G.hints) G.hints=new Set();
+    const cle='bannerBld:'+a.type;
+    if(!G.hints.has(cle)){ G.hints.add(cle); bigBanner(`✅ ${BDEF[a.type].nom}`); }
+    if(a.type===BT.CASTLE) hintOnce('hero',"⭐ Château bâti : vous pouvez former votre Héros de civilisation (une seule fois par partie).",'#f0c040');
+    if(a.type===BT.MONASTERY) hintOnce('relic',"🏺 Monastère bâti : un Moine peut porter les reliques dispersées sur la carte pour un revenu passif en or.",'#f0c040');
+    if(a.type===BT.MARKET&&a.second) hintOnce('trade',"🐫 Marché bâti : avec un second Marché, établissez une route commerciale pour un revenu continu en or.",'#f0c040');
+  },
+  detruit:(a)=>{
+    if(a.mien) notify(`${BDEF[a.type].nom} détruite !`,'#e74c3c');
+    else notify(`💥 ${BDEF[a.type].nom} ennemie détruite !`,'#2ecc71');
+  },
+  elimine:(a)=>notify(`💀 ${a.nom} a été éliminé`,'#f0c040'),
+  repare:(a)=>addFText(a.x,a.y-20,'Réparé !','#2ecc71'),
+  relique:()=>notify('🏺 Relique mise à l\'abri — revenu passif en or !','#f0c040'),
+  forme:()=>sfx('train'),
+  // Dépôt : le `+N` flottant, le son, ET le compteur de débit sous la barre
+  // de ressources — qui restait donc à 0,0 pendant toute la partie d'un
+  // invité, alors que son économie tournait.
+  depot:(a)=>{
+    addFText(a.x,a.y-16,`+${a.n}`,a.rk==='gold'?'#f0c040':a.rk==='wood'?'#8fbc44':a.rk==='stone'?'#bbb':'#e8d5a0');
+    sfx('drop');
+    if(G.rateAcc) G.rateAcc[a.rk]=(G.rateAcc[a.rk]||0)+a.n;
+  },
+  caravane:(a)=>{
+    addFText(a.x,a.y-24,`+${a.gold}💰`,'#f0c040');
+    if(G.rateAcc) G.rateAcc.gold=(G.rateAcc.gold||0)+a.gold;
+  },
+  merveilleRappel:(a)=>notify(`🏛️ Merveille : victoire dans ${a.min} min si elle tient debout`,'#d8c078'),
+  astuce:(a)=>hintOnce(a.cle,a.texte,a.col),
+  alerte:(a)=>{ if(typeof alertAttack==='function') alertAttack(a.x,a.y); },
+};
+// Adresse un retour au camp `owner` : joué tout de suite si c'est le mien,
+// mis en file pour le prochain delta si c'est un joueur distant, ignoré si
+// c'est l'IA (personne ne regarde son écran).
+// File PLAFONNÉE : sans ça, un invité déconnecté verrait déferler dix minutes
+// de messages d'un coup à sa reconnexion.
+const RETOUR_FILE_MAX = 24;
+function retour(owner,code,args){
+  if(owner===G.me){ const f=RETOURS[code]; if(f) f(args||{}); return; }
+  if(!RESEAU.actif||RESEAU.role!=='hote') return;
+  const f=fac(owner);
+  if(!f||f.genre!=='humain') return;
+  if(!f.evq) f.evq=[];
+  f.evq.push([code,args||{}]);
+  if(f.evq.length>RETOUR_FILE_MAX) f.evq.shift();
+}
+// Même retour pour TOUS les camps humains (fin d'un rival, indice de jeu…).
+function retourTous(code,args,sauf){
+  for(const f of factionsHumaines()) if(f.id!==sauf) retour(f.id,code,args);
+}
+
+
 function alertAttack(x,y){
   const t=G.gameTime||0;
   if(t-_lastAlert<8) return; // pas de spam

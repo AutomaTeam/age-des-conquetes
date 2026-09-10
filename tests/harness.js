@@ -87,6 +87,10 @@ const EXPORTS = [
   'garnisonsArcheres', 'updateBuildings', 'HOSPICE_HEAL_RATE', 'HOSPICE_HEAL_RADIUS',
   'updateWonders', 'checkMerveilleVictory', 'emettreOrdre', 'ordre', 'garnisonDe',
   'gainCaravane', 'trainTime', 'TTIME', 'fermiersDe', 'updateTradeRoutes', 'updateActBar',
+  // Passe « et si on jouait en invité / en coéquipier ? » : canal de retours
+  // d'interface, vision partagée, refus du tap sur un allié.
+  'RETOURS', 'retour', 'retourTous', 'majDebits', 'cmdAttack',
+  'memeEquipe', 'campsDeLEquipe', 'revealFog', 'fogTileDe',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

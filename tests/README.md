@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**210 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**219 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -344,6 +344,48 @@ qui **ne se voit pas** :
   Merveille, et le test échouait sur une défaite. Il garde maintenant une
   phase bout-en-bout courte (le vrai `update()` fait bien avancer le minuteur)
   puis pousse `updateWonders` seul.
+
+  **Troisième passe (2026-09-10) — « et si on était le COÉQUIPIER ? »**, qui a
+  débouché sur plus large :
+  10. **Tout le retour d'information du jeu vivait dans `update()`**, donc chez
+      l'hôte seul, derrière un `estLocal(x)` évalué là où `G.me` vaut toujours
+      l'hôte. Un invité en ligne ne recevait **rien** : ni son de construction,
+      ni bannière de montée d'âge, ni les trois indices contextuels (il ne
+      pouvait pas apprendre que le Héros et les reliques existent), ni
+      « base attaquée » — il pouvait perdre son Centre Ville sans un
+      avertissement. La simulation ADRESSE désormais ses retours à un camp
+      (`retour(owner, code, args)`) : joués tout de suite si c'est le mien,
+      mis en file et emportés par le delta (`d.ev`) sinon, puis rejoués par la
+      **même table `RETOURS`** — un seul endroit décrit chaque retour. Le code
+      reçu est une CLÉ dans cette table, jamais une fonction reconstruite.
+      Les retours de COMBAT, eux, sont **déduits des PV côté client**
+      (`retourCoup`) : le delta les porte déjà, donc zéro octet de plus.
+  11. **Taper un coéquipier envoyait un ordre d'attaque sur lui** : le geste
+      s'aiguille sur `estLocal`, et tout ce qui n'était pas à moi tombait dans
+      `cmdAttack`. Pas de tir ami (`ORD.ATK` refuse), mais le geste était muet
+      chez un hôte et disait « Cible invalide » chez un invité.
+  12. **Les alliés ne partageaient pas leur vision** — et comme le calque de
+      brouillard filtre AUSSI ce que le réseau transmet, l'invité ne recevait
+      même pas les unités de son allié : deux joueurs « ensemble » qui ne se
+      voyaient jamais. `campsDeLEquipe(f)` est calculé UNE fois par camp et par
+      balayage (revealFog tourne 5×/s sur toute la carte — mesuré après
+      correctif : 0,63 ms par appel sur 607 unités).
+  13. Deux anti-spam étaient initialisés à **0** alors qu'ils se comparent à
+      `G.gameTime`, qui part de 0 : `alertAttack` ne pouvait donc rien dire
+      pendant les huit premières secondes de chaque partie. Passés à
+      `-Infinity`.
+
+  **Pas de bump de protocole** pour cette passe, et c'est le critère qui
+  compte : `d.ev` est une clé de premier niveau qu'un client v6 ignore
+  (`liste()` rend `[]` sur `undefined`), et la vision partagée ne fait
+  qu'envoyer PLUS d'entités déjà décrites par le même format. On bump quand
+  un client de la version d'avant MISLIT ce qui arrive — pas ici.
+
+  **Piège de test** : la clause d'équipe du filtre réseau est *redondante* tant
+  que la vision est partagée (l'allié s'éclaire lui-même). La mutation l'a
+  montré — le premier test passait même en la retirant. Il faut éteindre le
+  calque de l'invité à la main pour l'isoler, ce qui n'est pas un cas de
+  laboratoire : `revealFog` tourne à 5 Hz et le delta à 10 Hz.
 
   Chacun de ces tests a été vérifié par MUTATION : on remet le comportement
   d'avant, et le test doit tomber. Deux pièges d'outillage ont été payés en

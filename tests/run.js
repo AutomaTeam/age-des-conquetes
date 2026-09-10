@@ -3744,6 +3744,116 @@ groupe('delta', () => {
     egal(client.fermiersDe(client.bldById(f.id)), 3, "le « 👷×N » du panneau de Ferme reste vide chez l'invité");
   });
 
+  // ══ LES RETOURS D'INTERFACE DE L'INVITÉ ══════════════
+  // Tout ce que le jeu DIT au joueur était écrit dans update(), qui ne tourne
+  // que chez l'hôte : un invité passait un âge sans un son ni une ligne.
+
+  const messages = (j) => {
+    const n = j.__sandbox.document.getElementById('notif');
+    return (n.children || []).map((c) => c.textContent || '');
+  };
+
+  test("l'invité reçoit les retours d'interface de SON camp (il n'en recevait aucun)", () => {
+    const { hote, client, pousser } = paireEnLigne();
+    const f = hote.G.factions[hote.FAC.P2];
+    riche(hote, f.id);
+    const avant = messages(client).length;
+    f.ageUpQ = { timer: 0.01 };
+    for (let k = 0; k < 5; k++) hote.update(hote.SIM_DT);
+    pousser();
+    const recus = messages(client).slice(avant).join(' | ');
+    egal(hote.G.factions[hote.FAC.P2].age, 1, "l'hôte n'a pas fait monter l'invité d'âge : le test ne prouverait rien");
+    ok(/atteint/.test(recus), `l'invité est monté d'âge sans un mot — reçu : « ${recus} »`);
+  });
+
+  test("un retour est joué UNE fois : la file se vide avec le delta qui l'emporte", () => {
+    const { hote, client, pousser } = paireEnLigne();
+    const f = hote.G.factions[hote.FAC.P2];
+    hote.retour(f.id, 'relique', {});
+    egal((f.evq || []).length, 1, "le retour n'a pas été mis en file pour l'invité");
+    const avant = messages(client).length;
+    pousser();
+    egal((f.evq || []).length, 0, 'la file devrait être vidée par le delta qui l\'emporte');
+    egal(messages(client).length, avant + 1, "l'invité n'a pas reçu le retour");
+    pousser();
+    egal(messages(client).length, avant + 1, 'le retour a été rejoué une seconde fois');
+  });
+
+  test('un code de retour inconnu ne fait pas tomber le delta', () => {
+    const { hote, client, pousser } = paireEnLigne();
+    const f = hote.G.factions[hote.FAC.P2];
+    f.evq = [['ceci-nexiste-pas', {}], ['relique', {}]];
+    const avant = messages(client).length;
+    pousser();
+    egal(messages(client).length, avant + 1, 'le code inconnu a emporté le retour valide qui le suivait');
+  });
+
+  test("un coup reçu produit un chiffre chez l'invité (son combat était muet)", () => {
+    const { hote, client, pousser } = paireEnLigne();
+    const tc = hote.G.buildings.find((b) => b.owner === hote.FAC.P2 && b.type === hote.BT.TC);
+    ok(!!tc, "pas de Centre Ville pour l'invité");
+    pousser();
+    const avant = (client.G.ftexts || []).length;
+    tc.hp -= 200;
+    pousser();
+    const nouveaux = (client.G.ftexts || []).slice(avant).map((t) => t.txt);
+    ok(nouveaux.some((t) => /-200/.test(t)),
+      `aucun chiffre de dégâts chez l'invité — obtenu : ${JSON.stringify(nouveaux)}`);
+    // Et l'alerte : c'est le retour le plus important de la liste — sans lui,
+    // un invité perdait son Centre Ville sans le moindre avertissement.
+    ok(messages(client).some((t) => /attaquée/.test(t)),
+      "aucune alerte « base attaquée » chez l'invité dont on démolit le Centre Ville");
+  });
+
+  // ══ VISION PARTAGÉE ══════════════════════════
+  test("un allié éclaire mon brouillard, un ennemi non", () => {
+    const j = partie(charger(), { graine: 4242 });
+    const moi = j.moi();
+    // Deux camps neufs, l'un dans mon équipe, l'autre non, chacun avec une
+    // unité dans un coin que je n'ai jamais exploré.
+    j.G.factions.copain = j.mkFaction('copain', { genre: 'humain', equipe: moi.equipe, nom: 'Copain' });
+    j.G.factions.rival2 = j.mkFaction('rival2', { genre: 'humain', equipe: moi.equipe + 50, nom: 'Rival' });
+    const posA = { x: 20 * j.BASE_TILE, y: 20 * j.BASE_TILE };
+    const posE = { x: 20 * j.BASE_TILE, y: 60 * j.BASE_TILE };
+    j.G.units.push(j.mkUnit(j.UT.MIL, posA.x, posA.y, 'copain'));
+    j.G.units.push(j.mkUnit(j.UT.MIL, posE.x, posE.y, 'rival2'));
+    j.rebuildGrid();
+    j.revealFog();
+    egal(j.fogTileDe(moi, 20, 20), 2, "le coin où se tient mon ALLIÉ reste dans le noir");
+    ok(j.fogTileDe(moi, 20, 60) !== 2, "le coin où se tient un RIVAL m'est révélé : la vision fuit");
+  });
+
+  test("les unités d'un allié arrivent chez l'invité, même hors de sa propre vue", () => {
+    const { hote, client, pousser } = paireEnLigne({ vueTotale: false });
+    // Coop : l'hôte et l'invité dans la même équipe.
+    const p2 = hote.G.factions[hote.FAC.P2];
+    p2.equipe = hote.G.factions[hote.FAC.P1].equipe;
+    const u = hote.mkUnit(hote.UT.MIL, 25 * hote.BASE_TILE, 25 * hote.BASE_TILE, hote.FAC.P1);
+    hote.G.units.push(u);
+    hote.rebuildGrid();
+    // Calque de l'invité mis à « exploré mais pas visible » PARTOUT : c'est la
+    // seule façon d'isoler la clause d'équipe du filtre réseau de l'effet de
+    // bord de la vision partagée (qui, elle, aurait de toute façon allumé la
+    // case). Ce n'est pas un cas de laboratoire : revealFog tourne à 5 Hz et
+    // le delta à 10 Hz, il existe donc une image sur deux où un allié qui
+    // vient de bouger n'est pas encore dans le calque.
+    for (let y = 0; y < hote.ROWS; y++) for (let x = 0; x < hote.COLS; x++) p2.fog[y][x] = 1;
+    pousser();
+    ok(!!client.unitById(u.id), "l'unité de mon allié ne m'est jamais transmise");
+  });
+
+  test("la vision n'est PAS partagée avec un camp hostile (contrôle négatif)", () => {
+    const { hote, client, pousser } = paireEnLigne({ vueTotale: false });
+    // Équipes distinctes : c'est le réglage par défaut du 1v1.
+    ok(hote.G.factions[hote.FAC.P1].equipe !== hote.G.factions[hote.FAC.P2].equipe, 'les deux camps sont alliés : le contrôle ne prouve rien');
+    const u = hote.mkUnit(hote.UT.MIL, 25 * hote.BASE_TILE, 25 * hote.BASE_TILE, hote.FAC.P1);
+    hote.G.units.push(u);
+    hote.rebuildGrid();
+    hote.revealFog();
+    pousser();
+    egal(!!client.unitById(u.id), false, "une unité ENNEMIE hors de vue est transmise à l'invité : fuite d'information");
+  });
+
   test('le delta reste sérialisable et modeste au repos', () => {
     const { hote, client, pousser, tourner } = paireEnLigne();
     for (let k = 0; k < 600; k++) {
@@ -4417,6 +4527,42 @@ groupe('promesses', () => {
       }
     }
     egal(manquants.length, 0, 'sites sans prédiction optimiste :\n      ' + manquants.join('\n      '));
+  });
+
+  // ── 8. Taper un coéquipier n'est pas un ordre d'attaque ──
+  test("taper un allié n'envoie aucun ordre d'attaque et le DIT", () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    j.G.factions.copain = j.mkFaction('copain', { genre: 'humain', equipe: j.moi().equipe, nom: 'Copain' });
+    const allie = j.mkUnit(j.UT.MIL, 500, 500, 'copain');
+    const mien = j.G.units.find((u) => u.owner === j.G.me && j.isMilitary(u.type))
+              || j.G.units.find((u) => u.owner === j.G.me);
+    j.G.units.push(allie);
+    j.rebuildGrid();
+    j.G.sel = [mien.id];
+    const n = j.__sandbox.document.getElementById('notif');
+    const avant = (n.children || []).length;
+    j.cmdAttack(allie);
+    egal(mien.state === 'attack', false, "mes troupes ont reçu l'ordre d'attaquer mon propre allié");
+    egal((n.children || []).length, avant + 1, 'le geste est resté sans un mot');
+    // Et le contrôle : sur une cible VRAIMENT hostile, l'ordre part.
+    const ennemi = j.mkUnit(j.UT.ENEMI, 520, 520, j.G.factions.ia.id);
+    j.G.units.push(ennemi);
+    j.rebuildGrid();
+    j.cmdAttack(ennemi);
+    egal(mien.state, 'attack', "l'ordre d'attaque ne part plus sur une cible hostile");
+  });
+
+  test('le débit de ressources tourne aussi chez un client', () => {
+    // majDebits vivait dans update(), qui ne tourne que chez l'hôte : les
+    // quatre compteurs sous la barre de ressources restaient à 0,0 chez un
+    // invité pendant que son économie tournait.
+    const j = partie(charger(), { mode: 'conquest' });
+    j.G.rateAcc.wood = 40;
+    j.majDebits(2.5);
+    ok(j.G.rateShow.wood > 0, 'majDebits ne calcule plus le débit');
+    egal(j.G.rateAcc.wood, 0, "l'accumulateur n'a pas été remis à zéro");
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '12-reseau.js'), 'utf8');
+    ok(/majDebits\(/.test(src), 'updateVisuel n\'appelle pas majDebits : le client reste à 0,0');
   });
 
   // ── 7. Deux formules écrites deux fois, réunies ─────────

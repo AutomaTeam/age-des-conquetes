@@ -55,19 +55,13 @@ function update(dt){
   // Indices contextuels liés au temps plutôt qu'à une construction : la
   // chasse est disponible dès le début, et la garnison mérite un rappel
   // juste avant le premier vrai danger plutôt qu'en pleine mise en place.
-  if(G.gameTime>=45) hintOnce('hunt',"🦌 Du gibier sauvage rôde sur la carte : envoyez une unité l'attaquer pour un gros bonus de nourriture.",'#8fbc44');
-  if(nightFactor()>0.5) hintOnce('night',"🌙 La nuit tombe : votre champ de vision se réduit jusqu'au lever du jour.",'#7fb8e8');
-  if(G.gmode==='survival'&&G.wave===0&&G.waveTimer<=60) hintOnce('garrison',"🏰 Première vague proche : vos villageois peuvent se mettre à l'abri dans le Centre Ville (sélectionnez-les puis tapez le bâtiment).",'#3498db');
+  // retourTous et non hintOnce : ces trois-là ne partaient qu'à G.me, c'est-à-dire
+  // à l'hôte, et un invité ne les recevait jamais (voir RETOURS, js/11-interface.js).
+  if(G.gameTime>=45) retourTous('astuce',{cle:'hunt',texte:"🦌 Du gibier sauvage rôde sur la carte : envoyez une unité l'attaquer pour un gros bonus de nourriture.",col:'#8fbc44'});
+  if(nightFactor()>0.5) retourTous('astuce',{cle:'night',texte:"🌙 La nuit tombe : votre champ de vision se réduit jusqu'au lever du jour.",col:'#7fb8e8'});
+  if(G.gmode==='survival'&&G.wave===0&&G.waveTimer<=60) retourTous('astuce',{cle:'garrison',texte:"🏰 Première vague proche : vos villageois peuvent se mettre à l'abri dans le Centre Ville (sélectionnez-les puis tapez le bâtiment).",col:'#3498db'});
 
-  // Suivi du taux de ressources (par 2s)
-  G.rateTimer+=dt;
-  if(G.rateTimer>=2){
-    for(const k of ['food','wood','stone','gold']){
-      G.rateShow[k]=Math.round(G.rateAcc[k]/G.rateTimer*10)/10;
-      G.rateAcc[k]=0;
-    }
-    G.rateTimer=0;
-  }
+  majDebits(dt);   // aussi appelé par updateVisuel : c'est le client qui en avait besoin
 
   // Pics et jalons de la partie (bilan de fin + succès). Échantillonnés à
   // chaque image plutôt que recalculés en fin de partie : un pic de
@@ -112,7 +106,7 @@ function update(dt){
     if(f.vaincu) continue;
     if(!G.buildings.find(b=>b.type===BT.TC&&b.owner===f.id)){
       f.vaincu=true;
-      if(f.id!==G.me) notify(`💀 ${f.nom} a été éliminé`,'#f0c040');
+      retourTous('elimine',{nom:f.nom},f.id);   // à TOUS les humains sauf l'éliminé, pas au seul hôte
       // Un second joueur humain éliminé PENDANT que l'hôte continue (coop
       // 2v1, 2 rivaux en ligne : chacun a son propre Centre Ville, l'un
       // peut tomber sans que la partie de l'autre s'arrête) ne recevait
@@ -167,15 +161,7 @@ function updateAgeUpFaction(dt,f){ // (auto-sauvegarde déclenchée à la fin du
   f.ageUpQ=null;
   // L'habillage (son, bannière, notifications) ne concerne que MON camp ;
   // l'effet de jeu, lui, s'applique à celui qui a payé.
-  if(local){
-    sfx('age');
-    notify(`${a.ico} ${a.nom} atteint !`,'#f0c040');
-    notify(`Apporte : ${a.bonus}`,'#e8d5a0',true);
-    bigBanner(`${a.ico} ${a.nom}`);
-    // Durée DÉRIVÉE de la constante : elle disait « 5 minutes » et est restée
-    // fausse le jour où MERVEILLE_WIN_TIME est passé à 10.
-    if(f.age>=3) hintOnce('wonder',`🏛️ Âge Impérial atteint : vous pouvez désormais bâtir une Merveille — la garder debout ${Math.round(MERVEILLE_WIN_TIME/60)} minutes une fois achevée gagne la partie.`,'#d8c078');
-  }
+  retour(f.id,'age',{ico:a.ico,nom:a.nom,bonus:a.bonus,n:f.age});
 
   // Recalcule proportionnellement les PV des bâtiments et des unités
   // existants DE CE CAMP (dégâts déjà subis conservés en absolu — même
@@ -1105,7 +1091,7 @@ function doRepair(u,dt){
     // aussi (voir aiRepare), un « Réparé ! » vert au-dessus du Centre Ville
     // adverse se lisait comme une bonne nouvelle pour le joueur. Même
     // principe que la fin de chantier dans doBuild.
-    if(b&&b.hp>=b.maxHp&&estLocal(b)) addFText(b.x,b.y-20,'Réparé !','#2ecc71');
+    if(b&&b.hp>=b.maxHp) retour(b.owner,'repare',{x:b.x,y:b.y});
     u.state='idle'; u.target=null; return;
   }
   const reach=bldContact(b,0.35);
@@ -1174,7 +1160,7 @@ function doRelic(u,dt){
   // Livraison : revenu passif désormais actif (voir updateRelicIncome)
   u.moving=false;
   relic.carrier=null; relic.bankedBy=u.owner; u.relicHeld=false;
-  if(estLocal(u)) notify('🏺 Relique mise à l\'abri — revenu passif en or !','#f0c040');
+  retour(u.owner,'relique',{});
   u.state='idle'; u.target=null;
 }
 
@@ -1275,11 +1261,7 @@ function doReturn(u,dt){
     const pool=resPool(u.owner);
     if(pool) pool[rk]+=u.inv;
     const fg=fac(u.owner); if(fg) fg.stats.gathered[rk]+=u.inv;
-    if(estLocal(u)){ // retours d'interface : seulement pour le joueur local
-      G.rateAcc[rk]=(G.rateAcc[rk]||0)+u.inv;
-      addFText(b.x,b.y-16,`+${u.inv}`,rk==='gold'?'#f0c040':rk==='wood'?'#8fbc44':rk==='stone'?'#bbb':'#e8d5a0');
-      sfx('drop');
-    }
+    retour(u.owner,'depot',{x:b.x,y:b.y,n:u.inv,rk});
   }
   const savedType=u.invT;
   u.inv=0; u.invT=null;
@@ -1324,9 +1306,12 @@ function doBuild(u,dt){
     // particule de fin reste, visible uniquement si la zone est explorée.
     const fb=fac(b.owner);
     if(fb){ fb.stats.built++; if(b.type===BT.WALL) fb.stats.wallsBuilt++; }
-    if(estLocal(b)){
-      sfx('build');
-      notify(`${BDEF[b.type].nom} construite !`,'#2ecc71');
+    {
+      // Le « second Marché » se compte CÔTÉ HÔTE, sur le propriétaire du
+      // chantier (et non G.me) : c'est lui qui décide, l'indice n'est qu'un
+      // affichage — voir RETOURS.construit, js/11-interface.js.
+      const second=G.buildings.filter(x=>x.owner===b.owner&&x.type===BT.MARKET&&!x.constructing).length>=1;
+      retour(b.owner,'construit',{type:b.type,second});
       // La bannière plein écran, elle, ne doit marquer que la PREMIÈRE fois
       // qu'un type de bâtiment est achevé dans la partie — un Mur ou une
       // Maison qu'on pose vingt fois ne mérite pas le même traitement qu'une
@@ -1352,6 +1337,22 @@ function doBuild(u,dt){
     spawnParts(b.x,b.y,'#2ecc71',10);
     updatePopCap();
     u.state='idle';
+  }
+}
+
+// Débit de ressources affiché sous la barre du haut, moyenné sur 2 s. Vivait
+// dans update() — donc côté hôte uniquement — alors que `G.rateAcc` est
+// alimenté par les retours de dépôt : chez un invité, les quatre compteurs
+// restaient à 0,0 toute la partie pendant que son économie tournait.
+// updateVisuel() l'appelle désormais aussi.
+function majDebits(dt){
+  G.rateTimer+=dt;
+  if(G.rateTimer>=2){
+    for(const k of ['food','wood','stone','gold']){
+      G.rateShow[k]=Math.round(G.rateAcc[k]/G.rateTimer*10)/10;
+      G.rateAcc[k]=0;
+    }
+    G.rateTimer=0;
   }
 }
 
@@ -1555,8 +1556,8 @@ function updateBuildings(dt){
     libererFileFormation(b); // un Héros encore en file n'est pas perdu pour la partie
     const fv=fac(b.owner); if(fv) fv.stats.bldLost++;
     const fk=fac(b.dernierAgresseur); if(fk&&fk!==fv) fk.stats.bldDestroyed++;
-    if(estLocal(b)) notify(`${BDEF[b.type].nom} détruite !`,'#e74c3c');
-    else if(fk&&fk.id===G.me) notify(`💥 ${BDEF[b.type].nom} ennemie détruite !`,'#2ecc71');
+    retour(b.owner,'detruit',{type:b.type,mien:true});
+    if(fk&&fk.id!==b.owner) retour(fk.id,'detruit',{type:b.type,mien:false});
     updatePopCap();
   }
   if(unRase) G.buildings=G.buildings.filter(b=>b.hp>0);
@@ -1587,7 +1588,7 @@ function updateTradeRoutes(dt){
         pool.gold+=gold;
         const fo=fac(b.owner);
         if(fo){ fo.stats.gathered.gold+=gold; fo.stats.tradesDone++; }
-        if(estLocal(b)){ addFText(b.x,b.y-24,`+${gold}💰`,'#f0c040'); if(G.rateAcc) G.rateAcc.gold=(G.rateAcc.gold||0)+gold; }
+        retour(b.owner,'caravane',{x:b.x,y:b.y,gold});
       }
     }
   }
@@ -1621,11 +1622,10 @@ function updateWonders(dt){
   for(const b of G.buildings){
     if(b.type!==BT.WONDER||b.constructing) continue;
     b.wonderTimer=(b.wonderTimer||0)+dt;
-    if(estLocal(b)){
+    {
       const restant=Math.max(0,MERVEILLE_WIN_TIME-b.wonderTimer);
-      if(restant>0&&Math.floor(restant)%60===0&&Math.abs(restant-Math.floor(restant))<dt){
-        notify(`🏛️ Merveille : victoire dans ${Math.ceil(restant/60)} min si elle tient debout`,'#d8c078');
-      }
+      if(restant>0&&Math.floor(restant)%60===0&&Math.abs(restant-Math.floor(restant))<dt)
+        retour(b.owner,'merveilleRappel',{min:Math.ceil(restant/60)});
     }
     if(b.wonderTimer>=MERVEILLE_WIN_TIME){
       const fo=fac(b.owner); if(fo) fo.merveilleAchevee=true;
@@ -1687,7 +1687,7 @@ function spawnUnit(type,building,owner){
   G.units.push(u);
   const fo=fac(owner);
   if(fo){ fo.pop++; fo.stats.trained++; }
-  if(estLocal(u)) sfx('train');
+  retour(u.owner,'forme',{});
   // Les bonus d'âge/recherche sont désormais appliqués par mkUnit pour TOUS
   // les camps : l'IA n'a plus qu'à poster sa recrue en garde.
   if(estIA(u)) aiAdoptUnit(u,fo);
@@ -2042,7 +2042,7 @@ function dealDmg(tgt,dmg,source){
   tgt.hitFlash=0.15;
   if(dmg>=18) shakeScreen(Math.min(9,dmg*0.35)); // gros coup = secousse ressentie, pas juste un chiffre qui saute
   // alerte si un bâtiment du joueur est frappé (hors champ de vision surtout)
-  if(estLocal(tgt)&&tgt.maxHp>=180&&typeof alertAttack==='function') alertAttack(tgt.x,tgt.y);
+  if(tgt.maxHp>=180) retour(tgt.owner,'alerte',{x:tgt.x,y:tgt.y});
 
   // ── RIPOSTE IMMÉDIATE ──────────────────────────────────
   // Jusqu'ici, le SEUL moyen pour une unité de remarquer un agresseur était

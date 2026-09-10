@@ -72,6 +72,13 @@ window.transportLocal=transportLocal;
 // versait l'or -- sans aucun moyen de l'annuler. C'est l'invariant n^o 6 du
 // protocole : ce que l'hote decide doit voyager. Meme raison de bump qu'en
 // v3/v5 -- un client v5 ne depile pas les nouvelles cases.
+// PAS de v7 pour le canal de retours d'interface (`d.ev`, voir retour(),
+// js/11-interface.js) ni pour la vision partagee entre allies : ni l'un ni
+// l'autre ne change la LECTURE du fil. `d.ev` est une cle de premier niveau
+// qu'un client v6 ignore simplement (`liste()` rend [] sur undefined), et la
+// vision partagee ne fait qu'envoyer PLUS d'entites, deja decrites par le
+// meme format. Le critere du bump reste : un client de la version d'avant
+// MISLIT-il ce qui arrive ? Ici, non.
 const PROTO_VERSION = 6;   // v4 : equipe suivie en cours de partie, autoRepair emis
 const DELTA_HZ      = 10;
 const DELTA_PERIODE = 1/DELTA_HZ;
@@ -318,10 +325,14 @@ function appliquerFaction(d){
 // ne lui a jamais ete reveillee (voir le commentaire de visiblePour).
 function construireSnap(){
   const dest=RESEAU.adversaire&&G.factions[RESEAU.adversaire.id];
-  const visU=G.units.filter(u=>u.owner===(dest&&dest.id)||visiblePour(dest,u.x,u.y));
+  // `memeEquipe` et non `owner===dest.id` : les unités d'un ALLIÉ sont
+  // toujours connues, comme les siennes (voir aussi revealFog, qui partage
+  // désormais le calque — la clause reste explicite pour que la règle ne
+  // dépende pas d'un effet de bord du brouillard).
+  const visU=G.units.filter(u=>memeEquipe(u.owner,dest&&dest.id)||visiblePour(dest,u.x,u.y));
   const visB=G.buildings.filter(b=>{
     const cx=(b.tx+b.w/2)*BASE_TILE, cy=(b.ty+b.h/2)*BASE_TILE;
-    return b.owner===(dest&&dest.id)||visiblePour(dest,cx,cy);
+    return memeEquipe(b.owner,dest&&dest.id)||visiblePour(dest,cx,cy);
   });
   RESEAU.connusU=new Set(visU.map(u=>u.id));
   RESEAU.connusB=new Set(visB.map(b=>b.id));
@@ -420,13 +431,17 @@ function construireDelta(){
   // Faction qui RECEVRA ce delta : c'est TOUJOURS l'adversaire (l'hote ne
   // s'envoie pas de messages a lui-meme).
   const dest=RESEAU.adversaire&&G.factions[RESEAU.adversaire.id];
+  // Retours d'interface adresses au destinataire (voir retour(), js/11-interface.js).
+  // La file part ENTIEREMENT et se vide : ce sont des evenements ponctuels, pas
+  // un etat -- les renvoyer au delta suivant les rejouerait deux fois.
+  if(dest&&dest.evq&&dest.evq.length){ d.ev=dest.evq; dest.evq=[]; }
 
   for(const u of G.units){
     // Hors de la vue du destinataire et pas la sienne : ne JAMAIS l'inclure,
     // qu'elle soit nouvelle ou deja connue. Si elle etait connue, on la
     // traite comme disparue (voir plus bas) plutot que de risquer un ecart
     // silencieux entre RESEAU.dernier et ce qui a reellement ete envoye.
-    if(!visiblePour(dest,u.x,u.y)&&u.owner!==(dest&&dest.id)) continue;
+    if(!visiblePour(dest,u.x,u.y)&&!memeEquipe(u.owner,dest&&dest.id)) continue;
     vus.add(u.id);
     const cle='u'+u.id, av=RESEAU.dernier.get(cle);
     if(!av){                                   // nouvelle unite : complete
@@ -467,7 +482,7 @@ function construireDelta(){
     // MET A JOUR tant qu'il n'est pas actuellement visible.
     const centreX=(b.tx+b.w/2)*BASE_TILE, centreY=(b.ty+b.h/2)*BASE_TILE;
     const cle='b'+b.id, connu=RESEAU.dernier.has(cle);
-    const visible=b.owner===(dest&&dest.id)||visiblePour(dest,centreX,centreY);
+    const visible=memeEquipe(b.owner,dest&&dest.id)||visiblePour(dest,centreX,centreY);
     if(!visible&&!connu) continue;         // jamais vu, toujours hors champ : rien a faire
     vusB.add(b.id);
     if(!visible) continue;                 // connu mais hors champ : reste tel quel cote client
@@ -625,7 +640,30 @@ function appliquerSnap(m){
   refreshUI();
 }
 
+// Retours de COUP chez le client. dealDmg (js/07-simulation.js) porte le son,
+// le `-N` flottant, la secousse et l'alerte de base attaquee -- mais il ne
+// tourne QUE chez l'hote, et les projectiles ne sont pas repliques : chez un
+// invite, le combat etait entierement muet, sans chiffres et sans alerte. Il
+// pouvait perdre son Centre Ville sans un seul avertissement.
+// Deduit des PV plutot qu'envoye : le delta les porte deja, donc zero octet
+// de plus. Les degats sont AGREGES sur la periode du delta (10 Hz), d'ou un
+// seul chiffre par entite au lieu d'un par coup -- et un seul son par delta,
+// sans quoi une melee de cent unites en declencherait cent d'un coup.
+let _coupSonne=false;
+function retourCoup(cible,degats){
+  if(degats<=0) return;
+  if(!_coupSonne){ _coupSonne=true; sfx('hit'); }
+  spawnParts(cible.x,cible.y,'#e74c3c',3);
+  addFText(cible.x,cible.y-10,`-${Math.round(degats)}`,'#ff5544');
+  if(degats>=18) shakeScreen(Math.min(9,degats*0.35));
+  // Meme seuil que dealDmg : seuls les gros batiments declenchent l'alerte,
+  // et alertAttack s'auto-limite deja a une fois toutes les 8 s.
+  if(estLocal(cible)&&cible.maxHp>=180&&cible.tx!=null&&typeof alertAttack==='function')
+    alertAttack(cible.x,cible.y);
+}
+
 function appliquerDelta(m){
+  _coupSonne=false;
   if(!m||typeof m!=='object') return;
   if(typeof m.gt==='number') G.gameTime=m.gt;
   if(typeof m.wave==='number') G.wave=m.wave;
@@ -664,7 +702,7 @@ function appliquerDelta(m){
     const masque=e[1]; let k=2;
     if(masque&M_X)     u._netX=e[k++];
     if(masque&M_Y)     u._netY=e[k++];
-    if(masque&M_HP)    { const av=u.hp; u.hp=e[k++]; if(u.hp<av) u.hitFlash=0.15; }
+    if(masque&M_HP)    { const av=u.hp; u.hp=e[k++]; if(u.hp<av){ u.hitFlash=0.15; retourCoup(u,av-u.hp); } }
     if(masque&M_ETAT)  u.state=e[k++];
     if(masque&M_CIBLE) u.target=e[k++];
     if(masque&M_DIR)   u.dir=e[k++];
@@ -694,7 +732,7 @@ function appliquerDelta(m){
     if(e[11]!=null) b.wonderTimer=e[11];
     if(e[12]!=null) b.nFarmers=e[12];
     if(e[13]!==undefined) poserRouteCompacte(b,e[13]);
-    if(b.hp<avHp) b.hitFlash=0.15;
+    if(b.hp<avHp){ b.hitFlash=0.15; retourCoup(b,avHp-b.hp); }
     // Un portail qui s'ouvre ou se ferme change la grille de blocage : sans
     // ca le pathfinding local du client diverge de celui de l'hote.
     if(b.open!==avOuvert&&b.type===BT.GATE){
@@ -735,6 +773,14 @@ function appliquerDelta(m){
     }
   }
   if(liste(m.rm).length||liste(m.rmb).length){ rebuildIndex(); updatePopCap(); }
+  // Retours d'interface envoyes par l'hote. Le code recu est une CLE dans
+  // RETOURS et rien d'autre : jamais une fonction reconstruite depuis le
+  // message. Un code inconnu (hote plus recent) est ignore en silence plutot
+  // que de faire tomber tout le delta.
+  for(const e of liste(m.ev)){
+    const f=Array.isArray(e)&&RETOURS[e[0]];
+    if(typeof f==='function'){ try{ f(e[1]||{}); }catch(err){} }
+  }
 
   // Projectiles : etat complet, ils sont trop peu nombreux pour un differentiel
   if(m.p!=null){
@@ -785,6 +831,7 @@ function updateVisuel(dt){
   updateSpriteRebuild(dt);
   updateGlide(dt);
   G.mtTimer=Math.max(0,G.mtTimer-dt);
+  majDebits(dt);   // sinon les quatre debits sous la barre de ressources restent a 0,0
 
   _fogClientT-=dt;
   if(_fogClientT<=0){ revealFog(); _fogClientT=0.2; }

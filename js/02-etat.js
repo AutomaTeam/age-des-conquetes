@@ -112,6 +112,29 @@ function estHostile(a,b){
   return fa.equipe!==fb.equipe;
 }
 
+// Même équipe ? Distinct d'`!estHostile` : deux camps NEUTRES (pillards
+// hostiles à tous) ne sont pas hostiles entre eux sans être alliés pour
+// autant, et rien ne doit se partager entre eux. Sert à la vision partagée
+// (revealFog) et au filtrage réseau (visiblePour) — partout où « à moi »
+// devait vouloir dire « à mon camp ».
+function memeEquipe(a,b){
+  if(a==null||b==null) return false;
+  if(a===b) return true;
+  const fa=fac(a), fb=fac(b);
+  if(!fa||!fb) return false;
+  if(fa.hostileATous||fb.hostileATous) return false;
+  return fa.equipe===fb.equipe;
+}
+// Identifiants des camps de l'équipe de `f`, `f` compris. Calculé UNE FOIS par
+// balayage plutôt qu'une remontée de table par unité : revealFog tourne
+// cinq fois par seconde sur toutes les unités et tous les bâtiments de la
+// carte, et c'est un budget que le groupe `charge` surveille.
+function campsDeLEquipe(f){
+  const out=new Set([f.id]);
+  if(G.factions) for(const o of Object.values(G.factions)) if(memeEquipe(o.id,f.id)) out.add(o.id);
+  return out;
+}
+
 // Accesseurs par camp — remplacent les ternaires codés en dur player/IA.
 function resPool(owner){ const f=fac(owner); return f?f.res:null; }
 function ageOf(owner){ const f=fac(owner); return f?f.age:0; }

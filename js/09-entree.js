@@ -934,10 +934,26 @@ function orderAMove(){
   notify('Tapez la destination — vos unités engageront en chemin','#e74c3c');
 }
 
+// Le geste de tap aiguille sur `estLocal` : tout ce qui n'est pas à MOI
+// tombait ici, y compris les unités et les bâtiments d'un COÉQUIPIER. Pas de
+// tir ami (ORD.ATK refuse une cible non hostile), mais le geste ne faisait
+// alors rien du tout et sans un mot chez un hôte — et affichait « Cible
+// invalide » chez un invité, quand on venait simplement de toucher son propre
+// allié. Le refus se prononce donc ICI, où l'on sait ce qui a été tapé.
+// Un seul point : les deux sites de tap (unité et bâtiment) y passent.
+// -Infinity et non 0 : le minuteur se compare a G.gameTime, qui vaut 0 au
+// debut de partie -- un anti-spam initialise a 0 avale donc le TOUT PREMIER
+// message, celui qui explique justement pourquoi rien ne se passe.
+let _lastAllieTap=-Infinity;
 function cmdAttack(tgt){
+  if(!estHostile({owner:G.me},tgt)){
+    const t=G.gameTime||0;
+    if(t-_lastAllieTap>4){ _lastAllieTap=t; notify('🤝 Allié — vous ne pouvez pas l\'attaquer','#95a5a6'); }
+    return;
+  }
   const ids=G.units.filter(u=>estSel(u.id)&&estLocal(u)).map(u=>u.id);
   if(!ids.length) return;
-  emettreOrdre(ordre(ORD.ATK,{ids, cible:tgt.id, genreCible:bldById(tgt.id)?'b':'u'}));
+  emettreOrdre(ordre(ORD.ATK,{ids, cible:tgt.id, genreCible:bldById(tgt.id)?'b':'u'}),{n:ids.length});
 }
 
 // Le Quai doit toucher l'eau (sinon aucune barque n'a d'endroit où prendre

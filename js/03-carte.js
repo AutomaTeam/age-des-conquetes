@@ -719,8 +719,16 @@ function revealFog(){
         if(x>=0&&y>=0&&x<COLS&&y<ROWS&&fog[y][x]!==2){ fog[y][x]=2; liste[nvu++]=y*COLS+x; } // visible
       }
     };
-    for(const u of G.units) if(u.owner===f.id) reveal((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0, Math.max(2,Math.round((u.type===UT.ARC||u.type===UT.XBOW?7:5)*visMult)));
-    for(const b of G.buildings) if(b.owner===f.id){
+    // VISION PARTAGÉE : tout le camp éclaire le même calque. En 2v1
+    // coopératif, chacun ne voyait qu'à travers ses propres yeux — et comme
+    // ce calque filtre AUSSI ce que le réseau transmet (visiblePour,
+    // js/12-reseau.js), l'invité ne recevait même pas les unités de son
+    // allié : deux joueurs « ensemble » qui ne se voyaient jamais.
+    // L'ensemble est calculé UNE fois par camp, pas une remontée de table par
+    // entité : ce balayage tourne 5×/s sur toute la carte (invariant de charge).
+    const equipe=campsDeLEquipe(f);
+    for(const u of G.units) if(equipe.has(u.owner)) reveal((u.x/BASE_TILE)|0,(u.y/BASE_TILE)|0, Math.max(2,Math.round((u.type===UT.ARC||u.type===UT.XBOW?7:5)*visMult)));
+    for(const b of G.buildings) if(equipe.has(b.owner)){
       const rad=b.type===BT.TOWER||b.type===BT.CASTLE?10:b.type===BT.TC?9:b.type===BT.OUTPOST?8:6;
       reveal((b.tx+b.w/2)|0,(b.ty+b.h/2)|0,Math.max(3,Math.round(rad*visMult)));
     }

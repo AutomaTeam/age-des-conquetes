@@ -339,13 +339,13 @@ function tryAutoReseed(b){
     // Le coût n'est annoncé QUE s'il a vraiment été prélevé : le message
     // facturait 30🪵 au joueur franc à chaque champ, c'est-à-dire qu'il
     // démentait le bonus de civilisation au moment même où celui-ci jouait.
-    if(estLocal(b)&&t-_lastFarmNotify>3){
+    if(t-_lastFarmNotify>3){
       _lastFarmNotify=t;
-      notify(gratuit?'🌱 Ferme re-semée (gratuit)':`🌱 Ferme re-semée (-${FARM_RESEED_COST.wood}🪵)`,'#8fbc44');
+      retour(b.owner,'ferme',{gratuit,cout:FARM_RESEED_COST.wood});
     }
   } else if(!b._reseedWarned){
     b._reseedWarned=true;
-    if(estLocal(b)&&t-_lastFarmNotify>3){ _lastFarmNotify=t; notify('🪵 Bois insuffisant pour re-semer une ferme','#e67e22'); }
+    if(t-_lastFarmNotify>3){ _lastFarmNotify=t; retour(b.owner,'fermeSansBois',{}); }
   }
 }
 const FIRST_WAVE_DELAY = 1200; // temps de paix avant le premier assaut (à difficulté Normal)
@@ -876,7 +876,7 @@ function awardKillXP(killerId){
   u.rank=rank;
   const fo=fac(u.owner);
   if(fo&&rank>=RANK_THRESHOLDS.length) fo.stats.hadEliteUnit=true; // survit à la mort de l'unité, pour le succès 'elite_unit'
-  if(estLocal(u)){ notify(`${cfg.ico} Une unité devient ${cfg.nom} !`,'#f0c040'); addFText(u.x,u.y-24,cfg.nom,'#f0c040'); }
+  retour(u.owner,'rang',{ico:cfg.ico,nom:cfg.nom,x:u.x,y:u.y});
 }
 
 // Coût réel d'un bâtiment, mis à l'échelle par la difficulté en cours.

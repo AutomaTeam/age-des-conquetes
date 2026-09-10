@@ -295,7 +295,7 @@ function updateUnits(dt){
       if(u.owner===FAC.PILL){
         const bounty=u.type===UT.ENEMI_BOSS?200:u.type===UT.ENEMI_G?15:u.type===UT.ENEMI_C?8:4;
         tueur.res.gold+=bounty;
-        if(tueur.id===G.me) addFText(u.x,u.y-12,`+${bounty}💰`,'#f0c040');
+        retour(tueur.id,'caravane',{x:u.x,y:u.y-12+24,gold:bounty}); // même retour « +N💰 » que la caravane
       }
     }
   }
@@ -1311,28 +1311,14 @@ function doBuild(u,dt){
       // chantier (et non G.me) : c'est lui qui décide, l'indice n'est qu'un
       // affichage — voir RETOURS.construit, js/11-interface.js.
       const second=G.buildings.filter(x=>x.owner===b.owner&&x.type===BT.MARKET&&!x.constructing).length>=1;
+      // Bannière plein écran et indices contextuels vivent DANS
+      // RETOURS.construit et nulle part ailleurs. Ils traînaient encore ici
+      // après la conversion : ils s'exécutaient donc pour TOUT bâtiment achevé,
+      // y compris ceux de l'IA. Vérifié : quand l'IA finissait un Château, le
+      // joueur lisait « Château bâti : vous pouvez former votre Héros » — et
+      // le drapeau à usage unique était consommé, si bien qu'il ne le verrait
+      // JAMAIS en bâtissant le sien.
       retour(b.owner,'construit',{type:b.type,second});
-      // La bannière plein écran, elle, ne doit marquer que la PREMIÈRE fois
-      // qu'un type de bâtiment est achevé dans la partie — un Mur ou une
-      // Maison qu'on pose vingt fois ne mérite pas le même traitement qu'une
-      // Merveille, et sur un écran de téléphone (signalé le 2026-09-08,
-      // capture à l'appui) un aplat à 30px en plein centre toutes les
-      // quelques secondes recouvre littéralement la carte. Réutilise G.hints
-      // (même compteur que hintOnce, remis à zéro à chaque partie) sous une
-      // clé distincte pour ne jamais entrer en collision avec ses indices.
-      if(!G.hints) G.hints=new Set();
-      const bannerKey='bannerBld:'+b.type;
-      if(!G.hints.has(bannerKey)){
-        G.hints.add(bannerKey);
-        bigBanner(`✅ ${BDEF[b.type].nom}`);
-      }
-      // Indices contextuels : signalés une seule fois par partie, au moment
-      // où ils deviennent concrètement utiles — plus efficace qu'un tutoriel
-      // qui les évoquerait tous d'un coup avant même le premier villageois.
-      if(b.type===BT.CASTLE) hintOnce('hero',"⭐ Château bâti : vous pouvez former votre Héros de civilisation (une seule fois par partie).",'#f0c040');
-      if(b.type===BT.MONASTERY) hintOnce('relic',"🏺 Monastère bâti : un Moine peut porter les reliques dispersées sur la carte pour un revenu passif en or.",'#f0c040');
-      if(b.type===BT.MARKET&&G.buildings.filter(x=>x.owner===G.me&&x.type===BT.MARKET&&!x.constructing).length>=1)
-        hintOnce('trade',"🐫 Marché bâti : avec un second Marché, établissez une route commerciale pour un revenu continu en or.",'#f0c040');
     }
     spawnParts(b.x,b.y,'#2ecc71',10);
     updatePopCap();

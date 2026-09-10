@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**232 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**235 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -470,6 +470,34 @@ qui **ne se voit pas** :
   la garnison et libère la file de formation ; et le **menu de construction**
   applique exactement les mêmes verrous qu'`ORD.BATIR`, l'aperçu de pose
   couvrant en plus la règle d'eau du Quai.
+
+  **Sixième passe (2026-09-10) — LA CONVERSION DES RETOURS ÉTAIT INCOMPLÈTE.**
+  Partie d'un sous-système périphérique (le Quai, la Barque, la pêche), la
+  passe est tombée sur un `estLocal()` oublié — puis sur six autres.
+  22. **Sept retours vivaient encore hors de `retour()`** : la conversion de
+      la veille n'avait balayé que `js/07-simulation.js`. Restaient les deux
+      messages de **re-semis** et la **vétérance** (js/01-regles.js), la
+      **chasse** et le dépôt de **pêche** (js/03-carte.js), la **prime de
+      pillard**, la **trahison** d'une IA alliée et les **dix-sept messages de
+      recherche** (js/08-ia.js). Un invité ne savait donc ni que ses fermes
+      attendaient du bois, ni qu'une unité montait en grade, ni qu'une
+      recherche était terminée — et sa pêche n'entrait même pas dans son
+      compteur de débit de nourriture.
+      **Un test mécanique remplace désormais l'œil** : aucun `notify` / `sfx` /
+      `bigBanner` / `hintOnce` / `addFText` / `G.rateAcc` ne peut rester gardé
+      par `estLocal` ou `G.me` dans les six fichiers de simulation. C'est lui
+      qui aurait attrapé les sept.
+  23. **La conversion elle-même avait laissé un bloc en double** : la bannière
+      plein écran et les trois indices contextuels étaient restés HORS de
+      `retour()`, donc ils s'exécutaient pour TOUT bâtiment achevé. Vérifié :
+      quand l'IA finissait un Château, **le joueur lisait « Château bâti :
+      vous pouvez former votre Héros »** — et le drapeau à usage unique était
+      brûlé, si bien qu'il ne le verrait JAMAIS en bâtissant le sien.
+
+  Les dix-sept messages de recherche passent par un retour générique
+  `message:{txt,col}` plutôt que par dix-sept entrées de table : le texte vient
+  des TABLES du jeu (jamais d'une saisie) et le client le rend par
+  `textContent`, donc comme du texte et rien d'autre.
 
   Chacun de ces tests a été vérifié par MUTATION : on remet le comportement
   d'avant, et le test doit tomber. Deux pièges d'outillage ont été payés en

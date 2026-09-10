@@ -94,7 +94,7 @@ const EXPORTS = [
   // Contrecoups de la vision partagée : le rendu croise désormais des entités
   // qui ne sont ni à moi ni hostiles, cas qui n'existait pratiquement pas.
   'estAmi', 'couleurLisere', 'couleurMinimap', 'curseurSurvol', 'RETOURS_COALESCENTS',
-  'purgerSelection', 'convertirUnite',
+  'purgerSelection', 'convertirUnite', 'doBuild', 'awardKillXP', 'veterancyRank',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

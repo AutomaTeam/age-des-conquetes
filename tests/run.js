@@ -4775,6 +4775,88 @@ groupe('promesses', () => {
       'boucles infinies hors de la bascule « Réduire les animations » :\n      ' + manquants.join('\n      '));
   });
 
+  // ── 12. AUCUN RETOUR NE DOIT RESTER DERRIÈRE UN `estLocal` ──
+  // La conversion des retours d'interface (voir le canal `d.ev`) n'avait
+  // balayé que js/07-simulation.js. Quatre retours vivaient encore dans
+  // js/01-regles.js et js/03-carte.js, et trois autres derrière une
+  // comparaison à `G.me` : un invité ne savait ni que ses fermes attendaient
+  // du bois, ni qu'une de ses unités montait en grade, ni que sa chasse avait
+  // abouti, ni qu'une recherche était terminée — et sa pêche n'entrait même
+  // pas dans son compteur de débit. Ce test remplace l'œil : c'est lui qui
+  // aurait attrapé les sept.
+  test("aucun retour d'interface ne reste enfermé dans la simulation", () => {
+    const fs = require('fs'), path = require('path');
+    const racine = path.join(__dirname, '..');
+    // Fichiers dont le code tourne DANS update(), c'est-à-dire chez l'hôte
+    // seul. js/09 et js/11 sont de l'interface : ils sont locaux par nature.
+    const SIMULATION = ['js/01-regles.js', 'js/03-carte.js', 'js/04-entites.js',
+      'js/07-simulation.js', 'js/08-ia.js', 'js/10-ordres.js'];
+    const RETOURS_UI = /\b(notify|sfx|bigBanner|hintOnce|addFText|buzz)\s*\(|G\.rateAcc/;
+    const GARDE = /estLocal\s*\(|\bG\.me\b/;
+    const fautes = [];
+    for (const f of SIMULATION) {
+      const lignes = fs.readFileSync(path.join(racine, f), 'utf8').split('\n');
+      for (let i = 0; i < lignes.length; i++) {
+        const l = lignes[i];
+        if (l.trim().startsWith('//') || !GARDE.test(l)) continue;
+        // La garde et le retour sur la même ligne, ou le retour dans les
+        // trois lignes du bloc qu'elle ouvre.
+        const fenetre = lignes.slice(i, i + 4).join('\n').split('\n')
+          .filter((x) => !x.trim().startsWith('//')).join('\n');
+        if (RETOURS_UI.test(fenetre)) fautes.push(`${f}:${i + 1}  ${l.trim().slice(0, 90)}`);
+      }
+    }
+    egal(fautes.length, 0,
+      'retours d\'interface encore gardés par estLocal/G.me dans la simulation — un invité ne les recevra jamais :\n      '
+      + fautes.join('\n      '));
+  });
+
+  test("un bâtiment de l'IA ne consomme pas les indices à usage unique du joueur", () => {
+    // Défaut introduit par la conversion elle-même : la bannière et les trois
+    // indices étaient restés HORS de retour(), donc ils s'exécutaient pour tout
+    // bâtiment achevé. Quand l'IA finissait un Château, le joueur lisait
+    // « vous pouvez former votre Héros » — et le drapeau à usage unique était
+    // brûlé, si bien qu'il ne le verrait JAMAIS en bâtissant le sien.
+    const acheverChateau = (owner) => {
+      const j = partie(charger(), { mode: 'conquest' });
+      const p = caseLibre(j, 60, 60, 3, 3);
+      const b = j.mkBuilding(j.BT.CASTLE, p.tx, p.ty, owner(j));
+      b.constructing = true; b.progress = 0.999;
+      j.placeBuilding(b);
+      const v = j.mkUnit(j.UT.VIL, b.x, b.y, b.owner);
+      v.state = 'build'; v.buildTarget = b.id;
+      j.G.units.push(v); j.rebuildGrid();
+      const n = j.__sandbox.document.getElementById('notif');
+      const avant = (n.children || []).length;
+      j.doBuild(v, 0.5);
+      return { j, recus: (n.children || []).slice(avant).map((c) => c.textContent || '').join(' | ') };
+    };
+    const mien = acheverChateau((j) => j.G.me);
+    ok(/Héros/.test(mien.recus), `mon propre Château ne déclenche plus son indice : « ${mien.recus} »`);
+    ok(mien.j.lire("[...(G.hints||[])].join(',')").includes('hero'), 'le drapeau devrait être posé par MON château');
+    const adverse = acheverChateau((j) => j.G.factions.ia.id);
+    egal(adverse.recus, '', `le Château de l'IA parle au joueur : « ${adverse.recus} »`);
+    egal(adverse.j.lire("[...(G.hints||[])].join(',')"), '',
+      "le Château de l'IA brûle les drapeaux à usage unique du joueur");
+  });
+
+  test('les retours de recherche sont adressés au camp qui a cherché', () => {
+    const j = partie(charger(), { mode: 'conquest' });
+    const n = j.__sandbox.document.getElementById('notif');
+    // MOI : je dois lire les deux messages (fin de recherche + effet).
+    const f = j.moi();
+    f.researchQ = [{ type: 'masonry', timer: 0.01 }];
+    let avant = (n.children || []).length;
+    j.updateResearchFaction(1, f);
+    ok((n.children || []).length > avant, "je ne suis plus averti de MA propre recherche");
+    // L'IA : je ne dois RIEN lire.
+    const a = j.G.factions.ia;
+    a.researchQ = [{ type: 'masonry', timer: 0.01 }];
+    avant = (n.children || []).length;
+    j.updateResearchFaction(1, a);
+    egal((n.children || []).length, avant, "la recherche de l'IA m'est annoncée comme la mienne");
+  });
+
   // ── 7. Deux formules écrites deux fois, réunies ─────────
   test("l'or d'une caravane est le même au panneau et à la caisse, Gitanos compris", () => {
     const j = partie(charger(), { mode: 'conquest' });

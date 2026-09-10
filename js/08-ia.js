@@ -1235,10 +1235,8 @@ function updateUneIA(dt,a){
       if(armeeA>=10&&armeeA>=armeeAllie*1.5&&Math.random()<0.02){
         a.equipe=a._equipeAvant!=null?a._equipeAvant:a.equipe;
         const traheId=a.allieDe; a.allieDe=null;
-        if(traheId===G.me){
-          bigBanner(`⚔️ TRAHISON DE ${a.nom.toUpperCase()}`);
-          notify(`⚔️ ${a.nom} rompt son alliance et vous attaque !`,'#e74c3c');
-        }
+        retour(traheId,'banniere',{txt:`⚔️ TRAHISON DE ${a.nom.toUpperCase()}`,
+                                   txt2:`⚔️ ${a.nom} rompt son alliance et vous attaque !`,col:'#e74c3c'});
       }
     }
   }
@@ -1305,7 +1303,7 @@ function updateResearchFaction(dt,f){
     f.research[r.type]=true;
     f.researchQ.shift();
     f.stats.research++;
-    if(local) notify(`✅ ${RDEF[r.type].nom} recherché !`,'#2ecc71');
+    retour(owner,'message',{txt:`✅ ${RDEF[r.type].nom} recherché !`,col:'#2ecc71'});
     // Effets rétroactifs
     if(r.type==='iron_armor'){
       for(const u of G.units)
@@ -1322,11 +1320,11 @@ function updateResearchFaction(dt,f){
         if(u.owner===owner&&isMilitary(u.type)){
           u.atk=Math.round(u.atk*1.2);
         }
-      if(local) notify('⚔️ +20% ATK sur toutes vos unités militaires !','#f0c040');
+      retour(owner,'message',{txt:'⚔️ +20% ATK sur toutes vos unités militaires !',col:'#f0c040'});
     }
     if(r.type==='iron_sword'){
       for(const u of G.units) if(u.owner===owner&&MELEE_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.25);
-      if(local) notify('⚔️ Miliciens et Piquiers renforcés !','#e74c3c');
+      retour(owner,'message',{txt:'⚔️ Miliciens et Piquiers renforcés !',col:'#e74c3c'});
     }
     if(r.type==='bow_craft'){
       // RANGED_BONUS_TYPES et non [ARC,XBOW] : l'Arbalétrier à Répétition et
@@ -1334,7 +1332,7 @@ function updateResearchFaction(dt,f){
       // recevaient PAS ici — un exemplaire déjà sur la carte restait
       // définitivement plus faible que le suivant formé au Château.
       for(const u of G.units) if(u.owner===owner&&RANGED_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.25);
-      if(local) notify('🏹 Archers renforcés !','#e67e22');
+      retour(owner,'message',{txt:'🏹 Archers renforcés !',col:'#e67e22'});
     }
     if(r.type==='cavalry'){
       // Éclaireur inclus : c'est de la cavalerie légère, et mkUnit lui
@@ -1346,45 +1344,45 @@ function updateResearchFaction(dt,f){
       for(const u of G.units) if(u.owner===owner&&CAV_BONUS_TYPES.includes(u.type)){
         u.maxHp=Math.round(u.maxHp*1.2); u.hp=Math.min(u.hp+15,u.maxHp);
       }
-      if(local) notify('🐴 Cavalerie renforcée !','#9b59b6');
+      retour(owner,'message',{txt:'🐴 Cavalerie renforcée !',col:'#9b59b6'});
     }
     if(r.type==='masonry'){ // était absent : les bâtiments existants ne gagnaient rien
       for(const b of G.buildings)
         if(b.owner===owner){ b.maxHp=Math.round(b.maxHp*1.25); b.hp=Math.min(Math.round(b.hp*1.25),b.maxHp); }
-      if(local) notify('🧱 Tous vos bâtiments renforcés !','#95a5a6');
+      retour(owner,'message',{txt:'🧱 Tous vos bâtiments renforcés !',col:'#95a5a6'});
     }
     if(r.type==='longbow'){
       for(const u of G.units)
         if(u.owner===owner&&(u.type===UT.ARC||u.type===UT.XBOW)){ // Arbalétrier inclus
           u.rng=Math.round(u.rng*1.5);
         }
-      if(local) notify('🎯 Portée des Archers augmentée !','#3498db');
+      retour(owner,'message',{txt:'🎯 Portée des Archers augmentée !',col:'#3498db'});
     }
     if(r.type==='engineering'){
       for(const b of G.buildings)
         if(b.owner===owner&&(b.type===BT.TOWER||b.type===BT.CASTLE)){
           b.maxHp=Math.round(b.maxHp*1.4); b.hp=Math.min(b.hp+80,b.maxHp);
         }
-      if(local) notify('🔧 Tours et Château renforcés !','#95a5a6');
+      retour(owner,'message',{txt:'🔧 Tours et Château renforcés !',col:'#95a5a6'});
     }
     if(r.type==='siege_smithing'){
       for(const u of G.units) if(u.owner===owner&&SIEGE_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.25);
-      if(local) notify('🐏 Machines de siège renforcées !','#c0392b');
+      retour(owner,'message',{txt:'🐏 Machines de siège renforcées !',col:'#c0392b'});
     }
     if(r.type==='cavalry_lance'){
       for(const u of G.units) if(u.owner===owner&&CAV_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.2);
-      if(local) notify('🗡️ Cavalerie plus offensive !','#9b59b6');
+      retour(owner,'message',{txt:'🗡️ Cavalerie plus offensive !',col:'#9b59b6'});
     }
     if(r.type==='fortification'){
       for(const b of G.buildings)
         if(b.owner===owner&&(b.type===BT.WALL||b.type===BT.GATE||b.type===BT.OUTPOST)){
           b.maxHp=Math.round(b.maxHp*1.25); b.hp=Math.min(Math.round(b.hp*1.25),b.maxHp);
         }
-      if(local) notify('🏯 Murs, Portails et Avant-postes renforcés !','#95a5a6');
+      retour(owner,'message',{txt:'🏯 Murs, Portails et Avant-postes renforcés !',col:'#95a5a6'});
     }
     if(r.type==='logistics'){
       for(const u of G.units) if(u.owner===owner&&isMilitary(u.type)) u.spd*=1.15;
-      if(local) notify('🥾 Vos troupes se déplacent plus vite !','#3498db');
+      retour(owner,'message',{txt:'🥾 Vos troupes se déplacent plus vite !',col:'#3498db'});
     }
     // Recherches de civilisation — même logique rétroactive que leurs
     // équivalents génériques (Lance de Cavalerie, Logistique, Arc Long) : ce
@@ -1393,27 +1391,27 @@ function updateResearchFaction(dt,f){
     // statistiques selon qu'elles sont nées avant ou après.
     if(r.type==='chevalerie'){
       for(const u of G.units) if(u.owner===owner&&CAV_BONUS_TYPES.includes(u.type)) u.atk=Math.round(u.atk*1.15);
-      if(local) notify('🏇 Votre cavalerie frappe plus fort !','#9b59b6');
+      retour(owner,'message',{txt:'🏇 Votre cavalerie frappe plus fort !',col:'#9b59b6'});
     }
     if(r.type==='etriers'){
       for(const u of G.units) if(u.owner===owner&&CAV_BONUS_TYPES.includes(u.type)) u.spd*=1.15;
-      if(local) notify('👟 Votre cavalerie se déplace plus vite !','#3498db');
+      retour(owner,'message',{txt:'👟 Votre cavalerie se déplace plus vite !',col:'#3498db'});
     }
     if(r.type==='arc_composite'){
       for(const u of G.units)
         if(u.owner===owner&&UDEF[u.type]&&UDEF[u.type].atkType==='p'&&!UDEF[u.type].siege) u.rng+=BASE_TILE;
-      if(local) notify('🏹 Vos tireurs gagnent une case de portée !','#16a085');
+      retour(owner,'message',{txt:'🏹 Vos tireurs gagnent une case de portée !',col:'#16a085'});
     }
     if(r.type==='roues_cerclees'){
       for(const u of G.units) if(u.owner===owner&&ROUES_TYPES.includes(u.type)) u.spd*=1.25;
-      if(local) notify('🛞 Vos attelages roulent plus vite !','#e67e22');
+      retour(owner,'message',{txt:'🛞 Vos attelages roulent plus vite !',col:'#e67e22'});
     }
     // Le Feu Grégeois n'a rien à rattraper : updateBuildings lit la recherche
     // à chaque tir (comme gatherMult pour la Charrue).
     // Sentiers Pavés : même effet rétroactif que Logistique, côté civil.
     if(r.type==='sentiers'){
       for(const u of G.units) if(u.owner===owner&&u.type===UT.VIL) u.spd*=1.15;
-      if(local) notify('🛤️ Vos villageois se déplacent plus vite !','#3498db');
+      retour(owner,'message',{txt:'🛤️ Vos villageois se déplacent plus vite !',col:'#3498db'});
     }
     // Brouette et Charrue Lourde n'ont RIEN à faire ici : gatherCap() et
     // gatherMult() lisent la recherche à chaque appel, donc le bonus vaut

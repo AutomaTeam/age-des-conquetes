@@ -335,7 +335,7 @@ function doHunt(u,dt){
       killWildlife(w);
       u.state='idle'; u.target=null;
       const fo=fac(u.owner); if(fo) fo.stats.wildlifeHunted++;
-      if(estLocal(u)) notify(`${def.ico} ${def.nom} abattu — ${def.food}🍖 à récolter`,'#8fbc44');
+      retour(u.owner,'chasse',{ico:def.ico,nom:def.nom,food:def.food});
     } else if(def.counter>0){
       dealDmg(u,def.counter,null);
     }
@@ -406,7 +406,7 @@ function doFishReturn(u,dt){
   const pool=resPool(u.owner);
   if(pool) pool.food+=u.inv;
   const fg=fac(u.owner); if(fg) fg.stats.gathered.food+=u.inv;
-  if(estLocal(u)){ addFText(b.x,b.y-16,`+${u.inv}`,'#e8d5a0'); G.rateAcc.food=(G.rateAcc.food||0)+u.inv; sfx('drop'); }
+  retour(u.owner,'peche',{x:b.x,y:b.y,n:u.inv});
   u.inv=0; u.invT=null;
   const orig=nodeById(u.target);
   if(orig&&orig.amt>0) u.state='fish';

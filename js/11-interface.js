@@ -1387,6 +1387,29 @@ const RETOURS = {
   },
   merveilleRappel:(a)=>notify(`🏛️ Merveille : victoire dans ${a.min} min si elle tient debout`,'#d8c078'),
   astuce:(a)=>hintOnce(a.cle,a.texte,a.col),
+  // Message déjà composé côté hôte. Réservé aux textes qui viennent des
+  // TABLES du jeu (RDEF, AGES, noms de faction) et jamais d'une saisie : le
+  // client les rend par `textContent`, donc comme du texte et rien d'autre.
+  // Sert aux dix-sept retours de recherche (js/08-ia.js), qu'il aurait fallu
+  // sinon décrire un par un dans cette table pour aucun gain.
+  message:(a)=>notify(a.txt,a.col),
+  banniere:(a)=>{ bigBanner(a.txt); if(a.txt2) notify(a.txt2,a.col); },
+  // Les quatre suivants vivaient encore derriere un `estLocal()` dans
+  // js/01-regles.js et js/03-carte.js : la conversion de la veille n'avait
+  // balaye que js/07-simulation.js. Un invite en ligne ne savait donc ni que
+  // ses fermes attendaient du bois, ni qu'une de ses unites montait en grade,
+  // ni que sa chasse avait abouti -- et sa peche n'entrait meme pas dans son
+  // compteur de debit de nourriture. Un test mecanique interdit desormais
+  // qu'un cinquieme se glisse ailleurs (voir le groupe `promesses`).
+  ferme:(a)=>notify(a.gratuit?'\u{1F331} Ferme re-sem\u00e9e (gratuit)':`\u{1F331} Ferme re-sem\u00e9e (-${a.cout}\u{1FAB5})`,'#8fbc44'),
+  fermeSansBois:(a)=>notify(`\u{1FAB5} Bois insuffisant pour re-semer une ferme`,'#e67e22'),
+  rang:(a)=>{ notify(`${a.ico} Une unit\u00e9 devient ${a.nom} !`,'#f0c040'); addFText(a.x,a.y-24,a.nom,'#f0c040'); },
+  chasse:(a)=>notify(`${a.ico} ${a.nom} abattu \u2014 ${a.food}\u{1F356} \u00e0 r\u00e9colter`,'#8fbc44'),
+  peche:(a)=>{
+    addFText(a.x,a.y-16,`+${a.n}`,'#e8d5a0');
+    sfx('drop');
+    if(G.rateAcc) G.rateAcc.food=(G.rateAcc.food||0)+a.n;
+  },
   alerte:(a)=>{ if(typeof alertAttack==='function') alertAttack(a.x,a.y); },
 };
 // Adresse un retour au camp `owner` : joué tout de suite si c'est le mien,

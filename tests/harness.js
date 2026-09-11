@@ -53,6 +53,9 @@ const EXPORTS = [
   // le code existe vraiment sur le disque — et un nom faux ne lève RIEN.
   'BLD_SPRITE_FILES', 'BLD_AGE_SPRITE_FILES', 'BLD_LEVEL_SPRITE_FILES',
   'liverySprite', 'resetLiveryBudget',
+  // Défrangeage du bord détouré (voir le groupe `civilisations`) : pur calcul
+  // sur un tableau de pixels, donc testable sans canvas.
+  'defrangerBord',
   'applyCommand', 'pickCiv', 'civKeyOf', 'civOf', 'PRODUCTION', 'ORD', 'mkFaction',
   'CARTES', 'pickCarte', 'carteCfg', 'poserMursArene', 'construireSalut', 'T_WATER',
   'TAILLES', 'pickTaille', 'departsHumains',

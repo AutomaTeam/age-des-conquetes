@@ -897,13 +897,69 @@ function drawShore(g,x,y,px2,py2,dw,dh){
 // table figée une fois pour toutes plutôt que recréée à chaque arbre et à
 // chaque image.
 const FEUILLE_TEINTES=['rgba(196,140,58,.7)','rgba(210,170,60,.7)','rgba(176,90,48,.7)'];
+// ── ÉCLATS D'OR ───────────────────────────────────────────
+// L'illustration du filon d'or est un bloc de roche SOMBRE veiné de quelques
+// pépites : superbe de près, mais à distance, ou sur une herbe de sous-bois,
+// on le confondait avec un tas de charbon — la ressource la plus convoitée
+// du jeu était la moins lisible de la carte. Trois éclats en étoile
+// s'allument ici tour à tour sur le dessus du filon, chacun à sa cadence
+// (phase tirée de l'id : deux filons voisins ne scintillent pas ensemble).
+// Rendu seul, sans Math.random() : rien ne touche la simulation.
+// « Réduire les animations » (voir MOTION) fige les éclats : ils restent
+// allumés, à mi-force, au lieu de clignoter — la lisibilité sans le
+// scintillement.
+function eclatsOr(n,sx,sy,w,h){
+  const fige=typeof MOTION!=='undefined'&&MOTION.reduced;
+  const t=G.gameTime;
+  let hh=Math.imul(n.id+7,2246822519)>>>0;
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  for(let k=0;k<3;k++){
+    hh=Math.imul(hh^(hh>>>13),1274126177)>>>0;
+    const ph=(hh&1023)/1023*Math.PI*2, vit=1.3+((hh>>>10)&7)*0.12;
+    const v=fige?0.9:Math.sin(t*vit+ph);
+    if(v<0.8) continue;
+    const a=(v-0.8)/0.2;
+    const gx=sx+(((hh>>>13)&255)/255-0.5)*w*0.55;
+    const gy=sy-h*(0.22+((hh>>>21)&255)/255*0.36);
+    const L=Math.max(3.5,w*0.11)*(0.6+0.4*a);
+    ctx.strokeStyle='rgba(255,226,140,'+(0.85*a).toFixed(3)+')';
+    ctx.lineWidth=Math.max(1,w*0.012);
+    ctx.beginPath();
+    ctx.moveTo(gx-L,gy); ctx.lineTo(gx+L,gy);
+    ctx.moveTo(gx,gy-L); ctx.lineTo(gx,gy+L);
+    ctx.stroke();
+    ctx.fillStyle='rgba(255,246,200,'+a.toFixed(3)+')';
+    ctx.fillRect(gx-1,gy-1,2,2);
+  }
+  ctx.restore();
+}
+
+// Gisements visibles, triés du fond vers l'avant. G.nodes est dans l'ordre
+// de SEMIS, pas de profondeur (225 inversions sur 486 gisements, mesuré) :
+// dans un bosquet, un arbre planté plus haut sur la carte mais semé plus tard
+// posait sa canopée PAR-DESSUS le tronc de l'arbre devant lui. Même écrémage
+// puis tri que drawUnits, réutilisant le même tableau d'une image à l'autre.
+const _nodesOrdre=[];
 function drawNodes(){
+  _nodesOrdre.length=0;
   for(const n of G.nodes){
     if(n.amt<=0) continue;
     const{x:sx,y:sy}=ws(n.x,n.y);
     if(sx<-TILE*2||sx>W+TILE*2||sy<48-TILE||sy>H+TILE*2) continue;
+    _nodesOrdre.push(n);
+  }
+  _nodesOrdre.sort((a,b)=>a.y-b.y);
+  for(const n of _nodesOrdre){
+    const{x:sx,y:sy}=ws(n.x,n.y);
     let spr=null;
-    if(n.type===RT.TREE)      spr=SPR.tree[n.id%SPR.tree.length];
+    // Arbres : feuillage (voir teinterFeuillage) et gabarit tirés d'un
+    // hachage de l'id, et non de n.id modulo 5 — les arbres d'un même
+    // bosquet sont semés à la suite, et le modulo y déroulait les cinq
+    // variantes dans l'ordre, en motif régulier.
+    let hA=0;
+    if(n.type===RT.TREE){ hA=Math.imul(n.id+1,2654435761)>>>0; }
+    if(n.type===RT.TREE)      spr=SPR.tree[(hA>>>3)%SPR.tree.length];
     else if(n.type===RT.STONE)spr=SPR.stone[n.id%SPR.stone.length];
     else if(n.type===RT.GOLD) spr=SPR.gold[n.id%SPR.gold.length];
     else if(n.type===RT.FISH) spr=SPR.fish[n.id%SPR.fish.length];
@@ -912,7 +968,11 @@ function drawNodes(){
     if(spr){
       // léger amincissement quand la ressource s'épuise
       const r=(0.55+0.45*(n.amt/n.max))*(TILE/(SPR.refT||TILE));
-      const w=spr.S*r, h=spr.S*r;
+      // Gabarit propre à chaque arbre : ±8 % en hauteur, ±5 % en largeur,
+      // tirés séparément — un arbre un peu plus élancé, un autre plus trapu.
+      // Purement visuel : la case occupée et le clic ne changent pas.
+      const kh=hA?1+(((hA>>>11)%17)-8)*0.01:1, kw=hA?1+(((hA>>>19)%11)-5)*0.01:1;
+      const w=spr.S*r*kw, h=spr.S*r*kh;
       // Ombre au sol (sauf poissons : ils SONT dans l'eau, une tache sous
       // eux se lirait comme un trou dans le lac). Les arbres, plus hauts,
       // en projettent une plus longue et plus marquée que les buissons.
@@ -921,6 +981,7 @@ function drawNodes(){
         groundShadow(sx+w*0.12, sy+h*(tall?0.05:0.03), w*(tall?0.38:0.30), w*(tall?0.17:0.13), tall?0.65:0.5);
       }
       ctx.drawImage(spr.c, Math.round(sx-w/2), Math.round(sy-h*0.78), Math.round(w), Math.round(h));
+      if(n.type===RT.GOLD) eclatsOr(n,sx,sy,w,h);
       // Feuille qui tombe, de temps en temps, d'un arbre À L'ÉCRAN — le
       // filtre hors-champ juste au-dessus fait déjà tout le travail de
       // portée, jamais un balayage à part sur les centaines d'arbres de la

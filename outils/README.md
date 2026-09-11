@@ -40,10 +40,26 @@ sujet) et les poches de fond fermées, qui sortiraient en voile blanc opaque.
   complet de `detourer-planche.py --pockets` plutôt que ce correctif
   ponctuel (voir le commit du 2026-09-08).
 
+  Le seuil de taille de l'audit (0,1 % de la boîte du sujet) est fait pour
+  un bâtiment, vu une fois. Une planche REPÉTÉE à l'écran — l'arbre, le
+  buisson, des centaines d'exemplaires par carte — montre des poches bien
+  plus petites : l'arbre avait deux trous blancs entre ses branches (0,03 %),
+  sous le seuil, visibles dans chaque forêt. `--min=0.02` abaisse le seuil
+  pour ces planches-là (appliqué le 2026-09-11 à `arbre.webp` et
+  `buisson_baies.webp`). Regarder la planche avant : à ce seuil, un reflet
+  blanc voulu passerait aussi.
+
   ```bash
   python outils/comble-poches-livrees.py --dry assets/batiments/*.webp assets/unites/*.webp   # aperçu
   python outils/comble-poches-livrees.py assets/batiments/mur_mongols.webp                     # applique
+  python outils/comble-poches-livrees.py --min=0.02 assets/ressources/arbre.webp              # planche répétée
   ```
+
+  Le jeu lui-même, depuis le 2026-09-11, **défrange** le bord de chaque
+  planche au chargement (`defrangerBord`, js/05-sprites.js) : la couronne
+  délavée de blanc qu'une planche peinte sur fond blanc garde tout autour de
+  son sujet disparaît, le bord devient anticrénelé. Ça ne comble PAS une
+  poche fermée — seul ce script le fait.
 
 - `reboucher-transparence.py` — remplace le RGB caché sous les pixels déjà
   transparents d'une planche livrée par la couleur du pixel opaque le plus

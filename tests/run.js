@@ -629,6 +629,19 @@ groupe('combat', () => {
     egal(tc.hitFlash, 0, 'éclair d\'impact du Centre Ville');
   });
 
+  test('des textes flottants nés au même point s\'empilent au lieu de se couvrir', () => {
+    // Une charge qui abat quatre pillards d'un coup faisait naître quatre
+    // « +4 💰 » au même pixel.
+    const j = partie(charger(), { graine: 4242 });
+    j.G.ftexts.length = 0;
+    for (let i = 0; i < 4; i++) j.addFText(1000, 1000, '+4 💰', '#f1c40f');
+    const ys = j.G.ftexts.map((f) => Math.round(f.y));
+    egal(new Set(ys).size, 4, `ordonnées confondues : ${ys.join(', ')}`);
+    // Un texte loin des autres, lui, naît à sa place.
+    j.addFText(2000, 1000, '-5', '#ff5544');
+    egal(j.G.ftexts[4].y, 1000, 'un texte isolé a été décalé');
+  });
+
   test('le triangle de contres tient', () => {
     // Joue chaque affrontement sous TROIS graines d'aléa et exige la
     // majorité. La simulation utilise Math.random en pleine boucle (ciblage

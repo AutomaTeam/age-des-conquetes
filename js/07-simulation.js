@@ -2161,8 +2161,18 @@ function spawnParts(x,y,col,n){
   }
 }
 
+// Les textes nés au même endroit dans le même instant s'EMPILENT au lieu de
+// se superposer : une charge de chevaliers qui abat quatre pillards faisait
+// naître quatre « +4 💰 » exactement au même point, une bouillie dorée
+// illisible. Chaque texte encore frais (moins d'un tiers de vie écoulée) à
+// moins d'une case monte le nouveau d'une ligne. Aucun tirage aléatoire :
+// les textes flottants ne voyagent pas et ne touchent pas la simulation.
 function addFText(x,y,txt,col){
-  G.ftexts.push({x,y,txt,col,life:1});
+  let n=0;
+  for(const ft of G.ftexts){
+    if(ft.life>0.66&&Math.abs(ft.x-x)<BASE_TILE*0.8&&Math.abs(ft.y0-y)<14) n++;
+  }
+  G.ftexts.push({x:x+(n%2?7:-7)*(n?1:0),y:y-n*13,y0:y,txt,col,life:1});
 }
 
 function updateWaves(dt){

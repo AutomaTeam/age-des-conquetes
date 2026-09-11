@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**239 tests, 16 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**243 tests, 17 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -89,6 +89,20 @@ qui **ne se voit pas** :
   sa défaite. La boucle d'élimination envoie maintenant le bilan dès qu'un
   joueur HUMAIN (jamais l'IA — bruit réseau inutile, elle n'a pas de
   succès) tombe, sans attendre l'hôte.
+  **2026-09-11 — la fin de partie à deux, par le VRAI transport.** Les
+  tests de delta faisaient passer les messages à la main ; ces quatre-là
+  branchent `RESEAU.envoi` et livrent au client par `recevoirReseau`, donc
+  seul ce que le code envoie LUI-MÊME arrive. Trois défauts, tous
+  reproduits avant correction : (1) l'hôte éliminé en coop arrêtait la
+  simulation et fermait la session alors que son allié jouait encore —
+  l'invité était figé, puis « l'hôte a quitté » ; il reste désormais
+  SPECTATEUR (`partieContinuePourUnAutre`, `majSpectateurHote`) ; (2) la
+  chute du dernier Centre Ville et l'écran de fin se jouent dans le même
+  `update()`, et la session se fermait avant que le delta portant `v:1`
+  ne parte — l'invité ne voyait jamais sa victoire (`viderDeltaFinal`) ;
+  (3) l'invité éliminé coupe son pouls, et l'hôte prenait ce silence pour
+  une coupure : partie gelée trois minutes (`verifierVeilleReseau` ignore
+  un camp `vaincu`). Prérequis du mode Campagne, jouable à deux.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

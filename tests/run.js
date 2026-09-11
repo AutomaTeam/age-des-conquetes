@@ -3200,12 +3200,12 @@ groupe('delta', () => {
   // Monte une paire hôte/client réellement reliée : même graine, SNAP initial,
   // puis flux de deltas. Le client ne simule JAMAIS (architecture hôte
   // autoritaire) : tout ce qu'il sait vient du réseau.
-  function paireEnLigne({ graine = 4242, vueTotale = true } = {}) {
+  function paireEnLigne({ graine = 4242, vueTotale = true, mode = 'conquest' } = {}) {
     const hote = charger();
     hote.RESEAU.actif = true; hote.RESEAU.role = 'hote';
     hote.RESEAU.adversaire = { id: hote.FAC.P2, nom: 'Invité' };
     hote.RESEAU.tick = 0;
-    partie(hote, { graine });            // initState voit RESEAU.actif → crée P2
+    partie(hote, { graine, mode });      // initState voit RESEAU.actif → crée P2
     ok(!!hote.G.factions[hote.FAC.P2], 'la faction invitée n\'a pas été créée');
 
     // Vision complète pour l'invité : on teste alors la CONVERGENCE du delta,
@@ -3231,7 +3231,7 @@ groupe('delta', () => {
     // tombait pas au même endroit.
     client.RESEAU.actif = true; client.RESEAU.role = 'hote';
     client.RESEAU.adversaire = { id: client.FAC.P2, nom: 'Invité' };
-    partie(client, { graine });
+    partie(client, { graine, mode });
     client.G.me = client.FAC.P2; client.G.hote = false;
     if (vueTotale) hote.voirTout();
     client.appliquerSnap(JSON.parse(JSON.stringify(hote.construireSnap())));
@@ -4007,6 +4007,78 @@ groupe('delta', () => {
     egalJSON(d, JSON.parse(JSON.stringify(d)), 'delta non sérialisable');
     const taille = JSON.stringify(d).length;
     ok(taille < 20000, `delta de ${taille} octets : la compression différentielle a-t-elle sauté ?`);
+  });
+
+  // ══ FIN DE PARTIE À DEUX ══════════════════════════
+  // Jusqu'ici, rien ne testait une fin de partie EN LIGNE autrement qu'en
+  // solo : la paire ci-dessus fait passer les deltas à la main, sans jamais
+  // emprunter le transport. Or c'est précisément là que la fin cassait —
+  // l'écran de fin de l'hôte refermait la session avant que le dernier état
+  // ne parte. On branche donc ici le VRAI transport (RESEAU.envoi), et le
+  // client reçoit par recevoirReseau, comme en jeu : seul ce que le code
+  // envoie lui-même arrive de l'autre côté.
+  function brancherTransport(hote, client) {
+    const file = [];
+    hote.RESEAU.envoi = (m) => { file.push(JSON.parse(JSON.stringify(m))); return true; };
+    hote.RESEAU.pret = true;
+    client.RESEAU.role = 'client'; client.RESEAU.pret = true;
+    client.RESEAU.envoi = () => true;
+    const livrer = () => { while (file.length) client.recevoirReseau(file.shift()); };
+    return { file, livrer };
+  }
+  const raserTC = (j, owner) => {
+    for (const b of j.G.buildings.filter((b) => b.owner === owner && b.type === j.BT.TC)) b.hp = 0;
+  };
+
+  test("coop : l'hôte éliminé ne fige pas la partie de son allié encore debout", () => {
+    const { hote, client } = paireEnLigne({ mode: 'coop2v1' });
+    brancherTransport(hote, client);
+    raserTC(hote, hote.FAC.P1);
+    for (let k = 0; k < 120 && !hote.G.gameOver; k++) hote.update(hote.SIM_DT);
+    egal(hote.G.gameOver, true, "l'hôte n'a pas constaté sa propre élimination");
+    egal(hote.G.factions[hote.FAC.P2].vaincu, false, "l'allié invité a été éliminé avec l'hôte");
+    // L'hôte est le SEUL à simuler : s'il s'arrête, l'invité est figé, puis
+    // reçoit « l'hôte a quitté » trois minutes plus tard.
+    egal(hote.G.running, true, "la simulation s'est arrêtée alors que l'allié joue encore");
+    egal(hote.RESEAU.actif, true, "la session réseau a été fermée alors que l'allié joue encore");
+  });
+
+  test("coop : le dernier état part avant la fermeture — l'invité voit la victoire de son équipe", () => {
+    const { hote, client, tourner } = paireEnLigne({ mode: 'coop2v1' });
+    const { livrer } = brancherTransport(hote, client);
+    raserTC(hote, hote.FAC.IA);
+    for (let k = 0; k < 120 && !hote.G.victory; k++) hote.update(hote.SIM_DT);
+    egal(hote.G.victory, true, "l'hôte n'a pas constaté la victoire de l'équipe");
+    livrer(); tourner(1);
+    egal(client.G.factions[client.FAC.IA].vaincu, true, "l'élimination du rival n'est jamais parvenue à l'invité");
+    egal(client.G.victory, true, "l'invité n'a jamais vu la victoire de son équipe");
+  });
+
+  test("coop : l'invité éliminé ne met pas l'hôte en attente de reconnexion", () => {
+    const { hote, client } = paireEnLigne({ mode: 'coop2v1' });
+    brancherTransport(hote, client);
+    raserTC(hote, hote.FAC.P2);
+    for (let k = 0; k < 120 && !hote.G.factions[hote.FAC.P2].vaincu; k++) hote.update(hote.SIM_DT);
+    egal(hote.G.factions[hote.FAC.P2].vaincu, true, "l'invité n'a pas été éliminé");
+    // L'invité éliminé affiche son écran de fin et coupe son pouls : c'est un
+    // départ LÉGITIME, pas une coupure. Dix secondes de silence ensuite…
+    hote.RESEAU.dernierRecu = Date.now() - 10000;
+    hote.verifierVeilleReseau();
+    egal(hote.RESEAU.enAttenteReconnexion, false, "l'hôte attend la reconnexion d'un joueur éliminé");
+    egal(hote.G.paused, false, "la partie de l'hôte est gelée par le départ d'un joueur éliminé");
+  });
+
+  test("coop : l'hôte éliminé en spectateur ferme la session quand son allié l'emporte", () => {
+    const { hote, client, tourner } = paireEnLigne({ mode: 'coop2v1' });
+    const { livrer } = brancherTransport(hote, client);
+    raserTC(hote, hote.FAC.P1);
+    for (let k = 0; k < 120 && !hote.G.gameOver; k++) hote.update(hote.SIM_DT);
+    raserTC(hote, hote.FAC.IA);
+    for (let k = 0; k < 120 && hote.RESEAU.actif; k++) hote.update(hote.SIM_DT);
+    egal(hote.RESEAU.actif, false, "l'hôte spectateur garde la session ouverte après la fin réelle de la partie");
+    egal(hote.G.running, false, "l'hôte spectateur simule encore après la fin réelle de la partie");
+    livrer(); tourner(1);
+    egal(client.G.victory, true, "l'allié resté seul n'a jamais vu sa victoire");
   });
 });
 

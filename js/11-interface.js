@@ -2141,6 +2141,7 @@ function soumettreClassement(won){
 // ── VICTOIRE ──────────────────────────────────────────────
 function showVictory(){
   G.running=false;
+  viderDeltaFinal();   // AVANT le bilan et la fermeture : voir viderDeltaFinal
   envoyerBilanReseau();
   arreterVeilleReseau();
   const fresh=finishGame(true);
@@ -2183,9 +2184,14 @@ window.continuePlay=continuePlay;
 
 // ── GAME OVER ─────────────────────────────────────────────
 function showGameOver(){
-  G.running=false;
+  // Hôte éliminé alors qu'un autre joueur est encore en lice : il devient
+  // spectateur, sa simulation et le flux réseau continuent (voir
+  // partieContinuePourUnAutre, js/12-reseau.js) — majSpectateurHote fermera
+  // la session quand la partie sera finie pour tout le monde.
+  const spectateur=partieContinuePourUnAutre();
+  if(spectateur) G.spectateur=true;
+  else { G.running=false; viderDeltaFinal(); arreterVeilleReseau(); }
   envoyerBilanReseau();
-  arreterVeilleReseau();
   const fresh=finishGame(false);
   const gagnantMerveille=factionsJouantes().find(f=>f.merveilleAchevee&&f.id!==G.me);
   const cause=gagnantMerveille
@@ -2203,10 +2209,12 @@ function showGameOver(){
     ${statsBlock()}
     ${bilanDeuxColonnes()}
     ${freshAchBlock(fresh)}
+    ${spectateur?`<p class="lore" id="spectateur-note">Un autre joueur est encore en lice : la partie continue sur cette page. La quitter mettrait fin à la sienne.</p>
+    <button class="bigbtn" id="spectateur-btn" onclick="observerFinDePartie()">👁️ Observer la suite</button>`:''}
     <button class="bigbtn" onclick="location.reload()">🔄 Recommencer</button>
     <button class="bigbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Voir tous les succès</button>
   `;
-  quitterSessionReseau(); // le bilan est rendu : plus rien a echanger
+  if(!spectateur) quitterSessionReseau(); // le bilan est rendu : plus rien a echanger
 }
 
 // ── VITESSE DE JEU ────────────────────────────────────────

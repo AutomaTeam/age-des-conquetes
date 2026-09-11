@@ -66,8 +66,9 @@ qui survit à une population qui grossit). Voir
 ## Écran-titre
 
 Le premier choix est **Solo**, **Multijoueur** ou **Campagne** : trois
-onglets, avant tout réglage. Chacun n'affiche que ses modes et **un seul** bouton de lancement,
-pour qu'on ne puisse plus se demander lequel va avec quoi.
+onglets, avant tout réglage. Chacun n'affiche que ses modes et **un seul**
+bouton de lancement, pour qu'on ne puisse plus se demander lequel va avec
+quoi.
 
 | | Modes proposés | Bouton |
 |---|---|---|
@@ -79,8 +80,8 @@ Une mission impose sa carte, sa graine et les civilisations ; seule la
 difficulté se choisit, sur son briefing. Les missions s'ouvrent l'une après
 l'autre (la précédente gagnée, à n'importe quelle difficulté) et la
 progression — meilleure difficulté, étoiles, meilleur temps — vit dans le
-profil, fusionnée mission par mission avec Drive. Voir 
-(moteur et interface) et  (contenu).
+profil, fusionnée mission par mission avec Drive. Voir `js/15-campagne.js`
+(moteur et interface) et `js/16-missions.js` (contenu).
 
 Ce filtrage n'est pas cosmétique : il traduit l'existence d'une condition de
 victoire (drapeaux `solo`/`multi` de la table `MODES`).

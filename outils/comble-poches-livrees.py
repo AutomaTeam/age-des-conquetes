@@ -12,7 +12,8 @@ ete signalees par l'audit, via le meme seuil `MIN_FRAC`).
 
     python outils/comble-poches-livrees.py [--dry] assets/batiments/mur_mongols.webp [...]
 
-`--dry` liste ce qui serait change sans rien ecrire.
+`--dry` liste ce qui serait change sans rien ecrire. `--min=0.02` abaisse le
+seuil de taille (voir plus bas) pour une planche repetee a l'ecran.
 
 Un pixel deja transparent (alpha<128) compte comme fond deja correctement
 detoure -- on ne touche donc jamais le contour legitime du sujet, seulement
@@ -83,10 +84,19 @@ def fix(path, dry=False, min_frac=MIN_FRAC):
 
 if __name__ == '__main__':
     dry = '--dry' in sys.argv
+    # --min=0.02 : seuil abaisse pour les planches REPETEES a l'ecran (arbre,
+    # buisson : des centaines d'exemplaires sur une carte). Une poche de 0,03 %
+    # de la boite passe inapercue sur un batiment unique, pas quand elle
+    # clignote blanc entre les branches de chaque arbre de la foret. Voir le
+    # passage du 2026-09-11 (arbre.webp, buisson_baies.webp).
+    min_frac = MIN_FRAC
+    for a in sys.argv[1:]:
+        if a.startswith('--min='):
+            min_frac = float(a[6:])
     paths = [p for p in sys.argv[1:] if not p.startswith('--')]
     total = 0
     for p in paths:
-        n = fix(p, dry=dry)
+        n = fix(p, dry=dry, min_frac=min_frac)
         if n:
             total += 1
             print(('[dry] ' if dry else '') + '%-55s %d pixels de poche combles' % (p, n))

@@ -837,6 +837,32 @@ groupe('combat', () => {
 
 // ════════════════════════════════════════════════════════════
 groupe('civilisations', () => {
+  test('le bord détouré perd sa couronne blanche sans ronger un sujet clair', () => {
+    // Toutes les illustrations passent par defrangerBord (voir
+    // computeStripBgTrimmed). Deux sujets sur une image 12×12 : un carré
+    // VERT dont la première rangée est délavée de blanc à 50 % (la couronne
+    // que laisse la réduction d'une planche peinte sur blanc), et un carré
+    // GRIS CLAIR (un mur chaulé) qui doit rester strictement intact.
+    const j = charger();
+    const W = 12, H = 12, d = new Uint8ClampedArray(W * H * 4), st = new Uint8Array(W * H);
+    const px = (x, y, r, g, b) => { const q = (y * W + x) * 4; d[q] = r; d[q + 1] = g; d[q + 2] = b; d[q + 3] = 255; };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { px(x, y, 255, 255, 255); st[y * W + x] = 2; }
+    for (let y = 3; y < 9; y++) for (let x = 1; x < 6; x++) { px(x, y, 40, 110, 30); st[y * W + x] = 0; }
+    for (let x = 1; x < 6; x++) px(x, 3, 148, 182, 142);   // 50 % vert + 50 % blanc
+    for (let y = 3; y < 9; y++) for (let x = 7; x < 11; x++) { px(x, y, 205, 205, 200); st[y * W + x] = 0; }
+    const avant = Array.from(d);
+    j.defrangerBord(d, st, W, H);
+    const q = (3 * W + 3) * 4;
+    ok(d[q + 1] < 130 && d[q] < 70, `la couronne reste délavée : ${d[q]},${d[q + 1]},${d[q + 2]}`);
+    ok(d[q + 3] > 90 && d[q + 3] < 170, `alpha de couronne attendu vers 128 : ${d[q + 3]}`);
+    const c = (5 * W + 3) * 4;
+    egalJSON(Array.from(d.slice(c, c + 4)), avant.slice(c, c + 4), 'le cœur du sujet a été retouché');
+    for (let y = 3; y < 9; y++) for (let x = 7; x < 11; x++) {
+      const m = (y * W + x) * 4;
+      egalJSON(Array.from(d.slice(m, m + 4)), avant.slice(m, m + 4), `le mur clair a été rongé en ${x},${y}`);
+    }
+  });
+
   // L'invité d'une partie en ligne choisit désormais SA civilisation : elle
   // remonte du salon dans RESEAU.adversaire.civ, et l'hôte — seul à créer
   // l'état de partie — la pose sur FAC.P2. Auparavant il lui en imposait une,

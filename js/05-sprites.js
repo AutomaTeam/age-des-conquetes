@@ -2411,10 +2411,37 @@ function upgradeResourceNodes(){
         const meta=arr[i]; if(!meta) continue;
         if(meta.c.width!==fittedS){ fitted=fitNodeImage(url,meta.c.width,gf); fittedS=meta.c.width; }
         if(!fitted) return;
-        arr[i]=Object.assign({},meta,fitted);
+        arr[i]=Object.assign({},meta,type==='tree'?teinterFeuillage(fitted,i):fitted);
       }
     });
   }
+}
+
+// ── FORÊTS : UNE ILLUSTRATION, CINQ FEUILLAGES ────────────────────────
+// Les cinq palettes procédurales de buildTrees (chêne, frêne, vert profond,
+// olivier, conifère) disparaissent dès que l'illustration d'arbre est
+// chargée : les cinq variantes reçoivent la MÊME planche. Une forêt entière
+// devenait un bosquet de clones, le même chêne au même vert répété cent fois.
+//
+// Chaque variante reçoit ici un lavis de couleur léger, contraint à la
+// silhouette (source-atop, comme damagedSprite) : vert plus profond, olive
+// ensoleillé, vert froid, pointe d'automne. Le tronc en prend un peu aussi ;
+// à cette opacité il reste brun. Pas de MIROIR, qui aurait été le moyen le
+// plus simple de varier la silhouette : la planche est éclairée en haut à
+// gauche, comme tout le décor, et un arbre retourné aurait eu le soleil de
+// l'autre côté de son ombre portée. La silhouette varie par l'échelle (voir
+// drawNodes), pas par la symétrie.
+const LAVIS_FEUILLAGE=[null,'rgba(22,58,16,.20)','rgba(168,156,48,.14)','rgba(14,48,58,.20)','rgba(196,118,36,.12)'];
+function teinterFeuillage(fitted,i){
+  const lavis=LAVIS_FEUILLAGE[i%LAVIS_FEUILLAGE.length];
+  if(!lavis) return fitted;
+  const{c,cx}=offCanvas(fitted.c.width,fitted.c.height);
+  cx.drawImage(fitted.c,0,0);
+  cx.globalCompositeOperation='source-atop';
+  cx.fillStyle=lavis;
+  cx.fillRect(0,0,c.width,c.height);
+  cx.globalCompositeOperation='source-over';
+  return{c,cx};
 }
 
 // ── SURCOUCHE : faune sauvage illustrée (Cerf, Sanglier) ──────────────
@@ -3479,6 +3506,95 @@ function stripBgTrimmed(src,W,cle){
   return res;
 }
 
+// ── DÉFRANGEAGE DU BORD DÉTOURÉ ───────────────────────────────
+// Le flood fill ci-dessous ne retire que le fond FRANC (>230 sur les trois
+// composantes). Or une planche est peinte sur du blanc, et sa réduction à la
+// résolution de travail fond le sujet dans ce blanc sur un pixel de large :
+// la couronne de pixels qui borde le sujet n'est ni du fond (trop sombre pour
+// le seuil) ni du sujet (délavée de blanc). Elle restait opaque. Mesuré sur
+// l'arbre : 340 des 890 pixels de bord avaient leur composante la plus
+// sombre au-dessus de 160 — un arbre vert cerné de crème. En jeu, un liseré
+// clair en pointillé autour de CHAQUE illustration, arbres, mines, bâtiments
+// et unités, visible sur l'herbe sombre dès le zoom intermédiaire.
+//
+// On inverse le mélange au lieu d'éroder. Pour chaque pixel des deux
+// premiers anneaux, on prend la couleur du sujet juste derrière lui (moyenne
+// des voisins intérieurs, qui ne touchent pas le fond) : F. Le pixel observé
+// vaut C = a·F + (1-a)·blanc, d'où a = (255-C)/(255-F) composante par
+// composante. Le pixel reprend la couleur F avec l'opacité a : le blanc
+// disparaît et le bord devient enfin ANTICRÉNELÉ (l'alpha était tout ou rien).
+//
+// Garde-fous : une composante où le sujet est lui-même presque blanc
+// (255-F < 28) ne dit rien sur a et n'est pas utilisée ; si aucune ne l'est
+// — une pierre claire, un mur chaulé —, le pixel est laissé tel quel. Un
+// pixel qui n'a aucun voisin intérieur (trait d'un pixel de large) aussi.
+//
+// Ne change pas QUELS pixels sont du fond : les outils d'audit du dépôt
+// (outils/audit-detourage.py), qui simulent le flood fill, restent justes.
+function defrangerBord(d,st,W,H){
+  const N=W*H, anneau=new Uint8Array(N);
+  // Est « fond » ce que le flood fill a retiré, mais AUSSI ce qui était déjà
+  // transparent dans le fichier : la plupart des planches livrées sont
+  // détourées d'avance (outils/detourer-planche.py), avec un alpha tout ou
+  // rien et la même couronne délavée — le flood fill n'y trouve rien à faire.
+  // Codé dans `anneau` : 255 = fond, 1 et 2 = anneaux, 0 = intérieur. Les
+  // anneaux sont aussi notés en LISTES d'indices : la correction ne reparcourt
+  // pas l'image entière, seulement le bord (quelques pour cent des pixels).
+  // Détourer une planche de bâtiment coûte ainsi quelques ms de plus, pas le
+  // double — elle se fait au chargement, pendant que la partie tourne.
+  for(let i=0;i<N;i++) if(st[i]===2||d[i*4+3]<8) anneau[i]=255;
+  const a1=[], a2=[];
+  // Anneau 1 : sujet au contact (4-voisinage) du fond.
+  for(let y=0;y<H;y++){
+    const l=y*W;
+    for(let x=0;x<W;x++){
+      const i=l+x;
+      if(anneau[i]) continue;
+      if((x>0&&anneau[i-1]===255)||(x<W-1&&anneau[i+1]===255)||(y>0&&anneau[i-W]===255)||(y<H-1&&anneau[i+W]===255)){
+        anneau[i]=1; a1.push(i);
+      }
+    }
+  }
+  // Anneau 2 : au contact de l'anneau 1. La réduction de la planche étale le
+  // mélange sur un peu plus d'un pixel.
+  for(const i of a1){
+    const x=i%W;
+    for(const j of [x>0?i-1:-1, x<W-1?i+1:-1, i-W, i+W]){
+      if(j<0||j>=N||anneau[j]) continue;
+      anneau[j]=2; a2.push(j);
+    }
+  }
+  // L'anneau 2 ne lit que l'intérieur, intact. L'anneau 1 passe ensuite et
+  // lit l'intérieur ET l'anneau 2 déjà corrigé — qui porte alors la couleur
+  // du sujet, pas le blanc : c'est ce qui donne une référence aux traits trop
+  // fins pour avoir un intérieur.
+  const corriger=(liste,niveau)=>{
+    for(const i of liste){
+      const x=i%W, y=(i/W)|0;
+      // Couleur du sujet : voisins (rayon 2) plus profonds que ce pixel.
+      let r=0,g=0,b=0,n=0;
+      for(let yy=Math.max(0,y-2);yy<=Math.min(H-1,y+2);yy++)
+        for(let xx=Math.max(0,x-2);xx<=Math.min(W-1,x+2);xx++){
+          const j=yy*W+xx, k=anneau[j];
+          if(k===255||(k&&k<=niveau)) continue;
+          const q=j*4; r+=d[q]; g+=d[q+1]; b+=d[q+2]; n++;
+        }
+      if(!n) continue;
+      r/=n; g/=n; b/=n;
+      const q=i*4;
+      let somme=0, poids=0, den;
+      if((den=255-r)>=28){ somme+=Math.min(1,Math.max(0,(255-d[q])/den))*den; poids+=den; }
+      if((den=255-g)>=28){ somme+=Math.min(1,Math.max(0,(255-d[q+1])/den))*den; poids+=den; }
+      if((den=255-b)>=28){ somme+=Math.min(1,Math.max(0,(255-d[q+2])/den))*den; poids+=den; }
+      if(!poids) continue;
+      const a=somme/poids;
+      if(a>0.96) continue;          // déjà franc : rien à gagner
+      d[q]=r; d[q+1]=g; d[q+2]=b; d[q+3]=Math.round(a*d[q+3]);
+    }
+  };
+  corriger(a2,2); corriger(a1,1);
+}
+
 function computeStripBgTrimmed(img,W){
   const H=Math.max(1,Math.round(W*img.height/img.width));
   const{c:wc,cx:wcx}=offCanvas(W,H);
@@ -3519,6 +3635,7 @@ function computeStripBgTrimmed(img,W){
     if(i>=W    && st[i-W]===1){ st[i-W]=2; stack[sp++]=i-W; }
     if(i+W<N   && st[i+W]===1){ st[i+W]=2; stack[sp++]=i+W; }
   }
+  defrangerBord(d,st,W,H);
   wcx.putImageData(id,0,0);
   let minX=W,minY=H,maxX=-1,maxY=-1;
   for(let y=0;y<H;y++){

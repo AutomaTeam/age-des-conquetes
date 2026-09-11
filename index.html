@@ -450,14 +450,21 @@ html,body { width:100%;height:100%;overflow:hidden;background:var(--bg);touch-ac
 .nmsg {
   background:rgba(20,12,0,.94);border:1px solid var(--gold-d);border-radius:20px;
   font-family:'Cinzel',serif;font-size:11px;padding:4px 14px;text-align:center;
-  animation:nfade 2.8s forwards;white-space:nowrap;
+  animation:nfade 2.8s forwards;
+  /* Le toast était en nowrap dans une colonne de 260 px à overflow:hidden :
+     tout message de plus d'une trentaine de caractères — « Seigneur rival
+     lance tout ce qu'il a sur la Merveille ! », la moitié des alertes — sortait
+     de sa pastille ET de la colonne, tronqué des deux côtés puisque centré.
+     Il revient désormais à la ligne, lignes équilibrées : un message court
+     reste une pastille d'une ligne, un long en fait deux, lisibles en entier. */
+  max-width:100%;box-sizing:border-box;white-space:normal;text-wrap:balance;line-height:1.35;
   /* #notif est pointer-events:none (pour ne jamais bloquer un clic sur la
      carte derrière un toast) ; chaque toast le réactive pour lui, ce qui
      permet à l'alerte d'attaque (voir alertAttack) d'être réellement
      cliquable — elle le promettait ("toucher pour voir") sans l'être. */
   pointer-events:auto;
 }
-.nmsg.wide { white-space:normal;max-width:252px;border-radius:12px;line-height:1.5;padding:6px 14px; }
+.nmsg.wide { max-width:252px;border-radius:12px;line-height:1.5;padding:6px 14px; }
 @keyframes nfade { 0%{opacity:0;transform:translateY(6px)} 12%{opacity:1;transform:none} 75%{opacity:1} 100%{opacity:0;transform:translateY(-8px)} }
 
 /* ── OVERLAY (écran-titre) ──

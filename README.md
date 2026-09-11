@@ -53,7 +53,7 @@ préservent.
 node tests/run.js
 ```
 
-259 tests, 18 groupes, ~45 s, sans dépendance ni build — comme le jeu. Ils
+267 tests, 18 groupes, ~45 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, le fait
@@ -65,14 +65,23 @@ qui survit à une population qui grossit). Voir
 
 ## Écran-titre
 
-Le premier choix est **Solo** ou **Multijoueur** : deux onglets, avant tout
-réglage. Chacun n'affiche que ses modes et **un seul** bouton de lancement,
-pour qu'on ne puisse plus se demander lequel va avec quoi.
+Le premier choix est **Solo**, **Multijoueur** ou **Campagne** : trois
+onglets, avant tout réglage. Chacun n'affiche que ses modes et **un seul**
+bouton de lancement, pour qu'on ne puisse plus se demander lequel va avec
+quoi.
 
 | | Modes proposés | Bouton |
 |---|---|---|
 | 🎮 **Solo** | Survie · Conquête · 2 rivaux | ⚔️ *Commencer la partie* |
 | 👥 **Multijoueur** | Conquête · 2 rivaux · 2v1 Coop | 👥 *Jouer avec un ami* |
+| 📜 **Campagne** | les campagnes qui ont des missions (Francs pour l'instant) | ⚔️ *Jouer seul*, sur le briefing de la mission |
+
+Une mission impose sa carte, sa graine et les civilisations ; seule la
+difficulté se choisit, sur son briefing. Les missions s'ouvrent l'une après
+l'autre (la précédente gagnée, à n'importe quelle difficulté) et la
+progression — meilleure difficulté, étoiles, meilleur temps — vit dans le
+profil, fusionnée mission par mission avec Drive. Voir `js/15-campagne.js`
+(moteur et interface) et `js/16-missions.js` (contenu).
 
 Ce filtrage n'est pas cosmétique : il traduit l'existence d'une condition de
 victoire (drapeaux `solo`/`multi` de la table `MODES`).

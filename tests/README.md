@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**259 tests, 18 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**267 tests, 18 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -114,7 +114,13 @@ qui **ne se voit pas** :
   victoire ; une fermeture de scénariste qui lève perd son déclencheur, pas
   la partie ; et le test de FORMAT relit chaque mission et chaque campagne
   (zones dans la carte, orateurs déclarés, au moins un principal
-  remplissable).
+  remplissable). Depuis l'interface (lot L2) : la progression se FUSIONNE
+  mission par mission (meilleure difficulté, plus d'étoiles, meilleur temps,
+  chacun indépendamment), une défaite n'ouvre rien, « Mission suivante »
+  n'apparaît que s'il y en a une, l'onglet ne montre que les campagnes qui
+  ont des missions, et Herstal (mission 1 des Francs) garde des gués ouverts
+  et un chemin du village à chaque camp — vérifié par un parcours en largeur
+  sur bmap, pas à l'œil.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

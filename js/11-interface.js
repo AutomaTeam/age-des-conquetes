@@ -1530,7 +1530,9 @@ function bigBanner(txt){
 // reste acquise même après une défaite, un rechargement ou un changement de
 // difficulté.
 const PROFILE_KEY='adc_profile_v1';
-let PROFILE={ unlocked:[], games:0, wins:0, bestWave:0 };
+// `campagne` : une entrée par mission GAGNÉE au moins une fois — voir
+// fusionProgressionMission (js/15-campagne.js) pour la règle de fusion.
+let PROFILE={ unlocked:[], games:0, wins:0, bestWave:0, campagne:{} };
 // Chargement initial : storageLoad() suit déjà la même cascade Drive → Canvas
 // → localStorage que la sauvegarde de partie (voir plus bas dans le fichier),
 // mais tant que le joueur ne s'est pas connecté à Google (cas du tout premier
@@ -1542,7 +1544,8 @@ async function loadProfile(){
     const p=await storageLoad(PROFILE_KEY);
     if(p){
       PROFILE={ unlocked:Array.isArray(p.unlocked)?p.unlocked:[],
-                games:p.games||0, wins:p.wins||0, bestWave:p.bestWave||0 };
+                games:p.games||0, wins:p.wins||0, bestWave:p.bestWave||0,
+                campagne:(p.campagne&&typeof p.campagne==='object')?p.campagne:{} };
     }
   }catch(e){}
 }
@@ -1575,6 +1578,10 @@ async function syncProfilAvecDrive(){
         games:Math.max(PROFILE.games||0, cloud.games||0),
         wins:Math.max(PROFILE.wins||0, cloud.wins||0),
         bestWave:Math.max(PROFILE.bestWave||0, cloud.bestWave||0),
+        // Mission par mission, jamais en bloc : une mission gagnée sur le
+        // téléphone et une autre sur l'ordinateur doivent TOUTES DEUX rester
+        // acquises, chacune avec son meilleur résultat.
+        campagne:fusionProgression(PROFILE.campagne, cloud.campagne),
       };
       refreshAchCount();
       if(document.getElementById('achpanel').style.display==='flex') openAch();
@@ -1664,6 +1671,9 @@ function achToast(a){
 }
 
 function refreshAchCount(){
+  // Appelée à chaque (re)chargement du profil : la progression de campagne
+  // affichée doit suivre, elle aussi (voir rafraichirCampagne).
+  if(typeof rafraichirCampagne==='function') rafraichirCampagne();
   const txt=`${PROFILE.unlocked.length}/${ACH.length}`;
   for(const id of ['achcount','achcount2']){
     const el=document.getElementById(id);
@@ -2107,6 +2117,7 @@ function finishGame(won){
   effacerRejoinEnLigne();
   PROFILE.games++;
   if(won) PROFILE.wins++;
+  if(won&&G.mission) enregistrerVictoireMission();
   PROFILE.bestWave=Math.max(PROFILE.bestWave,G.wave||0);
   saveProfile();
   soumettreClassement(won);
@@ -2163,12 +2174,12 @@ function showVictory(){
   ov.innerHTML=`
     <div style="font-size:52px">👑</div>
     <h1>Victoire !</h1>
-    <p>${exploit}<br>Âge atteint : <strong>${AGES[G.age].nom}</strong> · ${MODES[G.gmode].ico} ${MODES[G.gmode].nom} · ${DIFFS[G.difficulty].ico} ${DIFFS[G.difficulty].nom}</p>
+    <p>${exploit}<br>Âge atteint : <strong>${AGES[G.age].nom}</strong> · ${G.mission&&missionCourante()?'📜 '+echapHTML(missionCourante().titre):MODES[G.gmode].ico+' '+MODES[G.gmode].nom} · ${DIFFS[G.difficulty].ico} ${DIFFS[G.difficulty].nom}</p>
     <p class="lore">Durée de la partie : ${fmtDuration(G.gameTime)}</p>
     ${statsBlock()}
     ${bilanDeuxColonnes()}
     ${freshAchBlock(fresh)}
-    <button class="bigbtn" onclick="location.reload()">🔄 Nouvelle partie</button>
+    ${G.mission?boutonsFinMission('victoire'):`<button class="bigbtn" onclick="location.reload()">🔄 Nouvelle partie</button>`}
     ${G.gmode!=='survival'?'':`<button class="bigbtn" id="contBtn" style="background:linear-gradient(180deg,#1a4a2a,#0d2a18);color:#2ecc71;border:2px solid #2ecc71;" onclick="continuePlay()">⚔️ Continuer (sans fin)</button>`}
     <button class="bigbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Voir tous les succès</button>
   `;
@@ -2211,14 +2222,14 @@ function showGameOver(){
   document.getElementById('overlay').innerHTML=`
     <div style="font-size:48px">💀</div>
     <h1>Défaite !</h1>
-    <p>${cause}<br>Âge atteint : <strong>${AGES[G.age].nom}</strong> · ${MODES[G.gmode].ico} ${MODES[G.gmode].nom} · ${DIFFS[G.difficulty].ico} ${DIFFS[G.difficulty].nom}</p>
+    <p>${cause}<br>Âge atteint : <strong>${AGES[G.age].nom}</strong> · ${G.mission&&missionCourante()?'📜 '+echapHTML(missionCourante().titre):MODES[G.gmode].ico+' '+MODES[G.gmode].nom} · ${DIFFS[G.difficulty].ico} ${DIFFS[G.difficulty].nom}</p>
     <p class="lore">Durée de la partie : ${fmtDuration(G.gameTime)}</p>
     ${statsBlock()}
     ${bilanDeuxColonnes()}
     ${freshAchBlock(fresh)}
     ${spectateur?`<p class="lore" id="spectateur-note">Un autre joueur est encore en lice : la partie continue sur cette page. La quitter mettrait fin à la sienne.</p>
     <button class="bigbtn" id="spectateur-btn" onclick="observerFinDePartie()">👁️ Observer la suite</button>`:''}
-    <button class="bigbtn" onclick="location.reload()">🔄 Recommencer</button>
+    ${G.mission?boutonsFinMission('defaite'):`<button class="bigbtn" onclick="location.reload()">🔄 Recommencer</button>`}
     <button class="bigbtn" onclick="openAch()" style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;">🏆 Voir tous les succès</button>
   `;
   if(!spectateur) quitterSessionReseau(); // le bilan est rendu : plus rien a echanger

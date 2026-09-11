@@ -105,6 +105,8 @@ const EXPORTS = [
   'CAMPAGNES', 'MISSIONS', 'lancerMission', 'choisirMission', 'missionCourante', 'zoneMission', 'SCN_API',
   'majScenario', 'finMission', 'installerMission', 'initScenario', 'aiTune', 'AI_TUNE',
   'texteFinMission', 'facMission', 'loadGame', 'initAI',
+  'fusionProgression', 'missionDebloquee', 'boutonsFinMission', 'afficherListeCampagnes',
+  'majInterfaceScenario',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

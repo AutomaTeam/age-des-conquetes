@@ -429,6 +429,7 @@ window.addEventListener('keydown',e=>{
       break;
     }
     case 'Backquote':     toggleCheatTerminal(); break;
+    case 'KeyO':          if(!G.mission) return; basculerObjectifs(); break;
     default: return;
   }
   e.preventDefault();

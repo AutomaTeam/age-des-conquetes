@@ -204,7 +204,10 @@ function saveLabel(d){
   const ages=['Sombre','Féodal','Châteaux','Impérial'];
   const jour=dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
   const heure=dt.getHours()+':'+String(dt.getMinutes()).padStart(2,'0');
-  return `Vague ${d.wave} · Âge ${ages[d.age||0]} · ${jour} ${heure}`;
+  // Une mission se reconnaît à son titre, pas à un numéro de vague qu'elle
+  // n'a pas (toujours 0 hors Survie).
+  const quoi=(d.mission&&MISSIONS[d.mission])?`📜 ${MISSIONS[d.mission].titre}`:`Vague ${d.wave}`;
+  return `${quoi} · Âge ${ages[d.age||0]} · ${jour} ${heure}`;
 }
 
 // Affiche l'état des deux emplacements dans le menu pause
@@ -483,6 +486,7 @@ async function loadGame(key=SAVE_KEY){
     // planter sur une clé inconnue.
     G.mission=(data.mission&&MISSIONS[data.mission])?data.mission:null;
     G.scn=G.mission&&data.scn?data.scn:null;
+    if(G.scn) marquerScenarioRepris();   // ses répliques déjà dites ne se rejouent pas
     // Le mode 'mission' n'est sélectionnable qu'à travers une mission (voir
     // MODES) : il ne doit pas rester choisi sur l'écran-titre.
     if(G.gmode!=='mission') selectedMode=G.gmode;
@@ -654,7 +658,7 @@ try{
 // était resté sur 2v1 Coop côté Solo (voir pickPlayTab(), js/01-regles.js).
 try{
   const savedTab=localStorage.getItem('adc_playtab');
-  if(savedTab==='multi') selectedPlayTab='multi';
+  if(savedTab==='multi'||savedTab==='campagne') selectedPlayTab=savedTab;
 }catch(e){}
 try{ pickPlayTab(selectedPlayTab); }catch(e){}
 try{ pickMode(selectedMode); }catch(e){}

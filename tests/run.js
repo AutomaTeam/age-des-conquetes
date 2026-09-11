@@ -5290,6 +5290,140 @@ groupe('campagne', () => {
     ok(/G\.mission\s*=/.test(corps) && /G\.scn\s*=/.test(corps), 'loadGame ne restaure pas la mission');
   });
 
+  // ══ INTERFACE ET PROGRESSION (lot L2) ══════════════════════
+  // Campagne de test à deux missions (des clones de la mission d'essai) :
+  // de quoi vérifier le déblocage sans dépendre du contenu réel.
+  const campagneTest = (j) => {
+    for (const cle of ['essai_a', 'essai_b']) {
+      variante(j, cle, (v) => { v.campagne = 'test'; v.titre = 'Essai ' + cle.slice(-1).toUpperCase(); });
+    }
+    j.CAMPAGNES.test = { nom: 'Campagne de test', heros: 'francs', ico: '🧪', missions: ['essai_a', 'essai_b'] };
+    return j;
+  };
+  // Tous les camps humains de l'équipe du joueur vont d'une case à une autre
+  // (bmap 3 = seul obstacle, voir tileBlocked) : un parcours en largeur suffit.
+  const chemin = (j, a, b) => {
+    const C = j.lire('COLS'), R = j.lire('ROWS');
+    const vu = new Uint8Array(C * R), file = [a.tx + a.ty * C];
+    vu[file[0]] = 1;
+    while (file.length) {
+      const c = file.shift(), x = c % C, y = (c / C) | 0;
+      if (Math.abs(x - b.tx) <= 1 && Math.abs(y - b.ty) <= 1) return true;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy, n = nx + ny * C;
+        if (nx < 0 || ny < 0 || nx >= C || ny >= R || vu[n] || j.G.bmap[ny][nx] === 3) continue;
+        vu[n] = 1; file.push(n);
+      }
+    }
+    return false;
+  };
+
+  test('progression : la fusion garde, mission par mission, la meilleure difficulté, le plus d\'étoiles, le meilleur temps', () => {
+    const j = charger();
+    const a = { essai_a: { v: 1, diff: 'brutal', etoiles: 2, temps: 900 }, essai_b: { v: 1, diff: 'easy', etoiles: 1, temps: 600 } };
+    const b = { essai_a: { v: 1, diff: 'easy', etoiles: 3, temps: 700 }, fr1: { v: 1, diff: 'normal', etoiles: 1, temps: 1200 } };
+    const f = j.fusionProgression(a, b);
+    egalJSON(f.essai_a, { v: 1, diff: 'brutal', etoiles: 3, temps: 700 }, 'fusion d\'une mission présente des deux côtés');
+    ok(f.essai_b && f.fr1, 'une mission présente d\'un seul côté a été perdue à la fusion');
+  });
+
+  test('le profil charge ET fusionne la campagne (les trois endroits où un champ se perd sinon)', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '11-interface.js'), 'utf8');
+    ok(/let PROFILE=\{[^}]*campagne:\{\}/.test(src), 'PROFILE ne déclare pas campagne');
+    const charge = src.slice(src.indexOf('async function loadProfile'), src.indexOf('function saveProfile'));
+    ok(/campagne:/.test(charge), 'loadProfile ne relit pas la campagne : elle disparaît au rechargement');
+    const drive = src.slice(src.indexOf('async function syncProfilAvecDrive'), src.indexOf('async function syncProfilAvecDrive') + 2000);
+    ok(/fusionProgression\(/.test(drive), 'la synchronisation Drive écrase la campagne au lieu de la fusionner');
+  });
+
+  test('gagner une mission l\'inscrit au profil et ouvre la suivante — la perdre, non', () => {
+    const j = campagneTest(charger());
+    j.PROFILE.campagne = {};
+    egal(j.missionDebloquee('essai_a'), true, 'la première mission est fermée');
+    egal(j.missionDebloquee('essai_b'), false, 'la seconde est ouverte avant d\'avoir gagné la première');
+    // Défaite d'abord : rien ne s'ouvre.
+    mission(j, 'essai_a');
+    jusquA(j, 2);
+    for (const u of j.G.units.filter((u) => u.tag === 'heros')) u.hp = 0;
+    jusquA(j, 3, () => j.G.gameOver);
+    egal(j.missionDebloquee('essai_b'), false, 'une DÉFAITE a ouvert la mission suivante');
+    // Puis victoire.
+    const k = campagneTest(charger());
+    k.PROFILE.campagne = {};
+    mission(k, 'essai_a', 'hard');
+    jusquA(k, 140, () => k.G.victory || k.G.gameOver);
+    egal(k.G.victory, true, 'la mission n\'a pas été gagnée');
+    const r = k.PROFILE.campagne.essai_a;
+    ok(r, 'la victoire n\'est pas inscrite au profil');
+    egal(r.diff, 'hard', 'difficulté inscrite');
+    egal(r.etoiles, k.G.scn.etoiles, 'étoiles inscrites');
+    egal(k.missionDebloquee('essai_b'), true, 'la mission suivante reste fermée après la victoire');
+  });
+
+  test('écran de fin : « Mission suivante » seulement s\'il y en a une, et jamais « Nouvelle partie » en mission', () => {
+    const j = campagneTest(charger());
+    mission(j, 'essai_a');
+    ok(/Mission suivante/.test(j.boutonsFinMission('victoire')), 'pas de mission suivante proposée après la première');
+    const k = campagneTest(charger());
+    mission(k, 'essai_b');
+    ok(!/Mission suivante/.test(k.boutonsFinMission('victoire')), 'une « mission suivante » est proposée après la dernière');
+    jusquA(k, 140, () => k.G.victory);
+    const ov = k.__sandbox.document.getElementById('overlay').innerHTML;
+    ok(/Retour à la campagne/.test(ov), 'l\'écran de victoire d\'une mission ne ramène pas à la campagne');
+    ok(!/Nouvelle partie/.test(ov), 'l\'écran de victoire d\'une mission propose « Nouvelle partie »');
+  });
+
+  test('l\'onglet Campagne ne montre QUE les campagnes qui ont des missions', () => {
+    const j = charger();
+    j.afficherListeCampagnes();
+    const html = j.__sandbox.document.getElementById('campbloc').innerHTML;
+    for (const [cle, c] of Object.entries(j.CAMPAGNES)) {
+      egal(html.includes(`ouvrirCampagne('${cle}')`), c.missions.length > 0,
+        `campagne « ${cle} » (${c.missions.length} mission(s)) : affichage`);
+    }
+  });
+
+  test('en mission : le panneau montre les objectifs visibles, et le bandeau lit le journal des répliques', () => {
+    const j = mission(charger());
+    jusquA(j, 2);
+    j.majInterfaceScenario();
+    const obj = j.__sandbox.document.getElementById('objpanel').innerHTML;
+    ok(/Tenez deux minutes/.test(obj), 'objectif principal absent du panneau');
+    ok(/Dispersez le camp/.test(obj), 'objectif révélé par un déclencheur absent du panneau');
+    const dlg = j.__sandbox.document.getElementById('dlgbandeau').innerHTML;
+    ok(/capitaine/.test(dlg) && /Tenez la rivière/.test(dlg), 'la réplique d\'introduction n\'est pas affichée : ' + dlg.slice(0, 120));
+  });
+
+  test('Herstal : départs praticables, gués ouverts, camps et bord de raid atteignables depuis le village', () => {
+    const j = mission(charger(), 'fr1');
+    const tc = j.G.buildings.find((b) => b.owner === 'p1' && b.type === j.BT.TC);
+    const depart = { tx: tc.tx - 1, ty: tc.ty + tc.h + 1 };
+    for (const z of ['gue_nord', 'gue_sud']) {
+      const zn = j.zoneMission(z);
+      egal(j.G.tiles[zn.ty][zn.tx], 0, `le ${z} est sous l'eau`);
+    }
+    for (const z of ['camp_nord', 'camp_est', 'bord_est']) {
+      ok(chemin(j, depart, j.zoneMission(z)), `aucun chemin du village jusqu'à ${z}`);
+    }
+    egal(j.G.units.filter((u) => u.owner === 'p1' && u.type === j.UT.KNIGHT).length, 5, 'les cavaliers de Roland n\'ont pas rejoint le joueur');
+    egal(j.G.units.filter((u) => u.tag === 'charles').length, 1, 'Charles n\'est pas sur la carte');
+    jusquA(j, 300);
+    egal(j.G.gameOver, false, 'la mission est perdue sans que le joueur ait rien fait en cinq minutes');
+    for (const f of Object.values(j.G.factions)) egal(f.vaincu, false, `${f.id} vaincu en cinq minutes`);
+  });
+
+  test('Herstal : les quatre objectifs principaux remplis gagnent la mission, et la victoire est inscrite', () => {
+    const j = mission(charger(), 'fr1');
+    j.PROFILE.campagne = {};
+    const tc = j.G.buildings.find((b) => b.owner === 'p1' && b.type === j.BT.TC);
+    for (let i = 0; i < 6; i++) { const p = caseLibre(j, tc.tx + 6, tc.ty, 2, 2); batir(j, j.BT.FARM, p.tx, p.ty, 'p1'); }
+    j.G.factions.p1.age = 1;
+    for (const e of [...j.G.units, ...j.G.buildings]) if (e.tag === 'camp_nord' || e.tag === 'camp_est') e.hp = 0;
+    jusquA(j, 5, () => j.G.victory || j.G.gameOver);
+    egal(j.G.victory, true, 'la mission n\'est pas gagnée : ' + JSON.stringify(j.G.scn.obj));
+    ok(j.PROFILE.campagne.fr1, 'la victoire de Herstal n\'est pas inscrite au profil');
+  });
+
   test('format : chaque mission et chaque campagne est bien formée', () => {
     const j = charger();
     const clesFac = new Set(['p1', 'p2', 'ia', 'ia2', 'pill']);

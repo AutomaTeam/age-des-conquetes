@@ -289,6 +289,13 @@ function buildSaveData(){
       // exactement le déluge de bannières signalé en production sur petit
       // écran, que le compteur avait été introduit pour éteindre.
       hints:[...(G.hints||[])],
+      // Mission de campagne : sa clé et son état (objectifs, déclencheurs
+      // tirés, journal des répliques). G.scn ne contient que des données —
+      // les prédicats restent dans la table MISSIONS, rechargée depuis le
+      // code : c'est ce qui rend une mission reprenable sans re-tirer ses
+      // déclencheurs. null hors campagne.
+      mission:G.mission||null,
+      scn:G.scn?JSON.parse(JSON.stringify(G.scn)):null,
     };
 }
 
@@ -471,7 +478,14 @@ async function loadGame(key=SAVE_KEY){
     selectedDifficulty=G.difficulty; // cohérence si le joueur revient à l'écran-titre
     // Sauvegardes antérieures au mode Conquête : Survie par défaut, sans IA.
     G.gmode=(data.mode&&MODES[data.mode])?data.mode:'survival';
-    selectedMode=G.gmode;
+    // Une mission dont la table a disparu du code (renommée, retirée) ne peut
+    // plus s'évaluer : la partie reprend alors sans scénario plutôt que de
+    // planter sur une clé inconnue.
+    G.mission=(data.mission&&MISSIONS[data.mission])?data.mission:null;
+    G.scn=G.mission&&data.scn?data.scn:null;
+    // Le mode 'mission' n'est sélectionnable qu'à travers une mission (voir
+    // MODES) : il ne doit pas rester choisi sur l'écran-titre.
+    if(G.gmode!=='mission') selectedMode=G.gmode;
     // Toutes les factions d'un coup : chacune porte sa caisse, son âge, ses
     // recherches, sa population, son brouillard et ses compteurs. Les
     // sauvegardes antérieures ont été converties par migrerSauvegarde().

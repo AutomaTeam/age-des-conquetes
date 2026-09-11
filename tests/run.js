@@ -5,7 +5,7 @@
 //
 // Groupes : carte, reseau, sauvegarde, chemin, combat, civilisations,
 // cartes, tailles, ordres, economie, ages, finpartie, ia, delta, charge,
-// triche, promesses.
+// triche, promesses, campagne.
 // Les groupes `delta` et `ia` pèsent à eux deux la moitié du temps total :
 // ils simulent de vraies parties, c'est le prix pour observer des
 // comportements qui n'existent qu'apres plusieurs minutes de jeu.
@@ -5094,6 +5094,240 @@ groupe('promesses', () => {
     ok(semer('mongols').includes(cout), "le re-semis payant n'annonce plus son coût");
     ok(!semer('francs').includes(cout),
       'le message facture le bois au joueur franc, dont la civilisation le dispense de payer');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Moteur de CAMPAGNE (js/15-campagne.js). La mission d'essai (MISSIONS.essai,
+// js/16-missions.js) exerce chaque pièce du moteur sur une petite carte ; les
+// variantes montées ici n'en changent qu'un détail à la fois.
+groupe('campagne', () => {
+  const mission = (j, cle = 'essai', diff = 'normal') => {
+    j.pickDifficulty(diff);
+    ok(j.lancerMission(cle), `la mission « ${cle} » ne se lance pas`);
+    return j;
+  };
+  // Une variante de la mission d'essai, enregistrée sous une autre clé : la
+  // table MISSIONS est partagée par référence avec le bac à sable.
+  const variante = (j, cle, retouche) => {
+    const base = j.MISSIONS.essai;
+    const v = Object.assign({}, base, {
+      roles: { p1: Object.assign({}, base.roles.p1), p2: Object.assign({}, base.roles.p2) },
+      factions: Object.assign({}, base.factions),
+    });
+    retouche(v);
+    j.MISSIONS[cle] = v;
+    return j;
+  };
+  const jusquA = (j, sec, arret) => {
+    for (let k = 0; k < sec * 30; k++) { j.update(j.SIM_DT); if (arret && arret()) break; }
+  };
+
+  test("la mission d'essai démarre avec SES réglages : mode, carte, graine, civilisations, seigneur", () => {
+    const j = mission(charger());
+    const def = j.MISSIONS.essai;
+    egal(j.G.gmode, 'mission', 'mode de partie');
+    egal(j.G.mission, 'essai', 'mission en cours');
+    egal(j.G.seed, def.carte.graine, "la graine de la mission n'est pas imposée");
+    egal(j.lire('COLS'), j.TAILLES[def.carte.taille].n, "la taille de la mission n'est pas imposée");
+    egal(j.G.factions.p1.civ, 'francs', 'civilisation du rôle p1');
+    egal(j.G.factions.p1.age, 1, 'âge de départ du rôle p1');
+    const ia = j.G.factions.ia;
+    ok(ia && ia.genre === 'ia', "le seigneur de la mission n'existe pas");
+    egal(ia.civ, 'mongols', 'civilisation imposée au seigneur');
+    egal(ia.equipe, 3, 'équipe imposée au seigneur');
+    egal(j.lire('missionChoisie'), null, 'la mission reste choisie : « Commencer la partie » la relancerait');
+  });
+
+  test('second commandant en solo : fusionné, sa base et ses unités reviennent au joueur', () => {
+    const j = mission(charger());
+    egal(j.G.factions.p2, undefined, 'une faction P2 existe alors que le rôle est fusionné');
+    egal(j.G.buildings.filter((b) => b.owner === 'p1' && b.type === j.BT.TC).length, 2,
+      "le joueur n'a pas reçu le Centre Ville du second commandant");
+    egal(j.facMission('p2'), 'p1', "une mission qui parle à « p2 » ne s'adresse pas au joueur");
+  });
+
+  test("second commandant en solo : confié à l'IA, allié, avec sa propre base", () => {
+    const j = variante(charger(), 'essai_ia', (v) => { v.roles.p2 = Object.assign({}, v.roles.p2, { solo: 'ia' }); });
+    mission(j, 'essai_ia');
+    const p2 = j.G.factions.p2;
+    ok(p2 && p2.genre === 'ia', "le second commandant n'est pas mené par l'IA");
+    egal(p2.equipe, j.G.factions.p1.equipe, "le second commandant n'est pas dans l'équipe du joueur");
+    ok(j.G.buildings.some((b) => b.owner === 'p2' && b.type === j.BT.TC), "le second commandant n'a pas de base");
+    jusquA(j, 10);
+    egal(p2.vaincu, false, 'le second commandant est tombé dès le départ');
+  });
+
+  test('la surcouche est déterministe, et elle a bien creusé, asséché, semé et posé', () => {
+    const a = mission(charger()), b = mission(charger());
+    egalJSON(empreinteCarte(a), empreinteCarte(b), 'deux lancements de la même mission');
+    const C = a.lire('COLS'), R = a.lire('ROWS');
+    const gue = a.zoneMission('gue'), camp = a.zoneMission('camp');
+    egal(a.G.tiles[gue.ty][gue.tx], 0, "le gué est resté sous l'eau");
+    // La rivière coupe la carte du nord au sud sur la colonne centrale.
+    let eau = 0; for (let y = 0; y < R; y++) if (a.G.tiles[y][Math.round(0.5 * (C - 1))] === a.T_WATER) eau++;
+    ok(eau > R * 0.8, `la rivière ne coupe pas la carte (${eau}/${R} cases d'eau)`);
+    const dans = (o) => Math.hypot(o.tx - camp.tx, o.ty - camp.ty) <= camp.r + 1;
+    ok(a.G.nodes.some((n) => n.infinite && dans(n)), 'aucun filon inépuisable dans le camp');
+    ok(a.G.relics.some(dans), 'aucune relique dans le camp');
+  });
+
+  test("le client obtient la même carte que l'hôte : la surcouche passe par genMap, pas par startGame", () => {
+    const hote = mission(charger());
+    // Ce que fait demarrerPartieClient : initState puis genMap, jamais startGame.
+    const client = charger();
+    client.pickDifficulty('normal');
+    client.choisirMission('essai');
+    client.initState();
+    client.genMap();
+    egalJSON(empreinteCarte(client), empreinteCarte(hote), "carte du client ≠ carte de l'hôte");
+  });
+
+  test('aucun camp vaincu à la première image, y compris un camp parti SANS Centre Ville', () => {
+    const j = variante(charger(), 'essai_sansbase', (v) => {
+      v.roles.p1 = Object.assign({}, v.roles.p1, { base: 'rien' });
+      v.roles.p2 = Object.assign({}, v.roles.p2, { base: 'rien' });
+    });
+    mission(j, 'essai_sansbase');
+    egal(j.G.buildings.filter((b) => b.owner === 'p1' && b.type === j.BT.TC).length, 0, 'le camp a reçu un Centre Ville');
+    jusquA(j, 3);
+    egal(j.G.factions.p1.vaincu, false, "un camp parti sans Centre Ville est déclaré vaincu d'office");
+    egal(j.G.gameOver, false, 'la mission est perdue à la première image');
+  });
+
+  test('victoire : les principaux tenus gagnent la mission, et les étoiles se comptent', () => {
+    const j = mission(charger());
+    jusquA(j, 140, () => j.G.victory || j.G.gameOver);
+    egal(j.G.victory, true, 'aucune victoire après avoir tenu deux minutes');
+    egal(j.G.scn.fin.issue, 'victoire', 'issue de la mission');
+    // Un objectif sans `test` (« le héros doit survivre ») se MAINTIENT : sans
+    // cette règle il ne se remplissait jamais et bloquait toute victoire.
+    egal(j.G.scn.obj.heros, 'fait', "l'objectif à maintenir n'a pas été validé à la victoire");
+    // 'victoire' + héros vivant ; le camp secondaire n'a pas été dispersé.
+    egal(j.G.scn.etoiles, 2, 'étoiles comptées');
+  });
+
+  test('défaite : le héros tombe, la mission est perdue — avec la cause de CET objectif', () => {
+    const j = mission(charger());
+    jusquA(j, 2);
+    for (const u of j.G.units.filter((u) => u.tag === 'heros')) u.hp = 0;
+    jusquA(j, 3, () => j.G.gameOver);
+    egal(j.G.gameOver, true, 'la mort du héros protégé ne perd pas la mission');
+    egal(j.G.scn.fin.cause, 'obj:heros', 'cause de la défaite');
+    ok(/héros est tombé/.test(j.texteFinMission()), 'le texte de fin ne dit pas pourquoi : ' + j.texteFinMission());
+  });
+
+  test('raser le seigneur ne gagne PAS une mission qui demandait autre chose', () => {
+    const j = mission(charger());
+    for (const b of j.G.buildings.filter((b) => b.owner === 'ia' && b.type === j.BT.TC)) b.hp = 0;
+    jusquA(j, 5);
+    egal(j.G.factions.ia.vaincu, true, 'le seigneur sans Centre Ville reste en lice');
+    egal(j.G.victory, false, 'la victoire par élimination de la Conquête a court-circuité les objectifs');
+  });
+
+  test('déclencheurs : chacun tire UNE fois, la réplique est journalisée, le renfort arrive tagué', () => {
+    const j = mission(charger());
+    jusquA(j, 65);
+    egal(j.G.scn.decl.intro, 1, "l'introduction a tiré plusieurs fois (ou jamais)");
+    egal(j.G.scn.decl.renfort, 1, 'le renfort a tiré plusieurs fois (ou jamais)');
+    egalJSON(j.G.scn.dlg.map((d) => d.k), ['intro', 'renfort'], 'journal des répliques');
+    egal(j.G.units.filter((u) => u.tag === 'renfort').length, 2, "renfort (allié : effectif tel qu'écrit)");
+    egal(j.G.scn.obj.camp, 'actif', "l'objectif caché n'a pas été révélé par le déclencheur");
+  });
+
+  test('une fermeture de mission qui lève une erreur perd son déclencheur, pas la partie', () => {
+    const j = variante(charger(), 'essai_faute', (v) => {
+      v.declencheurs = [{ id: 'boum', si: () => true, alors: () => { throw new Error('faute de scénariste'); } }]
+        .concat(v.declencheurs);
+    });
+    mission(j, 'essai_faute');
+    jusquA(j, 65);
+    egal(j.G.scn.decl.renfort, 1, 'une erreur dans un déclencheur a bloqué les suivants');
+  });
+
+  test('une mission impose ses réglages à SON seigneur ; la difficulté fixe le reste', () => {
+    const j = mission(charger(), 'essai', 'hard');
+    const ia = j.G.factions.ia;
+    egal(ia.atkTimer, 900, 'le premier assaut imposé par la mission est ignoré');
+    egal(j.aiTune(ia).hpMult, j.AI_TUNE.hard.hpMult, 'les autres réglages ne suivent plus la difficulté');
+    // Hors mission, rien ne change : même lecture qu'avant.
+    const k = partie(charger(), { diff: 'hard' });
+    egal(k.aiTune(k.G.factions.ia), k.AI_TUNE.hard, 'une IA de Conquête ne lit plus AI_TUNE');
+  });
+
+  test('ni le succès Conquérant, ni Guerre Éclair, ni le classement ne se gagnent en mission', () => {
+    const j = charger();
+    const ctx = { won: true, gmode: 'mission', time: 60 };
+    for (const id of ['conqueror', 'blitz']) {
+      const a = j.ACH.find((x) => x.id === id);
+      egal(a.test({}, ctx), false, `le succès « ${a.nom} » se débloque en gagnant une mission`);
+    }
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '11-interface.js'), 'utf8');
+    const i = src.indexOf('function soumettreClassement');
+    ok(/gmode==='mission'\)\s*return/.test(src.slice(i, i + 700)), 'soumettreClassement envoie un temps de mission au classement Conquête');
+  });
+
+  test("le mode Campagne ne se propose dans aucun onglet : on n'y entre que par une mission", () => {
+    const j = charger();
+    egal(j.modeDispo('mission', 'solo'), false, 'proposé en Solo');
+    egal(j.modeDispo('mission', 'multi'), false, 'proposé en Multijoueur');
+    // Sélectionné sans mission (reliquat d'une sauvegarde), il retombe sur Survie.
+    j.__sandbox.selectedMode = 'mission';
+    j.initState();
+    egal(j.G.gmode, 'survival', 'le mode Campagne lancé sans mission');
+  });
+
+  test('sauvegarde : la mission et son état partent, et reviennent en données pures', () => {
+    const j = mission(charger());
+    jusquA(j, 65);
+    const s = JSON.parse(JSON.stringify(j.buildSaveData()));
+    egal(s.mission, 'essai', 'la sauvegarde oublie la mission');
+    egalJSON(s.scn.decl, j.G.scn.decl, 'déclencheurs tirés');
+    egalJSON(s.scn.obj, j.G.scn.obj, 'état des objectifs');
+    // Le contrat côté chargement : loadGame relit bien les deux champs.
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '13-cloud.js'), 'utf8');
+    const corps = src.slice(src.indexOf('async function loadGame'));
+    ok(/G\.mission\s*=/.test(corps) && /G\.scn\s*=/.test(corps), 'loadGame ne restaure pas la mission');
+  });
+
+  test('format : chaque mission et chaque campagne est bien formée', () => {
+    const j = charger();
+    const clesFac = new Set(['p1', 'p2', 'ia', 'ia2', 'pill']);
+    const ops = new Set(['eau', 'lac', 'terre', 'gue', 'degager', 'foret', 'baies', 'poissons', 'gisement', 'relique', 'faune']);
+    const dansCarte = (p, ou) => {
+      const [x, y] = Array.isArray(p) ? p : [p.x, p.y];
+      ok(x >= 0 && x <= 1 && y >= 0 && y <= 1, `${ou} : position hors de la carte (${x}, ${y})`);
+    };
+    for (const [cle, m] of Object.entries(j.MISSIONS)) {
+      const ou = `mission « ${cle} »`;
+      ok(m.titre, `${ou} sans titre`);
+      ok(m.carte && m.carte.graine, `${ou} sans graine fixe`);
+      ok(!m.carte.taille || j.TAILLES[m.carte.taille], `${ou} : taille inconnue`);
+      ok(!m.carte.type || j.CARTES[m.carte.type], `${ou} : type de carte inconnu`);
+      ok(m.roles && m.roles.p1, `${ou} sans rôle p1`);
+      for (const [k, r] of Object.entries(m.roles)) {
+        ok(k === 'p1' || k === 'p2', `${ou} : rôle inconnu « ${k} »`);
+        ok(!r.civ || j.CIVS[r.civ], `${ou} : civilisation inconnue pour ${k}`);
+        if (r.depart) dansCarte(r.depart, `${ou}, départ de ${k}`);
+      }
+      for (const k of Object.keys(m.factions || {})) ok(clesFac.has(k), `${ou} : faction inconnue « ${k} »`);
+      for (const [nom, z] of Object.entries(m.zones || {})) dansCarte(z, `${ou}, zone ${nom}`);
+      const ids = (m.objectifs || []).map((o) => o.id);
+      egal(new Set(ids).size, ids.length, `${ou} : deux objectifs portent le même id`);
+      ok((m.objectifs || []).some((o) => o.type !== 'secondaire' && o.test), `${ou} : aucun objectif principal ne peut être rempli`);
+      for (const o of (m.objectifs || [])) ok(o.txt, `${ou} : objectif « ${o.id} » sans texte`);
+      for (const d of (m.declencheurs || [])) ok(d.id && typeof d.si === 'function' && typeof d.alors === 'function', `${ou} : déclencheur mal formé`);
+      for (const op of (m.surcouche || [])) ok(ops.has(op.op), `${ou} : opération de surcouche inconnue « ${op.op} »`);
+      for (const lignes of Object.values(m.dialogues || {})) for (const [qui] of lignes)
+        ok(m.orateurs && m.orateurs[qui], `${ou} : orateur « ${qui} » sans fiche`);
+    }
+    for (const [cle, c] of Object.entries(j.CAMPAGNES)) {
+      ok(j.HEROES[c.heros], `campagne « ${cle} » : héros inconnu`);
+      for (const id of c.missions) {
+        ok(j.MISSIONS[id], `campagne « ${cle} » : mission « ${id} » introuvable`);
+        egal(j.MISSIONS[id].campagne, cle, `mission « ${id} » : campagne mal renseignée`);
+      }
+    }
   });
 });
 

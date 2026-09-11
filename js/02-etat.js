@@ -173,11 +173,26 @@ function installerShims(){
 
 function initState() {
   const diff=DIFFS[selectedDifficulty]||DIFFS.normal;
-  const mode=MODES[selectedMode]?selectedMode:'survival';
+  // Mission de campagne (voir js/15-campagne.js) : elle impose son mode, sa
+  // carte, sa taille, sa GRAINE et les civilisations des deux commandants —
+  // seule la difficulté reste au choix du joueur. La graine fixe est ce qui
+  // rend la surcouche de la mission identique à chaque partie, et chez les
+  // deux joueurs.
+  const cleMission=(typeof missionChoisie!=='undefined'&&missionChoisie&&MISSIONS[missionChoisie])?missionChoisie:null;
+  const defMission=cleMission?MISSIONS[cleMission]:null;
+  const carteMission=defMission?(defMission.carte||{}):null;
+  // Le mode 'mission' n'existe QUE porté par une mission : sélectionné sans
+  // elle (reliquat d'une sauvegarde de campagne rechargée), il retombe sur
+  // Survie plutôt que de lancer une partie sans objectifs ni adversaire.
+  const mode=defMission?'mission':((MODES[selectedMode]&&selectedMode!=='mission')?selectedMode:'survival');
+  // Consommée : une fois revenu à l'écran-titre, « Commencer la partie » ne
+  // doit pas relancer la dernière mission jouée.
+  if(cleMission) missionChoisie=null;
   // Taille de la carte : figée ICI, AVANT toute allocation de grille (tuiles,
   // blocage, brouillard) et avant genMap. C'est le seul moment où COLS/ROWS
   // changent de valeur — voir appliquerTailleCarte.
-  const taille=TAILLES[selectedTaille]?selectedTaille:'normale';
+  const taille=(carteMission&&TAILLES[carteMission.taille])?carteMission.taille
+              :(TAILLES[selectedTaille]?selectedTaille:'normale');
   appliquerTailleCarte(TAILLES[taille].n);
   G = {
     difficulty:selectedDifficulty,
@@ -187,7 +202,7 @@ function initState() {
     gmode:mode,
     // Type de carte (voir CARTES). Fige a la creation de l'etat, comme gmode :
     // genMap le lit, et il voyage avec la graine en multijoueur (construireSalut).
-    carte:selectedCarte,
+    carte:(carteMission&&CARTES[carteMission.type])?carteMission.type:selectedCarte,
     // Taille de la carte (voir TAILLES). Figée à la création de l'état comme
     // carte et gmode : elle voyage avec la graine en multijoueur (voir
     // construireSalut) et part dans la sauvegarde.
@@ -195,7 +210,12 @@ function initState() {
     // Graine de la carte. Deux joueurs qui la partagent génèrent une carte
     // strictement identique : en multijoueur on transmet ces 4 octets au lieu
     // des 3 × 57 600 tuiles de terrain, blocage et brouillard (~500 Ko).
-    seed:(grainePartie!=null?grainePartie:(Math.random()*2147483646|0)+1),
+    seed:(carteMission&&carteMission.graine)?carteMission.graine
+        :(grainePartie!=null?grainePartie:(Math.random()*2147483646|0)+1),
+    // Mission en cours (clé de MISSIONS) et son état (voir initScenario).
+    // null hors campagne : tout le moteur de scénario se tait alors.
+    mission:cleMission,
+    scn:null,
     factions:{},   // tous les camps — voir mkFaction()
     me:FAC.P1,     // faction jouée par CE navigateur
     hote:true,     // cette instance fait-elle tourner la simulation ? (multijoueur)
@@ -241,7 +261,8 @@ function initState() {
   const nomLocal=(typeof RESEAU!=='undefined'&&RESEAU.actif&&RESEAU.role==='hote')
     ? ((typeof _mpEtat!=='undefined'&&_mpEtat.nom)||lirePseudoStocke()||'Hôte')
     : 'Vous';
-  G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:nomLocal,res:diff.startRes,maxPop:5,civ:selectedCiv});
+  const civRole=k=>defMission&&defMission.roles&&defMission.roles[k]&&CIVS[defMission.roles[k].civ]?defMission.roles[k].civ:null;
+  G.factions[FAC.P1]=mkFaction(FAC.P1,{genre:'humain',equipe:1,nom:nomLocal,res:diff.startRes,maxPop:5,civ:civRole('p1')||selectedCiv});
   G.factions[FAC.PILL]=mkFaction(FAC.PILL,{genre:'neutre',equipe:0,hostileATous:true});
   // Partie en ligne : le second joueur humain existe des la creation de
   // l'etat, car mkBuilding/mkUnit lisent l'age et les recherches de leur
@@ -265,9 +286,12 @@ function initState() {
     // deux camps aux bonus différents qu'un second camp sans civilisation.
     const choixInvite=RESEAU.adversaire&&RESEAU.adversaire.civ;
     const civKeys=Object.keys(CIVS);
-    const civP2=(choixInvite&&CIVS[choixInvite])
-      ? choixInvite
-      : civKeys[(civKeys.indexOf(selectedCiv)+1)%civKeys.length];
+    // En mission, la civilisation du second commandant est celle de son
+    // RÔLE : la campagne des Francs se joue en Francs, à deux comme seul.
+    const civP2=civRole('p2')
+      || ((choixInvite&&CIVS[choixInvite])
+        ? choixInvite
+        : civKeys[(civKeys.indexOf(selectedCiv)+1)%civKeys.length]);
     G.factions[FAC.P2]=mkFaction(FAC.P2,{genre:'humain',equipe:allie?1:2,
       nom:(RESEAU.adversaire&&RESEAU.adversaire.nom)||'Adversaire',
       res:diff.startRes,maxPop:5,civ:civP2});

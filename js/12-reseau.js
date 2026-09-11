@@ -1210,16 +1210,20 @@ function updateBandeauAdverse(){
 // faire ressembler la faction humaine deconnectee a une faction IA pour
 // qu'updateAI() la prenne en charge d'elle-meme, avec son propre budget de
 // difficulte, comme n'importe quel rival de Conquete.
-function convertirEnIA(factionId){
+// `o.silencieux` : le second commandant d'une mission jouée seul (voir
+// installerMission) est confié à l'IA dès la pose — ce n'est pas un joueur
+// qui s'en va, il n'y a rien à annoncer.
+function convertirEnIA(factionId,o){
   const f=G.factions[factionId]; if(!f||f.genre==='ia') return;
   f.genre='ia';
   const tc=G.buildings.find(b=>b.owner===factionId&&b.type===BT.TC);
-  const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+  const tune=aiTune(f);
   Object.assign(f,{
     baseX:tc?tc.x:0, baseY:tc?tc.y:0, tcId:tc?tc.id:null,
     think:0, atkTimer:tune.firstAtk, atkMin:tune.atkMin, raids:0, vilTarget:tune.vilTarget,
   });
   for(const u of G.units) if(u.owner===factionId) u.ai=true;
+  if(o&&o.silencieux) return;
   notify('🤖 '+f.nom+' est d\u00e9sormais men\u00e9e par l\'IA','#f0c040');
 }
 
@@ -1458,6 +1462,9 @@ function viderDeltaFinal(){
 // jusqu'a ce que la partie soit finie pour tout le monde.
 function partieContinuePourUnAutre(){
   if(!reseauActif()||RESEAU.role!=='hote') return false;
+  // Une mission tranchée l'est pour toute l'équipe (voir finMission) : pas
+  // de spectateur, la partie est finie pour les deux commandants.
+  if(G.scn&&G.scn.fin) return false;
   // Une Merveille achevee tranche la partie pour TOUS les camps a la fois
   // (voir checkMerveilleVictory) : plus personne n'est en lice.
   if(factionsJouantes().some(f=>f.merveilleAchevee)) return false;

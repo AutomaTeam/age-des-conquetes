@@ -12,7 +12,7 @@ qu'hébergé sur GitHub Pages.
 ## Organisation du code
 
 Le code vivait dans un unique `<script>` de 13 500 lignes. Il est désormais
-réparti en quatorze fichiers sous [`js/`](js/), chargés **dans l'ordre** par
+réparti en seize fichiers sous [`js/`](js/), chargés **dans l'ordre** par
 `index.html` — ordre qui est significatif :
 
 | Fichier | Contenu |
@@ -31,6 +31,8 @@ réparti en quatorze fichiers sous [`js/`](js/), chargés **dans l'ordre** par
 | `12-reseau.js` | Transport, protocole, salon multijoueur |
 | `13-cloud.js` | Connexion Google, Drive, sauvegarde et migration |
 | `14-demarrage.js` | Boucle de jeu, démarrage de partie |
+| `15-campagne.js` | Moteur du mode Campagne : surcouche de carte, pose des camps, objectifs, déclencheurs |
+| `16-missions.js` | Contenu des campagnes (tables de missions) |
 
 Ce sont des **scripts classiques**, pas des modules ES : ni `import`, ni
 `export`. Ils partagent le même environnement lexical global, exactement comme
@@ -51,7 +53,7 @@ préservent.
 node tests/run.js
 ```
 
-243 tests, 17 groupes, ~45 s, sans dépendance ni build — comme le jeu. Ils
+259 tests, 18 groupes, ~45 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, le fait

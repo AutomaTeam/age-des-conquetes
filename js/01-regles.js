@@ -974,6 +974,15 @@ const MODES = {
   conquest: { nom:'Conquête', ico:'🏴', targetWaves:0, rivaux:1,
               desc:'Un seigneur rival bâtit sa propre cité. Détruisez son Centre Ville — avant qu\'il ne détruise le vôtre.',
               intro:'Un rival récolte, construit, monte les âges et lève ses armées en même temps que vous.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong> — pas de vagues, un seul adversaire.' },
+  // Mission de campagne (voir js/15-campagne.js). Proposée dans AUCUN onglet
+  // (solo:false ET multi:false) : on n'y entre que par l'écran de campagne,
+  // qui choisit une mission précise — lancer « le mode Campagne » sans
+  // mission n'aurait aucun sens. `rivaux:0` : ce sont les missions qui
+  // posent leurs seigneurs. `coop` : le second joueur d'une mission à deux
+  // est toujours un allié, jamais un adversaire.
+  mission:  { nom:'Campagne', ico:'📜', targetWaves:0, rivaux:0, coop:true, solo:false, multi:false,
+              desc:'Une mission de campagne, avec ses objectifs et son récit.',
+              intro:'' },
   coop2v1:  { nom:'2v1 Coop',  ico:'🤝', targetWaves:0, rivaux:1, coop:true, solo:false,
               desc:'Deux joueurs alliés contre un seul seigneur IA, à la difficulté choisie ci-dessous.',
               intro:'Rejoignez-vous à un allié (bouton « Jouer avec un ami » ci-dessous) pour affronter ensemble un seul seigneur rival.<br>Son premier assaut n\'arrive pas avant <strong id="peacetxt">8 minutes</strong>.' },

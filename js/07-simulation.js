@@ -46,6 +46,7 @@ function update(dt){
   updateRelicIncome(dt);
   updateWonders(dt);
   updateAgeUp(dt);
+  if(G.mission) majScenario(dt);   // objectifs et déclencheurs de mission (js/15-campagne.js)
   G.mtTimer=Math.max(0,G.mtTimer-dt);
 
   // Brouillard rafraîchi 5×/s
@@ -103,7 +104,9 @@ function update(dt){
   // une seule fois (f.vaincu), ce qui permet à une partie à trois camps de
   // continuer après la chute du premier.
   for(const f of factionsJouantes()){
-    if(f.vaincu) continue;
+    // sansElimination : camp de mission parti sans Centre Ville (escorte,
+    // marche, ville à fonder) — c'est la mission qui décide de sa défaite.
+    if(f.vaincu||f.sansElimination) continue;
     if(!G.buildings.find(b=>b.type===BT.TC&&b.owner===f.id)){
       f.vaincu=true;
       retourTous('elimine',{nom:f.nom},f.id);   // à TOUS les humains sauf l'éliminé, pas au seul hôte
@@ -136,7 +139,11 @@ function update(dt){
   // d'où la garde sur le mode : sans elle, Conquête serait gagnée à la
   // 1ère image).
   if(!G.victory&&!G.gameOver){
-    if(G.gmode!=='survival'){
+    if(G.mission){
+      // Mission : seuls ses objectifs la gagnent (voir majScenario). On peut
+      // gagner en escortant une roulotte pendant que l'ennemi est debout —
+      // et raser l'ennemi ne gagne rien si la mission demandait autre chose.
+    } else if(G.gmode!=='survival'){
       const rivaux=factionsJouantes().filter(f=>f.id!==G.me&&f.equipe!==(moi()?moi().equipe:-1));
       if(rivaux.length&&rivaux.every(f=>f.vaincu)){ G.victory=true; showVictory(); }
     } else if(G.wave>=G.targetWaves&&!G.waveActive){

@@ -101,6 +101,10 @@ const EXPORTS = [
   // Fin de partie à deux (voir la fin du groupe `delta`) : le client reçoit
   // par le vrai routage, et la veille de connexion se vérifie sans setInterval.
   'recevoirReseau', 'verifierVeilleReseau', 'partieContinuePourUnAutre',
+  // Moteur de campagne (voir le groupe `campagne`).
+  'CAMPAGNES', 'MISSIONS', 'lancerMission', 'choisirMission', 'missionCourante', 'zoneMission', 'SCN_API',
+  'majScenario', 'finMission', 'installerMission', 'initScenario', 'aiTune', 'AI_TUNE',
+  'texteFinMission', 'facMission', 'loadGame', 'initAI',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

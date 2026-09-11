@@ -61,6 +61,15 @@ const AI_TUNE = {
   hard:   { start:{food:320,wood:260,stone:160,gold:160}, vilTarget:16, firstAtk:540, atkEvery:130, atkMin:8,  atkStep:3, hpMult:1.15, atkMult:1.10 },
   brutal: { start:{food:460,wood:380,stone:240,gold:240}, vilTarget:20, firstAtk:420, atkEvery:100, atkMin:10, atkStep:3, hpMult:1.30, atkMult:1.25 },
 };
+// Réglages d'UNE IA. La difficulté choisie décide pour toutes, sauf quand une
+// mission en impose d'autres à un seigneur précis (`a.tune`, posé par
+// initAI) : un rival qui ne doit frapper qu'à la 10e minute, ou tout de
+// suite, dans une partie par ailleurs réglée en Normal. Seuls les champs
+// fournis sont remplacés, le reste suit la difficulté.
+function aiTune(a){
+  const base=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+  return (a&&a.tune)?Object.assign({},base,a.tune):base;
+}
 
 // L'IA aligne les archétypes ennemis (Pillard, Archer Pillard, Cavalier Noir,
 // Géant, Seigneur de Guerre) plutôt que les unités du joueur : leurs sprites
@@ -163,7 +172,7 @@ function aiSpend(cost,a){ const p=a.res; Object.entries(cost).forEach(([r,v])=>{
 // fonction ne les réapplique surtout pas, sous peine de les compter deux fois.
 function aiAdoptUnit(u,a){
   a=a||fac(u); if(!a||a.genre!=='ia') return;
-  const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+  const tune=aiTune(a);
   u.ai=true;
   // Les bonus d'âge sont déjà posés par mkUnit (ils valent pour tous les
   // camps depuis la refonte en factions) : il ne reste ici que le
@@ -654,8 +663,12 @@ function aiSiteRichness(tx,ty){
 // Installe UN adversaire IA. `id` permet d'en aligner plusieurs (mode
 // « 2 rivaux ») ; `evites` liste les points déjà pris, pour ne pas poser deux
 // rivaux au même endroit. Renvoie la faction créée, ou null.
-function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
-  const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+// `imp` (mission, voir installerMission) impose ce que l'IA choisit d'elle-même
+// en temps normal : `pos` [tx,ty] (son seul ancrage, sans exigence de
+// richesse — la mission a semé ce qu'il faut), `civ`, `equipe`, `age` de
+// départ et `tune` (réglages propres, voir aiTune).
+function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[],imp=null){
+  imp=imp||{};
   // Dérivé de la graine de carte ET de l'identifiant du camp : reproductible,
   // mais deux rivaux ne suivent pas la même suite.
   const rndPose=srnd((G.seed^(id===FAC.IA2?0x5bf03635:0x27d4eb2f))>>>0||1);
@@ -664,7 +677,7 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   // ressources — la Conquête désactivant spawnPOIs, ils sont libres ici).
   // aiAnchors() (03-carte.js) est la source UNIQUE : genMap() y garantit déjà
   // un minimum de ressources à chacun, avant même que l'un d'eux soit choisi.
-  const anchors=aiAnchors();
+  const anchors=imp.pos?[imp.pos]:aiAnchors();
   const d=BDEF[BT.TC];
   // Priorité à la richesse en ressources plutôt qu'au seul éloignement : un
   // adversaire posé loin mais sans la moindre pierre ni or à portée ne
@@ -677,6 +690,7 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   for(const[ax,ay] of anchors){
     const spot=aiSpot(d.w,d.h,ax,ay,0,14,rndPose);
     if(!spot) continue;
+    if(imp.pos){ best=spot; break; }
     const r=aiSiteRichness(spot.tx,spot.ty);
     if(!r.stone||!r.gold) continue;
     const dist=Math.hypot(spot.tx-playerTX,spot.ty-playerTY);
@@ -706,8 +720,10 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
   // Civilisation tirée depuis rndPose (déterministe par graine+camp), en
   // évitant celle du joueur pour que les bonus asymétriques se voient.
   const civKeysIA=Object.keys(CIVS).filter(k=>k!==selectedCiv);
-  const civIA=civKeysIA[Math.floor(rndPose()*civKeysIA.length)]||Object.keys(CIVS)[0];
-  const a=mkFaction(id,{genre:'ia', equipe:(id===FAC.IA?3:4), nom, res:tune.start,
+  const civTiree=civKeysIA[Math.floor(rndPose()*civKeysIA.length)]||Object.keys(CIVS)[0];
+  const civIA=(imp.civ&&CIVS[imp.civ])?imp.civ:civTiree;
+  const tune=imp.tune?Object.assign({},AI_TUNE[G.difficulty]||AI_TUNE.normal,imp.tune):(AI_TUNE[G.difficulty]||AI_TUNE.normal);
+  const a=mkFaction(id,{genre:'ia', equipe:(imp.equipe!=null?imp.equipe:(id===FAC.IA?3:4)), nom, res:tune.start,
                         maxPop:BDEF[BT.TC].popBonus, civ:civIA});
   Object.assign(a,{
     baseX:0, baseY:0, tcId:null,
@@ -715,6 +731,9 @@ function initAI(playerTX,playerTY,id=FAC.IA,nom='Seigneur rival',evites=[]){
     atkTimer:tune.firstAtk, atkMin:tune.atkMin, raids:0,
     vilTarget:tune.vilTarget,
   });
+  if(imp.tune) a.tune=imp.tune;
+  // L'âge AVANT de poser quoi que ce soit : mkBuilding/mkUnit le lisent.
+  if(imp.age!=null&&AGES[imp.age]) a.age=imp.age;
   G.factions[id]=a;
 
   const tc=mkBuilding(BT.TC,best.tx,best.ty,id);
@@ -827,7 +846,7 @@ function aiMerveilleHostile(a){
 }
 
 function majPhaseAssaut(dt,a,army){
-  const tune=AI_TUNE[G.difficulty]||AI_TUNE.normal;
+  const tune=aiTune(a);
 
   // ── Urgence Merveille ── prioritaire sur TOUT, la défense comprise.
   //

@@ -159,7 +159,14 @@ function genMap() {
   // (donc on peut s'en écarter) et les ressources ne sont pas encore semées
   // (donc on peut réserver la place). Ils sont mémorisés dans G.departs, que
   // startGame() lit ensuite pour poser les Centres Villes.
-  G.departs=resoudreDeparts();
+  // Une mission creuse d'abord SON terrain (rivières, gués, lacs) — avant
+  // les départs, pour qu'aucune base ne tombe dans une rivière posée après
+  // coup — puis impose ses départs au lieu de l'anneau (voir departsMission,
+  // js/15-campagne.js). Ses seigneurs IA ont les leurs, qui remplacent les
+  // huit ancrages génériques pour la réservation et le minimum de ressources.
+  if(G.mission) appliquerSurcouche('terrain');
+  G.departs=G.mission?departsMission():resoudreDeparts();
+  G.departsIA=G.mission?departsIAMission():null;
 
   // Réserve l'emplacement de CHAQUE Centre Ville de départ (+ 1 case de
   // marge) AVANT de semer les ressources. Sans ça, un gisement peut tomber
@@ -172,7 +179,7 @@ function genMap() {
   // après la pose réelle des Centres Villes dans startGame().
   {
     const tcW=BDEF[BT.TC].w, tcH=BDEF[BT.TC].h;
-    for(const [rsX,rsY] of G.departs){
+    for(const [rsX,rsY] of G.departs.concat(G.departsIA||[])){
       for(let y=rsY-1;y<=rsY+tcH;y++) for(let x=rsX-1;x<=rsX+tcW;x++){
         if(x>=0&&y>=0&&x<COLS&&y<ROWS&&b[y][x]===0) b[y][x]=9;
       }
@@ -230,15 +237,19 @@ function genMap() {
   // CANDIDATS ici, pendant genMap() (identique des deux côtés), avant même
   // qu'initAI() ne décide lequel il occupera.
   for(const [dtx,dty] of G.departs) assurerRessourcesDepart(dtx,dty);
-  for(const [atx,aty] of aiAnchors()) assurerRessourcesDepart(atx,aty);
+  for(const [atx,aty] of (G.departsIA||aiAnchors())) assurerRessourcesDepart(atx,aty);
 
   // Reliques : générées AVANT spawnPOIs pour rester à un point fixe de la
   // séquence RND (déterminisme partagé hôte/client — voir construireSnap,
   // seul r.bankedBy voyage sur le réseau, jamais la position).
-  genRelics();
+  // Une mission peut se passer des reliques et du gibier semés au hasard
+  // (`carte.reliques:false`, `carte.faune:false`) pour ne garder que les
+  // siens (surcouche). Le saut est le même chez l'hôte et le client.
+  const defCarte=(G.mission&&missionCourante())?(missionCourante().carte||{}):{};
+  if(defCarte.reliques===false) G.relics=[]; else genRelics();
   // Gibier : même logique de déterminisme (position tirée de la graine,
   // seuls PV et mise à mort voyagent sur le réseau — voir construireDelta).
-  genWildlife();
+  if(defCarte.faune===false) G.wildlife=[]; else genWildlife();
   // Poissons : nœuds ordinaires (comme le gibier abattu, RT.MEAT) mais posés
   // directement sur l'eau — aucune synchronisation réseau supplémentaire,
   // ils voyagent déjà comme n'importe quel gisement (voir construireDelta,
@@ -249,6 +260,10 @@ function genMap() {
   // garnisons ne ciblent que le joueur (voir updateEnemyAI), elles fausseraient
   // donc le duel en Conquête en n'inquiétant jamais l'adversaire.
   if(G.gmode==='survival') spawnPOIs();
+
+  // Décor de mission : en DERNIER, pour pouvoir dégager ou compléter tout ce
+  // que la génération vient de semer.
+  if(G.mission) appliquerSurcouche('decor');
 }
 
 // Quelques reliques dispersées sur la carte, à l'écart du centre (où les
@@ -753,6 +768,8 @@ function revealFog(){
       const rad=b.type===BT.TOWER||b.type===BT.CASTLE?10:b.type===BT.TC?9:b.type===BT.OUTPOST?8:6;
       reveal((b.tx+b.w/2)|0,(b.ty+b.h/2)|0,Math.max(3,Math.round(rad*visMult)));
     }
+    // Zones qu'une mission a révélées (voir SCN_API.reveler).
+    if(G.mission) revelationsScenario(f,equipe,reveal);
     vu.n=nvu;
   }
 }

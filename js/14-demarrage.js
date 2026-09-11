@@ -157,6 +157,62 @@ function startGame(){
   // tit qu'on pose bien les Centres Villes là où le terrain a été dégagé.
   const dep=(G.departs&&G.departs.length)?G.departs:resoudreDeparts();
   const sTX=dep[0][0], sTY=dep[0][1];
+  // Mission de campagne : ses camps, ses unités, ses seigneurs, à la place du
+  // départ ordinaire (voir installerMission, js/15-campagne.js).
+  if(G.mission) installerMission();
+  else poserDepartOrdinaire(dep);
+
+  // Caméra sur le TC
+  camCenterOn((sTX+1.5)*BASE_TILE,(sTY+1.5)*BASE_TILE);
+
+  afficherGraine(); // le joueur peut relire ou partager la graine de SA partie
+  G.running=true;
+  setSpeed(1);
+  rebuildIndex(); // sans quoi toute resolution par id echoue avant la 1ere image
+  revealFog();
+  applyDifficultyBadge();
+  syncAutoRepairBtn(); // repart toujours désactivé (voir initState) — resynchronise le bouton après une partie précédente
+  syncShelterBtn(); // idem : aucun villageois en garnison au démarrage, sauf reprise d'une sauvegarde
+  refreshUI();
+  requestAnimationFrame(loop);
+
+  // Messages de bienvenue — remplacés par le tutoriel pas à pas (ci-dessous)
+  // au tout premier lancement en solo, pour ne pas dire deux fois la même
+  // chose sur l'écran.
+  // En mission, ni tutoriel ni messages génériques : c'est la mission qui
+  // parle (voir ses déclencheurs), et la mission 1 des Francs tient lieu de
+  // tutoriel avancé.
+  const premierePartie=!G.mission&&tutoDoitDemarrer();
+  if(G.mission){
+    const def=missionCourante();
+    setTimeout(()=>bigBanner(`${(CAMPAGNES[def.campagne]||{}).ico||'📜'} ${def.titre}`),600);
+    for(const o of (def.objectifs||[])) if(G.scn.obj[o.id]==='actif')
+      notify(`📜 ${o.type==='secondaire'?'Secondaire':'Objectif'} : ${o.txt}`,'#f0c040',true);
+  } else if(!premierePartie){
+    setTimeout(()=>notify('Sélectionnez un villageois, puis tapez une ressource !','#f0c040'),600);
+    setTimeout(()=>notify('🪵 Récoltez du bois puis construisez des Maisons !','#e8d5a0'),3200);
+  }
+  if(G.mission){ /* voir plus haut */ }
+  else if(G.gmode!=='survival'){
+    const nb=MODES[G.gmode].rivaux||1;
+    const coop=!!MODES[G.gmode].coop&&!!G.factions[FAC.P2];
+    setTimeout(()=>notify(coop?'🤝 Vous et votre allié affrontez ensemble un seul seigneur rival.'
+                              :nb>1?'🏴 Deux seigneurs rivaux bâtissent leurs cités — et se combattent entre eux.'
+                              :'🏴 Un seigneur rival bâtit sa cité à l\'autre bout de la carte.','#e67e22'),6200);
+    setTimeout(()=>notify('🏰 Rasez leur Centre Ville pour l\'emporter — explorez pour les trouver !','#f0c040'),9200);
+  } else {
+    setTimeout(()=>notify(`⏳ ${peaceLabel()} avant la 1ère attaque — montez les âges !`,'#2ecc71'),6200);
+    setTimeout(()=>notify('🏆 Des points d\'intérêt (or illimité, lourdement gardés) sont dispersés sur la carte !','#f0c040'),9200);
+  }
+  if(!G.mission) setTimeout(()=>bigBanner('🌑 Âge Sombre'),900);
+  if(premierePartie) setTimeout(tutoDemarrer,1400);
+}
+window.startGame=startGame;
+
+// Départ d'une partie ordinaire (hors mission) : Centre Ville et villageois
+// de chaque humain, puis autant de seigneurs IA que le mode en réclame.
+function poserDepartOrdinaire(dep){
+  const sTX=dep[0][0], sTY=dep[0][1];
   const tc=mkBuilding(BT.TC,sTX,sTY,FAC.P1);
   placeBuilding(tc);
   // Libère la marge de réservation (le Centre Ville lui-même est déjà
@@ -210,44 +266,7 @@ function startGame(){
     const a=initAI(sTX,sTY,idsIA[i],nomsIA[i],prisSurCarte);
     if(a) prisSurCarte.push([Math.round(a.baseX/BASE_TILE),Math.round(a.baseY/BASE_TILE)]);
   }
-
-  // Caméra sur le TC
-  camCenterOn((sTX+1.5)*BASE_TILE,(sTY+1.5)*BASE_TILE);
-
-  afficherGraine(); // le joueur peut relire ou partager la graine de SA partie
-  G.running=true;
-  setSpeed(1);
-  rebuildIndex(); // sans quoi toute resolution par id echoue avant la 1ere image
-  revealFog();
-  applyDifficultyBadge();
-  syncAutoRepairBtn(); // repart toujours désactivé (voir initState) — resynchronise le bouton après une partie précédente
-  syncShelterBtn(); // idem : aucun villageois en garnison au démarrage, sauf reprise d'une sauvegarde
-  refreshUI();
-  requestAnimationFrame(loop);
-
-  // Messages de bienvenue — remplacés par le tutoriel pas à pas (ci-dessous)
-  // au tout premier lancement en solo, pour ne pas dire deux fois la même
-  // chose sur l'écran.
-  const premierePartie=tutoDoitDemarrer();
-  if(!premierePartie){
-    setTimeout(()=>notify('Sélectionnez un villageois, puis tapez une ressource !','#f0c040'),600);
-    setTimeout(()=>notify('🪵 Récoltez du bois puis construisez des Maisons !','#e8d5a0'),3200);
-  }
-  if(G.gmode!=='survival'){
-    const nb=MODES[G.gmode].rivaux||1;
-    const coop=!!MODES[G.gmode].coop&&!!G.factions[FAC.P2];
-    setTimeout(()=>notify(coop?'🤝 Vous et votre allié affrontez ensemble un seul seigneur rival.'
-                              :nb>1?'🏴 Deux seigneurs rivaux bâtissent leurs cités — et se combattent entre eux.'
-                              :'🏴 Un seigneur rival bâtit sa cité à l\'autre bout de la carte.','#e67e22'),6200);
-    setTimeout(()=>notify('🏰 Rasez leur Centre Ville pour l\'emporter — explorez pour les trouver !','#f0c040'),9200);
-  } else {
-    setTimeout(()=>notify(`⏳ ${peaceLabel()} avant la 1ère attaque — montez les âges !`,'#2ecc71'),6200);
-    setTimeout(()=>notify('🏆 Des points d\'intérêt (or illimité, lourdement gardés) sont dispersés sur la carte !','#f0c040'),9200);
-  }
-  setTimeout(()=>bigBanner('🌑 Âge Sombre'),900);
-  if(premierePartie) setTimeout(tutoDemarrer,1400);
 }
-window.startGame=startGame;
 
 // ── BADGE VILLAGEOIS INACTIFS ──────────────────────────────
 document.getElementById('idlebtn-inner').addEventListener('click',()=>{

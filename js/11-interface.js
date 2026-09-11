@@ -1607,8 +1607,8 @@ const ACH = [
   { id:'siegemaster', ico:'💥',  nom:'Assiégeur',          desc:'Détruire 25 bâtiments ennemis.',              test:(s)=>s.bldDestroyed>=25 },
   { id:'cleaner',     ico:'🏆',  nom:'Nettoyeur',          desc:"Nettoyer entièrement un point d'intérêt.",    test:(s)=>s.campsCleared>=1 },
   { id:'survivor',    ico:'🛡️',  nom:'Survivant',          desc:'Remporter une partie en mode Survie.',        test:(s,c)=>c.won&&c.gmode==='survival' },
-  { id:'conqueror',   ico:'🏴',  nom:'Conquérant',         desc:'Raser le Centre Ville adverse en Conquête.',  test:(s,c)=>c.won&&c.gmode!=='survival' },
-  { id:'blitz',       ico:'⚡',  nom:'Guerre Éclair',      desc:'Gagner une Conquête en moins de 25 minutes.', test:(s,c)=>c.won&&c.gmode!=='survival'&&c.time<1500 },
+  { id:'conqueror',   ico:'🏴',  nom:'Conquérant',         desc:'Raser le Centre Ville adverse en Conquête.',  test:(s,c)=>c.won&&c.gmode!=='survival'&&c.gmode!=='mission' },
+  { id:'blitz',       ico:'⚡',  nom:'Guerre Éclair',      desc:'Gagner une Conquête en moins de 25 minutes.', test:(s,c)=>c.won&&c.gmode!=='survival'&&c.gmode!=='mission'&&c.time<1500 },
   { id:'flawless',    ico:'✨',  nom:'Inébranlable',       desc:'Gagner sans perdre un seul bâtiment.',        test:(s,c)=>c.won&&s.bldLost===0 },
   { id:'tactician',   ico:'🔥',  nom:'Tacticien',          desc:'Gagner en difficulté Difficile.',             test:(s,c)=>c.won&&c.diff==='hard' },
   { id:'legend',      ico:'☠️',  nom:'Légende',            desc:'Gagner en difficulté Brutal.',                test:(s,c)=>c.won&&c.diff==='brutal' },
@@ -2130,6 +2130,9 @@ function finishGame(won){
 const CLASSEMENT_CAT={conquest:'conquete', conquest2:'conquete2', coop2v1:'coop2v1'};
 function soumettreClassement(won){
   if(!mpDispo()||!window.MP.classementEnvoyer) return;
+  // Une mission n'est pas une Conquête : ni même adversaire, ni même carte,
+  // ni même condition de victoire. Son temps fausserait le classement.
+  if(G.gmode==='mission') return;
   if(G.gmode==='survival'){
     window.MP.classementEnvoyer('survie',G.wave||0).catch(()=>{});
   } else if(won){
@@ -2150,7 +2153,9 @@ function showVictory(){
   ov.classList.add('endscreen');
   // La Merveille prime sur l'exploit habituel du mode (vagues repoussées ou
   // Centre Ville rival abattu) : c'est elle qui a réellement tranché la partie.
-  const exploit=moi()&&moi().merveilleAchevee
+  const exploit=G.mission&&G.scn&&G.scn.fin
+    ? `${texteFinMission()} ${'★'.repeat(G.scn.etoiles||0)}${'☆'.repeat(Math.max(0,((missionCourante()||{}).etoiles||['victoire']).length-(G.scn.etoiles||0)))}`
+    : moi()&&moi().merveilleAchevee
     ? `Votre Merveille est restée debout ${Math.round(MERVEILLE_WIN_TIME/60)} minutes après son achèvement. La postérité s'en souviendra.`
     : G.gmode!=='survival'
     ? `Le Centre Ville rival est tombé. La carte est à vous.`
@@ -2194,7 +2199,9 @@ function showGameOver(){
   envoyerBilanReseau();
   const fresh=finishGame(false);
   const gagnantMerveille=factionsJouantes().find(f=>f.merveilleAchevee&&f.id!==G.me);
-  const cause=gagnantMerveille
+  const cause=G.mission&&G.scn&&G.scn.fin
+    ? texteFinMission()
+    : gagnantMerveille
     ? `${gagnantMerveille.nom} a achevé sa Merveille et l'a gardée debout — la partie est terminée.`
     : G.gmode!=='survival'
     ? `Le seigneur rival a rasé votre Centre Ville.`

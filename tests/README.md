@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**243 tests, 17 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**259 tests, 18 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -103,6 +103,18 @@ qui **ne se voit pas** :
   (3) l'invité éliminé coupe son pouls, et l'hôte prenait ce silence pour
   une coupure : partie gelée trois minutes (`verifierVeilleReseau` ignore
   un camp `vaincu`). Prérequis du mode Campagne, jouable à deux.
+- **`campagne`** — le moteur de scénario (js/15-campagne.js), exercé par la
+  mission d'essai `MISSIONS.essai` et des variantes qui n'en changent qu'un
+  détail. Ce qui compte : la surcouche est DÉTERMINISTE et passe par
+  `genMap` (le client ne passe jamais par `startGame` — un test rejoue
+  exactement son chemin, `initState` + `genMap`) ; un camp parti sans
+  Centre Ville n'est pas vaincu à la première image ; raser le seigneur ne
+  gagne pas une mission qui demandait autre chose ; un objectif sans `test`
+  (« le héros doit survivre ») se MAINTIENT au lieu de bloquer toute
+  victoire ; une fermeture de scénariste qui lève perd son déclencheur, pas
+  la partie ; et le test de FORMAT relit chaque mission et chaque campagne
+  (zones dans la carte, orateurs déclarés, au moins un principal
+  remplissable).
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

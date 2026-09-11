@@ -1053,9 +1053,26 @@ window.pickMode=pickMode;
 // js/13-cloud.js).
 let selectedPlayTab='solo';
 function pickPlayTab(tab){
-  if(tab!=='solo'&&tab!=='multi') return;
+  if(tab!=='solo'&&tab!=='multi'&&tab!=='campagne') return;
   selectedPlayTab=tab;
   document.querySelectorAll('.playtab').forEach(b=>b.classList.toggle('sel', b.dataset.tab===tab));
+  // Onglet Campagne : ni mode, ni réglages, ni bouton de lancement — une
+  // mission impose tout sauf la difficulté, qui se choisit sur son briefing.
+  // Les réglages sont masqués par une CLASSE sur la carte de titre, pas en
+  // touchant leur style : leur état déplié/replié revient intact à l'onglet
+  // suivant. Le mode courant n'est pas touché non plus.
+  const carte=document.querySelector('.title-card');
+  if(carte) carte.classList.toggle('onglet-campagne',tab==='campagne');
+  if(tab==='campagne'){
+    const sb=document.getElementById('startsolobtn'), fb=document.getElementById('mpbtn-titre');
+    const mt=document.getElementById('multitip');
+    if(sb) sb.style.display='none';
+    if(fb) fb.style.display='none';
+    if(mt) mt.style.display='none';
+    if(typeof afficherListeCampagnes==='function') afficherListeCampagnes();
+    try{ localStorage.setItem('adc_playtab',tab); }catch(e){}
+    return;
+  }
   // Chaque onglet ne montre QUE les modes qui ont un vainqueur défini dans
   // ce contexte (voir MODES et modeDispo() plus haut) : Survie disparaît en
   // Multijoueur, 2v1 Coop en Solo. Piloté par la table, pas par une liste

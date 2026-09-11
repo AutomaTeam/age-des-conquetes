@@ -556,22 +556,13 @@ function texteFinMission(){
 }
 
 // ── RÉPLIQUES ─────────────────────────────────────────────
-// Le journal (G.scn.dlg) est la source ; l'affichage n'en est qu'une lecture.
-// Pour l'instant une réplique s'affiche en toast chez l'hôte — le bandeau de
-// dialogue, et sa lecture par l'invité depuis le journal répliqué, viennent
-// avec l'interface de campagne.
+// Le journal (G.scn.dlg) est la SOURCE ; le bandeau de dialogue n'en est
+// qu'une lecture (voir majInterfaceScenario, plus bas). C'est ce qui permettra
+// à l'invité d'une partie à deux de lire le même récit depuis l'état répliqué,
+// sans passer par la file de RETOURS, plafonnée et oublieuse.
 function destinataireLocal(dest){
   if(!dest||dest==='tous') return true;
   return facMission(dest)===G.me;
-}
-function afficherReplique(k,dest){
-  if(!destinataireLocal(dest)) return;
-  const def=missionCourante();
-  const lignes=(def.dialogues&&def.dialogues[k])||[];
-  for(const [qui,txt] of lignes){
-    const o=(def.orateurs&&def.orateurs[qui])||{nom:qui,ico:'💬'};
-    notify(`${o.ico} ${o.nom} : ${txt}`,'#e8d5a0',true);
-  }
 }
 
 // ── LE VOCABULAIRE DES SCÉNARISTES ────────────────────────
@@ -579,6 +570,11 @@ function afficherReplique(k,dest){
 // touchent jamais G directement : tout ce qu'elles lisent ou font passe par
 // ici, ce qui permet de faire évoluer le moteur sans les réécrire, et de les
 // rejouer telles quelles dans les tests.
+function campJoueur(){
+  const ids=new Set([FAC.P1]);
+  if(G.factions[FAC.P2]) ids.add(FAC.P2);
+  return ids;
+}
 function entitesTag(tag){
   const out=[];
   for(const u of G.units) if(u.tag===tag&&u.hp>0) out.push(u);
@@ -612,6 +608,15 @@ const SCN_API = {
     }
     return false;
   },
+  // Tout le camp du JOUEUR (P1, et le second commandant s'il existe) : un
+  // objectif commun — « six fermes » — compte les fermes des deux
+  // commandants en coop, et ne compte pas deux fois en solo fusionné.
+  compteEquipe(type){
+    const ids=campJoueur();
+    if(UDEF[type]) return G.units.filter(u=>ids.has(u.owner)&&u.type===type&&u.hp>0).length;
+    return G.buildings.filter(b=>ids.has(b.owner)&&b.type===type&&!b.constructing&&b.hp>0).length;
+  },
+  statsEquipe(cle){ let n=0; for(const id of campJoueur()){ const f=G.factions[id]; if(f&&f.stats) n+=f.stats[cle]||0; } return n; },
   age(k){ const f=G.factions[facMission(k)]; return f?f.age:0; },
   res(k,r){ const f=G.factions[facMission(k)]; return f&&f.res?(f.res[r]||0):0; },
   stats(k,cle){ const f=G.factions[facMission(k)]; return f&&f.stats?(f.stats[cle]||0):0; },
@@ -624,7 +629,6 @@ const SCN_API = {
   dire(k,dest){
     if(!G.scn) return;
     G.scn.dlg.push({k,d:dest||'tous',t:G.gameTime}); G.scn.seq++;
-    afficherReplique(k,dest||'tous');
   },
   objectif(id,etat){ majObjectif(id,etat==='ajout'?'actif':etat); },
   // Renfort ou vague : même geste, poser des unités à une zone. Pour un camp
@@ -713,3 +717,290 @@ function revelationsScenario(f,equipe,reveal){
   G.scn.rev=G.scn.rev.filter(z=>z.jusqua==null||z.jusqua>G.gameTime);
   for(const z of G.scn.rev) if(z.f==null||equipe.has(z.f)) reveal(z.tx,z.ty,z.r);
 }
+
+// ══════════════════════════════════════════════════════════
+//  INTERFACE DE CAMPAGNE
+// ══════════════════════════════════════════════════════════
+// Tout texte de mission passe par echapHTML avant d'entrer dans un innerHTML :
+// ce contenu est le nôtre, mais la règle du jeu est qu'aucun texte ne soit
+// jamais rendu comme du balisage — et l'invité lira bientôt des clés venues
+// du réseau.
+function echapHTML(t){
+  return String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── PROGRESSION ───────────────────────────────────────────
+// PROFILE.campagne : une entrée par mission gagnée au moins une fois,
+// {v:1, diff, etoiles, temps}. Fusion (Drive ↔ appareil, ou deux victoires
+// successives) : la MEILLEURE difficulté, le plus d'étoiles, le meilleur
+// temps — chacun indépendamment, puisqu'un joueur peut avoir gagné en
+// Brutal avec deux étoiles puis en Facile avec trois.
+const RANG_DIFF = { easy:0, normal:1, hard:2, brutal:3 };
+function fusionMission(a,b){
+  if(!a) return b?Object.assign({},b):null;
+  if(!b) return Object.assign({},a);
+  const ta=a.temps!=null?a.temps:Infinity, tb=b.temps!=null?b.temps:Infinity;
+  return { v:1,
+    diff:(RANG_DIFF[b.diff]||0)>(RANG_DIFF[a.diff]||0)?b.diff:a.diff,
+    etoiles:Math.max(a.etoiles||0,b.etoiles||0),
+    temps:isFinite(Math.min(ta,tb))?Math.min(ta,tb):null };
+}
+function fusionProgression(a,b){
+  const out={};
+  for(const k of new Set([...Object.keys(a||{}),...Object.keys(b||{})])){
+    const m=fusionMission(a&&a[k],b&&b[k]);
+    if(m) out[k]=m;
+  }
+  return out;
+}
+// Appelée par finishGame(true) — donc une seule fois par partie.
+function enregistrerVictoireMission(){
+  if(!G.mission) return;
+  const e={v:1, diff:G.difficulty, etoiles:(G.scn&&G.scn.etoiles)||1, temps:Math.round(G.gameTime)};
+  if(!PROFILE.campagne) PROFILE.campagne={};
+  PROFILE.campagne[G.mission]=fusionMission(PROFILE.campagne[G.mission],e);
+}
+function resultatMission(cle){ return (PROFILE.campagne&&PROFILE.campagne[cle])||null; }
+// Une mission s'ouvre quand la précédente de sa campagne a été gagnée, à
+// n'importe quelle difficulté. La première est toujours ouverte.
+function missionDebloquee(cle){
+  const m=MISSIONS[cle]; if(!m) return false;
+  const c=CAMPAGNES[m.campagne]; if(!c) return true;
+  const i=c.missions.indexOf(cle);
+  return i<=0||!!resultatMission(c.missions[i-1]);
+}
+function missionSuivante(cle){
+  const m=MISSIONS[cle], c=m&&CAMPAGNES[m.campagne];
+  if(!c) return null;
+  const i=c.missions.indexOf(cle);
+  return (i>=0&&i+1<c.missions.length)?c.missions[i+1]:null;
+}
+function etoilesTexte(n,max){ return '★'.repeat(n||0)+'☆'.repeat(Math.max(0,(max||3)-(n||0))); }
+function nbEtoilesMax(cle){ const m=MISSIONS[cle]; return ((m&&m.etoiles)||['victoire']).length; }
+
+// ── ÉCRAN-TITRE : onglet Campagne ─────────────────────────
+// Une campagne sans mission n'est PAS affichée : un bouton grisé « à venir »
+// serait une promesse que le jeu ne tient pas encore.
+function afficherListeCampagnes(){
+  const el=document.getElementById('campbloc');
+  if(!el) return;
+  let html='';
+  for(const [cle,c] of Object.entries(CAMPAGNES)){
+    if(!c.missions.length) continue;
+    const gagnees=c.missions.filter(id=>resultatMission(id)).length;
+    const h=HEROES[c.heros]||{nom:''};
+    html+=`<button type="button" class="campbtn" onclick="ouvrirCampagne('${cle}')">`
+      +`<span class="cico">${c.ico}</span>`
+      +`<span><span class="cnom">${echapHTML(c.nom)}</span>`
+      +`<span class="csub">${echapHTML(h.nom)} · ${gagnees}/${c.missions.length} mission${c.missions.length>1?'s':''}</span></span></button>`;
+  }
+  el.innerHTML='<p class="campintro">Des missions scénarisées, chacune avec son récit, ses objectifs et sa carte.</p>'
+    +(html||'<p class="tip">Aucune campagne disponible pour le moment.</p>');
+}
+window.afficherListeCampagnes=afficherListeCampagnes;
+
+// ── PANNEAU DE CAMPAGNE : missions et briefing ────────────
+let _campOuverte=null, _missionVue=null;
+function ouvrirCampagne(cle,missionCle){
+  const c=CAMPAGNES[cle]; if(!c||!c.missions.length) return;
+  _campOuverte=cle;
+  const h=HEROES[c.heros]||{nom:'',ico:''};
+  const tete=document.getElementById('camp-tete');
+  if(tete) tete.innerHTML=`<div class="ct-ico">${c.ico}</div><h2>${echapHTML(c.nom)}</h2>`
+    +`<div class="ct-sub">${echapHTML(CIVS[c.heros]?CIVS[c.heros].nom:'')} · ${h.ico||''} ${echapHTML(h.nom)}</div>`;
+  // Par défaut : la première mission ouverte et pas encore gagnée — là où le
+  // joueur en était.
+  const defaut=c.missions.find(id=>missionDebloquee(id)&&!resultatMission(id))
+             ||[...c.missions].reverse().find(missionDebloquee)||c.missions[0];
+  voirMission(missionCle&&missionDebloquee(missionCle)?missionCle:defaut);
+  const p=document.getElementById('campagnepanel');
+  if(p) p.style.display='flex';
+}
+function fermerCampagne(){
+  const p=document.getElementById('campagnepanel');
+  if(p) p.style.display='none';
+  _campOuverte=null;
+}
+function voirMission(cle){
+  const m=MISSIONS[cle]; if(!m||!missionDebloquee(cle)) return;
+  _missionVue=cle;
+  const c=CAMPAGNES[m.campagne];
+  const liste=document.getElementById('camp-missions');
+  if(liste) liste.innerHTML=c.missions.map((id,i)=>{
+    const mm=MISSIONS[id], ouverte=missionDebloquee(id), r=resultatMission(id);
+    return `<button type="button" class="missbtn${id===cle?' sel':''}" ${ouverte?`onclick="voirMission('${id}')"`:'disabled'}>`
+      +`<span class="mnum">${ouverte?i+1:'🔒'}</span>`
+      +`<span class="mtit">${echapHTML(mm.titre)}</span>`
+      +`<span class="mstar">${r?etoilesTexte(r.etoiles,nbEtoilesMax(id)):''}</span></button>`;
+  }).join('');
+  const r=resultatMission(cle);
+  const vus=(m.objectifs||[]).filter(o=>!o.cache);
+  const princ=vus.filter(o=>o.type!=='secondaire'), sec=vus.filter(o=>o.type==='secondaire');
+  const listeObj=l=>`<ul class="cb-obj">${l.map(o=>`<li>${echapHTML(o.txt)}</li>`).join('')}</ul>`;
+  const brief=document.getElementById('camp-brief');
+  if(!brief) return;
+  brief.innerHTML=`<h3>${echapHTML(m.titre)}</h3>`
+    +`<div class="cb-lieu">${echapHTML(m.lieu||'')}${m.date?' · '+echapHTML(m.date):''}</div>`
+    +(m.briefing||[]).map(t=>`<p>${echapHTML(t)}</p>`).join('')
+    +`<div class="cb-sec">Objectifs</div>${listeObj(princ)}`
+    +(sec.length?`<div class="cb-sec">Secondaires</div>${listeObj(sec)}`:'')
+    +(r?`<div class="cb-sec">Meilleur résultat : ${etoilesTexte(r.etoiles,nbEtoilesMax(cle))} · ${DIFFS[r.diff]?DIFFS[r.diff].nom:''}${r.temps!=null?' · '+fmtDuration(r.temps):''}</div>`:'')
+    +`<div class="cb-sec">Difficulté</div>`
+    +`<div class="diffrow">${Object.entries(DIFFS).map(([k,d])=>
+        `<button type="button" class="diffbtn${k===selectedDifficulty?' sel':''}" data-d="${k}" onclick="choisirDiffCampagne('${k}')"><span class="dico">${d.ico}</span><span class="dlabel">${d.nom}</span></button>`).join('')}</div>`
+    +`<button class="bigbtn sheen" onclick="jouerMissionSolo()">⚔️ Jouer seul</button>`;
+  brief.style.display='flex';
+}
+function choisirDiffCampagne(k){ pickDifficulty(k); if(_missionVue) voirMission(_missionVue); }
+function jouerMissionSolo(){
+  const cle=_missionVue;
+  if(!cle||!missionDebloquee(cle)) return;
+  fermerCampagne();
+  lancerMission(cle);
+}
+// Le profil se charge en asynchrone (et se refusionne après une connexion
+// Drive) : ce qui est affiché doit suivre — voir refreshAchCount.
+function rafraichirCampagne(){
+  if(typeof selectedPlayTab!=='undefined'&&selectedPlayTab==='campagne') afficherListeCampagnes();
+  if(_campOuverte&&_missionVue) voirMission(_missionVue);
+}
+Object.assign(window,{ouvrirCampagne,fermerCampagne,voirMission,choisirDiffCampagne,jouerMissionSolo});
+
+// ── FIN DE MISSION ────────────────────────────────────────
+// Après une mission, on revient à l'écran de campagne en RECHARGEANT la page
+// (comme « Nouvelle partie » depuis toujours : c'est le seul chemin qui remet
+// tout l'état à neuf), en laissant un mot dans sessionStorage pour rouvrir le
+// bon briefing. Les boutons disent donc où ils mènent — un briefing — et non
+// « Rejouer », que le jeu ne ferait pas d'un seul clic.
+const CLE_RETOUR_CAMPAGNE='adc_campagne_ouvrir';
+function allerAuBriefing(cle){
+  const m=MISSIONS[cle];
+  try{ sessionStorage.setItem(CLE_RETOUR_CAMPAGNE,JSON.stringify({c:m&&m.campagne,m:cle})); }catch(e){}
+  location.reload();
+}
+window.allerAuBriefing=allerAuBriefing;
+function boutonsFinMission(issue){
+  const cle=G.mission, suiv=missionSuivante(cle);
+  const second='style="background:linear-gradient(180deg,#3a2a08,#1a1200);color:var(--gold-l);border:1.5px solid var(--gold-d);box-shadow:none;"';
+  if(issue==='victoire'){
+    return (suiv?`<button class="bigbtn" onclick="allerAuBriefing('${suiv}')">➡️ Mission suivante : ${echapHTML(MISSIONS[suiv].titre)}</button>`:'')
+      +`<button class="bigbtn" ${suiv?second:''} onclick="allerAuBriefing('${cle}')">📜 Retour à la campagne</button>`;
+  }
+  return `<button class="bigbtn" onclick="allerAuBriefing('${cle}')">📜 Retour au briefing</button>`;
+}
+// À l'ouverture de la page : rouvre le briefing laissé par une fin de mission.
+function reprendreEcranCampagne(){
+  let r=null;
+  try{ r=JSON.parse(sessionStorage.getItem(CLE_RETOUR_CAMPAGNE)||'null'); sessionStorage.removeItem(CLE_RETOUR_CAMPAGNE); }catch(e){}
+  if(!r||!CAMPAGNES[r.c]) return;
+  pickPlayTab('campagne');
+  ouvrirCampagne(r.c,r.m);
+}
+
+// ── EN PARTIE : objectifs, répliques, marqueurs ───────────
+// Lecture de G.scn à chaque image (voir loop), redessinée seulement quand
+// G.scn.seq a bougé. Rien ici ne modifie l'état : c'est l'affichage du
+// scénario, que l'hôte écrit — et que l'invité recevra tel quel.
+let _scnRef=null, _scnVu=-1, _objOuvert=true;
+let _dlgLu=0, _fileRepliques=[], _repliqueFin=0;
+// Posé par loadGame : une partie reprise rouvre sur un journal déjà joué, qu'on
+// ne rejoue pas. Un signal explicite plutôt qu'une devinette sur le temps de
+// jeu — une mission neuve peut très bien avoir déjà quelques secondes au
+// compteur quand l'interface la découvre.
+let _scnReprise=false;
+function marquerScenarioRepris(){ _scnReprise=true; }
+function majInterfaceScenario(){
+  if(!G.mission||!G.scn) return;
+  if(G.scn!==_scnRef){
+    // Nouvelle mission, ou partie reprise (voir marquerScenarioRepris).
+    _scnRef=G.scn; _scnVu=-1; _fileRepliques=[]; _repliqueFin=0;
+    // Sur un téléphone, le panneau ouvert couvrirait un quart de la carte au
+    // moment où le joueur la découvre : il démarre replié, la barre du haut
+    // tient le compte (refreshConquestBar) et le bouton 📜 le rouvre.
+    _objOuvert=!(typeof matchMedia==='function'&&matchMedia('(max-width:600px)').matches);
+    _dlgLu=_scnReprise?G.scn.dlg.length:0;
+    _scnReprise=false;
+    const b=document.getElementById('zobjectifs'); if(b) b.style.display='';
+  }
+  if(G.scn.seq!==_scnVu){
+    _scnVu=G.scn.seq;
+    dessinerObjectifs();
+    const def=missionCourante();
+    for(;_dlgLu<G.scn.dlg.length;_dlgLu++){
+      const e=G.scn.dlg[_dlgLu];
+      if(!destinataireLocal(e.d)) continue;
+      for(const l of ((def.dialogues&&def.dialogues[e.k])||[])) _fileRepliques.push(l);
+    }
+  }
+  avancerRepliques();
+}
+function dessinerObjectifs(){
+  const el=document.getElementById('objpanel'), def=missionCourante();
+  if(!el||!def) return;
+  if(!_objOuvert){ el.style.display='none'; return; }
+  const ico={actif:'☐',fait:'✓',echec:'✗'};
+  const lignes=(def.objectifs||[]).filter(o=>G.scn.obj[o.id]&&G.scn.obj[o.id]!=='cache')
+    .sort((a,b)=>(a.type==='secondaire')-(b.type==='secondaire'))
+    .map(o=>{
+      const st=G.scn.obj[o.id];
+      const cls=['op-ligne',st==='fait'?'fait':st==='echec'?'echec':'',o.type==='secondaire'?'sec':'',o.zone?'zone':''].join(' ');
+      const clic=o.zone?` onclick="centrerObjectif('${o.id}')"`:'';
+      return `<div class="${cls}"${clic}>${ico[st]||'☐'} ${o.type==='secondaire'?'◇ ':''}${echapHTML(o.txt)}</div>`;
+    });
+  el.innerHTML=`<div class="op-titre"><span>📜 ${echapHTML(def.titre)}</span><button type="button" onclick="basculerObjectifs()" title="Masquer (O)">–</button></div>`+lignes.join('');
+  el.style.display='flex';
+}
+function basculerObjectifs(){
+  if(!G.mission) return;
+  _objOuvert=!_objOuvert;
+  dessinerObjectifs();
+}
+function centrerObjectif(id){
+  const o=objectifDef(id); const zn=o&&o.zone?zoneMission(o.zone):null;
+  if(zn) camCenterOn(zn.x,zn.y);
+}
+// Une réplique reste affichée le temps de la lire (≈ 15 caractères par
+// seconde, bornée), ou jusqu'au clic. Temps RÉEL, pas temps de jeu : on lit
+// au même rythme en ×2.
+function dureeReplique(txt){ return Math.max(3500,Math.min(9000,1800+String(txt).length*65)); }
+function avancerRepliques(){
+  const el=document.getElementById('dlgbandeau');
+  if(!el) return;
+  const maintenant=(typeof performance!=='undefined'?performance.now():Date.now());
+  if(_repliqueFin&&maintenant<_repliqueFin) return;
+  if(!_fileRepliques.length){
+    if(_repliqueFin){ el.style.display='none'; _repliqueFin=0; }
+    return;
+  }
+  const [qui,txt]=_fileRepliques.shift();
+  const def=missionCourante();
+  const o=(def&&def.orateurs&&def.orateurs[qui])||{nom:qui,ico:'💬'};
+  el.innerHTML=`<span class="dl-ico">${o.ico}</span><span><span class="dl-nom">${echapHTML(o.nom)}</span>`
+    +`<span class="dl-txt">${echapHTML(txt)}</span>`
+    +(_fileRepliques.length?`<span class="dl-suite">Toucher pour la suite (${_fileRepliques.length})</span>`:'')+`</span>`;
+  el.style.display='flex';
+  _repliqueFin=maintenant+dureeReplique(txt);
+}
+function repliqueSuivante(){ _repliqueFin=1; avancerRepliques(); }
+Object.assign(window,{basculerObjectifs,centrerObjectif,repliqueSuivante});
+
+// Marqueurs sur la mini-carte : les objectifs actifs qui ont une zone, et ce
+// que la mission a marqué (M.marquer). Un anneau qui pulse, pour se voir sur
+// une forêt comme sur l'inexploré.
+function dessinerMarquesMinimap(ctx,scx,scy,K){
+  if(!G.mission||!G.scn) return;
+  const def=missionCourante(); if(!def) return;
+  const pts=[];
+  for(const o of (def.objectifs||[])) if(o.zone&&G.scn.obj[o.id]==='actif'){ const zn=zoneMission(o.zone); if(zn) pts.push(zn); }
+  for(const m of (G.scn.marques||[])) pts.push(m);
+  if(!pts.length) return;
+  const t=((typeof performance!=='undefined'?performance.now():Date.now())%1400)/1400;
+  for(const p of pts){
+    const x=(p.tx+0.5)*BASE_TILE*scx, y=(p.ty+0.5)*BASE_TILE*scy;
+    ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=2.6*K;
+    ctx.beginPath(); ctx.arc(x,y,(3+t*4)*K,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle=`rgba(255,215,90,${1-t*0.7})`; ctx.lineWidth=1.3*K;
+    ctx.beginPath(); ctx.arc(x,y,(3+t*4)*K,0,Math.PI*2); ctx.stroke();
+  }
+}
+

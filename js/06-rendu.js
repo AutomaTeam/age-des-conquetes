@@ -1930,6 +1930,8 @@ function drawMinimap(){
     mctx.fillStyle=couleurMinimap(u,true);
     mctx.fillRect(u.x*scx-1.5*K,u.y*scy-1.5*K,3*K,3*K);
   }
+  // Objectifs de mission à atteindre (voir dessinerMarquesMinimap).
+  if(G.mission) dessinerMarquesMinimap(mctx,scx,scy,K);
   // Viewport — G.cam et W/gameH() sont en pixels écran zoomés, scx/scy en
   // unités-monde : on divise par l'échelle pour repasser en unités-monde.
   const S=TILE/BASE_TILE;

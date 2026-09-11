@@ -45,6 +45,7 @@ function loop(ts){
   updateCamBords(dt);
   render();
   updateHUD();
+  if(G.mission) majInterfaceScenario();   // objectifs et répliques (js/15-campagne.js)
   _uiRefreshCd-=dt;
   if(_uiRefreshCd<=0){
     _uiRefreshCd=0.5;
@@ -185,9 +186,10 @@ function startGame(){
   const premierePartie=!G.mission&&tutoDoitDemarrer();
   if(G.mission){
     const def=missionCourante();
+    // Le titre seul : les objectifs ont leur propre panneau (voir
+    // dessinerObjectifs) — les annoncer aussi en toasts recouvrait le haut de
+    // l'écran de six bandeaux au moment même où le joueur découvre la carte.
     setTimeout(()=>bigBanner(`${(CAMPAGNES[def.campagne]||{}).ico||'📜'} ${def.titre}`),600);
-    for(const o of (def.objectifs||[])) if(G.scn.obj[o.id]==='actif')
-      notify(`📜 ${o.type==='secondaire'?'Secondaire':'Objectif'} : ${o.txt}`,'#f0c040',true);
   } else if(!premierePartie){
     setTimeout(()=>notify('Sélectionnez un villageois, puis tapez une ressource !','#f0c040'),600);
     setTimeout(()=>notify('🪵 Récoltez du bois puis construisez des Maisons !','#e8d5a0'),3200);

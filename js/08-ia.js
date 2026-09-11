@@ -1270,6 +1270,14 @@ function refreshConquestBar(){
   el.style.display='';
   if(sv) sv.style.display='none';
   const a=G.ai;
+  // Mission sans seigneur rival (brigands seulement) : « Conquête » y serait
+  // faux — la barre dit où en sont les objectifs principaux à REMPLIR (pas
+  // « Charles doit survivre », qui ne se coche qu'à la victoire).
+  if(!a&&G.mission&&G.scn){
+    const def=missionCourante(), pr=((def&&def.objectifs)||[]).filter(o=>o.type!=='secondaire'&&o.test);
+    el.textContent=`📜 Objectifs ${pr.filter(o=>G.scn.obj[o.id]==='fait').length}/${pr.length}`;
+    return;
+  }
   if(!a){ el.textContent='🏴 Conquête'; return; }
   const army=G.units.filter(u=>u.owner===a.id&&u.type!==UT.VIL).length;
   const nextAtk=Math.max(0,Math.ceil(a.atkTimer));

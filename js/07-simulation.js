@@ -124,6 +124,9 @@ function update(dt){
   }
   // Défaite locale
   if(moi()&&moi().vaincu&&!G.gameOver){ G.gameOver=true; showGameOver(); }
+  // Hôte éliminé resté spectateur d'une partie en ligne : clôt la session dès
+  // qu'il n'y a plus personne en lice (voir majSpectateurHote).
+  if(G.spectateur) majSpectateurHote();
   // Merveille achevée et restée debout assez longtemps : victoire immédiate,
   // quel que soit le mode — vérifiée avant les conditions propres au mode
   // pour ne jamais être masquée par elles.

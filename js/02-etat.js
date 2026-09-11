@@ -225,6 +225,10 @@ function initState() {
     hover:null, // entité survolée à la souris (desktop) : {kind,id,owner}
     tiles:[], bmap:[], // carte + blocage (le brouillard est par faction)
     running:false, gameOver:false,
+    // Hôte d'une partie en ligne éliminé alors qu'un autre joueur est encore
+    // en lice : il continue de simuler pour lui (voir showGameOver et
+    // majSpectateurHote). Jamais vrai en solo ni chez l'invité.
+    spectateur:false,
     dayPhase:0, // 0..1 cycle jour/nuit
     groupes:{}, // groupes de contrôle Ctrl+1..9 → [id, id, ...] (voir plus bas)
   };

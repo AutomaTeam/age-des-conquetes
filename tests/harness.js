@@ -98,6 +98,9 @@ const EXPORTS = [
   // qui ne sont ni à moi ni hostiles, cas qui n'existait pratiquement pas.
   'estAmi', 'couleurLisere', 'couleurMinimap', 'curseurSurvol', 'RETOURS_COALESCENTS',
   'purgerSelection', 'convertirUnite', 'doBuild', 'awardKillXP', 'veterancyRank',
+  // Fin de partie à deux (voir la fin du groupe `delta`) : le client reçoit
+  // par le vrai routage, et la veille de connexion se vérifie sans setInterval.
+  'recevoirReseau', 'verifierVeilleReseau', 'partieContinuePourUnAutre',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

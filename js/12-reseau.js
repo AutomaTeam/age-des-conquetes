@@ -1279,12 +1279,21 @@ let _minuteurVeille=null, _minuteurDecision=null, _minuteurBattement=null;
 function demarrerVeilleReseau(){
   RESEAU.dernierRecu=Date.now();
   if(_minuteurVeille) clearInterval(_minuteurVeille);
-  _minuteurVeille=setInterval(()=>{
-    if(!RESEAU.actif||RESEAU.enAttenteReconnexion||RESEAU.decisionRequise) return;
-    if(Date.now()-RESEAU.dernierRecu>DELAI_GEL_RECO) entrerAttenteReconnexion();
-  },500);
+  _minuteurVeille=setInterval(verifierVeilleReseau,500);
   if(_minuteurBattement) clearInterval(_minuteurBattement);
   _minuteurBattement=setInterval(()=>{ if(RESEAU.actif) envoyerReseau({t:'BAT'}); },BAT_PERIODE);
+}
+// Un camp ELIMINE qui se tait n'est pas une coupure : il affiche son ecran de
+// fin, arrete son pouls (arreterVeilleReseau) et ferme sa session — c'est un
+// depart legitime. Sans cette garde, l'hote d'une partie a deux prenait ce
+// silence pour une connexion perdue : il gelait SA partie, encore bien
+// vivante contre l'IA, affichait « connexion perdue » pendant trois minutes,
+// puis lui demandait s'il fallait confier a l'IA un camp qui n'existait plus.
+function verifierVeilleReseau(){
+  if(!RESEAU.actif||RESEAU.enAttenteReconnexion||RESEAU.decisionRequise) return;
+  const adv=RESEAU.adversaire&&G.factions&&G.factions[RESEAU.adversaire.id];
+  if(adv&&adv.vaincu) return;
+  if(Date.now()-RESEAU.dernierRecu>DELAI_GEL_RECO) entrerAttenteReconnexion();
 }
 // La partie est finie (victoire, defaite, retour au menu) : il n'y a plus
 // rien a surveiller. Sans cet arret la veille continuait de tourner par-dessus
@@ -1424,6 +1433,69 @@ window.mpSauverEtQuitter=mpSauverEtQuitter;
 // partie se termine ; le client l'affiche a cote du sien. Si le message
 // n'arrive jamais (l'hote se deconnecte pile a la fin), l'ecran normal
 // (une colonne) s'affiche quand meme : la fonction rend '' dans ce cas.
+// ── DERNIER ETAT AVANT FERMETURE (hote) ──────────────────────────
+// La chute d'un Centre Ville et la fin de partie qu'elle entraine se jouent
+// dans le MEME update() : l'ecran de fin de l'hote refermait donc la session
+// (quitterSessionReseau) avant que pousserReseau n'ait emporte ce pas-la. Le
+// delta qui portait `v:1` du dernier rival ne partait jamais, et l'invite —
+// qui ne constate sa victoire que sur ce drapeau (voir updateVisuel) — ne
+// voyait jamais son ecran de fin. On pousse donc un delta tout de suite,
+// hors cadence, avant le bilan : sur un canal ordonne il arrive le premier.
+function viderDeltaFinal(){
+  if(!reseauActif()||RESEAU.role!=='hote'||!RESEAU.pret||RESEAU.snapEnVol) return;
+  RESEAU.tick++;
+  envoyerReseau(construireDelta());
+}
+
+// ── HOTE ELIMINE, ALLIE ENCORE EN LICE : SPECTATEUR ─────────────
+// L'hote est le SEUL a simuler. Son ecran de defaite arretait la simulation
+// et fermait la session : en coop 2v1, un hote dont le Centre Ville tombait
+// le premier figeait la partie de son allie encore debout, qui recevait
+// « l'hote a quitte » trois minutes plus tard. (Meme chose en 1v1 en ligne :
+// l'hote rase par l'IA laissait l'invite fige face a elle.)
+// Tant qu'un autre joueur humain est en lice, l'hote vaincu reste donc
+// SPECTATEUR : ecran de defaite, mais simulation et flux reseau continuent,
+// jusqu'a ce que la partie soit finie pour tout le monde.
+function partieContinuePourUnAutre(){
+  if(!reseauActif()||RESEAU.role!=='hote') return false;
+  // Une Merveille achevee tranche la partie pour TOUS les camps a la fois
+  // (voir checkMerveilleVictory) : plus personne n'est en lice.
+  if(factionsJouantes().some(f=>f.merveilleAchevee)) return false;
+  return factionsHumaines().some(f=>{
+    if(f.id===G.me||f.vaincu) return false;
+    // Son equipe a-t-elle deja gagne ? Meme regle que la victoire par
+    // elimination d'update(), vue depuis CE camp.
+    const rivaux=factionsJouantes().filter(o=>o.equipe!==f.equipe);
+    return !(rivaux.length&&rivaux.every(o=>o.vaincu));
+  });
+}
+// Appelee a chaque pas par update() tant que l'hote est spectateur : des que
+// plus personne n'est en lice, le dernier etat part, puis le bilan, puis la
+// session se ferme — exactement la fin qu'aurait eue un hote non elimine.
+function majSpectateurHote(){
+  if(!G.spectateur||partieContinuePourUnAutre()) return;
+  G.spectateur=false;
+  G.running=false;
+  viderDeltaFinal();
+  envoyerBilanReseau();
+  quitterSessionReseau();
+  const note=document.getElementById('spectateur-note');
+  if(note) note.textContent='La partie est terminée pour tous les joueurs.';
+  const obs=document.getElementById('spectateur-btn');
+  if(obs) obs.style.display='none';
+  // Le spectateur a pu masquer son écran de défaite pour regarder : il
+  // revient, sinon la partie s'arrêterait sous ses yeux sans un mot.
+  const ov=document.getElementById('overlay');
+  if(ov){ ov.style.display='flex'; ov.classList.add('endscreen'); }
+}
+function observerFinDePartie(){
+  const ov=document.getElementById('overlay');
+  ov.style.display='none';
+  ov.classList.remove('endscreen');
+  notify('👁️ Vous observez la fin de la partie — le bilan reviendra quand elle s\'achèvera','#3498db');
+}
+window.observerFinDePartie=observerFinDePartie;
+
 function envoyerBilanReseau(){
   if(!reseauActif()||RESEAU.role!=='hote') return;
   const bilan={};

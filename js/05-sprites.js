@@ -53,7 +53,14 @@ const SS=3;    // supersampling : sprites générés en 3×, dessinés réduits 
 const ASSET_EXT='.webp';
 const TRIM_W_BLD=512, TRIM_W_UNIT=320, TRIM_W_NODE=320, TRIM_W_ICON=256;
 const GRASS_VARIANTS=8; // nb de textures d'herbe distinctes (buildTerrain ↔ drawMap doivent s'accorder)
-const WATER_VARIANTS=6; // idem pour l'eau (buildTerrain ↔ drawMap)
+// Côté de la nappe d'eau, en cases (buildTerrainEau ↔ drawMap). À quatre
+// cases, les mêmes grappes de vaguelettes revenaient toutes les 152 px — un
+// motif de papier peint, lisible dès le premier coup d'œil sur un lac. Six
+// cases, peintes à ×2 et non ×3 (des traits d'écume n'ont pas besoin du
+// suréchantillonnage des sprites) : une nappe de 456 px au zoom maximum, quatre
+// images d'animation, ~3,3 Mo. Le calque de variation propre à l'eau (voir
+// buildMacroEau) a une période de onze cases, qui n'en est pas multiple.
+const EAU_PERIODE=6, EAU_SS=2;
 // Couleur de fond de l'eau. Sert DEUX fois, et les deux doivent rester
 // d'accord : c'est la base du sprite d'eau (buildTerrainEau) et le fond opaque
 // peint sous les cases d'eau dans le pavé de terrain (terrainChunk), qui
@@ -310,58 +317,86 @@ function buildTerrainEau(T){
   // d'une tuile à l'autre sur toute la longueur du lac : un lac entier se
   // lisait comme du papier millimétré, de loin le pire défaut du rendu.
   //
-  // Ici, deux principes :
+  // Une première correction (historique, remplacée plus bas) posait deux
+  // principes :
   //  1. Aucune ligne droite. Les crêtes sont des sinusoïdes dont le déphasage
   //     revient exactement à zéro aux bords gauche et droit de la tuile
   //     (période entière sur T) — elles se raccordent donc parfaitement à la
   //     tuile voisine sans jamais former de segment rectiligne.
-  //  2. WATER_VARIANTS jeux de crêtes différents, choisis par un hachage de
+  //  2. Six jeux de crêtes différents, choisis par un hachage de
   //     la position (comme l'herbe) : deux tuiles voisines n'ont ni les mêmes
   //     hauteurs de crête ni les mêmes amplitudes, donc plus rien ne s'aligne
   //     à l'échelle du lac.
   // Les barres verticales, elles, disparaissent purement et simplement : rien
   // dans une surface d'eau vue de dessus ne justifie un réseau orthogonal.
-  for(let v=0;v<WATER_VARIANTS;v++) for(let f=0;f<4;f++){
-    const{c,cx}=offCanvas(T,T); const rnd=srnd(v*131+f*31+7);
-    px(cx,0,0,T,T,EAU_FOND);
-    // Fonds : deux bandes très sombres et très douces, elles aussi ondulées,
-    // qui donnent un peu de profondeur sans marquer de bord de tuile.
-    const bande=(base,amp,per,ph,thick,col)=>{
-      cx.strokeStyle=col; cx.lineWidth=thick; cx.lineCap='round'; cx.lineJoin='round';
-      // Tracé répété en -T / 0 / +T : une crête qui déborde par le haut
-      // ressort par le bas, donc la tuile reste raccordable verticalement.
-      for(const off of [-T,0,T]){
-        cx.beginPath();
-        for(let x=0;x<=T;x+=2){
-          const y=base+off+Math.sin(x/T*Math.PI*2*per+ph)*amp;
-          if(x===0) cx.moveTo(x,y); else cx.lineTo(x,y);
-        }
-        cx.stroke();
+  //
+  // ── 2026-09-10 : UNE SEULE NAPPE, PLUS DE TUILES ──
+  // Le principe 2 ne suffisait pas : chaque case portait SES crêtes, qui
+  // s'arrêtaient net à son bord. De près, un lac se lisait comme une mosaïque
+  // de carreaux de 38 px, chacun rayé de tirets qui ne se prolongeaient jamais
+  // chez le voisin — la grille chassée par la porte revenait par la fenêtre.
+  //
+  // L'eau est désormais une NAPPE continue de EAU_PERIODE×EAU_PERIODE cases,
+  // raccordable sur ses quatre bords, dont chaque case d'eau prélève le
+  // morceau qui correspond à sa position MONDE (voir drawMap). Les vaguelettes
+  // y sont semées librement, à cheval sur les limites de case : il n'y a plus
+  // de limite de case dans l'eau. Chaque vaguelette a sa phase propre et
+  // n'est visible que sur une partie du cycle de quatre images (elle naît,
+  // enfle, s'efface) : c'est ce qui donne le clapot, sans défilement d'ensemble
+  // qui ferait glisser le lac comme un tapis roulant.
+  T=Math.round(T*EAU_SS/SS);   // voir EAU_SS : la nappe n'est pas suréchantillonnée ×3
+  const P=T*EAU_PERIODE;
+  const lw=Math.max(1.2,T*0.030), lw2=Math.max(1,T*0.016);
+  // Les vaguelettes sont tirées une fois pour les quatre images : c'est la
+  // MÊME vaguelette qui vit d'une image à l'autre, pas un nouveau semis.
+  const rndV=srnd(7349);
+  const vagues=[];
+  for(let i=0;i<3.2*EAU_PERIODE*EAU_PERIODE;i++){
+    vagues.push({x:rndV()*P, y:rndV()*P, L:T*(0.32+rndV()*0.5),
+                 cb:T*(0.03+rndV()*0.05), ph:rndV()*Math.PI*2, a:0.14+rndV()*0.12});
+  }
+  for(let f=0;f<4;f++){
+    const{c,cx}=offCanvas(P,P); const rnd=srnd(911+f*57);
+    px(cx,0,0,P,P,EAU_FOND);
+    cx.lineCap='round'; cx.lineJoin='round';
+    // Trace une forme aux neuf positions ±P qui peuvent mordre sur la nappe :
+    // ce qui déborde d'un bord ressort par le bord opposé.
+    const neuf=(x,y,marge,dessin)=>{
+      for(const oy of [-P,0,P]) for(const ox of [-P,0,P]){
+        const X=x+ox, Y=y+oy;
+        if(X<-marge||Y<-marge||X>P+marge||Y>P+marge) continue;
+        dessin(X,Y);
       }
     };
-    // Ces bandes-là sont volontairement IDENTIQUES d'une variante à l'autre
-    // (aucun `v` dans leur position ni leur phase) : larges et sombres, elles
-    // laisseraient une marche visible à chaque jointure si elles sautaient de
-    // niveau entre deux tuiles voisines. Ce sont les crêtes claires, fines et
-    // ondulées, qui portent toute la variété — leur décalage se lit comme du
-    // clapot, pas comme une grille.
-    for(let i=0;i<2;i++) bande((i+0.35)*T/2+f*T/9, T*0.07, 1, i*1.9, T*0.16, 'rgba(14,48,80,.16)');
-    // Crêtes claires : 3 par tuile, hauteurs/amplitudes/périodes dépendantes
-    // de la variante, décalées d'un quart de tuile par image d'animation.
-    for(let i=0;i<3;i++){
-      const base=((i+0.5)*T/3 + v*T*0.11 + f*T/4)%T;
-      const amp=T*(0.025+0.030*(((v+i)%3)/2));
-      const per=1+((v+i)%2);           // 1 ou 2 ondulations complètes
-      const ph=(v*2.1+i*1.3);
-      bande(base, amp, per, ph, Math.max(1.2,T*0.028), 'rgba(206,234,255,.20)');
-      bande(base-T*0.035, amp, per, ph, Math.max(1,T*0.016), 'rgba(255,255,255,.16)');
+    for(const v of vagues){
+      // Cycle de quatre images : sin(ph + f·π/2) reprend sa valeur à f=4, la
+      // boucle d'animation se referme donc sans saut.
+      const s=Math.sin(v.ph+f*Math.PI/2);
+      if(s<=0.05) continue;             // hors de sa moitié de vie : rien
+      const dx=Math.cos(v.ph+f*Math.PI/2)*v.L*0.12;   // léger roulis latéral
+      const croissant=(X,Y,d)=>{
+        cx.beginPath();
+        for(let k=0;k<=10;k++){
+          const u=k/10, t=u*2-1;
+          const xx=X+dx+t*v.L/2, yy=Y+d-v.cb*(1-t*t);  // arc bombé vers le haut
+          if(k===0) cx.moveTo(xx,yy); else cx.lineTo(xx,yy);
+        }
+        cx.stroke();
+      };
+      neuf(v.x,v.y,v.L,(X,Y)=>{
+        cx.strokeStyle='rgba(206,234,255,'+(v.a*s).toFixed(3)+')'; cx.lineWidth=lw;
+        croissant(X,Y,0);
+        cx.strokeStyle='rgba(255,255,255,'+(v.a*s*0.8).toFixed(3)+')'; cx.lineWidth=lw2;
+        croissant(X,Y,-T*0.035);
+      });
     }
-    // éclats de soleil scintillants
-    for(let i=0;i<4;i++){
-      const sx2=(rnd()*T)|0, sy2=(rnd()*T)|0;
-      cx.fillStyle='rgba(255,255,255,.5)'; cx.fillRect(sx2,sy2,Math.max(1,T*0.012|0),Math.max(1,T*0.012|0));
-    }
-    SPR.terrain['water'+v+'_'+f]={c,cx};
+    // éclats de soleil scintillants, retirés à chaque image
+    const e=Math.max(1,T*0.012|0);
+    cx.fillStyle='rgba(255,255,255,.5)';
+    for(let i=0;i<4*EAU_PERIODE*EAU_PERIODE;i++) cx.fillRect((rnd()*P)|0,(rnd()*P)|0,e,e);
+    // Le motif est créé ici, une fois : drawMap ne fait plus que le recaler
+    // sur la caméra (setTransform) avant de remplir la forme de l'eau.
+    SPR.terrain['eau_'+f]={c,cx,pat:ctx.createPattern(c,'repeat')};
   }
 }
 
@@ -1088,6 +1123,35 @@ function damagedSprite(spr,stage){
   const out=Object.assign({},spr,{c,cx});
   arr[stage]=out;
   return out;
+}
+
+// ── ÉCLAIR D'IMPACT ───────────────────────────────────────────────────
+// Silhouette BLANCHE d'un sprite, posée par-dessus lui le temps d'un coup
+// reçu (voir hitFlash, drawUnits/drawBuildings).
+//
+// L'éclair était peint directement sur le canevas principal en
+// « source-atop » : ce mode contraint le dessin à ce qui est DÉJÀ opaque
+// dessous — et sur le canevas principal, sous le sprite, il y a le sol, lui
+// aussi opaque. Tout le carré S×S de l'unité frappée virait donc au blanc :
+// en pleine mêlée, un semis de rectangles blancs clignotants, et le chiffre
+// de dégât écrit dessus. Détourer la silhouette dans un canevas À PART, où
+// il n'y a rien d'autre que le sprite, est la seule façon de faire lire
+// « source-atop » comme prévu.
+//
+// Même cache que damagedSprite : WeakMap indexée par le canevas source,
+// donc rien à purger quand l'atlas est reconstruit au zoom.
+const FLASH_CACHE=new WeakMap();
+function silhouetteBlanche(c){
+  let s=FLASH_CACHE.get(c);
+  if(s) return s;
+  s=offCanvas(c.width,c.height).c;
+  const g=s.getContext('2d');
+  g.drawImage(c,0,0);
+  g.globalCompositeOperation='source-in';
+  g.fillStyle='#fff';
+  g.fillRect(0,0,s.width,s.height);
+  FLASH_CACHE.set(c,s);
+  return s;
 }
 
 // ── LIVRÉE DE CIVILISATION (surcouche, sans planche dédiée) ───────────
@@ -3773,6 +3837,33 @@ function buildMacro(){
   SPR.macroP=P;
   SPR.macroPat=ctx.createPattern(c,'repeat');
   buildMacroLarge();
+  buildMacroEau();
+}
+
+// Même principe, pour l'EAU. Les deux calques du sol recouvraient aussi les
+// lacs — avec les couleurs du SOL : des nappes vert d'herbe flottaient sur
+// l'eau comme des algues. L'eau est désormais peinte après eux (voir
+// drawMap), et reçoit ici sa propre variation, en bleus : fosses plus
+// sombres, hauts-fonds plus clairs. Période de onze cases, première avec
+// EAU_PERIODE : la nappe de vaguelettes et ce calque ne retombent en phase
+// que tous les soixante-six cases, ce qui efface la répétition de l'une et
+// de l'autre.
+function buildMacroEau(){
+  const P=Math.max(96,Math.round(TILE*11));
+  const{c,cx}=offCanvas(P,P); const rnd=srnd(3131);
+  for(let i=0;i<14;i++){
+    const bx=rnd()*P, by=rnd()*P, r=P*(0.12+rnd()*0.18);
+    const sombre=rnd()<0.55;
+    for(let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++){
+      const g=cx.createRadialGradient(bx+ox*P,by+oy*P,0,bx+ox*P,by+oy*P,r);
+      g.addColorStop(0,sombre?'rgba(8,32,62,.22)':'rgba(84,160,206,.14)');
+      g.addColorStop(1,'rgba(0,0,0,0)');
+      cx.fillStyle=g;
+      cx.fillRect(bx+ox*P-r,by+oy*P-r,r*2,r*2);
+    }
+  }
+  SPR.macroEauP=P;
+  SPR.macroEauPat=ctx.createPattern(c,'repeat');
 }
 
 // Deuxième calque de macro-variation, TROIS FOIS PLUS LARGE que le premier

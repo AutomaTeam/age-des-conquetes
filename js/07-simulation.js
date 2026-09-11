@@ -1396,6 +1396,11 @@ function garnisonsArcheres(){
 function updateBuildings(dt){
   const garnisons=garnisonsArcheres();
   for(const b of G.buildings){
+    // Éclair d'impact (posé par dealDmg) : il ne s'éteignait que chez
+    // l'invité (voir 12-reseau.js) — l'hôte le laissait allumé à jamais, ce
+    // qui passait inaperçu tant que le rendu des bâtiments ne le lisait pas.
+    // AVANT le filtre ci-dessous : un chantier aussi peut être frappé.
+    if(b.hitFlash) b.hitFlash=Math.max(0,b.hitFlash-dt);
     if(!b.active||b.constructing) continue;
     // Fumée d'un bâtiment abîmé — même geste que la poussière de chantier
     // (doBuild, plus bas), mais grise plutôt que claire et déclenchée par

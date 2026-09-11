@@ -369,8 +369,8 @@ function terrainChunk(ccx,ccy){
     g.fillRect(px2,py2,bX(x+1)-px2,bY(y+1)-py2);
   }
   for(let y=y0;y<=ey;y++) for(let x=x0;x<=ex;x++){
-    if(G.tiles[y][x]===T_WATER) continue;
-    drawShore(g,x,y,bX(x),bY(y),bX(x+1)-bX(x),bY(y+1)-bY(y));
+    if(G.tiles[y][x]===T_WATER) drawAnse(g,x,y,bX(x),bY(y),bX(x+1)-bX(x),bY(y+1)-bY(y));
+    else drawShore(g,x,y,bX(x),bY(y),bX(x+1)-bX(x),bY(y+1)-bY(y));
   }
   const ch={c,oxDev,oyDev,used:_frameId};
   _tchunks.set(key,ch);
@@ -438,35 +438,13 @@ function drawMap(){
       drawPatches(ctx,manquants[i],manquants[i+1],camDevX/DPR,camDevY/DPR);
       ctx.restore();
       for(let y=Math.max(sy,by);y<=mey;y++) for(let x=Math.max(sx,bx);x<=mex;x++){
-        if(G.tiles[y][x]===T_WATER) continue;
-        drawShore(ctx,x,y,BX[x-sx],BY[y-sy],BX[x-sx+1]-BX[x-sx],BY[y-sy+1]-BY[y-sy]);
+        const f=G.tiles[y][x]===T_WATER?drawAnse:drawShore;
+        f(ctx,x,y,BX[x-sx],BY[y-sy],BX[x-sx+1]-BX[x-sx],BY[y-sy+1]-BY[y-sy]);
       }
     }
   }
 
-  // 2) eau animée, peinte à chaque image par-dessus les pavés.
-  //
-  // Bornes BX/BY, issues de la même caméra quantifiée que le pavé : le lac est
-  // le pire cas de la couture décrite en tête de fichier, car le pavé n'y pose
-  // qu'un fond uni sous une eau animée qui, elle, bouge. Mesuré au cœur d'un
-  // lac avant correction : colonnes à alpha 205 toutes les deux cases, lignes à
-  // alpha 218 à chaque case. (Une jointure sur deux seulement en colonnes :
-  // avec TILE=38 et DPR=1,25, un bord de case sur deux tombait déjà par chance
-  // sur un pixel écran entier — de quoi rendre le motif trompeur à l'œil.)
-  for(let y=sy;y<=ey;y++) for(let x=sx;x<=ex;x++){
-    if(G.tiles[y][x]!==T_WATER) continue;
-    const px2=BX[x-sx], py2=BY[y-sy];
-    const dw=BX[x-sx+1]-px2, dh=BY[y-sy+1]-py2;
-    // variante stable par tuile (même principe que l'herbe) : sans elle,
-    // toutes les cases d'un lac porteraient les crêtes aux mêmes hauteurs
-    // et se rejoindraient en longues bandes rectilignes.
-    let hw=(x*2246822519+y*3266489917)|0; hw=(hw^(hw>>15))*668265263|0; hw=(hw^(hw>>13))|0;
-    const vw=((hw%WATER_VARIANTS)+WATER_VARIANTS)%WATER_VARIANTS;
-    const sp=SPR.terrain['water'+vw+'_'+waterFrame];
-    if(sp) ctx.drawImage(sp.c,px2,py2,dw,dh);
-  }
-
-  // 3) purge des pavés hors écran quand le cache dépasse son plafond, mesuré
+  // 2) purge des pavés hors écran quand le cache dépasse son plafond, mesuré
   // en pixels et non en nombre de pavés : un pavé au zoom maximum pèse une
   // quinzaine de fois celui du zoom minimum.
   const pxx=Math.ceil(TCHUNK*TILE*DPR);   // pavé sans marge, en pixels écran
@@ -474,7 +452,7 @@ function drawMap(){
     for(const [k,ch] of _tchunks) if(ch.used!==_frameId) _tchunks.delete(k);
   }
 
-  // Calques de variation lente, en coordonnées monde (voir buildMacro) : le
+  // 3) calques de variation lente, en coordonnées monde (voir buildMacro) : le
   // large d'abord — c'est le fond de vallée —, le fin par-dessus.
   const gh=gameH();
   const calque=(pat,P)=>{
@@ -486,6 +464,252 @@ function drawMap(){
   };
   if(SPR.macroLargePat) calque(SPR.macroLargePat,SPR.macroLargeP);
   if(SPR.macroPat) calque(SPR.macroPat,SPR.macroP);
+
+  // 4) eau animée, peinte à chaque image par-dessus les pavés — et APRÈS les
+  // calques du sol, qui la couvraient de taches d'herbe (voir buildMacroEau).
+  //
+  // Bornes BX/BY, issues de la même caméra quantifiée que le pavé : le lac est
+  // le pire cas de la couture décrite en tête de fichier, car le pavé n'y pose
+  // qu'un fond uni sous une eau animée qui, elle, bouge. Mesuré au cœur d'un
+  // lac avant correction : colonnes à alpha 205 toutes les deux cases, lignes à
+  // alpha 218 à chaque case. (Une jointure sur deux seulement en colonnes :
+  // avec TILE=38 et DPR=1,25, un bord de case sur deux tombait déjà par chance
+  // sur un pixel écran entier — de quoi rendre le motif trompeur à l'œil.)
+  //
+  // L'eau n'est plus peinte case par case mais comme UNE forme (voir
+  // formeEauVisible) remplie d'un motif : la nappe de vaguelettes (voir
+  // buildTerrainEau), calée sur les coordonnées MONDE. Deux cases voisines y
+  // lisent donc deux morceaux contigus de la même nappe, et une vaguelette à
+  // cheval sur leur limite passe de l'une à l'autre sans rupture. La forme
+  // porte aussi les arrondis de rive, que des cases carrées ne savaient pas
+  // dessiner, et elle détoure ensuite les calques propres à l'eau.
+  const nappe=SPR.terrain['eau_'+waterFrame];
+  const formeEau=formeEauVisible(sx,sy,ex,ey,BX,BY);
+  if(!formeEau) return;
+  if(nappe&&nappe.pat&&nappe.pat.setTransform){
+    const k=TILE/(nappe.c.width/EAU_PERIODE);
+    nappe.pat.setTransform(new DOMMatrix([k,0,0,k,-cx,54-cy]));
+    ctx.fillStyle=nappe.pat;
+    ctx.fill(formeEau);
+  } else if(nappe){
+    // Repli sans DOMMatrix (vieux WebKit) : case par case, sans arrondis —
+    // exactement le rendu d'avant les rives arrondies.
+    const Tn=nappe.c.width/EAU_PERIODE;
+    for(let y=sy;y<=ey;y++) for(let x=sx;x<=ex;x++){
+      if(G.tiles[y][x]!==T_WATER) continue;
+      const px2=BX[x-sx], py2=BY[y-sy];
+      ctx.drawImage(nappe.c,(x%EAU_PERIODE)*Tn,(y%EAU_PERIODE)*Tn,Tn,Tn,
+                    px2,py2,BX[x-sx+1]-px2,BY[y-sy+1]-py2);
+    }
+  }
+  ctx.save();
+  ctx.clip(formeEau);
+  if(SPR.macroEauPat) calque(SPR.macroEauPat,SPR.macroEauP);
+  drawHautsFonds(sx,sy,ex,ey);
+  ctx.restore();
+}
+
+// ── RIVES ARRONDIES ───────────────────────────────────────
+// Depuis que les lacs ne sont plus des carrés (voir genMap), leurs berges
+// suivent des diagonales — et une diagonale faite de cases carrées est un
+// ESCALIER, marche après marche, que le feston de sable ne faisait que
+// souligner. Deux arrondis de rayon RIVE_R × case le transforment en courbe :
+//  • SAILLIE — une case de terre bordée d'eau sur deux côtés voisins (et en
+//    diagonale) : son coin pointait dans l'eau. L'eau le mord désormais en
+//    quart de cercle, et le sable suit l'arrondi (drawShore).
+//  • ANSE — une case d'eau bordée de terre sur deux côtés voisins (et en
+//    diagonale) : son coin rentrait dans la terre à angle droit. Le sable le
+//    comble en quart de cercle (drawAnse) et l'eau s'arrête à l'arrondi.
+// Sur un escalier, saillies et anses alternent : la berge ondule.
+//
+// Purement graphique : les cases, le passage et la pose de bâtiments restent
+// ceux de G.tiles. Les coins sont calculés une fois par carte, comme la
+// profondeur (voir profondeurEau), et relus tant que G.tiles ne change pas.
+const RIVE_R=0.5;
+// Sens du coin vu du centre de la case : NO, NE, SE, SO.
+const COINS_RIVE=[[-1,-1],[1,-1],[1,1],[-1,1]];
+let _coinsRive=null, _coinsRiveTiles=null;
+// Bits 0..3 : saillies d'une case de terre. Bits 4..7 : anses d'une case d'eau.
+function coinsRive(){
+  if(_coinsRive&&_coinsRiveTiles===G.tiles) return _coinsRive;
+  // Calculé d'un bloc à la première image d'une partie (quelques ms sur une
+  // carte de 240×240, une seule fois) : l'eau est d'abord aplatie en un
+  // tableau d'octets, plutôt que douze lectures de G.tiles[y][x] par case.
+  const m=new Uint8Array(COLS*ROWS), eau=new Uint8Array(COLS*ROWS);
+  for(let y=0;y<ROWS;y++){ const l=G.tiles[y]; for(let x=0;x<COLS;x++) eau[y*COLS+x]=l[x]===T_WATER?1:0; }
+  const isW=(x,y)=>x>=0&&y>=0&&x<COLS&&y<ROWS&&eau[y*COLS+x]===1;
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const i=y*COLS+x, e0=eau[i];
+    // Saillie comme anse exigent deux voisins orthogonaux de l'AUTRE nature :
+    // une case entourée de sa propre nature (presque toutes) n'a rien à
+    // calculer.
+    if(x>0&&y>0&&x<COLS-1&&y<ROWS-1&&eau[i-1]===e0&&eau[i+1]===e0&&eau[i-COLS]===e0&&eau[i+COLS]===e0) continue;
+    const w=e0===1; let b=0;
+    for(let k=0;k<4;k++){
+      const sxk=COINS_RIVE[k][0], syk=COINS_RIVE[k][1];
+      const h=isW(x+sxk,y), v=isW(x,y+syk), d=isW(x+sxk,y+syk);
+      if(!w&&h&&v&&d) b|=1<<k;
+      else if(w&&!h&&!v&&!d) b|=16<<k;
+    }
+    m[y*COLS+x]=b;
+  }
+  _coinsRive=m; _coinsRiveTiles=G.tiles;
+  return m;
+}
+// Le quart de case compris entre le coin (CX,CY) et le centre de l'arrondi
+// (à r du coin sur chaque axe), privé du disque de rayon `rho` autour de ce
+// centre. rho=r : la lunule d'un arrondi. rho<r : la même, épaissie d'une
+// bande côté centre (le sable qui suit une saillie).
+function coinArrondi(p,CX,CY,sxk,syk,r,rho){
+  const cx=CX-sxk*r, cy=CY-syk*r;
+  const aA=Math.atan2(syk,0), aB=Math.atan2(0,sxk);
+  const ccw=((aB-aA)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)>Math.PI;
+  p.moveTo(cx+sxk*rho,cy); p.lineTo(CX,cy); p.lineTo(CX,CY); p.lineTo(cx,CY); p.lineTo(cx,cy+syk*rho);
+  p.arc(cx,cy,rho,aA,aB,ccw); p.closePath();
+}
+// L'arc du même arrondi, au rayon `rad`, pour y tracer l'écume.
+function arcArrondi(g,CX,CY,sxk,syk,r,rad){
+  const cx=CX-sxk*r, cy=CY-syk*r;
+  const aA=Math.atan2(syk,0), aB=Math.atan2(0,sxk);
+  const ccw=((aB-aA)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)>Math.PI;
+  g.beginPath(); g.arc(cx,cy,rad,aA,aB,ccw); g.stroke();
+}
+// La forme de l'eau visible à l'écran : plages horizontales de cases d'eau
+// ordinaires, cases à anse arrondies (arcTo), et lunules d'eau qui mordent
+// les saillies des cases de terre. Aucune de ces pièces ne chevauche une
+// autre, donc la règle de remplissage n'a pas à arbitrer entre elles.
+function formeEauVisible(sx,sy,ex,ey,BX,BY){
+  const m=coinsRive();
+  let p=null;
+  for(let y=sy;y<=ey;y++){
+    const Y0=BY[y-sy], Y1=BY[y-sy+1];
+    let debut=-1;
+    for(let x=sx;x<=ex+1;x++){
+      const b=x<=ex?m[y*COLS+x]:0;
+      const eau=x<=ex&&G.tiles[y][x]===T_WATER;
+      // Une case à anse ferme la plage en cours et se dessine seule.
+      if(debut>=0&&(!eau||(b&0xf0))){
+        (p||(p=new Path2D())).rect(BX[debut-sx],Y0,BX[x-sx]-BX[debut-sx],Y1-Y0);
+        debut=-1;
+      }
+      if(!eau&&x<=ex&&(b&0x0f)){
+        const X0=BX[x-sx], X1=BX[x-sx+1], r=Math.min(X1-X0,Y1-Y0)*RIVE_R;
+        for(let k=0;k<4;k++) if(b&(1<<k)){
+          const s=COINS_RIVE[k];
+          coinArrondi(p||(p=new Path2D()),s[0]<0?X0:X1,s[1]<0?Y0:Y1,s[0],s[1],r,r);
+        }
+      }
+      if(!eau) continue;
+      if(!(b&0xf0)){ if(debut<0) debut=x; continue; }
+      const X0=BX[x-sx], X1=BX[x-sx+1], r=Math.min(X1-X0,Y1-Y0)*RIVE_R;
+      const rk=k=>(b&(16<<k))?r:0;
+      p=p||new Path2D();
+      p.moveTo(X0+rk(0),Y0);
+      p.arcTo(X1,Y0,X1,Y1,rk(1));
+      p.arcTo(X1,Y1,X0,Y1,rk(2));
+      p.arcTo(X0,Y1,X0,Y0,rk(3));
+      p.arcTo(X0,Y0,X1,Y0,rk(0));
+      p.closePath();
+    }
+  }
+  return p;
+}
+// Sable qui comble les anses d'une case d'eau, peint une fois pour toutes
+// dans le pavé (voir terrainChunk), par-dessus le fond d'eau opaque : l'eau
+// animée, qui s'arrête désormais à l'arrondi, le laisse à découvert.
+function drawAnse(g,x,y,px2,py2,dw,dh){
+  const b=coinsRive()[y*COLS+x]>>4;
+  if(!b) return;
+  const X0=px2, Y0=py2, X1=px2+dw, Y1=py2+dh, r=Math.min(dw,dh)*RIVE_R;
+  const forme=new Path2D();
+  for(let k=0;k<4;k++) if(b&(1<<k)){
+    const s=COINS_RIVE[k];
+    coinArrondi(forme,s[0]<0?X0:X1,s[1]<0?Y0:Y1,s[0],s[1],r,r);
+  }
+  const sable=SPR.terrain&&SPR.terrain.sand;
+  g.save();
+  g.clip(forme);
+  if(sable) g.drawImage(sable.c,X0,Y0,dw,dh);
+  else { g.fillStyle='#c9ab72'; g.fillRect(X0,Y0,dw,dh); }
+  // Écume côté sable, le long de l'arrondi — détourée par la lunule, elle
+  // ne déborde pas sur la case de terre voisine.
+  const ep=Math.max(1.5,TILE*0.20*0.36);
+  g.strokeStyle='#f0e4b8'; g.lineWidth=ep;
+  for(let k=0;k<4;k++) if(b&(1<<k)){
+    const s=COINS_RIVE[k];
+    arcArrondi(g,s[0]<0?X0:X1,s[1]<0?Y0:Y1,s[0],s[1],r,r+ep/2);
+  }
+  g.restore();
+}
+
+// ── HAUTS-FONDS ───────────────────────────────────────────
+// Un lac était du même bleu profond d'une rive à l'autre : l'eau touchait la
+// plage sans transition, comme dans un bassin. Ici, un voile turquoise part
+// de la berge et s'éteint en trois cases vers le large.
+//
+// Même technique que le brouillard (drawFog) : un pixel par case dans un
+// canevas minuscule, étiré avec lissage bilinéaire — un dégradé continu pour
+// le prix d'un seul drawImage. Le détourage aux cases d'eau est fait par
+// l'appelant (clip), sans quoi le voile déborderait sur le sable.
+//
+// La distance à la terre ne dépend que de G.tiles, figé pour toute la partie
+// (genMap, ou chargement d'une sauvegarde qui en remplace le tableau) : elle
+// est calculée une fois, par un parcours en largeur, et reprise tant que
+// G.tiles reste le même tableau.
+const HAUT_FOND_ALPHA=[0.50,0.34,0.17,0.06];   // [terre, 1, 2, 3 cases du bord]
+let _profEau=null, _profEauTiles=null, _hfBuf=null, _hfImg=null;
+function profondeurEau(){
+  if(_profEau&&_profEauTiles===G.tiles) return _profEau;
+  const n=COLS*ROWS, p=new Uint8Array(n), file=new Int32Array(n);
+  let tete=0, queue=0;
+  // Terre = 0, eau = 255 (pas encore atteinte). Le parcours part des cases
+  // d'eau qui touchent la terre, et non de la terre elle-même : celle-ci
+  // occupe l'écrasante majorité de la carte, inutile de l'enfiler.
+  for(let y=0;y<ROWS;y++){ const l=G.tiles[y]; for(let x=0;x<COLS;x++) if(l[x]===T_WATER) p[y*COLS+x]=255; }
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const i=y*COLS+x;
+    if(p[i]!==255) continue;
+    let rive=false;
+    for(let dy=-1;dy<=1&&!rive;dy++) for(let dx=-1;dx<=1;dx++){
+      const xx=x+dx, yy=y+dy;
+      if(xx>=0&&yy>=0&&xx<COLS&&yy<ROWS&&p[yy*COLS+xx]===0){ rive=true; break; }
+    }
+    if(rive){ p[i]=1; file[queue++]=i; }
+  }
+  while(tete<queue){
+    const i=file[tete++], d=p[i];
+    if(d>=HAUT_FOND_ALPHA.length) continue;   // au-delà, le large : inutile d'aller plus loin
+    const x=i%COLS, y=(i/COLS)|0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const xx=x+dx, yy=y+dy;
+      if(xx<0||yy<0||xx>=COLS||yy>=ROWS) continue;
+      const j=yy*COLS+xx;
+      if(p[j]>d+1){ p[j]=d+1; file[queue++]=j; }
+    }
+  }
+  _profEau=p; _profEauTiles=G.tiles;
+  return p;
+}
+function drawHautsFonds(sx,sy,ex,ey){
+  const prof=profondeurEau();
+  // Une case de marge, comme le brouillard : sans elle le lissage irait
+  // chercher au-delà du tampon sur les bords de l'écran.
+  const x0=Math.max(0,sx-1), y0=Math.max(0,sy-1);
+  const x1=Math.min(COLS-1,ex+1), y1=Math.min(ROWS-1,ey+1);
+  const w=x1-x0+1, h=y1-y0+1;
+  if(!_hfBuf||_hfBuf.c.width<w||_hfBuf.c.height<h) _hfBuf=offCanvas(Math.max(w,96),Math.max(h,96));
+  if(!_hfImg||_hfImg.width!==w||_hfImg.height!==h) _hfImg=_hfBuf.cx.createImageData(w,h);
+  const d=_hfImg.data;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const v=prof[(y0+y)*COLS+x0+x];
+    const i=(y*w+x)*4;
+    d[i]=86; d[i+1]=184; d[i+2]=178;
+    d[i+3]=v<HAUT_FOND_ALPHA.length?Math.round(HAUT_FOND_ALPHA[v]*255):0;
+  }
+  _hfBuf.cx.putImageData(_hfImg,0,0);
+  const cx=G.cam.x, cy=G.cam.y;
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(_hfBuf.c,0,0,w,h,x0*TILE-cx,y0*TILE-cy+54,w*TILE,h*TILE);
 }
 
 // Liséré de rive (transition herbe→eau façon AoE2)
@@ -589,14 +813,23 @@ function drawShore(g,x,y,px2,py2,dw,dh){
   //    carré et arrondit le virage, ce que fait aussi une vraie plage.
   // Arrondis dans les deux cas : un carré de sable posé dans un angle se voit.
   const coin=(cx2,cy2)=>{ forme.moveTo(cx2+b,cy2); forme.arc(cx2,cy2,b,0,Math.PI*2); };
-  if(no&&!o&&!n) coin(X0,Y0);
-  if(ne&&!e&&!n) coin(X1,Y0);
-  if(so&&!o&&!sO) coin(X0,Y1);
-  if(se&&!e&&!sO) coin(X1,Y1);
-  if(n&&o) coin(X0,Y0);
-  if(n&&e) coin(X1,Y0);
-  if(sO&&o) coin(X0,Y1);
-  if(sO&&e) coin(X1,Y1);
+  // Coin k de la case d'eau (xx,yy) comblé par une anse (voir RIVES
+  // ARRONDIES) ? Son sable arrive alors jusqu'à notre coin, et l'encoche
+  // ci-dessous ferait une bosse par-dessus.
+  const mr=coinsRive();
+  const anse=(xx,yy,k)=>xx>=0&&yy>=0&&xx<COLS&&yy<ROWS&&(mr[yy*COLS+xx]&(16<<k));
+  if(no&&!o&&!n&&!anse(x-1,y-1,2)) coin(X0,Y0);
+  if(ne&&!e&&!n&&!anse(x+1,y-1,3)) coin(X1,Y0);
+  if(so&&!o&&!sO&&!anse(x-1,y+1,1)) coin(X0,Y1);
+  if(se&&!e&&!sO&&!anse(x+1,y+1,0)) coin(X1,Y1);
+  // Un virage dont la diagonale est AUSSI de l'eau est une saillie : l'eau
+  // l'arrondit (voir RIVES ARRONDIES) et le sable suit l'arrondi plus bas —
+  // le disque ne sert plus qu'aux virages qui touchent la terre en diagonale.
+  const saillie=mr[y*COLS+x]&0x0f;
+  if(n&&o&&!(saillie&1)) coin(X0,Y0);
+  if(n&&e&&!(saillie&2)) coin(X1,Y0);
+  if(sO&&e&&!(saillie&4)) coin(X1,Y1);
+  if(sO&&o&&!(saillie&8)) coin(X0,Y1);
 
   // 2) la texture de sable, détourée par cette forme
   const sable=SPR.terrain&&SPR.terrain.sand;
@@ -610,24 +843,54 @@ function drawShore(g,x,y,px2,py2,dw,dh){
   //    de hachage distinct : sinon la crête d'écume suivrait exactement le
   //    feston du sable et les deux se liraient comme un seul trait.
   g.fillStyle='#f0e4b8';
-  const ecume=(horizontal,fixe,vers,iBase)=>{
+  // [u0,u1] : portion du côté réellement bordée d'eau. Là où la case d'eau
+  // voisine a une anse, c'est du SABLE qui borde notre côté sur RIVE_R de
+  // case — une écume droite y traversait la plage comme une couture.
+  const ecume=(horizontal,fixe,vers,iBase,u0,u1)=>{
+    if(u1-u0<=0.01) return;
     const ep=u=>Math.max(1,profondeurRive(iBase,u,b)*0.42);
+    const i0=Math.round(u0*PAS), i1=Math.round(u1*PAS);
     g.beginPath();
     if(horizontal){
-      g.moveTo(X0,fixe);
-      for(let i=0;i<=PAS;i++){ const u=i/PAS; g.lineTo(X0+u*dw,fixe+vers*ep(u)); }
-      g.lineTo(X1,fixe);
+      g.moveTo(X0+u0*dw,fixe);
+      for(let i=i0;i<=i1;i++){ const u=i/PAS; g.lineTo(X0+u*dw,fixe+vers*ep(u)); }
+      g.lineTo(X0+u1*dw,fixe);
     } else {
-      g.moveTo(fixe,Y0);
-      for(let i=0;i<=PAS;i++){ const u=i/PAS; g.lineTo(fixe+vers*ep(u),Y0+u*dh); }
-      g.lineTo(fixe,Y1);
+      g.moveTo(fixe,Y0+u0*dh);
+      for(let i=i0;i<=i1;i++){ const u=i/PAS; g.lineTo(fixe+vers*ep(u),Y0+u*dh); }
+      g.lineTo(fixe,Y0+u1*dh);
     }
     g.closePath(); g.fill();
   };
-  if(n)  ecume(true, Y0, 1, x*RIVE_ONDUL+DEC.n+51);
-  if(sO) ecume(true, Y1,-1, x*RIVE_ONDUL+DEC.s+51);
-  if(o)  ecume(false,X0, 1, y*RIVE_ONDUL+DEC.o+51);
-  if(e)  ecume(false,X1,-1, y*RIVE_ONDUL+DEC.e+51);
+  const lo=(xx,yy,k)=>anse(xx,yy,k)?RIVE_R:0, hi=(xx,yy,k)=>anse(xx,yy,k)?1-RIVE_R:1;
+  if(n)  ecume(true, Y0, 1, x*RIVE_ONDUL+DEC.n+51, lo(x,y-1,3), hi(x,y-1,2));
+  if(sO) ecume(true, Y1,-1, x*RIVE_ONDUL+DEC.s+51, lo(x,y+1,0), hi(x,y+1,1));
+  if(o)  ecume(false,X0, 1, y*RIVE_ONDUL+DEC.o+51, lo(x-1,y,1), hi(x-1,y,2));
+  if(e)  ecume(false,X1,-1, y*RIVE_ONDUL+DEC.e+51, lo(x+1,y,0), hi(x+1,y,3));
+
+  // 4) saillies : l'eau mordra le coin en quart de cercle de rayon r (voir
+  //    formeEauVisible). Le sable suit, en bande de largeur b le long de
+  //    l'arrondi, et l'écume en borde le côté eau — juste en deçà de r, là
+  //    où l'eau animée ne la recouvre pas.
+  if(saillie){
+    const r=Math.min(dw,dh)*RIVE_R;
+    const bande=new Path2D();
+    for(let k=0;k<4;k++) if(saillie&(1<<k)){
+      const s=COINS_RIVE[k];
+      coinArrondi(bande,s[0]<0?X0:X1,s[1]<0?Y0:Y1,s[0],s[1],r,Math.max(1,r-b));
+    }
+    g.save();
+    g.clip(bande);
+    if(sable) g.drawImage(sable.c,X0,Y0,dw,dh);
+    else { g.fillStyle='#c9ab72'; g.fillRect(X0,Y0,dw,dh); }
+    g.restore();
+    const ep=Math.max(1.5,b*0.36);
+    g.strokeStyle='#f0e4b8'; g.lineWidth=ep;
+    for(let k=0;k<4;k++) if(saillie&(1<<k)){
+      const s=COINS_RIVE[k];
+      arcArrondi(g,s[0]<0?X0:X1,s[1]<0?Y0:Y1,s[0],s[1],r,r-ep/2);
+    }
+  }
 }
 
 // Teintes de la feuille qui tombe parfois d'un arbre (voir drawNodes) —
@@ -757,9 +1020,21 @@ function drawBuildings(){
       // pointes. Un tronçon est-ouest, lui, n'a jamais de mur au-dessus et reste
       // rendu tel quel.
       const murSuite=(b.type===BT.WALL||b.type===BT.GATE)&&!b.constructing&&_murSet.has(murKey(b.tx,b.ty-1));
+      // Éclair d'impact, comme sur les unités (voir silhouetteBlanche). Le
+      // bâtiment recevait bien son hitFlash — de dealDmg en solo, du fil
+      // réseau chez l'invité — mais le rendu ne le lisait pas : une Tour sous
+      // le feu d'un Trébuchet ne réagissait qu'avec sa jauge. Plus doux que
+      // sur une unité (0,45 contre 0,8) : c'est une grande surface, un éclair
+      // franc à chaque flèche ferait clignoter toute la base.
+      const flash=(b.hitFlash>0&&!b.constructing)?Math.min(1,b.hitFlash/0.15)*0.45:0;
       if(murSuite){
         const src=spr.c, cut=src.height*0.53;   // au-dessus : pointes et créneaux
         ctx.drawImage(src, 0, cut, src.width, src.height-cut, Math.round(bx), Math.round(by), pw, ph);
+        if(flash){
+          ctx.globalAlpha=flash;
+          ctx.drawImage(silhouetteBlanche(src), 0, cut, src.width, src.height-cut, Math.round(bx), Math.round(by), pw, ph);
+          ctx.globalAlpha=1;
+        }
       } else if(b.constructing&&b.progress<1&&b.progress>0){
         // Le bâtiment "sort de terre" au lieu d'un simple fondu d'opacité :
         // silhouette fantôme complète (aperçu de la forme finale) + partie
@@ -774,6 +1049,10 @@ function drawBuildings(){
         ctx.restore();
       } else {
         ctx.drawImage(spr.c, Math.round(bx), sy0, dw, dh);
+        if(flash){
+          ctx.globalAlpha=flash; ctx.drawImage(silhouetteBlanche(spr.c), Math.round(bx), sy0, dw, dh);
+          ctx.globalAlpha=1;
+        }
       }
     } else {
       ctx.fillStyle=(teinte==='bleu')?'#8a6a3a':couleurMinimap(b,false); ctx.fillRect(bx,by,pw,ph);
@@ -1126,16 +1405,22 @@ function drawUnits(){
     }
     if(spr){
       const flip=Math.cos(u.dir)<-0.01; // regarde à gauche => miroir
-      if(u.hitFlash>0){
-        // flash blanc : on dessine le sprite puis un voile blanc en "source-atop"
-        ctx.drawImage(spr.c,drawX,drawY,S,S);
-        ctx.save(); ctx.globalAlpha=0.7; ctx.globalCompositeOperation='source-atop';
-        ctx.fillStyle='#fff'; ctx.fillRect(drawX,drawY,S,S); ctx.restore();
-      } else if(flip){
+      // Éclair d'impact : silhouette blanche détourée (voir silhouetteBlanche),
+      // qui s'éteint sur la durée du coup au lieu de rester à pleine force. Il
+      // suit le MIROIR du sprite : l'ancien éclair redessinait l'unité non
+      // retournée, qui pivotait donc sur elle-même à chaque coup reçu.
+      const flash=u.hitFlash>0?Math.min(1,u.hitFlash/0.15)*0.8:0;
+      if(flip){
         ctx.save(); ctx.translate(drawX+S,drawY); ctx.scale(-1,1);
-        ctx.drawImage(spr.c,0,0,S,S); ctx.restore();
+        ctx.drawImage(spr.c,0,0,S,S);
+        if(flash){ ctx.globalAlpha=flash; ctx.drawImage(silhouetteBlanche(spr.c),0,0,S,S); }
+        ctx.restore();
       } else {
         ctx.drawImage(spr.c,drawX,drawY,S,S);
+        if(flash){
+          ctx.globalAlpha=flash; ctx.drawImage(silhouetteBlanche(spr.c),drawX,drawY,S,S);
+          ctx.globalAlpha=1;
+        }
       }
     }
     // barre PV si blessé

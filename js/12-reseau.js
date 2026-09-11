@@ -79,7 +79,14 @@ window.transportLocal=transportLocal;
 // vision partagee ne fait qu'envoyer PLUS d'entites, deja decrites par le
 // meme format. Le critere du bump reste : un client de la version d'avant
 // MISLIT-il ce qui arrive ? Ici, non.
-const PROTO_VERSION = 6;   // v4 : equipe suivie en cours de partie, autoRepair emis
+// v7 : le fil ne change pas, mais la CARTE, oui. L'invite ne recoit pas le
+// terrain : il le regenere lui-meme a partir de la graine (startGame ->
+// genMap), et les lacs ne sont plus des carres mais des disques ondules (voir
+// genMap, js/03-carte.js). Un invite v6 creuserait donc d'autres rives que son
+// hote -- il verrait de l'eau la ou l'hote a de l'herbe, et inversement, avec
+// des unites qui marchent sur son lac. Il ne mislit pas le fil, il mislit le
+// MONDE : meme critere, meme bump.
+const PROTO_VERSION = 7;   // v4 : equipe suivie en cours de partie, autoRepair emis
 const DELTA_HZ      = 10;
 const DELTA_PERIODE = 1/DELTA_HZ;
 const SEUIL_POS     = 1;    // unites-monde : en deca, on ne renvoie pas la position

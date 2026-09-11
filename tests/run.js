@@ -154,6 +154,38 @@ groupe('carte', () => {
     });
     egal(dessous.length, 0, 'gisements piégés sous le Centre Ville');
   });
+
+  test('les lacs ne sont plus des carrés, et gardent leur surface', () => {
+    // Chaque lac était un carré de (2r+1) cases : taux de remplissage de sa
+    // boîte englobante = 100 %. Un disque ondulé tombe vers 75-80 %. On
+    // exige aussi une vraie surface — la forme ne doit pas s'être payée en
+    // lacs rabougris (Grands Lacs promet plus du double d'eau des Plaines,
+    // voir le groupe `cartes`).
+    const j = partie(charger(), { graine: 909 });
+    const vu = new Uint8Array(j.COLS * j.ROWS);
+    const lacs = [];
+    for (let y = 0; y < j.ROWS; y++) for (let x = 0; x < j.COLS; x++) {
+      if (j.G.tiles[y][x] !== j.T_WATER || vu[y * j.COLS + x]) continue;
+      let n = 0, x0 = x, x1 = x, y0 = y, y1 = y;
+      const pile = [[x, y]]; vu[y * j.COLS + x] = 1;
+      while (pile.length) {
+        const [cx, cy] = pile.pop(); n++;
+        x0 = Math.min(x0, cx); x1 = Math.max(x1, cx); y0 = Math.min(y0, cy); y1 = Math.max(y1, cy);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= j.COLS || ny >= j.ROWS) continue;
+          if (j.G.tiles[ny][nx] !== j.T_WATER || vu[ny * j.COLS + nx]) continue;
+          vu[ny * j.COLS + nx] = 1; pile.push([nx, ny]);
+        }
+      }
+      lacs.push({ n, rempli: n / ((x1 - x0 + 1) * (y1 - y0 + 1)) });
+    }
+    ok(lacs.length >= 8, `seulement ${lacs.length} lacs`);
+    for (const l of lacs) {
+      ok(l.rempli < 0.9, `un lac de ${l.n} cases remplit ${Math.round(l.rempli * 100)} % de sa boîte : c'est encore un carré`);
+      ok(l.rempli > 0.6, `un lac de ${l.n} cases ne remplit que ${Math.round(l.rempli * 100)} % de sa boîte : forme déchiquetée`);
+    }
+  });
 });
 
 // ════════════════════════════════════════════════════════════
@@ -584,6 +616,19 @@ groupe('chemin', () => {
 
 // ════════════════════════════════════════════════════════════
 groupe('combat', () => {
+  test('l\'éclair d\'impact d\'un bâtiment s\'éteint (il restait allumé à jamais chez l\'hôte)', () => {
+    // dealDmg pose hitFlash sur toute cible, bâtiment compris, mais seule
+    // la boucle des UNITÉS le faisait décroître côté hôte : invisible tant
+    // que le rendu ignorait l'éclair des bâtiments, un bâtiment frappé une
+    // fois aurait clignoté tout le reste de la partie dès qu'il le lit.
+    const j = partie(charger(), { graine: 4242 });
+    const tc = j.G.buildings.find((b) => b.type === j.BT.TC && j.estLocal(b));
+    j.dealDmg(tc, 5, 'pillards');
+    ok(tc.hitFlash > 0, 'dealDmg ne pose plus d\'éclair');
+    for (let k = 0; k < 20; k++) j.update(j.SIM_DT);
+    egal(tc.hitFlash, 0, 'éclair d\'impact du Centre Ville');
+  });
+
   test('le triangle de contres tient', () => {
     // Joue chaque affrontement sous TROIS graines d'aléa et exige la
     // majorité. La simulation utilise Math.random en pleine boucle (ciblage

@@ -127,10 +127,31 @@ function genMap() {
                [COLS>>1,SC(8),SC(2)],[COLS>>1,ROWS-SC(9),SC(2)],
                [SC(10),ROWS>>1,SC(1)],[COLS-SC(11),ROWS>>1,SC(1)]]
               .map(([cx,cy,r])=>[cx,cy,Math.max(1,Math.round(r*mLac))]);
+  // Chaque lac était un CARRÉ parfait de (2r+1) cases de côté : quatre berges
+  // à la règle et quatre angles droits, le dessin le plus artificiel de toute
+  // la carte, que le feston de rive (drawShore) ne pouvait qu'orner. Le lac
+  // est maintenant un disque dont le rayon ONDULE avec l'angle — trois
+  // harmoniques, donc des anses et des avancées, jamais un cercle.
+  //   • Surface tenue : le rayon moyen vaut 1,1×(r+½), soit ~95 % de l'aire
+  //     du carré d'avant. Les presets (Grands Lacs = plus du double d'eau des
+  //     Plaines, plus de poisson) gardent donc leur promesse.
+  //   • Aucun tirage RND : les harmoniques sont dérivées de la POSITION du lac
+  //     (hachage). La séquence RND consommée par tout ce qui suit — départs,
+  //     ressources, IA — est donc exactement celle d'avant.
+  //   • Déterministe par graine, comme tout genMap : l'hôte et l'invité
+  //     creusent les mêmes rives (voir PROTO_VERSION, 12-reseau.js).
   for(const[cx,cy,r] of lakes){
-    for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+    let h=(cx*73856093^cy*19349663)|0;
+    const alea=()=>{ h=(h*1103515245+12345)|0; return ((h>>>8)&0xffff)/0xffff; };
+    const harm=[[2,0.10],[3,0.07],[5,0.04]].map(([k,a])=>[k,a*(0.6+alea()*0.8),alea()*Math.PI*2]);
+    const R0=(r+0.5)*1.1, R=Math.ceil(R0*1.3);   // 1,3 ≥ 1 + somme des amplitudes
+    for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++){
       const x=cx+dx,y=cy+dy;
-      if(x>=0&&y>=0&&x<COLS&&y<ROWS){t[y][x]=T_WATER;b[y][x]=3;}
+      if(x<0||y<0||x>=COLS||y>=ROWS) continue;
+      const ang=Math.atan2(dy,dx);
+      let k=1;
+      for(const[n,a,ph] of harm) k+=a*Math.sin(n*ang+ph);
+      if(Math.hypot(dx,dy)<=R0*k){t[y][x]=T_WATER;b[y][x]=3;}
     }
   }
 

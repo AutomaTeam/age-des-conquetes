@@ -55,7 +55,7 @@ const EXPORTS = [
   'liverySprite', 'resetLiveryBudget',
   // Défrangeage du bord détouré (voir le groupe `civilisations`) : pur calcul
   // sur un tableau de pixels, donc testable sans canvas.
-  'defrangerBord',
+  'defrangerBord', 'addFText',
   'applyCommand', 'pickCiv', 'civKeyOf', 'civOf', 'PRODUCTION', 'ORD', 'mkFaction',
   'CARTES', 'pickCarte', 'carteCfg', 'poserMursArene', 'construireSalut', 'T_WATER',
   'TAILLES', 'pickTaille', 'departsHumains',

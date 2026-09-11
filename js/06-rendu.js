@@ -26,7 +26,14 @@ function render(){
   ctx.save();
   ctx.beginPath(); ctx.rect(0,54,W,gh); ctx.clip();
   if(G.shake.mag>0.05){ // secousse de caméra : petits impacts nerveux, pas un tremblement de terre
-    ctx.translate((Math.random()-0.5)*G.shake.mag,(Math.random()-0.5)*G.shake.mag);
+    // Décalage arrondi au PIXEL ÉCRAN. Tiré tel quel, il valait une fraction
+    // de pixel : tout le sol, aligné au pixel près (voir « POURQUOI TOUT LE
+    // SOL RAISONNE EN PIXELS ÉCRAN » plus bas), était rééchantillonné, et le
+    // bord de chaque pavé se fondait dans le vide — une grille de lignes
+    // sombres tous les huit cases, qui clignotait à chaque gros coup reçu
+    // (mesuré : -4,5 sur la colonne de jointure, rien au repos).
+    const q=v=>Math.round(v*DPR)/DPR;
+    ctx.translate(q((Math.random()-0.5)*G.shake.mag),q((Math.random()-0.5)*G.shake.mag));
   }
 
   drawMap(); drawNodes(); drawRelics(); drawWildlife(); drawBuildings(); drawCaravans(); drawDeathFx(); drawHeroAuras(); drawUniqueUnitAuras(); drawUnits();
@@ -897,6 +904,59 @@ function drawShore(g,x,y,px2,py2,dw,dh){
 // table figée une fois pour toutes plutôt que recréée à chaque arbre et à
 // chaque image.
 const FEUILLE_TEINTES=['rgba(196,140,58,.7)','rgba(210,170,60,.7)','rgba(176,90,48,.7)'];
+// ── FLAMMES D'UN BÂTIMENT EN RUINE ────────────────────────
+// Sous le tiers de ses PV, un bâtiment n'avait pour le dire qu'un lavis de
+// suie (damagedSprite) et une bouffée de fumée de temps en temps : une maison
+// à 20 % se distinguait à peine d'une maison intacte, alors que c'est
+// précisément celle qu'il faut réparer ou évacuer. Elle BRÛLE désormais :
+// une à trois langues de feu sur le toit, qui vacillent chacune à son
+// rythme, et une lueur orangée dessous.
+//
+// Positions et phases tirées de l'id du bâtiment (jamais de Math.random() :
+// un feu qui changerait de place à chaque image se lirait comme un
+// clignotement). Rendu seul, comme la fumée : rien ne touche la simulation,
+// et l'invité voit le même feu que l'hôte puisque hp/maxHp voyagent.
+//
+// Les flammes se posent dans la boîte du sujet PEINT (spr.box, notée à la
+// construction du sprite), pas dans celle du canevas : un Marché bas dans
+// un canevas haut les faisait flotter au-dessus de son toit.
+function flammes(b,spr,x0,sy0,dw,dh){
+  const fige=typeof MOTION!=='undefined'&&MOTION.reduced;
+  const t=fige?0:G.gameTime;
+  const sc=dw/spr.c.width, bo=spr.box;
+  const gx=x0+(bo?bo.minX*sc:0), gw=bo?(bo.maxX-bo.minX)*sc:dw;
+  const gy=sy0+(bo?bo.minY*sc:0), gh=bo?(bo.maxY-bo.minY)*sc:dh;
+  const n=Math.min(3,Math.max(1,b.w));
+  let h=Math.imul(b.id+13,2654435761)>>>0;
+  ctx.save();
+  for(let k=0;k<n;k++){
+    h=Math.imul(h^(h>>>15),2246822519)>>>0;
+    const fx=gx+gw*(0.2+0.6*(k+0.5)/n+(((h&255)/255)-0.5)*0.12);
+    const fy=gy+gh*(0.24+((h>>>8)&255)/255*0.2);
+    const ph=((h>>>16)&1023)/1023*Math.PI*2;
+    const vac=0.82+0.18*Math.sin(t*11+ph)+0.08*Math.sin(t*23+ph*2);
+    const H=Math.max(8,gw*0.26)*vac, L=H*0.4, dx=Math.sin(t*6+ph)*L*0.35;
+    // lueur sous la flamme
+    ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha=0.35*vac;
+    if(SPR.glow) ctx.drawImage(SPR.glow.c,fx-H,fy-H*0.9,H*2,H*1.6);
+    ctx.globalCompositeOperation='source-over';
+    // langue extérieure orange, cœur jaune plus court
+    for(const[kk,col] of [[1,'rgba(232,96,24,.9)'],[0.58,'rgba(255,214,90,.95)']]){
+      const hh=H*kk, ll=L*kk;
+      ctx.globalAlpha=1;
+      ctx.fillStyle=col;
+      ctx.beginPath();
+      ctx.moveTo(fx-ll,fy);
+      ctx.quadraticCurveTo(fx-ll*0.9,fy-hh*0.55,fx+dx*kk,fy-hh);
+      ctx.quadraticCurveTo(fx+ll*0.9,fy-hh*0.55,fx+ll,fy);
+      ctx.quadraticCurveTo(fx,fy+ll*0.5,fx-ll,fy);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 // ── ÉCLATS D'OR ───────────────────────────────────────────
 // L'illustration du filon d'or est un bloc de roche SOMBRE veiné de quelques
 // pépites : superbe de près, mais à distance, ou sur une herbe de sous-bois,
@@ -1115,6 +1175,7 @@ function drawBuildings(){
           ctx.globalAlpha=1;
         }
       }
+      if(dmgStage===2&&!b.constructing) flammes(b,spr,Math.round(bx),sy0,dw,dh);
     } else {
       ctx.fillStyle=(teinte==='bleu')?'#8a6a3a':couleurMinimap(b,false); ctx.fillRect(bx,by,pw,ph);
     }
@@ -1543,20 +1604,21 @@ function drawProjs(){
     const arc=Math.sin(prog*Math.PI); // 0 au départ/à l'arrivée, max au sommet
     if(p.siege){
       const{x:sx,y:sy}=ws(p.x,p.y);
-      const lift=arc*Math.min(70,p.d0*0.14); // arche haute et lente : trajectoire de trébuchet
+      const lift=arc*Math.min(70,p.d0*0.14)*TILE/BASE_TILE; // arche haute et lente : trajectoire de trébuchet (suit le zoom, comme le boulet)
       const bsy=sy-lift;
       // ombre au sol qui suit le point d'impact réel, pas le boulet en l'air
       ctx.fillStyle='rgba(0,0,0,.25)';
       ctx.beginPath(); ctx.ellipse(sx,sy,5,2,0,0,Math.PI*2); ctx.fill();
       // boulet tournoyant (facettes qui tournent avec la progression du vol)
       ctx.save(); ctx.translate(sx,bsy); ctx.rotate(prog*14);
+      ctx.scale(TILE/BASE_TILE,TILE/BASE_TILE);   // même raison que la flèche plus bas
       ctx.fillStyle='#777'; ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.fill();
       ctx.fillStyle='#999'; ctx.beginPath(); ctx.arc(-1,-1,1.5,0,Math.PI*2); ctx.fill();
       ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.arc(1.5,1,1.2,0,Math.PI*2); ctx.fill();
       ctx.restore();
     } else {
       const{x:sx,y:sy}=ws(p.x,p.y);
-      const lift=arc*Math.min(26,p.d0/BASE_TILE*7); // arc léger : lisible sans casser la lecture du tir tendu
+      const lift=arc*Math.min(26,p.d0/BASE_TILE*7)*TILE/BASE_TILE; // arc léger : lisible sans casser la lecture du tir tendu (suit le zoom)
       const bsy=sy-lift;
       // ombre au sol de la flèche en vol
       ctx.fillStyle='rgba(0,0,0,.18)';
@@ -1565,6 +1627,10 @@ function drawProjs(){
       const ang=Math.atan2(p.ty-p.y,p.tx-p.x)+(prog-0.5)*0.5;
       ctx.save();
       ctx.translate(sx,bsy); ctx.rotate(ang);
+      // Flèche dessinée en pixels FIXES alors que tout le reste suit le zoom :
+      // au zoom minimum elle faisait près de deux fois sa taille relative, une
+      // volée d'archers y tirait des javelots. Mise à l'échelle des cases.
+      const kz=TILE/BASE_TILE; ctx.scale(kz,kz);
       // Les traits d'un ALLIÉ sont des miens : depuis la vision partagée, on
       // voit ses volées, et les peindre en « terne ennemi » aurait fait lire
       // un tir de soutien comme un tir sur soi.
@@ -1613,35 +1679,54 @@ function drawDeathFx(){
     const{x:sx,y:sy}=ws(d.x,d.y);
     const S=spr.S*(TILE/(SPR.refT||TILE));
     const fall=1-Math.max(0,Math.min(1,d.life)); // 0→1 : progression de la chute
-    const up=S*(0.78-fall*0.68);
-    const rot=(Math.cos(d.dir)<-0.01?-1:1)*fall*1.15;
+    const gauche=Math.cos(d.dir)<-0.01;
+    const rot=(gauche?-1:1)*fall*1.15;
     const scale=1-fall*0.2;
     // L'ombre s'étale et pâlit à mesure que le corps s'affaisse : sans elle,
     // la silhouette semblait basculer dans le vide.
     groundShadow(sx+S*0.08,sy,S*(0.30+fall*0.14),S*(0.13+fall*0.04),Math.max(0,d.life)*0.6);
     ctx.save();
     ctx.globalAlpha=Math.max(0,d.life)*0.9;
-    ctx.translate(sx,sy-up);
+    // Pivot aux PIEDS, et sprite posé exactement comme drawUnits le pose
+    // (haut à 0,78·S au-dessus du sol) : le corps bascule autour de ses
+    // appuis. Il pivotait autour d'un centre placé 0,78·S au-dessus du sol,
+    // soit une demi-silhouette plus haut que l'unité vivante — chaque mort
+    // commençait par un bond vers le haut avant de tomber.
+    ctx.translate(sx,sy);
     ctx.rotate(rot);
-    ctx.scale(scale,scale);
-    ctx.drawImage(spr.c,-S/2,-S/2,S,S);
+    // Même miroir que drawUnits : une unité tournée vers la gauche se
+    // RETOURNAIT d'un coup en mourant, le cadavre étant toujours tiré face à
+    // droite — un demi-tour à l'instant de la chute.
+    ctx.scale(gauche?-scale:scale,scale);
+    ctx.drawImage(spr.c,-S/2,-S*0.78,S,S);
     ctx.restore();
   }
   ctx.globalAlpha=1;
 }
 
 function drawFTexts(){
+  ctx.font='bold 12px Cinzel,serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.lineWidth=3; ctx.lineJoin='round'; ctx.strokeStyle='rgba(0,0,0,.75)';
   for(const ft of G.ftexts){
     const{x:sx,y:sy}=ws(ft.x,ft.y);
-    ctx.globalAlpha=Math.max(0,ft.life);
-    ctx.font='bold 12px Cinzel,serif';
-    ctx.textAlign='center'; ctx.textBaseline='middle';
+    // Le texte s'éteignait LINÉAIREMENT dès sa naissance : à mi-vie il
+    // n'était déjà plus qu'à moitié opaque, pour une durée totale d'à peine
+    // plus d'une seconde. Il reste désormais plein sur ses trois premiers
+    // cinquièmes et ne s'efface qu'ensuite ; il naît avec un léger « pop »
+    // (×1,4 → ×1 en 0,15 s) qui attire l'œil là où le coup a porté.
+    ctx.globalAlpha=Math.max(0,Math.min(1,ft.life/0.4));
+    const age=1-ft.life, pop=age<0.12?1+(0.12-age)/0.12*0.4:1;
     // Contour sombre : un « +10 » doré sur de l'herbe éclairée était presque
     // illisible, et c'est précisément l'information qu'on lit du coin de l'œil.
-    ctx.lineWidth=3; ctx.lineJoin='round'; ctx.strokeStyle='rgba(0,0,0,.75)';
-    ctx.strokeText(ft.txt,sx,sy);
     ctx.fillStyle=ft.col||'#f1c40f';
-    ctx.fillText(ft.txt,sx,sy);
+    if(pop>1){
+      ctx.save(); ctx.translate(sx,sy); ctx.scale(pop,pop);
+      ctx.strokeText(ft.txt,0,0); ctx.fillText(ft.txt,0,0);
+      ctx.restore();
+    } else {
+      ctx.strokeText(ft.txt,sx,sy); ctx.fillText(ft.txt,sx,sy);
+    }
   }
   ctx.globalAlpha=1;
 }

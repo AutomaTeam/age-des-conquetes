@@ -68,8 +68,17 @@ const AI_TUNE = {
 // fournis sont remplacés, le reste suit la difficulté.
 function aiTune(a){
   const base=AI_TUNE[G.difficulty]||AI_TUNE.normal;
-  return (a&&a.tune)?Object.assign({},base,a.tune):base;
+  let t=(a&&a.tune)?Object.assign({},base,a.tune):base;
+  // Allié de mission (voir reglerIA) : un appui, pas un rival — ses assauts
+  // s'espacent de moitié, pour que la mission reste celle du joueur.
+  if(a&&a.role==='allie') t=Object.assign({},t,{atkEvery:t.atkEvery*1.5});
+  return t;
 }
+// Âge qu'une IA ne dépassera pas (voir reglerIA, `ageMax`).
+function aiAgeMax(a){ return (a&&a.ageMax!=null)?Math.min(a.ageMax,AGES.length-1):AGES.length-1; }
+// Une IA de mission passive ou retranchée n'engage pas d'assaut — sa défense
+// de base, elle, reste entière (voir majPhaseAssaut).
+function aiRetenue(a){ return !!a&&(a.role==='passif'||a.role==='forteresse'); }
 
 // L'IA aligne les archétypes ennemis (Pillard, Archer Pillard, Cavalier Noir,
 // Géant, Seigneur de Guerre) plutôt que les unités du joueur : leurs sprites
@@ -927,8 +936,12 @@ function majPhaseAssaut(dt,a,army){
 
   // ── Déclenchement ── le compte à rebours et l'effectif décident, comme
   // avant ; c'est ce qui suit qui change : on se masse d'abord.
+  // Rôle de mission passif ou forteresse : aucun assaut ne se déclenche.
+  if(aiRetenue(a)) return;
   if(a.atkTimer<=0&&army.length>=a.atkMin){
-    const cible=aiCibleBase(a);
+    // Mission : l'assaut peut viser une zone ou une étiquette (un gué, une
+    // tente, la Merveille à défendre) plutôt que le Centre Ville le plus proche.
+    const cible=(typeof cibleIAMission==='function'&&cibleIAMission(a))||aiCibleBase(a);
     if(!cible) return;                       // plus personne à attaquer
     a.cibleX=cible.x; a.cibleY=cible.y;
     a.rallyX=a.baseX+(cible.x-a.baseX)*AI_RALLY_PART;
@@ -1013,7 +1026,8 @@ function updateUneIA(dt,a){
   // palissade, une fois lancé, occupe déjà un villageois pendant plusieurs
   // secondes ; inutile de re-tenter à chaque respiration de l'IA.
   a.fortCd=(a.fortCd||0)-AI_THINK;
-  if(a.fortCd<=0){ a.fortCd=15; aiFortify(a); }
+  // Une forteresse de mission (voir reglerIA) se retranche trois fois plus souvent.
+  if(a.fortCd<=0){ a.fortCd=a.role==='forteresse'?5:15; aiFortify(a); }
 
   // Épargne de montée d'âge : dès que l'économie tient debout, le coût du
   // prochain âge devient intouchable pour la production militaire. L'IA
@@ -1024,7 +1038,7 @@ function updateUneIA(dt,a){
   // nourriture n'atteignait jamais le coût de l'âge suivant ET ne pouvait
   // plus rien entraîner, se figeant définitivement à 0 unité militaire. On
   // ne met de côté qu'une fois la défense minimale assurée.
-  const saving=(!a.ageQ&&a.age<AGES.length-1&&army.length>=5&&vils.length>=Math.min(8,a.vilTarget))
+  const saving=(!a.ageQ&&a.age<aiAgeMax(a)&&army.length>=5&&vils.length>=Math.min(8,a.vilTarget))
     ? AGES[a.age+1].cost : null;
 
   // ── Production ──
@@ -1112,7 +1126,7 @@ function updateUneIA(dt,a){
 
   // ── Montée d'âge ── une fois l'économie assise, et sans vider les caisses
   // au point de ne plus rien pouvoir produire ensuite.
-  if(!a.ageQ&&a.age<AGES.length-1&&tc&&vils.length>=Math.min(8,a.vilTarget)){
+  if(!a.ageQ&&a.age<aiAgeMax(a)&&tc&&vils.length>=Math.min(8,a.vilTarget)){
     const cost=AGES[a.age+1].cost;
     if(aiAfford(cost,null,a)){
       aiSpend(cost,a);
@@ -1176,7 +1190,7 @@ function updateUneIA(dt,a){
 
   // ── Héros ── une seule fois par partie (voir HEROES), dès que le Château
   // le permet — même garde-fou que côté joueur (f.heroTrained).
-  if(!a.heroTrained){
+  if(!a.heroTrained&&a.heros!==false){
     const castle=G.buildings.find(b=>b.owner===a.id&&b.type===BT.CASTLE&&!b.constructing);
     if(castle&&castle.trainQ.length<3&&a.pop<a.maxPop&&aiAfford(TCOST[UT.HERO],saving,a)){
       aiSpend(TCOST[UT.HERO],a);
@@ -1189,7 +1203,7 @@ function updateUneIA(dt,a){
   // ── Merveille ── dernier palier, seulement une fois une armée conséquente
   // déjà levée : bâtir une Merveille sans pouvoir la défendre serait un
   // cadeau offert au joueur, pas une vraie menace.
-  if(a.age>=3&&army.length>=10&&!G.buildings.some(b=>b.owner===a.id&&b.type===BT.WONDER)){
+  if(a.merveille!==false&&a.age>=3&&army.length>=10&&!G.buildings.some(b=>b.owner===a.id&&b.type===BT.WONDER)){
     aiBuild(BT.WONDER,a.baseX,a.baseY,a);
   }
 
@@ -1290,6 +1304,9 @@ function refreshConquestBar(){
   // arriver TOUTE l'armée d'un coup, hors de tout cycle d'assaut, il doit
   // pouvoir comprendre pourquoi sans deviner.
   if(a.phase==='merveille')      etat='<span style="color:#e74c3c">ruée sur la Merveille</span>';
+  // Rival de mission passif ou retranché : aucun assaut ne partira, quoi que
+  // dise son compte à rebours — l'afficher serait promettre une attaque.
+  else if(aiRetenue(a))          etat=`<span style="color:#9a8a6a">${a.role==='forteresse'?'retranché':'attend son heure'}</span>`;
   else if(army>=a.atkMin&&nextAtk<=0) etat='<span style="color:#e74c3c">assaut imminent</span>';
   else if(army>=a.atkMin)        etat=`assaut : ${nextAtk>60?`${m}m${String(s).padStart(2,'0')}`:nextAtk+'s'}`;
   else                           etat=`<span style="color:#9a8a6a">armée en formation</span>`;

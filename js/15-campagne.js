@@ -419,6 +419,9 @@ function installerMission(){
         res:(DIFFS[G.difficulty]||DIFFS.normal).startRes});
       poserRole(FAC.P2,def.roles.p2,dep[1],false);
       convertirEnIA(FAC.P2,{silencieux:true});
+      // Un appui, pas un second rival qui jouerait la mission à sa place ; la
+      // mission peut préciser (`roles.p2.ia`, mêmes champs que reglerIA).
+      reglerIA(G.factions[FAC.P2],Object.assign({role:'allie'},def.roles.p2.ia||{}));
     }
   }
 
@@ -432,7 +435,7 @@ function installerMission(){
     const p=depIA[i++]; if(!p) continue;
     const a=initAI(dep[0][0],dep[0][1],idsIA[k],fd.nom||'Seigneur rival',[],
       {pos:p, civ:fd.civ, equipe:fd.equipe, age:fd.age, tune:fd.tune});
-    if(a) poserApports(a.id,fd,p[0],p[1]);
+    if(a){ poserApports(a.id,fd,p[0],p[1]); reglerIA(a,fd); }
   }
   // Pillards : camps, garnisons, tentes — tout ce que la mission leur donne.
   if(def.factions&&def.factions.pill){
@@ -561,6 +564,64 @@ function texteFinMission(){
     if(o) return o.echecTxt||`Objectif manqué : ${o.txt}`;
   }
   return (def.causes&&def.causes[fin.cause])||def.defaite||'La mission a échoué.';
+}
+
+// ── RÈGLES DE MISSION ─────────────────────────────────────
+// `regles` d'une mission : {ageMax, interdits:[BT.x|UT.x], recherchesInterdites:
+// [clé RDEF], merveille:false}. UNE fonction, lue par applyCommand — la seule
+// porte de mutation, donc aussi celle des ordres forgés de l'invité — ET par
+// l'interface qui grise les boutons : les deux ne peuvent pas diverger (voir
+// le groupe de tests `promesses`). Rend la RAISON du refus, courte et
+// affichable telle quelle, ou null.
+//   quoi : 'age' | 'batir' | 'former' | 'recherche'
+function regleMission(quoi,cle,owner){
+  const def=missionCourante(), r=def&&def.regles;
+  if(!r) return null;
+  if(quoi==='age'){
+    const f=G.factions&&G.factions[owner];
+    return (r.ageMax!=null&&f&&f.age>=r.ageMax)?`Âge maximum de la mission : ${AGES[r.ageMax].nom}`:null;
+  }
+  if(quoi==='batir'||quoi==='former'){
+    if((r.interdits||[]).includes(cle)) return 'Interdit dans cette mission';
+    if(quoi==='batir'&&cle===BT.WONDER&&r.merveille===false) return 'Pas de Merveille dans cette mission';
+    return null;
+  }
+  if(quoi==='recherche') return (r.recherchesInterdites||[]).includes(cle)?'Interdite dans cette mission':null;
+  return null;
+}
+
+// ── RÔLES D'IA SCRIPTÉS ───────────────────────────────────
+// De petits crochets dans l'IA de Conquête (js/08-ia.js), pas une nouvelle
+// IA. Posés sur la FACTION (données pures : ils partent dans la sauvegarde) :
+//   role      : 'normal' | 'passif' (n'attaque pas — sa défense reste
+//               active — jusqu'à ce qu'un déclencheur la relance) |
+//               'forteresse' (n'attaque jamais, fortifie plus souvent) |
+//               'allie' (assauts plus espacés : un appui, pas un rival)
+//   cible     : zone ou étiquette vers laquelle ses assauts se rallient, au
+//               lieu du Centre Ville hostile le plus proche
+//   ageMax    : âge qu'elle ne dépassera pas
+//   heros:false, merveille:false : elle n'en forme / n'en bâtit pas
+//   tune      : réglages fusionnés dans les siens (voir aiTune)
+//   lancer    : son prochain assaut part dès que son armée est prête
+const ROLES_IA = new Set(['normal','passif','forteresse','allie']);
+function reglerIA(f,o){
+  if(!f||f.genre!=='ia'||!o) return;
+  if(o.role!=null&&ROLES_IA.has(o.role)) f.role=o.role;
+  if('cible' in o) f.cible=o.cible||null;
+  if(o.ageMax!=null&&AGES[o.ageMax]) f.ageMax=o.ageMax;
+  if(o.heros===false) f.heros=false;
+  if(o.merveille===false) f.merveille=false;
+  if(o.tune) f.tune=Object.assign({},f.tune||{},o.tune);
+  if(o.lancer) f.atkTimer=0;
+}
+// Où rallier l'assaut d'une IA de mission : sa zone ou son étiquette-cible,
+// ou null (l'IA garde alors son choix habituel, aiCibleBase).
+function cibleIAMission(a){
+  if(!a.cible||!G.mission) return null;
+  const zn=zoneMission(a.cible);
+  if(zn) return {x:zn.x,y:zn.y};
+  const e=entitesTag(a.cible)[0];
+  return e?{x:e.x,y:e.y}:null;
 }
 
 // ── RÉPLIQUES ─────────────────────────────────────────────
@@ -698,6 +759,9 @@ const SCN_API = {
     updatePopCap();
   },
   equipe(k,n){ const f=G.factions[facMission(k)]; if(f){ f.equipe=n; G.scn.seq++; } },
+  // Rôle et consignes d'un seigneur IA en cours de mission — voir reglerIA.
+  // `M.ia('ia',{role:'normal',lancer:true})` : le rival passif passe à l'attaque.
+  ia(k,o){ reglerIA(G.factions[facMission(k)],o); },
   eliminable(k,oui){ const f=G.factions[facMission(k)]; if(f) f.sansElimination=!oui; },
   donner(k,res){
     const f=G.factions[facMission(k)]; if(!f) return;

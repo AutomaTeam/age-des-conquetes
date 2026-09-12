@@ -397,6 +397,10 @@ function drawUnitAct(bar,u){
     bar.appendChild(tabRow);
     const list=[BICO_ECO,BICO_MIL,BICO_DEF,BICO_UPG][G.buildTab]||BICO_ECO;
     for(const[bt,ico,nom,cost] of list){
+      // Règle de la mission en cours : même fonction que le refus de l'hôte
+      // (voir regleMission), donc jamais un bouton qui promet ce qu'il refuse.
+      const ban=regleMission('batir',bt,G.me);
+      if(ban){ mkBtn(bar,ico,nom+'\n🚫 '+ban,()=>{},true); continue; }
       // Le Château Fort n'était jusqu'ici verrouillé par aucun âge malgré
       // ce que sa description prétendait — on tape juste le bouton, il se
       // construisait dès l'Âge Sombre si on avait les ressources.
@@ -514,7 +518,7 @@ function drawBuildAct(bar,b){
 
   // ── Centre Ville ──
   if(b.type===BT.TC){
-    mkBtn(bar,'👷','Villageois\n'+costLabel(TCOST[UT.VIL]),()=>trainUnit(b,UT.VIL),false,TCOST[UT.VIL]);
+    mkBtnUnite(bar,'👷','Villageois\n'+costLabel(TCOST[UT.VIL]),b,UT.VIL,false,TCOST[UT.VIL]);
     mkBtn(bar,b.autoTrain?'♾️':'🔁',(b.autoTrain?'Auto ON':'Auto OFF')+'\nVillageois',()=>{
       // L'état visé est connu ici même : sans la prédiction, un client lisait
       // « ⏹ Production continue arrêtée » au moment où il l'ACTIVAIT.
@@ -529,11 +533,11 @@ function drawBuildAct(bar,b){
   // ── Caserne ──
   if(b.type===BT.BARRACKS){
     // Unités de base disponibles dès la construction (la Forge les améliore, elle ne les débloque plus)
-    mkBtn(bar,'⚔️','Milicien\n'+costLabel(TCOST[UT.MIL]),()=>trainUnit(b,UT.MIL),false,TCOST[UT.MIL]);
-    mkBtn(bar,'🏹','Archer\n'+costLabel(TCOST[UT.ARC]),()=>trainUnit(b,UT.ARC),false,TCOST[UT.ARC]);
+    mkBtnUnite(bar,'⚔️','Milicien\n'+costLabel(TCOST[UT.MIL]),b,UT.MIL,false,TCOST[UT.MIL]);
+    mkBtnUnite(bar,'🏹','Archer\n'+costLabel(TCOST[UT.ARC]),b,UT.ARC,false,TCOST[UT.ARC]);
     // Piquier débloqué à l'Âge Féodal
     if(G.age>=1){
-      mkBtn(bar,'🔱','Piquier\n'+costLabel(TCOST[UT.PIKE]),()=>trainUnit(b,UT.PIKE),false,TCOST[UT.PIKE]);
+      mkBtnUnite(bar,'🔱','Piquier\n'+costLabel(TCOST[UT.PIKE]),b,UT.PIKE,false,TCOST[UT.PIKE]);
     }
     if(!G.research.iron_sword||!G.research.bow_craft){
       const t=document.createElement('div');
@@ -551,8 +555,8 @@ function drawBuildAct(bar,b){
 
   // ── Écurie ──
   if(b.type===BT.STABLE){
-    mkBtn(bar,'💨','Éclaireur\n'+costLabel(TCOST[UT.SCOUT]),()=>trainUnit(b,UT.SCOUT),false,TCOST[UT.SCOUT]);
-    mkBtn(bar,'🐴','Chevalier\n'+costLabel(TCOST[UT.KNIGHT]),()=>trainUnit(b,UT.KNIGHT),false,TCOST[UT.KNIGHT]);
+    mkBtnUnite(bar,'💨','Éclaireur\n'+costLabel(TCOST[UT.SCOUT]),b,UT.SCOUT,false,TCOST[UT.SCOUT]);
+    mkBtnUnite(bar,'🐴','Chevalier\n'+costLabel(TCOST[UT.KNIGHT]),b,UT.KNIGHT,false,TCOST[UT.KNIGHT]);
     if(!G.research.cavalry){
       const t=document.createElement('div');
       t.style.cssText='color:#8fbc44;font-size:10px;padding:2px 4px;font-style:italic;width:100%;text-align:center;';
@@ -563,7 +567,7 @@ function drawBuildAct(bar,b){
 
   // ── Monastère ──
   if(b.type===BT.MONASTERY){
-    mkBtn(bar,'⛪','Moine\n'+costLabel(TCOST[UT.MONK]),()=>trainUnit(b,UT.MONK),false,TCOST[UT.MONK]);
+    mkBtnUnite(bar,'⛪','Moine\n'+costLabel(TCOST[UT.MONK]),b,UT.MONK,false,TCOST[UT.MONK]);
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
     info.textContent='Soigne automatiquement les unités blessées';
@@ -580,14 +584,14 @@ function drawBuildAct(bar,b){
   // ── Château Fort ──
   if(b.type===BT.CASTLE){
     const pU=G.research.faith;
-    mkBtn(bar,'🌟','Paladin\n'+costLabel(TCOST[UT.PALADIN]),()=>trainUnit(b,UT.PALADIN),!pU,TCOST[UT.PALADIN]);
+    mkBtnUnite(bar,'🌟','Paladin\n'+costLabel(TCOST[UT.PALADIN]),b,UT.PALADIN,!pU,TCOST[UT.PALADIN]);
     // Arbalétrier à l'Âge des Châteaux
     if(G.age>=2){
-      mkBtn(bar,'🎯','Arbalétrier\n'+costLabel(TCOST[UT.XBOW]),()=>trainUnit(b,UT.XBOW),false,TCOST[UT.XBOW]);
+      mkBtnUnite(bar,'🎯','Arbalétrier\n'+costLabel(TCOST[UT.XBOW]),b,UT.XBOW,false,TCOST[UT.XBOW]);
     }
     // Trébuchet à l'Âge Impérial
     if(G.age>=3){
-      mkBtn(bar,'🪨','Trébuchet\n'+costLabel(TCOST[UT.TREB]),()=>trainUnit(b,UT.TREB),false,TCOST[UT.TREB]);
+      mkBtnUnite(bar,'🪨','Trébuchet\n'+costLabel(TCOST[UT.TREB]),b,UT.TREB,false,TCOST[UT.TREB]);
     }
     if(!pU){
       const t=document.createElement('div');
@@ -604,13 +608,13 @@ function drawBuildAct(bar,b){
       if(o.civ!==maCiv) continue;
       const verrou=(o.age!=null&&G.age<o.age);
       const libelle=UDEF[o.u].nom+'\n'+(verrou?'🔒 '+AGES[o.age].nom:costLabel(TCOST[o.u]));
-      mkBtn(bar,UNIT_ICO[o.u]||'⭐',libelle,()=>trainUnit(b,o.u),verrou,verrou?null:TCOST[o.u]);
+      mkBtnUnite(bar,UNIT_ICO[o.u]||'⭐',libelle,b,o.u,verrou,verrou?null:TCOST[o.u]);
     }
     // Héros : une seule fois par partie, même s'il meurt — voir HEROES/ORD.FORMER.
     const heroDone=G.factions[G.me].heroTrained;
     const heroDef=HEROES[G.factions[G.me].civ]||HEROES.francs;
-    mkBtn(bar,heroDef.ico,(heroDone?'Déjà formé\n':'')+heroDef.nom+'\n'+costLabel(TCOST[UT.HERO]),
-      ()=>trainUnit(b,UT.HERO), heroDone, TCOST[UT.HERO]);
+    mkBtnUnite(bar,heroDef.ico,(heroDone?'Déjà formé\n':'')+heroDef.nom+'\n'+costLabel(TCOST[UT.HERO]),
+      b,UT.HERO, heroDone, TCOST[UT.HERO]);
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:3px 6px;';
     info.textContent='⚔️ Défense auto longue portée';
@@ -620,7 +624,7 @@ function drawBuildAct(bar,b){
 
   // ── Atelier de Siège ──
   if(b.type===BT.SIEGE){
-    mkBtn(bar,'🐏','Bélier\n'+costLabel(TCOST[UT.RAM]),()=>trainUnit(b,UT.RAM),false,TCOST[UT.RAM]);
+    mkBtnUnite(bar,'🐏','Bélier\n'+costLabel(TCOST[UT.RAM]),b,UT.RAM,false,TCOST[UT.RAM]);
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:3px 6px;';
     info.textContent='🏚️ Dégâts x1.5 contre les bâtiments';
@@ -679,7 +683,7 @@ function drawBuildAct(bar,b){
 
   // ── Quai ──
   if(b.type===BT.DOCK){
-    mkBtn(bar,'⛵','Barque de\nPêche\n'+costLabel(TCOST[UT.BOAT]),()=>trainUnit(b,UT.BOAT),false,TCOST[UT.BOAT]);
+    mkBtnUnite(bar,'⛵','Barque de\nPêche\n'+costLabel(TCOST[UT.BOAT]),b,UT.BOAT,false,TCOST[UT.BOAT]);
     const info=document.createElement('div');
     info.style.cssText='color:#888;font-size:10px;padding:3px 6px;width:100%;text-align:center;';
     info.textContent='🐟 Envoyez une Barque pêcher un banc de poissons visible sur l\'eau';
@@ -827,6 +831,14 @@ function drawBuildAct(bar,b){
 //            l'appui fait clignoter les ressources manquantes au lieu de ne
 //            rien faire — avant, un bouton trop cher était aussi silencieux
 //            qu'un bouton verrouillé par l'âge, sans dire pourquoi.
+// Bouton de FORMATION : un mkBtn qui connaît l'unité, pour que la règle de
+// mission (voir regleMission) grise le bouton avec sa raison — la même que
+// renverrait le refus de l'hôte.
+function mkBtnUnite(parent,ico,label,b,type,locked=false,costObj=null){
+  const ban=regleMission('former',type,G.me);
+  if(ban) return mkBtn(parent,ico,String(label).split('\n')[0]+'\n🚫 '+ban,()=>{},true);
+  return mkBtn(parent,ico,label,()=>trainUnit(b,type),locked,costObj);
+}
 function mkBtn(parent,ico,label,onClick,locked=false,costObj=null){
   const b=document.createElement('button');
   const shortfall=!locked&&costObj&&!canAfford(costObj);
@@ -955,12 +967,13 @@ function openRP(cat='forge'){
     const done=G.research[key];
     const inQ=G.researchQ.some(q=>q.type===key);
     const ageManquant=(r.age!=null&&G.age<r.age);
+    const banR=regleMission('recherche',key,G.me);
     const costStr=Object.entries(r.cost).map(([k,v])=>`${v}${k==='wood'?'🪵':k==='stone'?'🪨':k==='gold'?'💰':'🍖'}`).join(' ');
     const el=document.createElement('div'); el.className='ritem';
     el.innerHTML=`<h3>${iconImg(r.ico,16)} ${r.nom}</h3>
       <div class="rcost">${r.desc} — Coût: ${costStr} — ${r.time}s</div>
-      ${done?'<div class="rdone">✅ Terminé</div>':inQ?'<div class="rdone">⏳ En cours…</div>':ageManquant?`<div class="rdone">🔒 ${AGES[r.age].nom} requis</div>`:''}`;
-    if(!done&&!inQ&&!ageManquant){
+      ${done?'<div class="rdone">✅ Terminé</div>':inQ?'<div class="rdone">⏳ En cours…</div>':banR?`<div class="rdone">🚫 ${banR}</div>`:ageManquant?`<div class="rdone">🔒 ${AGES[r.age].nom} requis</div>`:''}`;
+    if(!done&&!inQ&&!ageManquant&&!banR){
       const btn=document.createElement('button');
       // Volontairement JAMAIS `disabled` : un bouton grisé-mais-cliquable
       // qui répond par un flash de ressources en dit plus qu'un bouton
@@ -988,6 +1001,7 @@ function openRP(cat='forge'){
           }
           else if(res.raison==='deja') notify('Recherche déjà lancée ou terminée','#e67e22');
           else if(res.raison==='age') notify(`🔒 Nécessite ${AGES[r.age].nom}`,'#e74c3c');
+          else if(res.raison==='mission') notify('🚫 '+(res.msg||'Interdit dans cette mission'),'#e67e22');
           else notify('Recherche impossible','#e74c3c');
           return;
         }
@@ -2254,6 +2268,7 @@ function tryAgeUp(){
     if(r.raison==='max') notify('Âge maximum atteint !','#f0c040');
     else if(r.raison==='deja') notify('Avancement déjà en cours…','#f39c12');
     else if(r.raison==='tc') notify('Centre Ville requis !','#e74c3c');
+    else if(r.raison==='mission') notify('🚫 '+(r.msg||'Interdit dans cette mission'),'#e67e22');
     else if(r.raison==='ressources'&&next){
       notify(`${next.ico} ${next.nom} — Coût : ${fmtCost(next.cost)}`,'#e74c3c');
       notify(`Apporte : ${next.bonus}`,'#e8d5a0',true);
@@ -2275,8 +2290,10 @@ function updateAgeBar(){
     setCls('agebtn','');
     return;
   }
-  if(G.age>=AGES.length-1){
-    setHtml('agebtn',`${iconImg(AGES[G.age].ico,14)} ${AGES[G.age].nom}`);
+  // Âge maximum absolu, ou celui de la mission (voir regleMission) : dans les
+  // deux cas la flèche vers l'âge suivant serait une promesse fausse.
+  if(G.age>=AGES.length-1||regleMission('age',null,G.me)){
+    setHtml('agebtn',`${iconImg(AGES[G.age].ico,14)} ${AGES[G.age].nom}${G.age<AGES.length-1?' · 🔒':''}`);
     setCls('agebtn','maxage');
     return;
   }

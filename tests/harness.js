@@ -110,6 +110,7 @@ const EXPORTS = [
   'pousserReseau', 'demarrerPartieClient', 'appliquerScenario', 'destinataireLocal',
   'mpOuvrir', 'mpEstCoop',
   'drawUnitAct', 'drawBuildAct', 'updateAgeBar', 'refreshConquestBar', 'regleMission',
+  '_zonesInconnues', 'diplomatieMission', 'openDiplo', 'updateDiploBtn', 'passerBatiment', 'dessinerObjectifs',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

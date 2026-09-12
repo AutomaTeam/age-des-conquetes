@@ -5708,19 +5708,49 @@ groupe('campagne', () => {
     return false;
   };
 
-  test('Francs : les six missions se lancent, aucun camp ne tombe d\'office, et chaque lieu nommé est accessible par la terre', () => {
-    const cles = charger().CAMPAGNES.francs.missions;
-    egal(cles.length, 6, 'la campagne des Francs n\'a pas ses six missions');
-    for (const cle of cles) {
-      const j = mission(charger(), cle);
-      const p1 = j.G.units.find((u) => u.owner === 'p1');
-      const dep = { tx: (p1.x / j.BASE_TILE) | 0, ty: (p1.y / j.BASE_TILE) | 0 };
-      for (const z of Object.keys(j.MISSIONS[cle].zones || {})) {
-        ok(relie(j, dep, j.zoneMission(z)), `${cle} : la zone « ${z} » est coupée du départ par l'eau`);
+  // Une vérification par campagne : un échec dit tout de suite laquelle.
+  for (const [cc, camp] of Object.entries(charger().CAMPAGNES)) {
+    if (!camp.missions.length) continue;
+    test(`${camp.nom} : les six missions se lancent, aucun camp ne tombe d'office, et chaque lieu nommé est accessible par la terre`, () => {
+      egal(camp.missions.length, 6, `la campagne « ${cc} » n'a pas ses six missions`);
+      for (const cle of camp.missions) {
+        const j = mission(charger(), cle);
+        const p1 = j.G.units.find((u) => u.owner === 'p1');
+        const dep = { tx: (p1.x / j.BASE_TILE) | 0, ty: (p1.y / j.BASE_TILE) | 0 };
+        for (const z of Object.keys(j.MISSIONS[cle].zones || {})) {
+          ok(relie(j, dep, j.zoneMission(z)), `${cle} : la zone « ${z} » est coupée du départ par l'eau`);
+        }
+        jusquA(j, 3);
+        for (const f of Object.values(j.G.factions)) egal(f.vaincu, false, `${cle} : ${f.id} vaincu dès le départ`);
+        egal(j.G.gameOver, false, `${cle} : mission perdue dès le départ`);
       }
-      jusquA(j, 3);
-      for (const f of Object.values(j.G.factions)) egal(f.vaincu, false, `${cle} : ${f.id} vaincu dès le départ`);
-      egal(j.G.gameOver, false, `${cle} : mission perdue dès le départ`);
+    });
+  }
+
+  // Un déclencheur qui tire à la vingtième minute n'est jamais atteint par un
+  // test de lancement, et une faute dans une fermeture ne lève RIEN en jeu
+  // (scnAppel l'avale : la mission perd son déclencheur, pas la partie). On
+  // les exécute donc toutes, une fois, à la main — et une zone mal nommée, qui
+  // elle non plus ne lève rien (la vague part dans le vide), doit se voir.
+  test("chaque fermeture de chaque mission s'exécute sans erreur, et ne nomme que des zones déclarées", () => {
+    for (const cle of Object.keys(charger().MISSIONS)) {
+      const j = mission(charger(), cle);
+      jusquA(j, 1);
+      const M = j.SCN_API, def = j.MISSIONS[cle];
+      const appel = (f, lab) => { try { return f(M); } catch (e) { throw new Error(`${cle} — ${lab} : ${e.message}`); } };
+      for (const o of def.objectifs || []) {
+        if (o.test) appel(o.test, `test de « ${o.id} »`);
+        if (o.echec) appel(o.echec, `échec de « ${o.id} »`);
+        if (o.compte) {
+          const c = appel(o.compte, `compte de « ${o.id} »`);
+          ok(Array.isArray(c) && c.length === 2 && isFinite(c[0]) && isFinite(c[1]), `${cle} — le compte de « ${o.id} » n'est pas une paire de nombres`);
+        }
+      }
+      for (const e of def.etoiles || []) if (typeof e === 'function') appel(e, 'étoile');
+      for (const f of Object.values(def.factions || {})) if (f.diplomatie && f.diplomatie.si) appel(f.diplomatie.si, 'diplomatie');
+      for (const d of def.declencheurs || []) { appel(d.si, `si de « ${d.id} »`); appel(d.alors, `alors de « ${d.id} »`); }
+      const inconnues = [...j.lire('_zonesInconnues')];
+      egal(inconnues.length, 0, `${cle} — zone(s) inconnue(s) : ${inconnues.join(', ')}`);
     }
   });
 
@@ -5792,6 +5822,174 @@ groupe('campagne', () => {
     egal(k.G.gameOver, true, 'la Merveille danoise ne perd pas la mission');
     egal(k.G.scn.fin.cause, 'merveille', 'cause de la défaite');
     ok(/Merveille/.test(k.texteFinMission()), 'le texte de fin ne dit pas pourquoi : ' + k.texteFinMission());
+  });
+
+  // ══ CAMPAGNE DES BYZANTINS (lot L6) ════════════════════════
+  test("avancement : un objectif qui compte affiche « n/sur », calculé par l'hôte et lu par l'invité", () => {
+    const { hote, client, tour } = paireMission('fr1');
+    const tc = hote.G.buildings.find((b) => b.owner === 'p1' && b.type === hote.BT.TC);
+    for (let i = 0; i < 2; i++) { const p = caseLibre(hote, tc.tx + 6, tc.ty, 2, 2); batir(hote, hote.BT.FARM, p.tx, p.ty, 'p1'); }
+    tour(2);
+    egalJSON(hote.G.scn.prog.fermes, [2, 6], "l'hôte ne compte pas les fermes");
+    egalJSON(client.G.scn.prog.fermes, [2, 6], "l'avancement n'arrive pas chez l'invité");
+    client.majInterfaceScenario();
+    ok(/2\/6/.test(client.__sandbox.document.getElementById('objpanel').innerHTML), "le panneau de l'invité n'affiche pas « 2/6 »");
+    client.appliquerScenario(Object.assign(JSON.parse(JSON.stringify(hote.G.scn)), { prog: { fermes: ['<b>', 6] } }));
+    ok(!client.G.scn.prog.fermes, 'un avancement qui n\'est pas une paire de nombres est accepté');
+  });
+
+  test("diplomatie : en mission, seuls les camps prévus traitent — l'hôte refuse, et le menu ne propose rien", () => {
+    // Ring des Avars : un seigneur SEUL acceptait toujours (aucun autre rival
+    // à qui se comparer) — un clic, et la mission n'avait plus d'adversaire.
+    const j = mission(charger(), 'fr5');
+    const r = j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia', action: 'proposer' });
+    egal(r.raison, 'mission', "l'alliance avec le Khagan passe");
+    ok(r.msg, 'le refus ne dit pas pourquoi');
+    egal(j.G.factions.ia.equipe, 3, 'le Khagan a changé de camp');
+    j.G.running = true;
+    j.updateDiploBtn();
+    egal(j.__sandbox.document.getElementById('diplobtn').style.display, 'none', 'le menu pause propose une diplomatie que l\'hôte refusera');
+  });
+
+  test("diplomatie à condition (Ravenne) : refusée tant que le grenier tient, acceptée ensuite — et l'alliance gagne la mission", () => {
+    const j = mission(charger(), 'by5');
+    const avant = j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia', action: 'proposer' });
+    egal(avant.raison, 'refuse', 'Vitigès traite alors que son grenier est plein');
+    ok(/grenier/.test(avant.msg || ''), 'le refus ne dit pas ce qu\'il faut faire : ' + avant.msg);
+    for (const e of [...j.G.units, ...j.G.buildings]) if (e.tag === 'grenier') e.hp = 0;
+    jusquA(j, 1);
+    egal(j.G.scn.obj.grenier, 'fait', 'le grenier brûlé ne remplit pas son objectif');
+    const apres = j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia', action: 'proposer' });
+    ok(apres.ok, 'Vitigès refuse encore, grenier brûlé : ' + JSON.stringify(apres));
+    jusquA(j, 2, () => j.G.victory);
+    egal(j.G.victory, true, "l'alliance ne gagne pas Ravenne");
+    ok(j.G.scn.etoiles >= 2, 'la ruse ne rapporte pas son étoile');
+  });
+
+  test('diplomatie à tribut : refusée sans le prix, qui se lit sur le bouton ; prélevée à l\'accord', () => {
+    const j = variante(charger(), 'essai_tribut', (v) => {
+      v.factions = Object.assign({}, v.factions, { ia: Object.assign({}, v.factions.ia, { diplomatie: { prix: { gold: 250 } } }) });
+    });
+    mission(j, 'essai_tribut');
+    j.G.factions.p1.res.gold = 100;
+    const pauvre = j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia', action: 'proposer' });
+    egal(pauvre.raison, 'refuse', 'l\'alliance passe sans le tribut');
+    ok(/250/.test(pauvre.msg || ''), 'le refus ne dit pas le prix : ' + pauvre.msg);
+    egal(j.G.factions.p1.res.gold, 100, 'un refus a prélevé de l\'or');
+    j.openDiplo();
+    const liste = j.__sandbox.document.getElementById('diplolist');
+    const texte = JSON.stringify(liste.children.map((c) => (c.children || []).map((x) => x.textContent || x.innerHTML)));
+    ok(/250/.test(texte), 'le bouton ne dit pas le prix avant de proposer : ' + texte);
+    j.G.factions.p1.res.gold = 400;
+    ok(j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia', action: 'proposer' }).ok, 'l\'alliance payée est refusée');
+    egal(j.G.factions.p1.res.gold, 150, 'le tribut n\'est pas prélevé');
+    ok(j.SCN_API.allie('ia'), 'le seigneur n\'est pas devenu allié');
+  });
+
+  test("Dara : les colonnes perses marchent sur Dara, et le cerveau de l'IA ne les réquisitionne pas", () => {
+    const j = mission(charger(), 'by1');
+    const a = j.G.factions.ia;
+    const col = j.SCN_API.vague('ia', [[j.UT.ENEMI, 4]], 'est', { vers: 'dara' });
+    const dara = j.zoneMission('dara');
+    ok(col.length >= 4 && col.every((u) => u.horsArmee), 'la colonne n\'est pas marquée hors de l\'armée de l\'IA');
+    a.defenseJusqua = j.G.gameTime + 30;   // l'IA rappelle toute son armée en défense
+    for (let k = 0; k < 4; k++) { a.think = 0; j.updateUneIA(0.5, a); }
+    for (const u of col) ok(Math.hypot(u.campX - dara.x, u.campY - dara.y) < 1, 'le rappel en défense a détourné la colonne de Dara');
+  });
+
+  test("Nika : l'or de Narsès achète les Bleus — prélevé, et la garde passe au joueur sans garder son poste", () => {
+    const j = mission(charger(), 'by2');
+    j.G.factions.p1.res.gold = 320;
+    jusquA(j, 1);
+    const bleus = j.G.units.filter((u) => u.tag === 'bleus');
+    ok(bleus.length >= 8, 'les Bleus manquent');
+    ok(bleus.every((u) => u.owner === 'p1'), 'les Bleus ne sont pas passés au joueur');
+    ok(bleus.every((u) => u.camp == null), 'une garde ralliée garde encore le poste des pillards');
+    egal(j.G.factions.p1.res.gold, 20, "l'or de Narsès n'a pas été prélevé");
+    jusquA(j, 1);
+    egal(j.G.scn.obj.bleus, 'fait', "l'objectif des Bleus ne se coche pas");
+  });
+
+  test("Afrique : une ville libérée passe au joueur — chez l'invité aussi (un remplacement, pas un propriétaire muté en place)", () => {
+    const { hote, client, tour } = paireMission('by3');
+    tour(1);
+    for (const u of hote.G.units) if (u.tag === 'g1') u.hp = 0;
+    const v1 = hote.zoneMission('v1');
+    const chev = hote.G.units.filter((u) => u.owner === 'p1' && u.type === hote.UT.KNIGHT).slice(0, 3);
+    chev.forEach((u, i) => { u.x = v1.x + i * 10; u.y = v1.y + 10; u.state = 'idle'; });
+    const places = hote.G.buildings.filter((b) => b.tag === 'v1').map((b) => [b.tx, b.ty]);
+    ok(places.length >= 4, 'la ville n\'a pas ses bâtiments');
+    tour(2);
+    egal(hote.SCN_API.tirs('prise1'), 1, 'la ville n\'est pas prise');
+    ok(hote.G.buildings.filter((b) => b.tag === 'v1').every((b) => b.owner === 'p1'), 'les bâtiments de la ville ne sont pas au joueur');
+    for (const [tx, ty] of places) {
+      const b = client.G.buildings.find((x) => x.tx === tx && x.ty === ty);
+      ok(b && b.owner === 'p1', `chez l'invité, le bâtiment en ${tx},${ty} est resté vandale`);
+    }
+    egalJSON(client.G.scn.prog.villes, [1, 3], "l'invité ne voit pas l'avancement des villes");
+  });
+
+  test("Rome : l'enceinte est close, les camps goths gardent leur garnison — et un assaut force la palissade", () => {
+    const j = mission(charger(), 'by4');
+    const ring = j.G.buildings.filter((b) => b.owner === 'p1' && (b.type === j.BT.WALL || b.type === j.BT.GATE));
+    ok(ring.length >= 100, `l'enceinte de Rome n'est pas posée (${ring.length} sections)`);
+    ok(ring.filter((b) => b.type === j.BT.GATE).every((b) => !b.open), 'un portail de Rome est ouvert au départ');
+    const garde = j.G.units.filter((u) => u.tag === 'camp2' && u.owner === 'ia');
+    ok(garde.length && garde.every((u) => u.horsArmee), 'la garnison du camp est dans l\'armée de l\'IA');
+    const poses = j.SCN_API.vague('ia', [[j.UT.RAM, 2], [j.UT.ENEMI, 6]], 'camp2', { vers: 'rome' });
+    ok(poses.length, 'aucun assaut posé');
+    jusquA(j, 100);
+    ok(j.G.buildings.filter((b) => b.owner === 'p1' && b.type === j.BT.WALL).some((b) => b.hp < b.maxHp), "l'assaut n'a pas touché la palissade en cent secondes");
+  });
+
+  test("une colonne lancée à travers la carte suit ses étapes (via), passe la porte, et arrivée part chasser", () => {
+    // Sans étapes, la même colonne restait figée contre un lac à 88 cases de
+    // sa cible : la recherche de chemin a un budget, elle ne contourne pas
+    // un obstacle à l'autre bout de la carte.
+    const j = mission(charger(), 'by6');
+    const col = j.SCN_API.vague('ia', [[j.UT.ENEMI_C, 3]], 'bord_nord', { vers: 'cite', via: ['porte_n'] });
+    const porte = j.zoneMission('porte_n'), cite = j.zoneMission('cite');
+    ok(col.every((u) => Math.hypot(u.campX - porte.x, u.campY - porte.y) < 1 && u.etapes && u.etapes.length === 1), "la colonne ne vise pas d'abord sa première étape");
+    jusquA(j, 35);
+    for (const u of col) {
+      ok(u.hp <= 0 || u.x > porte.x, `un cavalier n'a pas passé la porte du mur (x=${Math.round(u.x / j.BASE_TILE)})`);
+      ok(u.hp <= 0 || u.camp == null || Math.hypot(u.campX - cite.x, u.campY - cite.y) < 1, "un cavalier arrivé à la porte ne s'est pas dirigé vers la Cité");
+    }
+    ok(col.some((u) => u.hp <= 0 || u.x > porte.x + 8 * j.BASE_TILE), "la colonne n'avance pas au-delà de la porte");
+    // Et une colonne arrivée au bout sans `garde` se lâche.
+    const u = col.find((x) => x.hp > 0) || j.SCN_API.vague('ia', [[j.UT.ENEMI_C, 1]], 'cite', { vers: 'cite' })[0];
+    u.x = cite.x; u.y = cite.y; u.etapes = null; u.campX = cite.x; u.campY = cite.y; u.aiCd = 0;
+    jusquA(j, 0.2);
+    egal(u.camp, null, "arrivée au bout, la colonne campe au lieu de partir chasser");
+  });
+
+  test("élimination en mission : l'objectif qui la couvre tranche avec SA cause — sinon, une cause d'élimination, jamais « null »", () => {
+    const j = mission(charger(), 'by4');
+    jusquA(j, 1);
+    for (const b of j.G.buildings.filter((b) => b.owner === 'p1' && b.type === j.BT.TC)) b.hp = 0;
+    jusquA(j, 0.2, () => j.G.gameOver);
+    egal(j.G.gameOver, true, 'la chute du dernier Centre Ville ne perd pas la mission');
+    ok(j.G.scn.fin, "la défaite par élimination contourne la fin de mission : l'invité ne l'apprendrait jamais");
+    egal(j.G.scn.fin.cause, 'obj:rome', "ce n'est pas l'objectif « Rome doit tenir » qui tranche");
+    const k = mission(charger());   // essai : aucun objectif ne couvre le Centre Ville
+    jusquA(k, 1);
+    for (const b of k.G.buildings.filter((b) => b.owner === 'p1' && b.type === k.BT.TC)) b.hp = 0;
+    jusquA(k, 0.2, () => k.G.gameOver);
+    egal(k.G.scn.fin && k.G.scn.fin.cause, 'elimine', "l'élimination n'a pas sa propre cause");
+    ok(/Centre Ville/.test(k.texteFinMission() || ''), 'le texte de fin ne dit pas pourquoi : ' + k.texteFinMission());
+  });
+
+  test("Mélantias : les Dèmes (l'IA alliée) tiennent leur base au lieu de raser Zabergan — et le piège sort des bois", () => {
+    const j = mission(charger(), 'by6');
+    const p2 = j.G.factions.p2;
+    egal(p2.genre, 'ia', 'les Dèmes ne sont pas menés par l\'IA en solo');
+    jusquA(j, 330);
+    egal(j.G.factions.ia.vaincu, false, 'les Dèmes ont rasé Zabergan : la mission se gagne toute seule');
+    egal(j.G.victory, false, 'la mission est gagnée sans que le joueur ait rien fait');
+    const horde = j.SCN_API.vague('ia', [[j.UT.ENEMI, 5]], 'melantias', { tag: 'horde' });
+    ok(horde.length >= 5, 'la horde n\'est pas posée');
+    jusquA(j, 1);
+    ok(j.G.units.filter((u) => u.tag === 'veterans' && u.owner === 'p1').length >= 10, 'les vétérans ne sortent pas des bois');
   });
 
   test('format : chaque mission et chaque campagne est bien formée', () => {

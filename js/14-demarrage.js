@@ -82,8 +82,9 @@ function loop(ts){
 // Le gisement est donc degage sous la palissade. C'est deterministe (meme
 // graine, memes gisements, memes retraits), donc l'hote et le client
 // obtiennent la meme enceinte.
-function poserMursArene(tx,ty,w,h,owner){
-  const r=6;                                   // rayon de l'enceinte, en cases
+// `r` et `ouverts` : les enceintes de mission (Rome, la Cité) reprennent ce
+// gabarit à leur propre rayon, et une place assiégée peut démarrer portes closes.
+function poserMursArene(tx,ty,w,h,owner,r=6,ouverts=true){
   const x0=tx+(w>>1)-r, y0=ty+(h>>1)-r, x1=tx+(w>>1)+r, y1=ty+(h>>1)+r;
   const mx=(x0+x1)>>1, my=(y0+y1)>>1;          // milieux de face : les portails
   const poses=[];
@@ -106,7 +107,7 @@ function poserMursArene(tx,ty,w,h,owner){
     // lui-meme. Le faire en plus inserait chaque mur DEUX FOIS dans la liste
     // (mesure : 94 batiments pour un anneau de 47), avec le meme id — tout
     // ce qui balaye G.buildings aurait compte double.
-    if(estPortail) b.open=true;
+    if(estPortail) b.open=ouverts;
     placeBuilding(b);
     if(estPortail) portails++; else murs++;
   }

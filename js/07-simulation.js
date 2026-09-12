@@ -125,8 +125,15 @@ function update(dt){
       if(f.genre==='humain'&&f.id!==G.me&&typeof envoyerBilanReseau==='function') envoyerBilanReseau();
     }
   }
-  // Défaite locale
-  if(moi()&&moi().vaincu&&!G.gameOver){ G.gameOver=true; showGameOver(); }
+  // Défaite locale. En mission, c'est la FIN DE MISSION qui tranche — sa cause,
+  // son texte, et l'état répliqué que lit l'invité (voir
+  // trancherEliminationMission, js/15-campagne.js) : le scénario ne s'évalue
+  // que deux fois par seconde, et l'élimination le devançait, laissant un écran
+  // de défaite sans cause (« null ») et un invité qui n'apprenait jamais l'issue.
+  if(moi()&&moi().vaincu&&!G.gameOver){
+    if(G.mission) trancherEliminationMission();
+    if(!G.gameOver){ G.gameOver=true; showGameOver(); }
+  }
   // Hôte éliminé resté spectateur d'une partie en ligne : clôt la session dès
   // qu'il n'y a plus personne en lice (voir majSpectateurHote).
   if(G.spectateur) majSpectateurHote();
@@ -264,7 +271,9 @@ function updateUnits(dt){
     // dériver leur compteur vers les négatifs — invisible à l'écran, mais le
     // champ part sur le réseau, et un compteur qui bouge sans arrêt fait
     // réexpédier la faction à chaque delta (voir le différentiel d.fac).
-    const fm=fac(u); if(fm&&fm.genre!=='neutre') fm.pop--;
+    // `horsArmee` : une troupe de mission n'a jamais compté dans la population
+    // de son seigneur (voir marquerHorsArmee, js/15-campagne.js).
+    const fm=fac(u); if(fm&&fm.genre!=='neutre'&&!u.horsArmee) fm.pop--;
     // Perte : compte pour la faction VICTIME elle-même si elle est humaine
     // — pas seulement G.me/estLocal(u). Sans ce filtre par PROPRIÉTAIRE, un
     // second joueur humain (coop 2v1, 2 rivaux en ligne — où l'ami peut
@@ -1789,11 +1798,27 @@ function updateEnemyAI(dt){
       u.target=tgt?tgt.id:null;
     }
     if(!tgt){
+      // Itinéraire d'une colonne de mission (`via`, voir M.renfort) : l'étape
+      // atteinte, le poste passe à la suivante.
+      // Arrivée au bout sans `garde` (u.assaut) : la colonne ne campe pas au
+      // milieu d'une ville vide, elle se lâche et va chercher quoi abattre.
+      if(u.camp&&(u.etapes||u.assaut)&&Math.hypot(u.campX-u.x,u.campY-u.y)<=BASE_TILE*2.5){
+        if(u.etapes){
+          const p=u.etapes.shift(); u.campX=p.x; u.campY=p.y;
+          if(!u.etapes.length) u.etapes=null;
+        } else { u.camp=null; u.assaut=false; u.aiCd=0; continue; }
+      }
       // Une garde sans cible retourne à son poste au lieu de dériver —
       // sans ça, elle resterait plantée là où le dernier combat l'a menée.
       if(u.camp&&Math.hypot(u.campX-u.x,u.campY-u.y)>BASE_TILE*1.5){
         u.state='moving'; u.moving=true;
-        advance(u,u.campX,u.campY,dt);
+        // Bloqué en route : on cherche un chemin, comme vers une cible. Le
+        // retour au poste allait en ligne droite et rien d'autre — un poste
+        // lointain (point de ralliement d'un assaut, colonne de mission
+        // lancée à travers la carte) derrière un lac ou le camp même de son
+        // seigneur laissait la troupe pousser contre l'obstacle à jamais
+        // (mesuré, Mélantias : deux cents cavaliers figés à l'ouest).
+        if(advance(u,u.campX,u.campY,dt)) requestPath(u);
         continue;
       }
       u.state='idle';u.moving=false;continue;
@@ -1805,7 +1830,14 @@ function updateEnemyAI(dt){
         // bloqué : on cherche d'abord à contourner ; on ne casse la palissade
         // que si elle enferme réellement la base (aucun chemin praticable).
         const r=requestPath(u);
-        if(!u.path&&r!==null){
+        // `r===null` : la recherche n'a pas été relancée (délai de recul après
+        // un échec, voir requestPath). Si la DERNIÈRE a échoué, la cible est
+        // toujours enfermée : on frappe le mur. Sans ce cas, une unité qui
+        // butait contre une enceinte close ne frappait qu'une fois par délai
+        // de recul (jusqu'à 5 s) et passait le reste du temps à pousser contre
+        // la palissade — mesuré (Rome assiégée) : deux béliers collés au mur
+        // une minute durant sans un seul coup, cent assaillants massés dehors.
+        if(!u.path&&(r===false||(r===null&&(u.pathEchecs||0)>0))){
           const spd=u.spd*BASE_TILE*dt;
           const nx=u.x+dx/d*spd, ny=u.y+dy/d*spd;
           const w=blockingBuildingAt(nx,ny)||blockingBuildingAt(u.x+Math.sign(dx)*BASE_TILE*0.6,u.y)||blockingBuildingAt(u.x,u.y+Math.sign(dy)*BASE_TILE*0.6);

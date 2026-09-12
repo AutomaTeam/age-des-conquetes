@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**291 tests, 18 groupes, ~60 s.** Les groupes `ia` et `delta` comptent pour
+**304 tests, 18 groupes, ~70 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -155,6 +155,21 @@ qui **ne se voit pas** :
   scriptée, assaut frontal sans économie) sont hors de la suite : elles
   mesurent, elles ne gardent pas — leurs résultats sont dans le message du
   commit.
+  TOUTES LES CAMPAGNES (depuis L6) : un test de lancement PAR campagne, et
+  un test qui EXÉCUTE chaque fermeture de chaque mission (tests, échecs,
+  comptes, étoiles, déclencheurs — un déclencheur de la vingtième minute
+  n'est jamais atteint par un lancement, et une faute y est avalée en jeu)
+  puis exige que le registre des ZONES INCONNUES (`_zonesInconnues`) soit
+  vide : un nom de zone mal tapé ne lève rien, la vague part dans le vide.
+  CAMPAGNE DES BYZANTINS (lot L6) : l'avancement « n/sur » est calculé par
+  l'hôte et voyage ; la diplomatie est VERROUILLÉE en mission sauf là où la
+  mission la prévoit (un seigneur seul acceptait toujours : un clic vidait le
+  Ring des Avars de son adversaire), à condition (Ravenne) ou à tribut ; une
+  colonne d'un seigneur postée par la mission n'est pas réquisitionnée par
+  son cerveau d'IA ni comptée dans sa population ; une ville prise passe au
+  joueur CHEZ L'INVITÉ AUSSI (remplacement, le propriétaire d'un bâtiment ne
+  voyage pas) ; une colonne suit ses étapes (`via`) au lieu de rester figée
+  contre un lac ; l'élimination en mission passe par la fin de mission.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

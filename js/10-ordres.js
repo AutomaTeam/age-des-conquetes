@@ -499,15 +499,23 @@ function applyCommand(cmd){
   case ORD.DIPLOMATIE: {
     const cible=G.factions[cmd.cibleId];
     if(!cible||cible.genre!=='ia'||cible.vaincu) return KO('cible');
+    // Mission : seuls les camps prévus par la mission traitent (voir
+    // diplomatieMission, js/15-campagne.js) — undefined hors mission.
+    const dm=diplomatieMission(cmd.cibleId);
+    if(dm===null) return KO('mission',{msg:'Aucun pourparler possible avec ce camp dans cette mission'});
     if(cmd.action==='proposer'){
       if(cible.equipe===f.equipe) return KO('deja');
+      if(dm){ const r=examenDiplomatie(dm,cible,cmd.f); if(r) return r; }
       // L'IA n'accepte que si elle n'est pas clairement la plus forte des
       // rivaux IA restants : sans intérêt à se lier si elle domine déjà.
-      const autres=factionsIA().filter(x=>x.id!==cible.id&&!x.vaincu);
-      const armeeDe=id=>G.units.filter(u=>u.owner===id&&u.hp>0&&isMilitary(u.type)).length;
-      const armeeCible=armeeDe(cible.id);
-      const armeeAutre=autres.length?Math.max(...autres.map(x=>armeeDe(x.id))):0;
-      if(autres.length&&armeeCible>armeeAutre*1.1) return {ok:false,raison:'refuse',nom:cible.nom};
+      if(!dm||dm.force===true||(dm.force==null&&!dm.si&&!dm.prix)){
+        const autres=factionsIA().filter(x=>x.id!==cible.id&&!x.vaincu);
+        const armeeDe=id=>G.units.filter(u=>u.owner===id&&u.hp>0&&isMilitary(u.type)).length;
+        const armeeCible=armeeDe(cible.id);
+        const armeeAutre=autres.length?Math.max(...autres.map(x=>armeeDe(x.id))):0;
+        if(autres.length&&armeeCible>armeeAutre*1.1) return {ok:false,raison:'refuse',nom:cible.nom};
+      }
+      if(dm&&dm.prix) spend(dm.prix,cmd.f);   // le tribut, une fois l'accord acquis
       cible._equipeAvant=cible.equipe;
       cible.equipe=f.equipe;
       cible.allieDe=cmd.f;

@@ -397,7 +397,7 @@ function construireSnap(){
 // cadence) reste chez lui.
 function scnPourReseau(){
   const s=G.scn;
-  return {inst:s.inst, seq:s.seq, obj:s.obj, dlg:s.dlg, rev:s.rev, marques:s.marques,
+  return {inst:s.inst, seq:s.seq, obj:s.obj, prog:s.prog||{}, dlg:s.dlg, rev:s.rev, marques:s.marques,
           fin:s.fin, etoiles:s.etoiles};
 }
 function scnAmorce(){
@@ -410,7 +410,13 @@ function scnAmorce(){
 // mission de l'invité se fige un instant, elle ne fait pas tomber sa page.
 function appliquerScenario(s){
   if(!s||typeof s!=='object'||!s.obj||typeof s.obj!=='object'||!Array.isArray(s.dlg)) return;
-  G.scn={inst:s.inst, seq:s.seq|0, obj:s.obj,
+  // `prog` : l'avancement des objectifs (« 4/6 ») — des paires de nombres ;
+  // toute autre forme est jetée, l'objectif s'affiche alors sans compteur.
+  const prog={};
+  if(s.prog&&typeof s.prog==='object') for(const [k,v] of Object.entries(s.prog)){
+    if(Array.isArray(v)&&v.length===2&&isFinite(v[0])&&isFinite(v[1])) prog[k]=[+v[0],+v[1]];
+  }
+  G.scn={inst:s.inst, seq:s.seq|0, obj:s.obj, prog,
          dlg:s.dlg.filter(e=>e&&typeof e==='object'&&typeof e.k==='string'),
          rev:liste(s.rev), marques:liste(s.marques),
          fin:(s.fin&&typeof s.fin==='object')?s.fin:null, etoiles:s.etoiles|0};

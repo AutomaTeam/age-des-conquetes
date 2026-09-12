@@ -993,7 +993,12 @@ function updateUneIA(dt,a){
   // compter dans l'armée faisait déclencher des assauts sur un effectif qui
   // n'existait pas — trois moines chasseurs de reliques pouvaient à eux
   // seuls faire franchir le seuil `atkMin`.
-  const army=G.units.filter(u=>u.owner===a.id&&u.type!==UT.VIL&&u.type!==UT.MONK);
+  // `horsArmee` : une troupe que la MISSION a postée (garnison d'un camp, colonne
+  // lancée sur une cible — voir poserGroupe et M.renfort, js/15-campagne.js).
+  // Le cerveau de l'IA ne la réquisitionne pas : ses phases de défense et de
+  // rassemblement repostaient TOUTE l'armée, garnisons de camps comprises, et
+  // un camp à brûler se vidait tout seul au premier éclaireur aperçu.
+  const army=G.units.filter(u=>u.owner===a.id&&u.type!==UT.VIL&&u.type!==UT.MONK&&!u.horsArmee);
   majPhaseAssaut(dt,a,army);
 
   a.think-=dt;
@@ -1001,7 +1006,9 @@ function updateUneIA(dt,a){
   a.think=AI_THINK;
 
   // ── Recensement ──
-  a.pop=G.units.filter(u=>u.owner===a.id).length;
+  // Hors population : les troupes que la mission commande (voir `horsArmee`
+  // plus bas et marquerHorsArmee, js/15-campagne.js).
+  a.pop=G.units.filter(u=>u.owner===a.id&&!u.horsArmee).length;
   let cap=0;
   for(const b of G.buildings){
     if(b.owner!==a.id||b.constructing) continue;

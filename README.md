@@ -53,7 +53,7 @@ préservent.
 node tests/run.js
 ```
 
-291 tests, 18 groupes, ~60 s, sans dépendance ni build — comme le jeu. Ils
+304 tests, 18 groupes, ~70 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, le fait
@@ -74,7 +74,7 @@ quoi.
 |---|---|---|
 | 🎮 **Solo** | Survie · Conquête · 2 rivaux | ⚔️ *Commencer la partie* |
 | 👥 **Multijoueur** | Conquête · 2 rivaux · 2v1 Coop | 👥 *Jouer avec un ami* |
-| 📜 **Campagne** | les campagnes qui ont des missions — Francs : six missions, de Herstal (768) à la couronne d'Occident (800) | ⚔️ *Jouer seul* ou 👥 *Jouer avec un ami*, sur le briefing de la mission |
+| 📜 **Campagne** | les campagnes qui ont des missions — Francs : de Herstal (768) à la couronne d'Occident (800) ; Byzantins : de Dara (530) à Mélantias (559) — six missions chacune | ⚔️ *Jouer seul* ou 👥 *Jouer avec un ami*, sur le briefing de la mission |
 
 Une mission impose sa carte, sa graine et les civilisations ; seule la
 difficulté se choisit, sur son briefing. Les missions s'ouvrent l'une après

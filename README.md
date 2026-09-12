@@ -53,7 +53,7 @@ préservent.
 node tests/run.js
 ```
 
-318 tests, 18 groupes, ~85 s, sans dépendance ni build — comme le jeu. Ils
+322 tests, 18 groupes, ~85 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, le fait
@@ -219,7 +219,8 @@ partie ne pourrait pas se terminer).
   zones explorées mais hors champ de vision en brouillard translucide).
 - Bilan chiffré en fin de partie (guerre, empire, récolte) affiché aussi bien
   sur la victoire que sur la défaite.
-- 22 succès persistants (locaux, ou synchronisés sur Google Drive une fois
+- 35 succès persistants — dont un par campagne achevée, et l'*Épopée* :
+  toutes les missions de toutes les campagnes en Brutal — (locaux, ou synchronisés sur Google Drive une fois
   connecté — voir *Sauvegarde cloud*), consultables depuis l'écran-titre et
   le menu pause, avec bandeau de déblocage en cours de partie.
 - Groupes de contrôle : `Ctrl+1..9` assigne la sélection courante, `1..9` la
@@ -576,6 +577,16 @@ ne peut lire ni écrire que dans les salons dont il fait partie.
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 36000"
         }
+      },
+      "missions": {
+        "$tableau": {
+          ".read": "auth != null",
+          ".indexOn": "valeur",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && $tableau.matches(/^(fr|by|mo|ch|gi)[1-6]_(easy|normal|hard|brutal)$/)",
+            ".validate": "newData.hasChildren(['nom','valeur','ts']) && newData.child('valeur').isNumber() && newData.child('valeur').val() >= 0 && newData.child('valeur').val() <= 36000"
+          }
+        }
       }
     }
   }
@@ -606,7 +617,11 @@ une par mode : meilleure vague atteinte en Survie (`survie`), victoire la
 plus rapide en Conquête (`conquete`), en 2 Rivaux (`conquete2`) et en 2v1
 Coop (`coop2v1`) — jamais mélangées entre elles, une victoire solo contre 1
 IA et une victoire à trois camps hostiles en 2 Rivaux ne se jouant pas à la
-même vitesse. Envoyé automatiquement en fin de partie si connecté ; échoue
+même vitesse. Les missions de campagne ont leur propre tableau, **un par
+mission et par difficulté** (`missions/fr1_brutal`…), affiché sur le briefing
+de la mission (les cinq meilleurs temps à la difficulté choisie) ; il
+demande la règle `classement/missions/$tableau` ci-dessus, et sans elle
+l'envoi échoue en silence comme le reste. Envoyé automatiquement en fin de partie si connecté ; échoue
 silencieusement sinon (comme le reste du multijoueur). Les règles
 `classement/…` ci-dessus valident le type et bornent la valeur envoyée
 (0-9999 vagues, 0-36000 s) — une protection minimale, pas une preuve

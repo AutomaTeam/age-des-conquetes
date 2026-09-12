@@ -5255,16 +5255,21 @@ groupe('campagne', () => {
     egal(k.aiTune(k.G.factions.ia), k.AI_TUNE.hard, 'une IA de Conquête ne lit plus AI_TUNE');
   });
 
-  test('ni le succès Conquérant, ni Guerre Éclair, ni le classement ne se gagnent en mission', () => {
+  test('ni le succès Conquérant, ni Guerre Éclair, ni le classement Conquête ne se gagnent en mission', () => {
     const j = charger();
     const ctx = { won: true, gmode: 'mission', time: 60 };
     for (const id of ['conqueror', 'blitz']) {
       const a = j.ACH.find((x) => x.id === id);
       egal(a.test({}, ctx), false, `le succès « ${a.nom} » se débloque en gagnant une mission`);
     }
-    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', '11-interface.js'), 'utf8');
-    const i = src.indexOf('function soumettreClassement');
-    ok(/gmode==='mission'\)\s*return/.test(src.slice(i, i + 700)), 'soumettreClassement envoie un temps de mission au classement Conquête');
+    // Le temps d'une mission va à SON tableau (voir le test du lot L10) :
+    // jamais à une catégorie de Conquête.
+    const envois = [];
+    j.__sandbox.MP = { classementEnvoyer: (c, v) => { envois.push(c); return Promise.resolve(true); } };
+    j.lire('_mpEtat').dispo = true;
+    mission(j, 'fr1');
+    j.soumettreClassement(true);
+    ok(envois.length && envois.every((c) => c.startsWith('missions/')), 'un temps de mission part vers ' + JSON.stringify(envois));
   });
 
   test("le mode Campagne ne se propose dans aucun onglet : on n'y entre que par une mission", () => {
@@ -6183,6 +6188,82 @@ groupe('campagne', () => {
     ok(j.SCN_API.tire('ralliement_valence'), 'la route commerciale ne rallie pas Valence');
     ok(j.G.buildings.filter((b) => b.tag === 'valence').every((b) => b.owner === 'p1'), 'les bâtiments de Valence ne passent pas à la compagnie');
     egal(j.G.factions.ia.atkTimer, 0, 'le comte ne réagit pas au ralliement');
+  });
+
+  // ══ FINITIONS (lot L10) ═══════════════════════════════════
+  const toutGagne = (j, diff, sauf) => {
+    const p = {};
+    for (const c of Object.values(j.CAMPAGNES)) for (const id of c.missions) if (id !== sauf) p[id] = { v: 1, diff, etoiles: 1, temps: 600 };
+    return p;
+  };
+
+  test('succès de campagne : ils tombent à la victoire qui COMPLÈTE la campagne — pas avant, et une seule fois', () => {
+    const j = charger();
+    ok(['camp_francs', 'camp_byzantins', 'camp_mongols', 'camp_chinois', 'camp_gitanos', 'camp_brutal'].every((id) => j.ACH.some((a) => a.id === id)),
+      'il manque un succès de campagne');
+    j.PROFILE.campagne = toutGagne(j, 'normal', 'fr6');
+    j.PROFILE.unlocked = [];
+    egal(j.campagneTerminee('francs'), false, 'la campagne est « terminée » sans sa dernière mission');
+    mission(j, 'fr6');
+    jusquA(j, 1);
+    egal(j.PROFILE.unlocked.includes('camp_francs'), false, 'le succès des Francs tombe avant la dernière victoire');
+    j.G.factions.p1.merveilleAchevee = true;
+    j.checkMerveilleVictory();
+    egal(j.G.victory, true, "la dernière mission n'est pas gagnée");
+    ok(j.PROFILE.unlocked.includes('camp_francs'), 'gagner la dernière mission des Francs ne débloque pas leur succès');
+    ok(j.PROFILE.unlocked.includes('camp_byzantins'), 'une campagne déjà complète au profil ne débloque pas son succès');
+    egal(j.PROFILE.unlocked.includes('camp_brutal'), false, "l'Épopée tombe sans une seule victoire en Brutal");
+    ok(/Marteau et la Couronne/.test(j.__sandbox.document.getElementById('overlay').innerHTML), "l'écran de victoire n'annonce pas le succès");
+  });
+
+  test('Épopée : toutes les missions de toutes les campagnes en Brutal — une seule en dessous, et non', () => {
+    const j = charger();
+    j.PROFILE.campagne = toutGagne(j, 'brutal');
+    egal(j.toutesEnBrutal(), true, 'tout gagné en Brutal ne suffit pas');
+    j.PROFILE.campagne.gi6 = { v: 1, diff: 'hard', etoiles: 3, temps: 100 };
+    egal(j.toutesEnBrutal(), false, "une mission gagnée en Difficile seulement compte comme Brutal");
+    // La fusion garde la meilleure difficulté : une victoire en Facile ensuite n'efface rien.
+    j.PROFILE.campagne = j.fusionProgression(toutGagne(j, 'brutal'), toutGagne(j, 'easy'));
+    egal(j.toutesEnBrutal(), true, 'une victoire en Facile après coup efface le Brutal');
+  });
+
+  test("classement par mission : un tableau par mission ET par difficulté — une victoire seulement, jamais la mission d'essai", () => {
+    const j = charger();
+    const envois = [];
+    j.__sandbox.MP = { classementEnvoyer: (c, v) => { envois.push([c, v]); return Promise.resolve(true); } };
+    j.lire('_mpEtat').dispo = true;
+    mission(j, 'by2', 'hard');
+    jusquA(j, 2);
+    j.soumettreClassement(false);
+    egal(envois.length, 0, 'une défaite envoie un temps');
+    j.soumettreClassement(true);
+    egalJSON(envois, [['missions/by2_hard', 2]], 'tableau et temps envoyés');
+    const k = charger();
+    const e2 = [];
+    k.__sandbox.MP = { classementEnvoyer: (c) => { e2.push(c); return Promise.resolve(true); } };
+    k.lire('_mpEtat').dispo = true;
+    mission(k);   // essai
+    k.soumettreClassement(true);
+    egal(e2.length, 0, "la mission d'essai du moteur a un classement");
+    egal(k.tableauClassementMission('fr1', 'pas-une-difficulte'), null, 'une difficulté inconnue ouvre un tableau');
+  });
+
+  test('le nom d\'un autre joueur, lu au classement, n\'est JAMAIS rendu comme du balisage (général et briefing)', () => {
+    const j = charger();
+    const piege = '<img src=x onerror=alert(1)>';
+    Object.assign(j.lire('_mpEtat'), { dispo: true, uid: 'moi' });
+    const general = j.ligneClassement({ uid: 'autre', nom: piege, valeur: 321 }, 0, (v) => String(v));
+    ok(general.includes('&lt;img') && !general.includes('<img'), 'le classement général rend le nom en HTML : ' + general);
+    const bloc = j.htmlClassementMission([{ uid: 'autre', nom: piege, valeur: 321 }, { uid: 'moi', nom: 'Moi', valeur: 400 }]);
+    ok(bloc.includes('&lt;img') && !bloc.includes('<img'), 'le briefing rend le nom en HTML : ' + bloc);
+    ok(bloc.includes(j.fmtDuration(321)), 'le temps n\'est pas affiché : ' + bloc);
+    ok(/cb-cla moi/.test(bloc), 'sa propre ligne n\'est pas distinguée');
+    // Le briefing lit le tableau de SA mission à SA difficulté.
+    const demandes = [];
+    j.__sandbox.MP = { classementLire: (cat) => { demandes.push(cat); return Promise.resolve([]); } };
+    j.pickDifficulty('brutal');
+    j.ouvrirCampagne('francs', 'fr1');
+    egalJSON(demandes, ['missions/fr1_brutal'], 'le briefing ne lit pas le bon tableau');
   });
 
   test('format : chaque mission et chaque campagne est bien formée', () => {

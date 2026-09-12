@@ -1321,6 +1321,9 @@ html.reduce-motion #ico-start {
 #objpanel .op-ligne.fait { color:#7fbf6a;text-decoration:line-through; }
 #objpanel .op-ligne.echec { color:#e07060;text-decoration:line-through; }
 #objpanel .op-ligne.sec { color:#b8a888; }
+#camp-brief .cb-cla { display:flex;justify-content:space-between;gap:10px;font-family:'Crimson Text',serif;font-size:13px;color:var(--parch2); }
+#camp-brief .cb-cla.moi { color:var(--gold-l);font-weight:bold; }
+#camp-brief .cb-cla-vide { font-family:'Crimson Text',serif;font-size:12.5px;color:#9a8a6a;margin:2px 0; }
 #objpanel .op-prog { color:var(--gold-l);font-family:'Cinzel',serif;font-size:11px;white-space:nowrap; }
 #dlgbandeau {
   position:fixed;left:50%;bottom:calc(var(--botH) + 12px);transform:translateX(-50%);
@@ -2415,8 +2418,9 @@ try {
   // pas d'historique, juste son MEILLEUR score. `categorie` vaut 'survie'
   // (nombre de vagues survécues — plus haut est meilleur) ou une catégorie
   // de type "durée" — 'conquete', 'conquete2', 'coop2v1', une par mode (voir
-  // CLASSEMENT_CAT) — où c'est la durée en secondes d'une victoire qui
-  // compte, et plus bas est meilleur. Seule 'survie' inverse ce sens.
+  // CLASSEMENT_CAT), et 'missions/<mission>_<difficulté>' pour la campagne
+  // (voir tableauClassementMission) — où c'est la durée en secondes d'une
+  // victoire qui compte, et plus bas est meilleur. Seule 'survie' inverse ce sens.
   // Nécessite les règles RTDB `classement/$categorie/$uid` du README ; sans
   // elles, échoue silencieusement (permission_denied) comme le reste du
   // multijoueur optionnel.

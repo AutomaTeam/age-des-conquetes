@@ -111,6 +111,8 @@ const EXPORTS = [
   'mpOuvrir', 'mpEstCoop',
   'drawUnitAct', 'drawBuildAct', 'updateAgeBar', 'refreshConquestBar', 'regleMission',
   '_zonesInconnues', 'diplomatieMission', 'openDiplo', 'updateDiploBtn', 'passerBatiment', 'dessinerObjectifs',
+  'campagneTerminee', 'toutesEnBrutal', 'tableauClassementMission', 'soumettreClassement', 'openClassement', 'voirMission', '_mpEtat',
+  'ligneClassement', 'htmlClassementMission', 'fmtDuration', 'ouvrirCampagne',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

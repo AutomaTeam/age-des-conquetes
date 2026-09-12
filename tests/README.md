@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**318 tests, 18 groupes, ~85 s.** Les groupes `ia` et `delta` comptent pour
+**322 tests, 18 groupes, ~85 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -190,6 +190,13 @@ qui **ne se voit pas** :
   (M.coupe : aucun chemin vers le sud tant que la palissade tient, une
   brèche le rouvre) ; une route commerciale jusqu'au Marché bâti dans une
   ville la rallie, et ses bâtiments passent à la compagnie.
+  FINITIONS (lot L10) : les succès de campagne tombent à la victoire qui
+  COMPLÈTE la campagne (pas avant) et s'annoncent sur l'écran de victoire ;
+  l'Épopée exige toutes les missions en Brutal, et une victoire en Facile
+  après coup ne l'efface pas ; le temps d'une mission va à SON tableau
+  (mission + difficulté), sur une victoire seulement, jamais pour la mission
+  d'essai ni vers une catégorie de Conquête ; et le nom d'un autre joueur,
+  lu au classement, n'est jamais rendu comme du balisage.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

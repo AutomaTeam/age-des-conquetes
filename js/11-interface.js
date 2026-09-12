@@ -1641,6 +1641,15 @@ const ACH = [
   { id:'negociant',   ico:'🐫',  nom:'Négociant',          desc:'Réaliser 20 opérations commerciales en une partie.', test:(s)=>s.tradesDone>=20 },
   { id:'forteresse',  ico:'🏰',  nom:'Forteresse',         desc:'Mettre 15 unités à l\'abri en garnison en une partie.', test:(s)=>s.garrisonUses>=15 },
   { id:'elite_unit',  ico:'⭐',  nom:'Aguerrie',           desc:'Faire passer une unité au rang Élite (8 victoires).', test:(s)=>!!s.hadEliteUnit },
+  // ── Campagnes ── lus dans la progression du profil (voir campagneTerminee,
+  // js/15-campagne.js), pas dans la partie : ils tombent à la victoire qui
+  // complète la campagne, à n'importe quelle difficulté.
+  { id:'camp_francs',    ico:'👑', nom:'Le Marteau et la Couronne',  desc:'Gagner les six missions de la campagne des Francs.',    test:()=>campagneTerminee('francs') },
+  { id:'camp_byzantins', ico:'🛡️', nom:'Le Rempart du Monde',        desc:'Gagner les six missions de la campagne des Byzantins.', test:()=>campagneTerminee('byzantins') },
+  { id:'camp_mongols',   ico:'🏇', nom:'Les Cavaliers de la Steppe', desc:'Gagner les six missions de la campagne des Mongols.',   test:()=>campagneTerminee('mongols') },
+  { id:'camp_chinois',   ico:'📯', nom:'Le Mandat du Ciel',          desc:'Gagner les six missions de la campagne des Chinois.',   test:()=>campagneTerminee('chinois') },
+  { id:'camp_gitanos',   ico:'🎻', nom:'La Route',                   desc:'Gagner les six missions de la campagne des Gitanos.',   test:()=>campagneTerminee('gitanos') },
+  { id:'camp_brutal',    ico:'🔱', nom:'Épopée',                     desc:'Gagner toutes les missions de toutes les campagnes en Brutal.', test:()=>toutesEnBrutal() },
 ];
 
 function achContext(won){
@@ -1971,6 +1980,14 @@ window.soumettreCheat=soumettreCheat;
 // (voir soumettreClassement). Nécessite d'être connecté (même compte que le
 // multijoueur, voir mpConnexion) — sans quoi ce panneau se contente
 // d'expliquer comment l'activer plutôt que de rester vide sans explication.
+// Une ligne du classement. Le nom vient d'un AUTRE joueur, par le réseau :
+// échappé, jamais rendu comme du balisage — un nom « <img onerror=…> »
+// s'exécutait ici, chez tous ceux qui ouvraient le classement.
+function ligneClassement(r,i,fmt){
+  return `<div class="clarow${r.uid===_mpEtat.uid?' moi':''}">`
+    +`<span class="clarang">${i+1}</span><span class="clanom">${echapHTML(r.nom||'Joueur')}</span>`
+    +`<span class="claval">${fmt(r.valeur)}</span></div>`;
+}
 async function openClassement(){
   const panel=document.getElementById('classementpanel');
   const list=document.getElementById('clalist');
@@ -1998,11 +2015,8 @@ async function openClassement(){
     window.MP.classementLire('survie',10),
     ...catsConquete.map(m=>window.MP.classementLire(CLASSEMENT_CAT[m],10)),
   ]);
-  const ligne=(r,i,fmt)=>`<div class="clarow${r.uid===_mpEtat.uid?' moi':''}">`
-    +`<span class="clarang">${i+1}</span><span class="clanom">${r.nom||'Joueur'}</span>`
-    +`<span class="claval">${fmt(r.valeur)}</span></div>`;
   const section=(titre,rows,fmt)=>`<div class="classec">${titre}</div>`
-    +(rows.length?rows.map((r,i)=>ligne(r,i,fmt)).join(''):'<p class="classub">Aucun score pour l\'instant — soyez le premier !</p>');
+    +(rows.length?rows.map((r,i)=>ligneClassement(r,i,fmt)).join(''):'<p class="classub">Aucun score pour l\'instant — soyez le premier !</p>');
   list.innerHTML=
     section('🛡️ Survie — meilleure vague',survie,v=>`Vague ${v}`)+
     catsConquete.map((m,i)=>section(`${MODES[m].ico} ${MODES[m].nom} — victoire la plus rapide`,conquetes[i],v=>fmtDuration(v))).join('');
@@ -2162,8 +2176,14 @@ const CLASSEMENT_CAT={conquest:'conquete', conquest2:'conquete2', coop2v1:'coop2
 function soumettreClassement(won){
   if(!mpDispo()||!window.MP.classementEnvoyer) return;
   // Une mission n'est pas une Conquête : ni même adversaire, ni même carte,
-  // ni même condition de victoire. Son temps fausserait le classement.
-  if(G.gmode==='mission') return;
+  // ni même condition de victoire. Son temps va à SON tableau — un par
+  // mission et par difficulté (voir tableauClassementMission) —, jamais à
+  // celui de la Conquête.
+  if(G.gmode==='mission'){
+    const t=won&&G.mission?tableauClassementMission(G.mission,G.difficulty):null;
+    if(t) window.MP.classementEnvoyer(t,Math.round(G.gameTime||0)).catch(()=>{});
+    return;
+  }
   if(G.gmode==='survival'){
     window.MP.classementEnvoyer('survie',G.wave||0).catch(()=>{});
   } else if(won){

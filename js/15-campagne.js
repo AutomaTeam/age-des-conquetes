@@ -1172,6 +1172,29 @@ function missionSuivante(cle){
   const i=c.missions.indexOf(cle);
   return (i>=0&&i+1<c.missions.length)?c.missions[i+1]:null;
 }
+// ── SUCCÈS ET CLASSEMENT DE CAMPAGNE ─────────────────────
+// Lus par les succès (ACH, js/11-interface.js) dans la PROGRESSION du profil,
+// pas dans la partie : ils tombent à la victoire qui complète la campagne —
+// enregistrerVictoireMission passe AVANT checkAchievements (voir finishGame).
+function campagneTerminee(cle){
+  const c=CAMPAGNES[cle];
+  return !!c&&c.missions.length>0&&c.missions.every(id=>!!resultatMission(id));
+}
+// Toutes les missions de toutes les campagnes, gagnées en Brutal (la fusion
+// garde la meilleure difficulté : une victoire en Facile après ne l'efface pas).
+function toutesEnBrutal(){
+  const ids=Object.values(CAMPAGNES).flatMap(c=>c.missions);
+  return ids.length>0&&ids.every(id=>{ const r=resultatMission(id); return !!r&&r.diff==='brutal'; });
+}
+// Tableau du classement en ligne d'une mission : UN PAR MISSION ET PAR
+// DIFFICULTÉ — un temps en Facile et un temps en Brutal ne se comparent pas.
+// Null pour une mission hors campagne (la mission d'essai du moteur).
+// Nécessite la règle RTDB `classement/missions/$tableau` du README.
+function tableauClassementMission(cle,diff){
+  const m=MISSIONS[cle];
+  if(!m||!m.campagne||!CAMPAGNES[m.campagne]||!DIFFS[diff]) return null;
+  return `missions/${cle}_${diff}`;
+}
 function etoilesTexte(n,max){ return '★'.repeat(n||0)+'☆'.repeat(Math.max(0,(max||3)-(n||0))); }
 function nbEtoilesMax(cle){ const m=MISSIONS[cle]; return ((m&&m.etoiles)||['victoire']).length; }
 
@@ -1242,6 +1265,7 @@ function voirMission(cle){
     +`<div class="cb-sec">Objectifs</div>${listeObj(princ)}`
     +(sec.length?`<div class="cb-sec">Secondaires</div>${listeObj(sec)}`:'')
     +(r?`<div class="cb-sec">Meilleur résultat : ${etoilesTexte(r.etoiles,nbEtoilesMax(cle))} · ${DIFFS[r.diff]?DIFFS[r.diff].nom:''}${r.temps!=null?' · '+fmtDuration(r.temps):''}</div>`:'')
+    +`<div id="camp-classement"></div>`
     +`<div class="cb-sec">Difficulté</div>`
     +`<div class="diffrow">${Object.entries(DIFFS).map(([k,d])=>
         `<button type="button" class="diffbtn${k===selectedDifficulty?' sel':''}" data-d="${k}" onclick="choisirDiffCampagne('${k}')"><span class="dico">${d.ico}</span><span class="dlabel">${d.nom}</span></button>`).join('')}</div>`
@@ -1249,6 +1273,34 @@ function voirMission(cle){
     // À deux seulement si la mission a un second commandant à confier.
     +(m.roles&&m.roles.p2?`<button class="bigbtn friendbtn" onclick="jouerMissionAvecAmi()">👥 Jouer avec un ami · votre allié sera ${echapHTML(m.roles.p2.nom||'le second commandant')}</button>`:'');
   brief.style.display='flex';
+  afficherClassementMission(cle);
+}
+// Les meilleurs temps de la mission, à la difficulté choisie. Chargés en
+// asynchrone : un jeton écarte la réponse d'une mission ou d'une difficulté
+// qu'on a quittée entre-temps. Rien du tout si le multijoueur n'est pas
+// configuré ; une invite si l'on n'est pas connecté (même panneau que le
+// classement général). Les NOMS viennent du réseau : échappés.
+let _jetonClassementMission=0;
+async function afficherClassementMission(cle){
+  const el=document.getElementById('camp-classement');
+  if(!el) return;
+  const tableau=tableauClassementMission(cle,selectedDifficulty);
+  if(!tableau||typeof mpDispo!=='function'||!mpDispo()||!window.MP.classementLire){ el.innerHTML=''; return; }
+  const titre=`<div class="cb-sec">🥇 Meilleurs temps · ${echapHTML(DIFFS[selectedDifficulty].nom)}</div>`;
+  if(!_mpEtat.uid){
+    el.innerHTML=titre+'<p class="cb-cla-vide">Connectez-vous depuis <b>👥 Jouer avec un ami</b> pour voir les meilleurs temps et y figurer.</p>';
+    return;
+  }
+  const jeton=++_jetonClassementMission;
+  el.innerHTML=titre+'<p class="cb-cla-vide">Chargement…</p>';
+  const rows=await window.MP.classementLire(tableau,5);
+  if(jeton!==_jetonClassementMission) return;
+  const e=document.getElementById('camp-classement'); if(!e) return;
+  e.innerHTML=titre+htmlClassementMission(rows);
+}
+function htmlClassementMission(rows){
+  if(!rows||!rows.length) return '<p class="cb-cla-vide">Aucun temps pour l\'instant — soyez le premier !</p>';
+  return rows.map((r,i)=>`<div class="cb-cla${r.uid===_mpEtat.uid?' moi':''}"><span>${i+1}. ${echapHTML(r.nom||'Joueur')}</span><span>${fmtDuration(+r.valeur||0)}</span></div>`).join('');
 }
 function choisirDiffCampagne(k){ pickDifficulty(k); if(_missionVue) voirMission(_missionVue); }
 // Ouvre le salon multijoueur habituel, réglé sur cette mission : l'hôte y

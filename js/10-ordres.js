@@ -519,6 +519,9 @@ function applyCommand(cmd){
       cible._equipeAvant=cible.equipe;
       cible.equipe=f.equipe;
       cible.allieDe=cmd.f;
+      // Un invité n'a eu qu'une prédiction (voir diplomatieAction) : c'est
+      // l'hôte qui lui annonce l'accord.
+      if(cmd.f!==G.me) retour(cmd.f,'message',{txt:`🤝 Alliance conclue avec ${cible.nom} — vous partagez désormais sa vision`,col:'#2ecc71'});
       return OK({nom:cible.nom});
     } else {
       if(cible.equipe!==f.equipe) return KO('pasallie');

@@ -53,7 +53,7 @@ préservent.
 node tests/run.js
 ```
 
-322 tests, 18 groupes, ~85 s, sans dépendance ni build — comme le jeu. Ils
+324 tests, 18 groupes, ~85 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, le fait

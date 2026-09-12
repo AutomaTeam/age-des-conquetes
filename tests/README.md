@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**322 tests, 18 groupes, ~85 s.** Les groupes `ia` et `delta` comptent pour
+**324 tests, 18 groupes, ~85 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -197,6 +197,12 @@ qui **ne se voit pas** :
   (mission + difficulté), sur une victoire seulement, jamais pour la mission
   d'essai ni vers une catégorie de Conquête ; et le nom d'un autre joueur,
   lu au classement, n'est jamais rendu comme du balisage.
+  EN INVITÉ (passe du 2026-09-12) : un refus de l'hôte arrive avec SA raison
+  (le REJ porte `msg` — l'invité lisait « Action refusee » là où l'hôte
+  lisait le tribut ou la règle de mission), la diplomatie de l'invité
+  n'annonce plus « Alliance conclue » sur une simple prédiction, et l'accord
+  lui est annoncé par l'hôte. Les deux tests ont été passés à la
+  contre-épreuve (`msg` retiré du REJ : ils tombent).
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

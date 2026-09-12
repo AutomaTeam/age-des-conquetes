@@ -1724,12 +1724,16 @@ function openDiplo(){
   const list=document.getElementById('diplolist');
   if(!list) return;
   list.innerHTML='';
-  const rivaux=factionsIA();
+  // En mission, seuls les camps qui acceptent de traiter (voir
+  // diplomatieMission) : proposer les autres serait promettre ce que l'hôte
+  // refuse d'office.
+  const rivaux=factionsIA().filter(a=>diplomatieMission(a.id)!==null);
   if(!rivaux.length){
     list.innerHTML='<p class="classub">Aucun rival dans ce mode.</p>';
   }
   for(const a of rivaux){
     const allie=a.equipe===moi().equipe;
+    const dm=diplomatieMission(a.id);
     const row=document.createElement('div');
     row.className='diprow'+(allie?' allie':'');
     // La vision PARTAGÉE est le gain le plus concret d'une alliance (voir
@@ -1740,7 +1744,8 @@ function openDiplo(){
     if(!a.vaincu){
       const btn=document.createElement('button');
       btn.className='dipbtn'+(allie?' rompre':'');
-      btn.textContent=allie?'Rompre':'Proposer une alliance';
+      // Le tribut se lit AVANT de proposer : c'est lui que l'hôte prélèvera.
+      btn.textContent=allie?'Rompre':(dm&&dm.prix?`Proposer une alliance (${texteCoutMission(dm.prix)})`:'Proposer une alliance');
       btn.onclick=()=>diplomatieAction(a.id,allie?'rompre':'proposer');
       row.appendChild(btn);
     }
@@ -1755,7 +1760,8 @@ function diplomatieAction(cibleId,action){
   const r=emettreOrdre(ordre(ORD.DIPLOMATIE,{cibleId,action}),
                        {nom:(G.factions[cibleId]||{}).nom||'Le rival'});
   if(!r.ok){
-    if(r.raison==='refuse') notify(`🤝 ${r.nom||'Le rival'} refuse votre alliance — trop confiant en ses propres forces.`,'#e67e22');
+    if(r.raison==='refuse') notify('🤝 '+(r.msg||`${r.nom||'Le rival'} refuse votre alliance — trop confiant en ses propres forces.`),'#e67e22');
+    else if(r.raison==='mission') notify('🚫 '+(r.msg||'Aucun pourparler possible dans cette mission'),'#e67e22');
     else notify('Action diplomatique impossible.','#e74c3c');
     return;
   }
@@ -1769,7 +1775,7 @@ function diplomatieAction(cibleId,action){
 function updateDiploBtn(){
   const btn=document.getElementById('diplobtn');
   if(!btn) return;
-  btn.style.display=(G.running&&factionsIA().some(a=>!a.vaincu))?'block':'none';
+  btn.style.display=(G.running&&factionsIA().some(a=>!a.vaincu&&diplomatieMission(a.id)!==null))?'block':'none';
 }
 
 // ── PANNEAU DES CONTRÔLES ──────────────────────────────────

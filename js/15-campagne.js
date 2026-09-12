@@ -67,10 +67,21 @@ window.lancerMission=lancerMission;
 // tailles, exactement comme SC() rend genMap indépendant de COLS. Une zone
 // est soit nommée (`zones:{gue:{x,y,r}}` dans la mission), soit donnée sur
 // place ([x,y] ou {x,y,r}).
-function zoneMission(z){
+// Un nom de zone que la mission ne déclare pas ne lève rien — la vague part
+// dans le vide, sans bruit. On le RETIENT donc ici (une trace par nom), et le
+// groupe de tests `campagne` exige que ce registre reste vide après avoir
+// exercé toutes les fermetures de toutes les missions. `peutEtreTag` : le
+// nom peut aussi désigner une étiquette (`vers`, `cible`), ce n'est alors pas
+// une faute de ne pas le trouver parmi les zones.
+const _zonesInconnues=new Set();
+function zoneMission(z,peutEtreTag){
   if(typeof z==='string'){
-    const def=missionCourante();
+    const def=missionCourante(), nom=z;
     z=def&&def.zones?def.zones[z]:null;
+    if(!z&&def&&!peutEtreTag&&!_zonesInconnues.has(nom)){
+      _zonesInconnues.add(nom);
+      console.warn(`Mission — zone inconnue : « ${nom} »`);
+    }
   }
   if(!z) return null;
   if(Array.isArray(z)) z={x:z[0],y:z[1],r:0};
@@ -316,6 +327,18 @@ function casePraticable(tx,ty){
   return {tx,ty};
 }
 function compterTag(tag){ G.scn.tags[tag]=(G.scn.tags[tag]||0)+1; }
+// Une troupe d'un SEIGNEUR que la mission commande elle-même : ni son cerveau
+// d'IA ne la réquisitionne (voir js/08-ia.js), ni elle ne compte dans sa
+// population. Comptée, une garnison de camp de vingt-quatre hommes laissait
+// Vitigès à 28/5 de population toute la partie : il ne formait plus un seul
+// villageois, plus un seul soldat (mesuré, Rome assiégée). Symétrique à la
+// mort (voir updateUnits) et à la conversion (M.convertir).
+function marquerHorsArmee(u){
+  const f=G.factions[u.owner];
+  if(u.horsArmee||!f||f.genre!=='ia') return;
+  u.horsArmee=true;
+  posePopulation(u.owner,-1);
+}
 
 // Pose une unité de scénario : dans G.units, population comptée, héros
 // réservé, difficulté appliquée aux camps adverses. Renvoie l'unité.
@@ -325,9 +348,11 @@ function poserUniteScn(type,wx,wy,owner,o){
   const f=G.factions[owner];
   if(o.tag){ u.tag=o.tag; compterTag(o.tag); }
   if(f&&f.genre==='ia') aiAdoptUnit(u,f);
-  else if(f&&f.genre==='neutre'){
+  else if(f&&f.genre==='neutre'&&!o.egal){
     // Même mise à l'échelle que les vagues de Survie (spawnWave) : c'est la
     // difficulté choisie qui rend un camp de pillards plus ou moins coriace.
+    // `egal` : un combat « à armes égales » (un exercice de contres) garde
+    // les chiffres de la table, quelle que soit la difficulté.
     const diff=DIFFS[G.difficulty]||DIFFS.normal;
     u.hp=u.maxHp=Math.round(u.maxHp*diff.enemyHp*(o.pv||1));
     u.atk=Math.round(u.atk*diff.enemyAtk);
@@ -350,8 +375,13 @@ function poserGroupe(g,owner,cx,cy){
   const pas=0.9, cols=Math.max(1,Math.ceil(Math.sqrt(g.n)));
   for(let i=0;i<g.n;i++){
     const c=casePraticable(Math.round(cx+(i%cols-(cols-1)/2)*pas),Math.round(cy+Math.floor(i/cols)*pas));
-    const u=poserUniteScn(g.type,(c.tx+0.5)*BASE_TILE,(c.ty+0.5)*BASE_TILE,owner,{tag:g.tag,pv:g.pv});
-    if(g.garde){ u.camp=owner; u.campX=u.x; u.campY=u.y; }
+    const u=poserUniteScn(g.type,(c.tx+0.5)*BASE_TILE,(c.ty+0.5)*BASE_TILE,owner,{tag:g.tag,pv:g.pv,egal:g.egal});
+    if(g.garde){
+      u.camp=owner; u.campX=u.x; u.campY=u.y;
+      // La garnison d'un camp de seigneur tient SON poste, pas celui que le
+      // cerveau de l'IA lui donnerait (voir `horsArmee`, js/08-ia.js).
+      marquerHorsArmee(u);
+    }
     out.push(u);
   }
   return out;
@@ -365,20 +395,40 @@ function poserApports(owner,spec,tx,ty){
     const bx=zn?zn.tx:tx+(o.dx||0), by=zn?zn.ty:ty+(o.dy||0);
     poserBatimentScn(o.type,bx,by,owner,o.tag);
   }
-  // `murs` : des lignes de palissade (abattis, barrage) d'un point à un autre,
-  // en fractions de carte. Les cases d'eau ou déjà bâties sont sautées.
+  // `murs` : des lignes de palissade (abattis, barrage, rempart) d'un point à
+  // un autre, en fractions de carte. Les cases d'eau ou déjà bâties sont
+  // sautées. `portes:n` : n portails ouverts, régulièrement espacés le long
+  // de la ligne (un rempart qu'on doit pouvoir franchir soi-même).
   for(const m of (spec.murs||[])){
     const a=zoneMission(m.de), z=zoneMission(m.a);
     if(!a||!z) continue;
     const pas=Math.max(Math.abs(z.tx-a.tx),Math.abs(z.ty-a.ty),1);
+    const portes=new Set();
+    for(let k=1;k<=(m.portes||0);k++) portes.add(Math.round(pas*k/((m.portes||0)+1)));
     for(let i=0;i<=pas;i++){
       const x=Math.round(a.tx+(z.tx-a.tx)*i/pas), y=Math.round(a.ty+(z.ty-a.ty)*i/pas);
+      // Un arbre sur le tracé ferait brèche : épuisé plutôt que retiré, comme
+      // le fait poserMursArene — un gisement à zéro VOYAGE (delta `n`), un
+      // gisement retiré du tableau de l'hôte resterait debout chez l'invité.
+      if(G.bmap[y]&&G.bmap[y][x]===2){
+        for(const nd of G.nodes) if(nd.tx===x&&nd.ty===y&&nd.amt>0) nd.amt=0;
+        G.bmap[y][x]=0;
+      }
       if(!libreRect(x,y,1,1)) continue;
-      const b=mkBuilding(BT.WALL,x,y,owner);
+      const b=mkBuilding(portes.has(i)?BT.GATE:BT.WALL,x,y,owner);
       b.constructing=false; b.progress=1;
+      if(portes.has(i)) b.open=true;
       if(m.tag){ b.tag=m.tag; compterTag(m.tag); }
       placeBuilding(b);
     }
+  }
+  // `enceintes` : l'anneau de palissade de l'Arène (poserMursArene), à un
+  // rayon et en un lieu choisis — une ville à défendre ou à prendre.
+  for(const e of (spec.enceintes||[])){
+    const zn=zoneMission(e.zone); if(!zn) continue;
+    const avant=G.buildings.length;
+    poserMursArene(zn.tx,zn.ty,1,1,owner,Math.max(3,Math.round((e.r||0.04)*COLS)),!e.ferme);
+    if(e.tag) for(const b of G.buildings.slice(avant)){ b.tag=e.tag; compterTag(e.tag); }
   }
   for(const e of (spec.unites||[])){
     const g=groupeUnites(e);
@@ -437,6 +487,17 @@ function installerMission(){
       // Un appui, pas un second rival qui jouerait la mission à sa place ; la
       // mission peut préciser (`roles.p2.ia`, mêmes champs que reglerIA).
       reglerIA(G.factions[FAC.P2],Object.assign({role:'allie'},def.roles.p2.ia||{}));
+      // Ses soldats ont été posés quand le camp était encore humain : aucune
+      // garde ne leur a été donnée (aiAdoptUnit ne passe que pour une IA), et
+      // un soldat d'IA sans poste part raser le bâtiment hostile le plus
+      // précieux de TOUTE la carte. Mesuré (Mélantias) : les Dèmes traversaient
+      // la carte et rasaient le camp de Zabergan à la cinquième minute, et la
+      // mission se gagnait toute seule. On les poste à leur base, comme toute
+      // armée d'IA en attendant son premier assaut.
+      const p2=G.factions[FAC.P2];
+      for(const u of G.units) if(u.owner===FAC.P2&&u.type!==UT.VIL&&u.type!==UT.MONK){
+        u.camp=FAC.P2; u.campX=p2.tcId?p2.baseX:u.x; u.campY=p2.tcId?p2.baseY:u.y;
+      }
     }
   }
 
@@ -489,7 +550,7 @@ function initScenario(){
   // remplacé par un objet neuf à chaque delta qui le porte : l'interface ne
   // peut pas se fier à l'identité de l'objet pour savoir si elle découvre une
   // nouvelle mission ou lit la suite de la même.
-  G.scn={inst:(Math.random()*1e9)|0, obj:{}, decl:{}, declT:{}, tags:{}, dlg:[], rev:[], marques:[], fin:null, etoiles:0, seq:0, acc:0};
+  G.scn={inst:(Math.random()*1e9)|0, obj:{}, prog:{}, decl:{}, declT:{}, tags:{}, dlg:[], rev:[], marques:[], fin:null, etoiles:0, seq:0, acc:0};
   for(const o of (def.objectifs||[])) G.scn.obj[o.id]=o.cache?'cache':'actif';
 }
 
@@ -523,9 +584,20 @@ function majScenario(dt){
     scnAppel(d.alors,'alors:'+d.id);
     if(G.scn.fin) return;                     // un déclencheur a tranché la mission
   }
-  // 2. Objectifs actifs.
+  // 2. Objectifs actifs. `compte` (M=>[n, sur]) : l'avancement affiché à
+  //    côté du texte (« 4/6 »). Calculé ICI, chez l'hôte, et rangé dans l'état
+  //    répliqué : l'invité n'a pas de quoi le recompter (les stats de l'autre
+  //    camp, le brouillard...), il le lit.
   for(const o of (def.objectifs||[])){
     if(G.scn.obj[o.id]!=='actif') continue;
+    if(o.compte){
+      const c=scnAppel(o.compte,'compte:'+o.id);
+      if(Array.isArray(c)){
+        const n=Math.max(0,Math.min(c[1],Math.floor(c[0]))), sur=Math.floor(c[1]);
+        const p=G.scn.prog||(G.scn.prog={}), av=p[o.id];
+        if(!av||av[0]!==n||av[1]!==sur){ p[o.id]=[n,sur]; G.scn.seq++; }
+      }
+    }
     if(o.echec&&scnAppel(o.echec,'echec:'+o.id)) majObjectif(o.id,'echec');
     else if(o.test&&scnAppel(o.test,'test:'+o.id)) majObjectif(o.id,'fait');
   }
@@ -565,6 +637,19 @@ function finMission(issue,cause){
     if(!G.victory&&!G.gameOver){ G.victory=true; showVictory(); }
   } else if(!G.victory&&!G.gameOver){ G.gameOver=true; showGameOver(); }
 }
+// Le joueur local vient d'être éliminé (son dernier Centre Ville est tombé),
+// entre deux évaluations du scénario. Les objectifs sont évalués SUR-LE-CHAMP —
+// « Rome doit tenir » échoue avec SON texte — et, si aucun ne tranche, la
+// mission est perdue pour élimination... seulement s'il ne reste personne de
+// l'équipe en lice : en coop, l'allié encore debout continue la mission.
+function trancherEliminationMission(){
+  if(!G.scn||G.scn.fin) return;
+  G.scn.acc=SCN_CADENCE; majScenario(0);
+  if(G.scn.fin) return;
+  const p1=G.factions[FAC.P1];
+  const reste=factionsHumaines().some(f=>!f.vaincu&&p1&&f.equipe===p1.equipe);
+  if(!reste) finMission('defaite','elimine');
+}
 // Étoiles : une par entrée de `etoiles`, dont 'victoire' (toujours acquise
 // quand on compte). Évaluées une seule fois, à l'instant de la victoire.
 function compterEtoiles(){
@@ -586,6 +671,7 @@ function texteFinMission(){
   }
   if(def.causes&&def.causes[fin.cause]) return def.causes[fin.cause];
   if(fin.cause==='merveille') return "Un rival a achevé sa Merveille et l'a gardée debout : la mission est perdue.";
+  if(fin.cause==='elimine') return "Votre dernier Centre Ville est tombé : la mission est perdue.";
   return def.defaite||'La mission a échoué.';
 }
 
@@ -610,6 +696,46 @@ function regleMission(quoi,cle,owner){
     return null;
   }
   if(quoi==='recherche') return (r.recherchesInterdites||[]).includes(cle)?'Interdite dans cette mission':null;
+  return null;
+}
+
+// ── DIPLOMATIE DE MISSION ─────────────────────────────────
+// Hors mission, tout rival IA peut être approché (ORD.DIPLOMATIE). En mission,
+// SEULS les camps dont la fiche porte `diplomatie` le peuvent. Sans ce verrou,
+// un seigneur SEUL de son camp acceptait toujours l'alliance — la règle
+// d'acceptation le compare aux AUTRES rivaux, et il n'y en a pas — et un clic
+// dans le menu pause vidait une mission de son adversaire (Reliques d'Aix, Ring
+// des Avars : le rival devenu allié n'attaquait plus, ou ne pouvait plus être
+// vaincu).
+//   diplomatie: true            — la règle ordinaire (pas plus fort que les autres rivaux)
+//             | { si:M=>bool,   — n'accepte qu'à cette condition (greniers brûlés...)
+//                 prix:{gold:…},— contre ce tribut, prélevé à l'acceptation
+//                 refus:'texte',— la raison dite au joueur quand il refuse
+//                 force:true }  — ET la règle ordinaire (par défaut : seulement
+//                                 sans `si` ni `prix`)
+// Rend undefined hors mission (aucun verrou), null si le camp refuse tout
+// pourparler, la fiche sinon. UNE fonction, lue par applyCommand ET par le
+// panneau Diplomatie : l'interface ne propose que ce que l'hôte acceptera
+// d'examiner (groupe `promesses`).
+function cleFactionMission(id){
+  for(const [k,v] of Object.entries(SCN_FAC)) if(v===id&&k!=='pillards') return k;
+  return null;
+}
+function diplomatieMission(cibleId){
+  const def=missionCourante(); if(!def) return undefined;
+  const k=cleFactionMission(cibleId);
+  const d=k&&def.factions&&def.factions[k]&&def.factions[k].diplomatie;
+  if(!d) return null;
+  return d===true?{}:d;
+}
+const ICO_RES={food:'🍖',wood:'🪵',stone:'🪨',gold:'💰'};
+function texteCoutMission(c){ return Object.entries(c||{}).map(([k,v])=>`${v}${ICO_RES[k]||k}`).join(' '); }
+// Examen d'une proposition d'alliance en mission — null si elle passe (le
+// tribut éventuel est alors prélevé), sinon le refus à renvoyer.
+function examenDiplomatie(d,cible,owner){
+  if(d.si&&!scnAppel(d.si,'diplomatie:si')) return {ok:false,raison:'refuse',nom:cible.nom,msg:d.refus||`${cible.nom} refuse de traiter pour l'instant.`};
+  if(d.prix&&!canAfford(d.prix,owner))
+    return {ok:false,raison:'refuse',nom:cible.nom,msg:`${cible.nom} demande ${texteCoutMission(d.prix)} pour traiter.`};
   return null;
 }
 
@@ -642,7 +768,7 @@ function reglerIA(f,o){
 // ou null (l'IA garde alors son choix habituel, aiCibleBase).
 function cibleIAMission(a){
   if(!a.cible||!G.mission) return null;
-  const zn=zoneMission(a.cible);
+  const zn=zoneMission(a.cible,true);
   if(zn) return {x:zn.x,y:zn.y};
   const e=entitesTag(a.cible)[0];
   return e?{x:e.x,y:e.y}:null;
@@ -673,6 +799,31 @@ function entitesTag(tag){
   for(const u of G.units) if(u.tag===tag&&u.hp>0) out.push(u);
   for(const b of G.buildings) if(b.tag===tag&&b.hp>0) out.push(b);
   return out;
+}
+// Fait passer un bâtiment dans un autre camp. Le propriétaire d'un bâtiment
+// NE VOYAGE PAS (le delta d'un bâtiment connu ne porte que ses PV, sa file,
+// son chantier... — voir construireDelta) : changer `b.owner` en place
+// laisserait l'invité voir la ville libérée sous les couleurs de l'ennemi, et
+// son estHostile la compterait encore adverse (invariant n°6). On le
+// REMPLACE donc par un bâtiment neuf, même type, même emprise, même état :
+// il part chez l'invité par `newB`, l'ancien par `rmb`.
+function passerBatiment(b,owner){
+  if(b.owner===owner) return b;
+  for(const u of G.units) if(u.target===b.id&&['repair','farm','build','garrison'].includes(u.state)){
+    const enGarnison=u.state==='garrison';
+    u.state='idle'; u.target=null;
+    if(enGarnison) reprendrePoste(u);
+  }
+  libererFileFormation(b);
+  const nb=mkBuilding(b.type,b.tx,b.ty,owner);
+  nb.hp=Math.max(1,Math.round(nb.maxHp*b.hp/Math.max(1,b.maxHp)));
+  nb.constructing=b.constructing; nb.progress=b.progress;
+  nb.foodLeft=b.foodLeft; nb.level=b.level; nb.open=b.open;
+  if(b.tag) nb.tag=b.tag;                  // même étiquette : ni « mort », ni compté deux fois
+  G.buildings=G.buildings.filter(x=>x!==b);
+  G.sel=G.sel.filter(id=>id!==b.id);
+  placeBuilding(nb);                        // même emprise : la marque de bmap est reposée telle quelle
+  return nb;
 }
 const SCN_API = {
   // ── lecture ──
@@ -728,6 +879,41 @@ const SCN_API = {
   },
   vaincu(k){ const f=G.factions[facMission(k)]; return !f||!!f.vaincu; },
   coop(){ return modeSecondCommandant()==='coop'; },
+  // Au moins `n` unités du camp du joueur (les deux commandants) dans la zone.
+  equipeDansZone(zone,n){
+    const zn=zoneMission(zone); if(!zn) return false;
+    const ids=campJoueur(); let c=0;
+    for(const u of G.units) if(u.hp>0&&ids.has(u.owner)&&dansZoneMonde(zn,u.x,u.y)&&++c>=(n||1)) return true;
+    return false;
+  },
+  // Combien d'unités HOSTILES au joueur dans la zone (garnison, pillards,
+  // armée d'un seigneur) : une place n'est à soi que lorsque ce compte tombe à 0.
+  hostilesDansZone(zone){
+    const zn=zoneMission(zone); if(!zn) return 0;
+    const moiRef={owner:FAC.P1}; let c=0;
+    for(const u of G.units) if(u.hp>0&&u.state!=='garrison'&&estHostile(moiRef,u)&&dansZoneMonde(zn,u.x,u.y)) c++;
+    return c;
+  },
+  // Une entité au moins de cette étiquette appartient au camp du joueur.
+  possede(tag){ const ids=campJoueur(); return entitesTag(tag).some(e=>ids.has(e.owner)); },
+  // Ce camp est-il (devenu) l'allié du joueur ? Diplomatie, ralliement.
+  allie(k){
+    const f=G.factions[facMission(k)], p=G.factions[FAC.P1];
+    return !!f&&!!p&&!f.vaincu&&f.id!==p.id&&f.equipe===p.equipe;
+  },
+  recherche(k,cle){ const f=G.factions[facMission(k)]; return !!(f&&f.research&&f.research[cle]); },
+  rechercheEquipe(cle){ for(const id of campJoueur()){ const f=G.factions[id]; if(f&&f.research&&f.research[cle]) return true; } return false; },
+  // Unités militaires vivantes du camp du joueur.
+  armeeEquipe(){ const ids=campJoueur(); let n=0; for(const u of G.units) if(u.hp>0&&ids.has(u.owner)&&isMilitary(u.type)) n++; return n; },
+  // Total récolté (ou gagné au commerce) par le camp du joueur depuis le départ.
+  recolte(r){ let n=0; for(const id of campJoueur()){ const f=G.factions[id]; if(f&&f.stats&&f.stats.gathered) n+=f.stats.gathered[r]||0; } return n; },
+  // Au moins `n` bâtiments ACHEVÉS de ce type au camp du joueur, dans la zone.
+  bati(type,zone,n){
+    const zn=zoneMission(zone); if(!zn) return false;
+    const ids=campJoueur(); let c=0;
+    for(const b of G.buildings) if(b.type===type&&ids.has(b.owner)&&!b.constructing&&b.hp>0&&dansZoneMonde(zn,b.x,b.y)&&++c>=(n||1)) return true;
+    return false;
+  },
   difficulte(){ return G.difficulty; },
 
   // ── action ──
@@ -740,7 +926,8 @@ const SCN_API = {
   // adverse, l'effectif suit la difficulté (enemyCount, comme spawnWave) et
   // la coopération (regles.coopMult) ; un renfort allié est toujours tel
   // qu'écrit. `vers` : les unités humaines y marchent en ordre offensif ;
-  // les adverses y tiennent la garde si `garde`, sinon partent chasser.
+  // les adverses y marchent (par les étapes de `via`), puis y tiennent la
+  // garde si `garde`, sinon partent chasser une fois arrivées.
   renfort(k,compo,zone,o){
     o=o||{};
     const id=facMission(k), zn=zoneMission(zone);
@@ -749,12 +936,12 @@ const SCN_API = {
     const adverse=f&&estHostile(FAC.P1,{owner:id});
     const diff=DIFFS[G.difficulty]||DIFFS.normal;
     const def=missionCourante();
-    const mult=adverse?diff.enemyCount*(SCN_API.coop()?((def.regles&&def.regles.coopMult)||1.3):1):1;
+    const mult=(adverse&&!o.egal)?diff.enemyCount*(SCN_API.coop()?((def.regles&&def.regles.coopMult)||1.3):1):1;
     // `vers` : une zone, ou une ÉTIQUETTE — la position actuelle de ce qu'elle
     // désigne (un convoi en marche). Indispensable là où le joueur n'a aucun
     // bâtiment : une vague libre cherche d'abord un bâtiment à abattre, et
     // sans cible elle resterait plantée à son point d'apparition.
-    let vers=o.vers?zoneMission(o.vers):null;
+    let vers=o.vers?zoneMission(o.vers,true):null;
     if(!vers&&typeof o.vers==='string'){
       const cibles=entitesTag(o.vers);
       if(cibles.length){ const c=cibles[(cibles.length/2)|0]; vers={x:c.x,y:c.y}; }
@@ -765,6 +952,7 @@ const SCN_API = {
       g.n=Math.max(1,Math.round(g.n*mult));
       if(o.tag) g.tag=o.tag;
       if(o.garde) g.garde=true;
+      if(o.egal) g.egal=true;
       poses.push(...poserGroupe(g,id,zn.tx,zn.ty));
     }
     if(vers){
@@ -775,7 +963,21 @@ const SCN_API = {
           u.amove={x:fmt[i].x,y:fmt[i].y}; u.destX=fmt[i].x; u.destY=fmt[i].y;
           u.anchorX=fmt[i].x; u.anchorY=fmt[i].y; u.state='amove'; u.target=null;
         });
-      } else for(const u of poses){ u.camp=id; u.campX=vers.x; u.campY=vers.y; }
+      } else {
+        // `via` : des étapes (zones) avant `vers`. La recherche de chemin a un
+        // budget (PF_BUDGET) qui ne contourne pas un lac ou un camp à
+        // quatre-vingts cases de distance : une colonne lancée à travers la
+        // carte doit recevoir son itinéraire, étape par étape (voir le
+        // retour au poste, updateEnemyAI).
+        const pts=(o.via||[]).map(z=>zoneMission(z)).filter(Boolean).map(z=>({x:z.x,y:z.y}));
+        pts.push({x:vers.x,y:vers.y});
+        for(const u of poses){
+          u.camp=id; u.campX=pts[0].x; u.campY=pts[0].y;
+          u.etapes=pts.length>1?pts.slice(1).map(p=>({x:p.x,y:p.y})):null;
+          if(!o.garde) u.assaut=true;   // arrivée, elle part chasser (voir updateEnemyAI)
+          marquerHorsArmee(u);   // la colonne va où la mission l'envoie (voir js/08-ia.js)
+        }
+      }
     }
     rebuildIndex();
     return poses;
@@ -794,13 +996,20 @@ const SCN_API = {
     if(b){ updatePopCap(); rebuildIndex(); }
     return b;
   },
+  // Change de camp tout ce qui porte l'étiquette : une garnison qui se rend,
+  // une ville qui ouvre ses portes.
   convertir(tag,k){
     const id=facMission(k);
     for(const e of entitesTag(tag)){
-      if(e.w){ e.owner=id; }                  // un bâtiment n'a pas d'état à réinitialiser
-      else convertirUnite(e,id);
+      if(e.w) passerBatiment(e,id);
+      else {
+        // Hors population de son ancien seigneur (marquerHorsArmee) : on l'y
+        // remet un instant, pour que convertirUnite l'en retire à l'identique.
+        if(e.horsArmee){ e.horsArmee=false; posePopulation(e.owner,1); }
+        convertirUnite(e,id); e.camp=null;   // une garde ralliée ne garde plus le poste de l'ancien camp
+      }
     }
-    updatePopCap();
+    updatePopCap(); rebuildIndex();
   },
   equipe(k,n){ const f=G.factions[facMission(k)]; if(f){ f.equipe=n; G.scn.seq++; } },
   // Rôle et consignes d'un seigneur IA en cours de mission — voir reglerIA.
@@ -1080,7 +1289,11 @@ function dessinerObjectifs(){
       const st=G.scn.obj[o.id];
       const cls=['op-ligne',st==='fait'?'fait':st==='echec'?'echec':'',o.type==='secondaire'?'sec':'',o.zone?'zone':''].join(' ');
       const clic=o.zone?` onclick="centrerObjectif('${o.id}')"`:'';
-      return `<div class="${cls}"${clic}>${ico[st]||'☐'} ${o.type==='secondaire'?'◇ ':''}${echapHTML(o.txt)}</div>`;
+      // L'avancement vient de l'état répliqué (voir `compte` dans majScenario) :
+      // des nombres, vérifiés, jamais du texte reçu.
+      const pr=st==='actif'&&G.scn.prog&&G.scn.prog[o.id];
+      const av=Array.isArray(pr)&&isFinite(pr[0])&&isFinite(pr[1])?` <span class="op-prog">${pr[0]|0}/${pr[1]|0}</span>`:'';
+      return `<div class="${cls}"${clic}>${ico[st]||'☐'} ${o.type==='secondaire'?'◇ ':''}${echapHTML(o.txt)}${av}</div>`;
     });
   el.innerHTML=`<div class="op-titre"><span>📜 ${echapHTML(def.titre)}</span><button type="button" onclick="basculerObjectifs()" title="Masquer (O)">–</button></div>`+lignes.join('');
   el.style.display='flex';

@@ -18,10 +18,11 @@
 //
 //   carte       : {graine, type (CARTES), taille (TAILLES), reliques:false?, faune:false?}
 //   zones       : {nom:{x,y,r}}
-//   roles       : {p1:{civ, age, res, recherches, depart, base, unites, batiments}, p2:{…, solo}}
-//   factions    : {ia:{civ, nom, equipe, depart, age, tune, unites, batiments}, ia2:{…}, pill:{unites, batiments}}
+//   roles       : {p1:{civ, age, res, recherches, depart, base, unites, batiments, murs, enceintes}, p2:{…, solo}}
+//   factions    : {ia:{civ, nom, equipe, depart, age, tune, unites, batiments, diplomatie}, ia2:{…}, pill:{unites, batiments}}
 //   surcouche   : [{op:'eau'|'lac'|'terre'|'gue'|'degager'|'foret'|'baies'|'poissons'|'gisement'|'relique'|'faune', …}]
-//   objectifs   : [{id, txt, type:'principal'|'secondaire', cache, test:M=>bool, echec:M=>bool, echecTxt}]
+//   objectifs   : [{id, txt, type:'principal'|'secondaire', cache, test:M=>bool, echec:M=>bool, echecTxt,
+//                   compte:M=>[n, sur]}]   (compte : l'avancement « n/sur » affiché à côté du texte)
 //   declencheurs: [{id, si:M=>bool, alors:M=>{…}, repete, intervalle}]
 //   orateurs    : {cle:{nom, ico}} ; dialogues : {cle:[[orateur, texte], …]}
 //   etoiles     : ['victoire', M=>bool, …]
@@ -29,6 +30,14 @@
 //
 // Unités : [type, nombre, tag] ou {type, n, tag, zone, garde, pv}.
 // Bâtiments : [type, dx, dy, tag] (relatif au départ) ou {type, zone, tag}.
+// Murs : {de:[x,y], a:[x,y], portes:n, tag} ; enceintes : {zone, r, ferme, tag}.
+// Diplomatie d'un seigneur : absente = aucun pourparler (le défaut en
+// mission) ; true = la règle ordinaire ; {si, prix, refus} — voir
+// diplomatieMission, js/15-campagne.js.
+// Une troupe d'un seigneur postée par la mission (`garde`, ou `vers` dans
+// M.vague/M.renfort) tient les ordres de la mission : le cerveau de l'IA ne
+// la réquisitionne pas. Une vague de PILLARDS, elle, est hostile à tous —
+// lâchée près du camp d'un seigneur, elle commence par lui.
 //
 // Ce qu'un déclencheur NE PEUT PAS faire en cours de partie : créer un
 // gisement, une relique, du gibier ou de l'eau. Ces choses-là ne voyagent
@@ -40,7 +49,7 @@
 // proposée.
 Object.assign(CAMPAGNES, {
   francs:    { nom:'Le Marteau et la Couronne', heros:'francs',    ico:'👑', missions:['fr1','fr2','fr3','fr4','fr5','fr6'] },
-  byzantins: { nom:'Le Rempart du Monde',       heros:'byzantins', ico:'🛡️', missions:[] },
+  byzantins: { nom:'Le Rempart du Monde',       heros:'byzantins', ico:'🛡️', missions:['by1','by2','by3','by4','by5','by6'] },
   chinois:   { nom:'Le Mandat du Ciel',         heros:'chinois',   ico:'📯', missions:[] },
   mongols:   { nom:'Les Cavaliers de la Steppe', heros:'mongols',  ico:'🏇', missions:[] },
   gitanos:   { nom:'La Route',                  heros:'gitanos',   ico:'🎻', missions:[] },
@@ -161,7 +170,7 @@ MISSIONS.fr1 = {
     { op:'faune', zone:{ x:0.18, y:0.85, r:0.06 }, type:'boar', n:2 },
   ],
   objectifs:[
-    { id:'fermes',    txt:'Faites pousser 6 fermes', test:M=>M.compteEquipe(BT.FARM)>=6 },
+    { id:'fermes',    txt:'Faites pousser 6 fermes', test:M=>M.compteEquipe(BT.FARM)>=6, compte:M=>[M.compteEquipe(BT.FARM),6] },
     { id:'feodal',    txt:"Passez à l'Âge Féodal", test:M=>M.age('p1')>=1 },
     { id:'camp_nord', txt:'Chassez les brigands du camp nord et abattez leur tour de guet',
       zone:'camp_nord', test:M=>M.detruit('camp_nord') },
@@ -170,7 +179,7 @@ MISSIONS.fr1 = {
     { id:'charles',   txt:'Charles doit survivre', echec:M=>M.mort('charles'),
       echecTxt:"Charles est tombé. Le royaume de Pépin n'aura pas d'héritier." },
     { id:'chasse',    txt:'Chassez 4 bêtes sauvages pour les greniers', type:'secondaire',
-      test:M=>M.statsEquipe('wildlifeHunted')>=4 },
+      test:M=>M.statsEquipe('wildlifeHunted')>=4, compte:M=>[M.statsEquipe('wildlifeHunted'),4] },
   ],
   declencheurs:[
     { id:'intro',     si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
@@ -258,7 +267,7 @@ MISSIONS.fr2 = {
     { op:'gisement', zone:{ x:0.18, y:0.40, r:0.04 }, type:RT.STONE, n:6, amt:500 },
   ],
   objectifs:[
-    { id:'tenir',   txt:"Tenez Eresburg jusqu'à l'arrivée de l'ost royal (15 min)", test:M=>M.temps()>=900 },
+    { id:'tenir',   txt:"Tenez Eresburg jusqu'à l'arrivée de l'ost royal (15 min)", test:M=>M.temps()>=900, compte:M=>[M.temps()/60,15] },
     { id:'charles', txt:'Charles doit survivre', echec:M=>M.mort('charles'),
       echecTxt:"Charles est tombé sur la marche. Les Saxons ont repris l'Eresburg." },
     { id:'camp',    txt:'Brûlez le camp de Widukind, au-delà de la rivière', type:'secondaire',
@@ -464,11 +473,12 @@ MISSIONS.fr4 = {
   ],
   objectifs:[
     { id:'reliques', txt:"Mettez 3 reliques à l'abri dans votre Monastère", test:M=>M.reliquesEquipe()>=3,
+      compte:M=>[M.reliquesEquipe(),3],
       echec:M=>M.reliques('ia')>=3,
       echecTxt:"Les Saxons ont emporté trois reliques. La chapelle d'Aix restera vide." },
     { id:'charles',  txt:'Charles doit survivre', echec:M=>M.mort('charles'),
       echecTxt:"Charles est tombé. Aix n'aura ni chapelle ni empereur." },
-    { id:'toutes',   txt:'Rapportez les cinq reliques', type:'secondaire', test:M=>M.reliquesEquipe()>=5 },
+    { id:'toutes',   txt:'Rapportez les cinq reliques', type:'secondaire', test:M=>M.reliquesEquipe()>=5, compte:M=>[M.reliquesEquipe(),5] },
   ],
   declencheurs:[
     { id:'intro',  si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
@@ -639,6 +649,668 @@ MISSIONS.fr6 = {
   },
   etoiles:['victoire', M=>M.fait('saxons'), M=>M.temps()<45*60],
   victoire:"À la Noël de l'an 800, à Rome, Charles reçoit la couronne d'empereur d'Occident.",
+};
+
+// ══════════════════════════════════════════════════════════
+//  CAMPAGNE DES BYZANTINS — « Le Rempart du Monde »
+// ══════════════════════════════════════════════════════════
+// Bélisaire, de Dara (530) à Mélantias (559). Le plan d'origine allait
+// jusqu'au Feu Grégeois (674) et à Basile le Tueur de Bulgares (1014) : des
+// siècles après la mort de son héros. Comme Poitiers chez les Francs, ces deux
+// missions sont remplacées par des batailles de Bélisaire lui-même — Ravenne
+// et Mélantias —, et la mécanique qu'elles devaient montrer est gardée : la
+// diplomatie (Ravenne), les murs, les Tours et le Feu Grégeois (Mélantias).
+// Mécaniques vedettes : chantiers rapides, murs et portails, réparation,
+// Cataphractaire, capture de villes, diplomatie, Feu Grégeois.
+
+// ── 1. Dara ──────────────────────────────────────────────
+// Défense (~15 min) et prise en main des chantiers byzantins (+30 %) : une
+// tranchée à creuser — vingt sections de palissade — avant l'arrivée des
+// Perses, un vrai seigneur rival qui attaque tôt, et les Immortels.
+MISSIONS.by1 = {
+  campagne:'byzantins', num:1,
+  titre:'Dara', lieu:'Dara, aux marches de la Perse', date:'530',
+  briefing:[
+    "Le Grand Roi a lancé son armée sur Dara, la forteresse que l'empereur a plantée face à la Perse. Bélisaire a vingt-cinq ans, et deux fois moins d'hommes que l'ennemi.",
+    "Il n'attendra pas derrière les murs : il fait creuser une tranchée devant la ville. Vos bâtisseurs vont vite — profitez-en. Tenez jusqu'à ce que les Perses renoncent.",
+  ],
+  carte:{ graine:5300612, type:'arides', taille:'petite', reliques:false },
+  zones:{
+    dara:    { x:0.22, y:0.52, r:0.05 },
+    tranchee:{ x:0.42, y:0.50, r:0.07 },
+    est:     { x:0.96, y:0.50, r:0.03 },
+    colline: { x:0.34, y:0.10, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'byzantins', nom:'Bélisaire', age:1, res:{food:250,wood:520,stone:220,gold:100},
+         depart:[0.22,0.52], base:'village',
+         unites:[[UT.VIL,8],[UT.MIL,5],[UT.ARC,5],[UT.HERO,1,'belisaire']],
+         batiments:[[BT.BARRACKS,5,-5],[BT.TOWER,7,2]] },
+    p2:{ civ:'byzantins', nom:'Hermogène', solo:'fusion', age:1, res:{food:100,wood:200,stone:50,gold:50},
+         depart:[0.30,0.76], base:'rien',
+         unites:[[UT.KNIGHT,4],[UT.PIKE,4]] },
+  },
+  factions:{
+    // Un vrai seigneur, bien doté dès le départ : sur une carte aride, un rival
+    // parti de quatre villageois n'avait encore rien lancé de sérieux à la
+    // neuvième minute (mesuré à la sonde).
+    ia:{ civ:'mongols', nom:'Perses de Firouz', equipe:3, depart:[0.84,0.50], age:1,
+         ageMax:2, heros:false, merveille:false,
+         tune:{ firstAtk:300, atkEvery:140, start:{food:450,wood:550,stone:200,gold:250} },
+         unites:[[UT.VIL,6],[UT.ENEMI,5],[UT.ENEMIA,4],[UT.ENEMI_C,2]] },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    { op:'degager', zone:'tranchee' },
+    { op:'foret', zone:{ x:0.90, y:0.28, r:0.05 }, n:30 },
+    { op:'foret', zone:{ x:0.90, y:0.74, r:0.05 }, n:30 },
+    { op:'foret', zone:{ x:0.34, y:0.12, r:0.06 }, n:24 },
+    { op:'gisement', zone:{ x:0.14, y:0.30, r:0.04 }, type:RT.STONE, n:6, amt:500 },
+  ],
+  objectifs:[
+    { id:'tenir',     txt:"Tenez jusqu'à la retraite des Perses (15 min)", test:M=>M.temps()>=900,
+      compte:M=>[M.temps()/60,15] },
+    { id:'dara',      txt:'Dara doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"Le Centre Ville de Dara est tombé. La frontière est ouverte." },
+    { id:'belisaire', txt:'Bélisaire doit survivre', echec:M=>M.mort('belisaire'),
+      echecTxt:"Bélisaire est tombé devant Dara. L'empereur n'aura pas son général." },
+    { id:'tranchee',  txt:'Creusez la tranchée : 20 sections de palissade', type:'secondaire',
+      zone:'tranchee', test:M=>M.compteEquipe(BT.WALL)>=20, compte:M=>[M.compteEquipe(BT.WALL),20] },
+    { id:'immortels', txt:'Brisez les Immortels', type:'secondaire', cache:true, test:M=>M.detruit('immortels') },
+  ],
+  declencheurs:[
+    { id:'intro',     si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'hermogene', si:M=>M.temps()>=16, alors:M=>M.dire('hermogene','p2') },
+    { id:'tranchee_ok', si:M=>M.fait('tranchee'), alors:M=>M.dire('tranchee_ok') },
+    { id:'avantgarde', si:M=>M.temps()>=300, alors:M=>M.dire('avantgarde') },
+    // L'armée du Grand Roi, colonne après colonne : fantassins, archers, puis
+    // cavaliers. Elle marche sur Dara ; la tranchée est sur son chemin.
+    { id:'colonne', repete:true, intervalle:90, si:M=>M.temps()>=240&&M.temps()<840,
+      alors:M=>{
+        const n=M.tirs('colonne');
+        const compo=[[UT.ENEMI,3+n]];
+        if(n>=2) compo.push([UT.ENEMIA,Math.floor(n/2)+1]);
+        if(n>=4) compo.push([UT.ENEMI_C,n-3]);
+        M.vague('ia',compo,'est',{vers:'dara'});
+      } },
+    { id:'immortels', si:M=>M.temps()>=540, alors:M=>{
+        M.dire('immortels'); M.objectif('immortels','ajout');
+        // Au nom des PERSES, pas des pillards : une vague de pillards, hostile
+        // à tous, aurait d'abord rasé le camp perse, tout proche de l'est.
+        M.vague('ia',[[UT.ENEMI_G,2],[UT.ENEMI,6],[UT.ENEMIA,4]],'est',{tag:'immortels',vers:'dara'});
+      } },
+    // Les Huns de Sunicas, cachés derrière la colline, prennent les Immortels
+    // de flanc — comme à la vraie bataille.
+    { id:'huns', si:M=>M.temps()>=600, alors:M=>{
+        M.dire('huns'); M.renfort('p2',[[UT.CAVARC,5]],'colline',{vers:'tranchee'});
+      } },
+    { id:'retraite', si:M=>M.temps()>=880, alors:M=>M.dire('retraite') },
+    { id:'immortels_ok', si:M=>M.fait('immortels'), alors:M=>M.dire('immortels_ok') },
+  ],
+  orateurs:{
+    belisaire:{ nom:'Bélisaire', ico:'🛡️' },
+    hermogene:{ nom:'Hermogène', ico:'📜' },
+    sunicas:  { nom:'Sunicas',   ico:'🏹' },
+    firouz:   { nom:'Firouz',    ico:'🦁' },
+  },
+  dialogues:{
+    intro:[
+      ['belisaire',"Une tranchée, devant la ville, avec des passages pour nos cavaliers. Qu'ils viennent se briser dessus."],
+      ['hermogene',"Nos ouvriers bâtissent plus vite que ceux de n'importe quel empire. Vingt sections, et l'ennemi ne passera qu'où nous voudrons."],
+    ],
+    hermogene:[['hermogene',"Je tiens l'aile sud avec les piquiers. Surveillez les cavaliers perses : ils chercheront le flanc."]],
+    tranchee_ok:[['belisaire',"La tranchée est creusée. Maintenant, nous attendons."]],
+    avantgarde:[['firouz',"Préparez les bains, Romains : demain je dîne à Dara."]],
+    immortels:[['hermogene',"Les Immortels ! La garde du Grand Roi marche sur la tranchée !"]],
+    huns:[['sunicas',"Mes cavaliers descendent de la colline. Ils ne nous ont pas vus venir !"]],
+    retraite:[['hermogene',"Les Perses se replient ! Ils abandonnent leurs étendards dans la plaine !"]],
+    immortels_ok:[['belisaire',"Les Immortels n'ont pas été immortels bien longtemps."]],
+  },
+  etoiles:['victoire', M=>M.fait('tranchee'), M=>M.fait('immortels')],
+  victoire:"Les Perses repassent la frontière. Pour la première fois depuis des générations, l'empire les a battus en bataille rangée.",
+};
+
+// ── 2. La Sédition Nika ──────────────────────────────────
+// Émeute (~12 min) : la ville se soulève contre l'empereur. Des vagues
+// d'émeutiers sortent des quartiers ; les Verts tiennent l'Hippodrome, qu'il
+// faut reprendre. Les Bleus, eux, peuvent être achetés — l'or de Narsès.
+MISSIONS.by2 = {
+  campagne:'byzantins', num:2,
+  titre:'La Sédition Nika', lieu:'Constantinople', date:'532',
+  briefing:[
+    "Les factions de l'Hippodrome, Bleus et Verts, se sont unies contre l'empereur. Aux cris de « Nika ! », la foule brûle la ville et proclame un autre empereur.",
+    "Justinien songe à fuir. Bélisaire et Mundus tiennent le Grand Palais : reprenez l'Hippodrome et tenez jusqu'à l'aube. Narsès, le trésorier, a une autre idée pour les Bleus.",
+  ],
+  carte:{ graine:5320113, type:'plaines', taille:'petite', reliques:false, faune:false },
+  zones:{
+    palais:     { x:0.74, y:0.66, r:0.04 },
+    hippodrome: { x:0.52, y:0.60, r:0.05 },
+    bleus:      { x:0.30, y:0.76, r:0.04 },
+    q_ouest:    { x:0.04, y:0.46, r:0.03 },
+    q_nord:     { x:0.42, y:0.05, r:0.03 },
+    q_mese:     { x:0.16, y:0.18, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'byzantins', nom:'Bélisaire', age:1, res:{food:200,wood:300,stone:150,gold:120},
+         depart:[0.74,0.66], base:'village',
+         unites:[[UT.VIL,5],[UT.MIL,6],[UT.ARC,4],[UT.HERO,1,'belisaire']],
+         batiments:[[BT.BARRACKS,-6,-3]] },
+    p2:{ civ:'byzantins', nom:'Mundus', solo:'fusion', age:1, res:{food:100,wood:100,stone:0,gold:50},
+         depart:[0.64,0.40], base:'rien',
+         unites:[[UT.KNIGHT,4],[UT.MIL,4]] },
+  },
+  factions:{
+    pill:{
+      unites:[
+        { type:UT.ENEMI,  n:8, zone:'hippodrome', tag:'verts', garde:true },
+        { type:UT.ENEMIA, n:3, zone:'hippodrome', tag:'verts', garde:true },
+        { type:UT.ENEMI,  n:6, zone:'bleus', tag:'bleus', garde:true },
+        { type:UT.ENEMIA, n:2, zone:'bleus', tag:'bleus', garde:true },
+      ],
+    },
+  },
+  regles:{ ageMax:1 },
+  surcouche:[
+    // La mer : le Bosphore à l'est, la Propontide au sud.
+    { op:'eau', trace:[[1,0],[1,1]], largeur:0.05 },
+    { op:'eau', trace:[[0.45,1],[1,1]], largeur:0.04 },
+    { op:'degager', zone:'hippodrome' },
+    { op:'degager', zone:'bleus' },
+  ],
+  objectifs:[
+    { id:'aube',       txt:"Tenez jusqu'à l'aube (12 min)", test:M=>M.temps()>=720, compte:M=>[M.temps()/60,12] },
+    { id:'hippodrome', txt:"Reprenez l'Hippodrome : chassez les Verts de l'arène", zone:'hippodrome',
+      test:M=>M.detruit('verts') },
+    { id:'palais',     txt:'Le Grand Palais doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"Le Palais est tombé. Justinien a pris la mer, et la ville a un autre empereur." },
+    { id:'belisaire',  txt:'Bélisaire doit survivre', echec:M=>M.mort('belisaire'),
+      echecTxt:"Bélisaire est tombé dans les rues en flammes." },
+    { id:'bleus',      txt:"Narsès achètera les Bleus dès que le trésor aura 300 d'or", type:'secondaire', zone:'bleus',
+      test:M=>M.possede('bleus'), echec:M=>M.mort('bleus'), compte:M=>[M.res('p1','gold'),300] },
+    { id:'hypatius',   txt:"Arrêtez l'usurpateur Hypatius", type:'secondaire', cache:true, test:M=>M.detruit('hypatius') },
+  ],
+  declencheurs:[
+    { id:'intro',  si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'mundus', si:M=>M.temps()>=14, alors:M=>M.dire('mundus','p2') },
+    { id:'emeute', repete:true, intervalle:65, si:M=>M.temps()>=80&&M.temps()<660,
+      alors:M=>{
+        const n=M.tirs('emeute');
+        const compo=[[UT.ENEMI,3+n]];
+        if(n>=2) compo.push([UT.ENEMIA,Math.floor(n/2)]);
+        M.vague('pill',compo,['q_ouest','q_nord','q_mese'][n%3]);
+        if(n===1) M.dire('emeute');
+      } },
+    { id:'theodora', si:M=>M.temps()>=220, alors:M=>M.dire('theodora') },
+    { id:'couronne', si:M=>M.temps()>=300, alors:M=>{
+        M.dire('couronne'); M.objectif('hypatius','ajout');
+        M.vague('pill',[[UT.ENEMI_G,1]],'q_mese',{tag:'hypatius'});
+        M.vague('pill',[[UT.ENEMI,5]],'q_mese');
+      } },
+    // L'or de Narsès : prélevé dès qu'il est là — l'objectif le dit.
+    { id:'achat', si:M=>M.vivant('bleus')&&!M.possede('bleus')&&M.res('p1','gold')>=300,
+      alors:M=>{ M.donner('p1',{gold:-300}); M.convertir('bleus','p1'); M.dire('achat'); } },
+    { id:'hippodrome_ok', si:M=>M.fait('hippodrome'), alors:M=>M.dire('hippodrome_ok') },
+    { id:'aube', si:M=>M.temps()>=700, alors:M=>M.dire('aube') },
+  ],
+  orateurs:{
+    belisaire:{ nom:'Bélisaire', ico:'🛡️' },
+    mundus:   { nom:'Mundus',    ico:'⚔️' },
+    theodora: { nom:"L'impératrice Théodora", ico:'👑' },
+    narses:   { nom:'Narsès',    ico:'💰' },
+  },
+  dialogues:{
+    intro:[
+      ['belisaire',"Les Verts tiennent l'Hippodrome, les Bleus la Mésè. Tant qu'ils restent unis, la ville est à eux."],
+      ['narses',"Unis ? Les Bleus ont toujours aimé l'or plus que les Verts. Trouvez-moi trois cents pièces, et je leur rappelle qui paie leurs courses."],
+    ],
+    mundus:[['mundus',"Mes Hérules sont au nord du Palais. Dites où frapper, et nous frappons."]],
+    emeute:[['mundus',"Ils sortent de tous les quartiers ! Ils en veulent au Palais !"]],
+    theodora:[['theodora',"Que ceux qui veulent fuir fuient. La mer est libre. Moi, je reste : la pourpre fait un beau linceul."]],
+    couronne:[['narses',"La foule a couronné Hypatius, le neveu d'un vieil empereur. Il marche sur le Palais depuis la Mésè !"]],
+    achat:[['narses',"C'est fait. Les Bleus se souviennent soudain qu'ils ont toujours soutenu l'empereur."]],
+    hippodrome_ok:[['belisaire',"L'Hippodrome est à nous. La sédition n'a plus de cœur."]],
+    aube:[['mundus',"Le jour se lève. La ville se tait."]],
+  },
+  etoiles:['victoire', M=>M.fait('bleus'), M=>M.fait('hypatius')],
+  victoire:"L'aube se lève sur une ville noircie, mais Justinien règne toujours. On rebâtira Sainte-Sophie, plus grande qu'avant.",
+};
+
+// ── 3. La Reconquête de l'Afrique ─────────────────────────
+// Marche (~25 min) : trois villes tenues par des garnisons vandales, à libérer
+// l'une après l'autre. Une ville se prend en chassant sa garnison puis en y
+// entrant : ses bâtiments passent alors au joueur (M.convertir — un
+// remplacement, pour que l'invité le voie aussi). Ad Decimum est une embuscade.
+MISSIONS.by3 = {
+  campagne:'byzantins', num:3,
+  titre:"La Reconquête de l'Afrique", lieu:'De Caput Vada à Carthage', date:'533',
+  briefing:[
+    "Il y a un siècle, les Vandales ont pris Carthage à l'empire. Bélisaire a débarqué à Caput Vada avec quinze mille hommes et l'ordre de la reprendre.",
+    "Libérez les villes de la côte l'une après l'autre : chassez la garnison vandale, puis entrez-y — et que personne ne pille, les habitants sont romains. Gélimer, le roi vandale, rassemble son armée à l'ouest.",
+  ],
+  carte:{ graine:5330901, type:'arides', taille:'moyenne' },
+  zones:{
+    v1:      { x:0.70, y:0.60, r:0.05 },
+    v2:      { x:0.52, y:0.38, r:0.05 },
+    decimum: { x:0.38, y:0.27, r:0.06 },
+    v3:      { x:0.20, y:0.16, r:0.06 },
+    ouest:   { x:0.03, y:0.40, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'byzantins', nom:'Bélisaire', age:2, res:{food:400,wood:500,stone:200,gold:250},
+         depart:[0.84,0.82], base:'tc',
+         unites:[[UT.VIL,8],[UT.KNIGHT,6],[UT.ARC,6],[UT.MIL,6],[UT.HERO,1,'belisaire']],
+         batiments:[[BT.BARRACKS,5,-5],[BT.HOUSE,-3,3],[BT.HOUSE,-3,5]] },
+    p2:{ civ:'byzantins', nom:"Jean l'Arménien", solo:'fusion', age:2, res:{food:100,wood:100,stone:0,gold:100},
+         depart:[0.74,0.80], base:'rien',
+         unites:[[UT.KNIGHT,5],[UT.SCOUT,3]] },
+  },
+  factions:{
+    ia:{ civ:'francs', nom:'Gélimer, roi des Vandales', equipe:3, depart:[0.12,0.74], age:2,
+         role:'passif', ageMax:2, heros:false, merveille:false },
+    pill:{
+      // Les trois villes : leurs bâtiments sont romains (ils passeront au
+      // joueur), leur garnison vandale.
+      batiments:[
+        { type:BT.MARKET, zone:'v1', tag:'v1' }, { type:BT.HOUSE, zone:'v1', tag:'v1' },
+        { type:BT.HOUSE,  zone:'v1', tag:'v1' }, { type:BT.TOWER, zone:'v1', tag:'v1' },
+        { type:BT.MARKET, zone:'v2', tag:'v2' }, { type:BT.HOUSE, zone:'v2', tag:'v2' },
+        { type:BT.HOUSE,  zone:'v2', tag:'v2' }, { type:BT.HOUSE, zone:'v2', tag:'v2' },
+        { type:BT.TOWER,  zone:'v2', tag:'v2' },
+        { type:BT.MARKET, zone:'v3', tag:'v3' }, { type:BT.HOUSE, zone:'v3', tag:'v3' },
+        { type:BT.HOUSE,  zone:'v3', tag:'v3' }, { type:BT.HOUSE, zone:'v3', tag:'v3' },
+        { type:BT.MONASTERY, zone:'v3', tag:'v3' },
+        { type:BT.TOWER,  zone:'v3', tag:'v3' }, { type:BT.TOWER, zone:'v3', tag:'v3' },
+      ],
+      unites:[
+        { type:UT.ENEMI,  n:5, zone:'v1', tag:'g1', garde:true }, { type:UT.ENEMIA, n:3, zone:'v1', tag:'g1', garde:true },
+        { type:UT.ENEMI,  n:6, zone:'v2', tag:'g2', garde:true }, { type:UT.ENEMIA, n:4, zone:'v2', tag:'g2', garde:true },
+        { type:UT.ENEMI_C,n:2, zone:'v2', tag:'g2', garde:true },
+        { type:UT.ENEMI,  n:8, zone:'v3', tag:'g3', garde:true }, { type:UT.ENEMIA, n:6, zone:'v3', tag:'g3', garde:true },
+        { type:UT.ENEMI_C,n:3, zone:'v3', tag:'g3', garde:true }, { type:UT.ENEMI_G, n:1, zone:'v3', tag:'g3', garde:true },
+      ],
+    },
+  },
+  surcouche:[
+    // La mer, au nord et à l'est.
+    { op:'eau', trace:[[0,0],[0.7,0]], largeur:0.035 },
+    { op:'eau', trace:[[1,0.3],[1,1]], largeur:0.035 },
+    { op:'degager', zone:'v1' }, { op:'degager', zone:'v2' }, { op:'degager', zone:'v3' },
+    { op:'gisement', zone:{ x:0.90, y:0.64, r:0.03 }, type:RT.GOLD, n:5, amt:500 },
+  ],
+  objectifs:[
+    { id:'villes',    txt:'Libérez les trois villes : chassez la garnison vandale, puis entrez-y',
+      test:M=>M.tirs('prise1')+M.tirs('prise2')+M.tirs('prise3')>=3,
+      compte:M=>[M.tirs('prise1')+M.tirs('prise2')+M.tirs('prise3'),3] },
+    { id:'belisaire', txt:'Bélisaire doit survivre', echec:M=>M.mort('belisaire'),
+      echecTxt:"Bélisaire est tombé en Afrique. Carthage restera vandale." },
+    { id:'ammatas',   txt:"Ad Decimum : abattez Ammatas, le frère du roi", type:'secondaire', cache:true,
+      test:M=>M.detruit('ammatas') },
+    { id:'gelimer',   txt:'Chassez Gélimer : rasez son Centre Ville', type:'secondaire', test:M=>M.vaincu('ia') },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'jean',  si:M=>M.temps()>=16, alors:M=>M.dire('jean','p2') },
+    // Une ville est prise quand sa garnison est tombée et que le joueur y est.
+    { id:'prise1', si:M=>M.detruit('g1')&&M.equipeDansZone('v1',2)&&!M.hostilesDansZone('v1'),
+      alors:M=>{ M.convertir('v1','p1'); M.dire('prise1'); } },
+    { id:'prise2', si:M=>M.detruit('g2')&&M.equipeDansZone('v2',2)&&!M.hostilesDansZone('v2'),
+      alors:M=>{ M.convertir('v2','p1'); M.dire('prise2'); M.ia('ia',{role:'normal',lancer:true}); } },
+    { id:'prise3', si:M=>M.detruit('g3')&&M.equipeDansZone('v3',2)&&!M.hostilesDansZone('v3'),
+      alors:M=>{ M.convertir('v3','p1'); M.dire('prise3'); } },
+    // Ad Decimum : au dixième mille avant Carthage, Ammatas attend.
+    { id:'decimum', si:M=>M.equipeDansZone('decimum',1), alors:M=>{
+        M.dire('decimum'); M.objectif('ammatas','ajout');
+        M.vague('pill',[[UT.ENEMI_G,1]],'v3',{tag:'ammatas',vers:'decimum'});
+        M.vague('pill',[[UT.ENEMI_C,3],[UT.ENEMI,4]],'v3',{vers:'decimum'});
+        M.vague('pill',[[UT.ENEMI_C,3]],'ouest',{vers:'decimum'});
+      } },
+    { id:'gelimer_marche', si:M=>M.temps()>=1200, alors:M=>{ M.ia('ia',{role:'normal',lancer:true}); M.dire('gelimer_marche'); } },
+    { id:'ammatas_ok', si:M=>M.fait('ammatas'), alors:M=>M.dire('ammatas_ok') },
+  ],
+  orateurs:{
+    belisaire:{ nom:'Bélisaire', ico:'🛡️' },
+    jean:     { nom:"Jean l'Arménien", ico:'🏇' },
+    procope:  { nom:'Procope, son secrétaire', ico:'📜' },
+  },
+  dialogues:{
+    intro:[
+      ['belisaire',"Nous ne sommes pas des conquérants ici : ces gens sont romains. Le premier qui pille, je le fais pendre."],
+      ['procope',"Leptis, puis Hadrumète, puis Carthage. Chaque ville libérée nous ouvrira ses marchés et ses tours."],
+    ],
+    jean:[['jean',"Mon avant-garde éclaire la route de la côte. Je vous signale tout ce qui bouge."]],
+    prise1:[['procope',"Leptis ouvre ses portes ! Les habitants apportent du pain aux soldats."]],
+    prise2:[['procope',"Hadrumète est libre. Gélimer ne peut plus nous ignorer : son armée se met en marche."]],
+    prise3:[['belisaire',"Carthage. Ce soir, je dînerai dans le palais du roi vandale — et nos soldats paieront leur pain."]],
+    decimum:[['jean',"Des Vandales devant nous, et d'autres qui arrivent par l'ouest ! C'est une embuscade !"]],
+    gelimer_marche:[['jean',"Gélimer a quitté son camp avec toute son armée !"]],
+    ammatas_ok:[['jean',"Ammatas est tombé ! La route de Carthage est ouverte."]],
+  },
+  etoiles:['victoire', M=>M.fait('ammatas'), M=>M.fait('gelimer')],
+  victoire:"Carthage est romaine à nouveau. À Constantinople, Bélisaire aura droit au triomphe — le premier depuis des siècles.",
+};
+
+// ── 4. Rome assiégée ─────────────────────────────────────
+// Siège défensif (~16 min) : une enceinte à quatre portails, des camps goths
+// qui envoient des béliers, et la réparation — villageois et Réparation
+// automatique — qui décide de tout. Bessas tient la porte sud.
+MISSIONS.by4 = {
+  campagne:'byzantins', num:4,
+  titre:'Rome assiégée', lieu:'Rome', date:'537',
+  briefing:[
+    "Bélisaire a repris Rome sans combat. Maintenant, le roi goth Vitigès revient avec toute son armée, et la ville est trop grande pour les cinq mille hommes qui la gardent.",
+    "Tenez les murs un an durant. Les Goths amènent des béliers : réparez sans relâche, et faites des sorties contre leurs camps quand vous le pourrez.",
+  ],
+  carte:{ graine:5370302, type:'plaines', taille:'moyenne', reliques:false },
+  zones:{
+    rome:    { x:0.46, y:0.50, r:0.10 },
+    camp1:   { x:0.46, y:0.10, r:0.04 },
+    camp2:   { x:0.88, y:0.46, r:0.04 },
+    camp3:   { x:0.52, y:0.90, r:0.04 },
+    pont:    { x:0.20, y:0.52, r:0.03 },
+    renforts:{ x:0.04, y:0.52, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'byzantins', nom:'Bélisaire', age:2, res:{food:500,wood:700,stone:400,gold:300},
+         depart:[0.45,0.47], base:'village',
+         // Cinq mille hommes pour des murs faits pour vingt mille : peu de
+         // soldats, beaucoup de murs. C'est la Caserne et les réparations qui
+         // doivent tenir la ville, pas une garnison de départ.
+         unites:[[UT.VIL,10],[UT.ARC,6],[UT.MIL,4],[UT.KNIGHT,2],[UT.HERO,1,'belisaire']],
+         batiments:[[BT.BARRACKS,6,-5]],
+         enceintes:[{ zone:'rome', r:0.10, ferme:true }] },
+    p2:{ civ:'byzantins', nom:'Bessas', solo:'fusion', age:2, res:{food:150,wood:150,stone:100,gold:50},
+         depart:[0.47,0.56], base:'rien',
+         unites:[[UT.PIKE,4],[UT.ARC,3]],
+         batiments:[{ type:BT.TOWER, zone:{ x:0.50, y:0.58, r:0 } }] },
+  },
+  factions:{
+    // Les camps goths sont au roi — pas aux pillards : une bande hostile à
+    // tous, lâchée à côté de son camp, commençait par raser Vitigès lui-même
+    // (mesuré : les Goths tombaient à la quatrième minute).
+    ia:{ civ:'francs', nom:'Goths de Vitigès', equipe:3, depart:[0.84,0.14], age:2,
+         ageMax:2, heros:false, merveille:false, tune:{ firstAtk:420, atkEvery:130 },
+         batiments:[
+           { type:BT.OUTPOST, zone:'camp1', tag:'camp1' }, { type:BT.SIEGE, zone:'camp1', tag:'camp1' },
+           { type:BT.OUTPOST, zone:'camp2', tag:'camp2' }, { type:BT.SIEGE, zone:'camp2', tag:'camp2' },
+           { type:BT.OUTPOST, zone:'camp3', tag:'camp3' }, { type:BT.SIEGE, zone:'camp3', tag:'camp3' },
+         ],
+         unites:[
+           { type:UT.ENEMI, n:5, zone:'camp1', tag:'camp1', garde:true }, { type:UT.ENEMIA, n:3, zone:'camp1', tag:'camp1', garde:true },
+           { type:UT.ENEMI, n:5, zone:'camp2', tag:'camp2', garde:true }, { type:UT.ENEMIA, n:3, zone:'camp2', tag:'camp2', garde:true },
+           { type:UT.ENEMI, n:5, zone:'camp3', tag:'camp3', garde:true }, { type:UT.ENEMIA, n:3, zone:'camp3', tag:'camp3', garde:true },
+         ] },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    // Le Tibre, à l'ouest de la ville, et le pont Milvius.
+    { op:'eau', trace:[[0.22,0],[0.19,0.35],[0.22,0.7],[0.20,1]], largeur:0.014 },
+    { op:'gue', zone:'pont' },
+    { op:'degager', zone:'camp1' }, { op:'degager', zone:'camp2' }, { op:'degager', zone:'camp3' },
+    { op:'gisement', zone:{ x:0.40, y:0.56, r:0.03 }, type:RT.STONE, n:5, amt:600 },
+  ],
+  objectifs:[
+    { id:'tenir',     txt:'Tenez Rome un an durant (16 min)', test:M=>M.temps()>=960, compte:M=>[M.temps()/60,16] },
+    { id:'rome',      txt:'Le cœur de Rome doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"Les Goths sont dans la ville. Rome est perdue." },
+    { id:'belisaire', txt:'Bélisaire doit survivre', echec:M=>M.mort('belisaire'),
+      echecTxt:"Bélisaire est tombé sur les murs de Rome." },
+    { id:'camps',     txt:'Sorties : brûlez les trois camps goths', type:'secondaire',
+      test:M=>M.detruit('camp1')&&M.detruit('camp2')&&M.detruit('camp3'),
+      compte:M=>[['camp1','camp2','camp3'].filter(c=>M.detruit(c)).length,3] },
+  ],
+  declencheurs:[
+    { id:'intro',  si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'bessas', si:M=>M.temps()>=14, alors:M=>M.dire('bessas','p2') },
+    { id:'reparer',si:M=>M.temps()>=150, alors:M=>M.dire('reparer') },
+    // Chaque camp debout envoie son bélier et son escorte, à tour de rôle.
+    { id:'assaut', repete:true, intervalle:80, si:M=>M.temps()>=120&&M.temps()<930,
+      alors:M=>{
+        const n=M.tirs('assaut'), debout=['camp1','camp2','camp3'].filter(c=>M.vivant(c));
+        if(!debout.length) return;
+        const camp=debout[n%debout.length];
+        const compo=[[UT.RAM,1+Math.floor(n/3)],[UT.ENEMI,5+n]];
+        if(n>=1) compo.push([UT.ENEMIA,2+Math.floor(n/2)]);
+        if(n>=4) compo.push([UT.ENEMI_C,1+Math.floor(n/3)]);
+        M.vague('ia',compo,camp,{vers:'rome'});
+        // Dès la mi-siège, deux camps frappent ensemble : les défenseurs ne
+        // peuvent plus courir d'un mur à l'autre.
+        if(n>=5&&debout.length>1) M.vague('ia',[[UT.RAM,1],[UT.ENEMI,4+Math.floor(n/2)]],debout[(n+1)%debout.length],{vers:'rome'});
+        if(n===1) M.dire('belier');
+      } },
+    { id:'jean', si:M=>M.temps()>=600, alors:M=>{ M.dire('jean'); M.renfort('p1',[[UT.KNIGHT,6],[UT.ARC,4]],'renforts',{vers:'pont'}); } },
+    { id:'camp_ok', si:M=>['camp1','camp2','camp3'].some(c=>M.detruit(c)), alors:M=>M.dire('camp_ok') },
+    { id:'fin', si:M=>M.temps()>=930, alors:M=>M.dire('fin') },
+  ],
+  orateurs:{
+    belisaire:{ nom:'Bélisaire', ico:'🛡️' },
+    bessas:   { nom:'Bessas',    ico:'🗡️' },
+    antonina: { nom:'Antonina',  ico:'📜' },
+    vitiges:  { nom:'Vitigès',   ico:'🐗' },
+  },
+  dialogues:{
+    intro:[
+      ['vitiges',"Rendez Rome, Grec. Vous n'avez pas assez d'hommes pour garnir le quart de ces murs."],
+      ['belisaire',"Alors je les ferai courir d'un mur à l'autre. Portes closes : on n'ouvre un portail que pour une sortie, et on le referme derrière soi."],
+    ],
+    bessas:[['bessas',"Je tiens la porte sud. Mes piquiers attendent leurs cavaliers."]],
+    reparer:[['antonina',"Les maçons sont prêts. Sélectionnez un villageois : la Réparation automatique les enverra d'eux-mêmes à chaque brèche."]],
+    belier:[['bessas',"Un bélier ! Les piquiers sur lui — les flèches glissent sur ses mantelets !"]],
+    jean:[['antonina',"Des renforts d'Orient passent le Tibre au pont Milvius !"]],
+    camp_ok:[['belisaire',"Un camp goth brûle. Ils sauront que nous pouvons sortir."]],
+    fin:[['antonina',"Les Goths lèvent le camp. La fièvre et la faim les ont vaincus avant nous."]],
+  },
+  etoiles:['victoire', M=>M.fait('camps'), M=>M.compteEquipe(BT.GATE)>=4],
+  victoire:"Après un an de siège, Vitigès lève le camp et remonte vers Ravenne. Rome a tenu.",
+};
+
+// ── 5. Ravenne ───────────────────────────────────────────
+// Deux façons de prendre la ville (~30 min) : l'assaut, ou la ruse. Les Goths
+// ne traitent pas tant que leur grenier du Pô est plein — brûlez-le, et ils
+// offriront la couronne d'Occident à Bélisaire (diplomatie de mission). Les
+// Francs de Théodebert, eux, ravagent tout le monde.
+MISSIONS.by5 = {
+  campagne:'byzantins', num:5,
+  titre:'Ravenne', lieu:'Ravenne, dans les marais du Pô', date:'540',
+  briefing:[
+    "Vitigès s'est enfermé dans Ravenne, derrière ses marais. La ville ne se prend pas d'assaut facilement — mais elle mange ce que le Pô lui apporte.",
+    "Brûlez le grenier des Goths, et ils voudront traiter : ouvrez alors la Diplomatie. Ils vous offriront une couronne — acceptez-la en apparence. Ou prenez la ville par les armes.",
+  ],
+  carte:{ graine:5400517, type:'lacs', taille:'moyenne', reliques:false },
+  zones:{
+    ravenne: { x:0.78, y:0.40, r:0.06 },
+    grenier: { x:0.64, y:0.80, r:0.04 },
+    nordouest:{ x:0.30, y:0.03, r:0.03 },
+    gue_po:  { x:0.40, y:0.66, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'byzantins', nom:'Bélisaire', age:2, res:{food:500,wood:600,stone:300,gold:300},
+         depart:[0.20,0.40], base:'village',
+         unites:[[UT.VIL,10],[UT.KNIGHT,6],[UT.ARC,6],[UT.MIL,6],[UT.CATA,3],[UT.HERO,1,'belisaire']],
+         batiments:[[BT.BARRACKS,6,-5],[BT.STABLE,6,4]] },
+    p2:{ civ:'byzantins', nom:'Jean le Sanguinaire', solo:'fusion', age:2, res:{food:200,wood:200,stone:100,gold:100},
+         depart:[0.28,0.84], base:'tc',
+         unites:[[UT.VIL,4],[UT.KNIGHT,5],[UT.ARC,4]] },
+  },
+  factions:{
+    ia:{ civ:'francs', nom:'Goths de Vitigès', equipe:3, depart:[0.78,0.40], age:2,
+         role:'forteresse', ageMax:2, heros:false, merveille:false, enceinte:true, tune:{ vilTarget:8 },
+         diplomatie:{ si:M=>M.fait('grenier'), refus:"Vitigès ne traitera pas tant que son grenier du Pô est plein." },
+         batiments:[[BT.CASTLE,-5,-8],[BT.TOWER,8,-5],[BT.BARRACKS,-7,4],
+                    { type:BT.MILL, zone:'grenier', tag:'grenier' }, { type:BT.MARKET, zone:'grenier', tag:'grenier' },
+                    { type:BT.TOWER, zone:'grenier', tag:'grenier' }],
+         unites:[[UT.ENEMI_C,4],[UT.ENEMIA,4],[UT.ENEMI,4],
+                 { type:UT.ENEMI, n:4, zone:'grenier', garde:true }, { type:UT.ENEMIA, n:3, zone:'grenier', garde:true }] },
+  },
+  surcouche:[
+    // Le Pô, d'ouest en est, et son gué.
+    { op:'eau', trace:[[0,0.66],[0.3,0.64],[0.6,0.68],[1,0.66]], largeur:0.012 },
+    { op:'gue', zone:'gue_po' },
+    { op:'gue', zone:{ x:0.64, y:0.68, r:0.03 } },
+    { op:'terre', zone:'ravenne' },
+    { op:'terre', zone:'grenier' },
+    { op:'degager', zone:'grenier' },
+  ],
+  objectifs:[
+    { id:'ravenne',   txt:'Entrez dans Ravenne — par les armes ou par la ruse', zone:'ravenne',
+      test:M=>M.vaincu('ia')||M.allie('ia') },
+    { id:'belisaire', txt:'Bélisaire doit survivre', echec:M=>M.mort('belisaire'),
+      echecTxt:"Bélisaire est tombé dans les marais. L'Italie reste gothe." },
+    { id:'grenier',   txt:'Coupez le ravitaillement : brûlez le grenier des Goths sur le Pô', type:'secondaire', zone:'grenier',
+      test:M=>M.detruit('grenier') },
+    { id:'francs',    txt:'Repoussez les Francs de Théodebert', type:'secondaire', cache:true,
+      test:M=>M.tirs('francs')>=3&&!M.vivant('francs') },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'jean',  si:M=>M.temps()>=16, alors:M=>M.dire('jean','p2') },
+    { id:'grenier_ok', si:M=>M.fait('grenier'), alors:M=>M.dire('grenier_ok') },
+    { id:'francs', repete:true, intervalle:150, si:M=>M.temps()>=480&&M.tirs('francs')<3,
+      alors:M=>{
+        const n=M.tirs('francs');
+        M.vague('pill',[[UT.ENEMI,5+2*n],[UT.ENEMI_C,1+n],[UT.ENEMIA,2]],'nordouest',{tag:'francs'});
+        if(n===1){ M.dire('francs'); M.objectif('francs','ajout'); }
+      } },
+    { id:'couronne', si:M=>M.allie('ia'), alors:M=>M.dire('couronne') },
+  ],
+  orateurs:{
+    belisaire:{ nom:'Bélisaire', ico:'🛡️' },
+    jean:     { nom:'Jean le Sanguinaire', ico:'🏇' },
+    procope:  { nom:'Procope', ico:'📜' },
+    vitiges:  { nom:'Vitigès', ico:'🐗' },
+  },
+  dialogues:{
+    intro:[
+      ['procope',"Ravenne ne tombera pas par les murs : les marais la protègent mieux que n'importe quelle palissade. Mais elle mange ce que le Pô lui apporte."],
+      ['belisaire',"Alors affamons-la. Et gardons une armée prête, au cas où Vitigès serait plus têtu que son ventre."],
+    ],
+    jean:[['jean',"Je tiens la rive sud du Pô. Le grenier des Goths est à portée de mes cavaliers."]],
+    grenier_ok:[['vitiges',"Bélisaire ! Les Goths sont prêts à traiter. Venez nous parler — nous avons une offre qu'aucun général n'a jamais reçue."]],
+    francs:[['jean',"Les Francs de Théodebert descendent les Alpes ! Ils pillent tout, Goths comme Romains !"]],
+    couronne:[
+      ['vitiges',"Les Goths vous offrent la couronne d'Occident. Régnez sur l'Italie, et nous vous suivrons."],
+      ['belisaire',"J'accepte... Ouvrez les portes de Ravenne à votre nouveau roi. (Il n'a jamais eu l'intention de trahir son empereur.)"],
+    ],
+  },
+  etoiles:['victoire', M=>M.allie('ia'), M=>M.fait('francs')],
+  victoire:"Ravenne ouvre ses portes. Les Goths comprennent trop tard que Bélisaire est resté fidèle à Justinien : l'Italie est rendue à l'empire.",
+};
+
+// ── 6. Mélantias ─────────────────────────────────────────
+// Finale (~20 min) : le vieux général, rappelé une dernière fois. Les
+// Koutrigoures de Zabergan marchent sur la Cité ; les Longs Murs sont
+// percés. Bélisaire cache ses vétérans dans les bois de Mélantias — la horde
+// qui entre dans la plaine y trouve son piège. Les Dèmes de la Cité (le second
+// commandant, confié à l'IA en solo) tiennent le nord.
+MISSIONS.by6 = {
+  campagne:'byzantins', num:6,
+  titre:'Mélantias', lieu:'Aux portes de Constantinople', date:'559',
+  briefing:[
+    "Bélisaire a près de soixante ans et vit retiré. Mais les Koutrigoures de Zabergan ont franchi le Danube, et l'empereur n'a plus personne d'autre.",
+    "Il n'a que trois cents vétérans et des paysans. Tenez la Cité vingt minutes ou rasez le camp de Zabergan ; et si la horde s'avance dans la plaine de Mélantias, les vétérans cachés dans les bois l'y attendront.",
+  ],
+  carte:{ graine:5590604, type:'plaines', taille:'normale', reliques:false },
+  zones:{
+    cite:      { x:0.84, y:0.50, r:0.06 },
+    melantias: { x:0.42, y:0.50, r:0.07 },
+    bois_n:    { x:0.44, y:0.30, r:0.03 },
+    bois_s:    { x:0.44, y:0.70, r:0.03 },
+    steppe:    { x:0.24, y:0.50, r:0.03 },
+    bord_nord: { x:0.58, y:0.06, r:0.03 },
+    bord_sud:  { x:0.58, y:0.94, r:0.03 },
+    porte_n:   { x:0.68, y:0.25, r:0.02 },
+    porte_c:   { x:0.68, y:0.50, r:0.02 },
+    porte_s:   { x:0.68, y:0.75, r:0.02 },
+  },
+  roles:{
+    p1:{ civ:'byzantins', nom:'Bélisaire', age:2, res:{food:800,wood:800,stone:600,gold:600},
+         depart:[0.84,0.56], base:'village',
+         unites:[[UT.VIL,12],[UT.ARC,6],[UT.MIL,6],[UT.CATA,2],[UT.HERO,1,'belisaire']],
+         batiments:[[BT.BARRACKS,6,-5],[BT.UNIV,-6,5]],
+         // Le mur de Théodose, d'une mer à l'autre, percé de trois portes.
+         murs:[{ de:[0.68,0], a:[0.68,1], portes:3, tag:'theodose' }] },
+    p2:{ civ:'byzantins', nom:'Les Dèmes de la Cité', solo:'ia', age:2, res:{food:300,wood:300,stone:150,gold:150},
+         depart:[0.84,0.24], base:'tc',
+         unites:[[UT.VIL,5],[UT.MIL,5],[UT.ARC,4]] },
+  },
+  factions:{
+    ia:{ civ:'mongols', nom:'Koutrigoures de Zabergan', equipe:3, depart:[0.12,0.50], age:2,
+         ageMax:3, heros:false, merveille:false, cible:'cite',
+         tune:{ firstAtk:480, atkEvery:140, start:{food:600,wood:600,stone:300,gold:300} },
+         // De quoi LOGER et former dès le départ : parti d'un seul Centre
+         // Ville, il plafonnait sa population sept minutes durant (mesuré).
+         batiments:[[BT.BARRACKS,6,-5],[BT.STABLE,-7,4],[BT.HLM,7,2],[BT.HOUSE,-4,-6],[BT.HOUSE,-6,-6]],
+         unites:[[UT.VIL,8],[UT.ENEMI_C,6],[UT.ENEMI,6],[UT.ENEMIA,4]] },
+  },
+  regles:{ ageMax:3 },
+  surcouche:[
+    // La Corne d'Or au nord, la Propontide au sud : la Cité est une presqu'île.
+    { op:'eau', trace:[[0.62,0],[1,0]], largeur:0.05 },
+    { op:'eau', trace:[[0.62,1],[1,1]], largeur:0.05 },
+    { op:'foret', zone:'bois_n', n:30 }, { op:'foret', zone:'bois_s', n:30 },
+    { op:'degager', zone:'melantias' },
+    { op:'gisement', zone:{ x:0.92, y:0.40, r:0.03 }, type:RT.GOLD, n:6, amt:700 },
+    { op:'gisement', zone:{ x:0.92, y:0.64, r:0.03 }, type:RT.STONE, n:6, amt:700 },
+  ],
+  objectifs:[
+    { id:'cite',      txt:'Sauvez la Cité : tenez 20 minutes, ou rasez le camp de Zabergan',
+      test:M=>M.temps()>=1200||M.vaincu('ia'), compte:M=>[M.temps()/60,20] },
+    { id:'belisaire', txt:'Bélisaire doit survivre', echec:M=>M.mort('belisaire'),
+      echecTxt:"Le vieux général est tombé. Zabergan campe sous les murs de la Cité." },
+    { id:'murailles', txt:'La Cité doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"La Cité est tombée." },
+    { id:'piege',     txt:'Le piège de Mélantias : écrasez la horde dans la plaine', type:'secondaire', cache:true, zone:'melantias',
+      test:M=>M.detruit('horde') },
+    { id:'feu',       txt:'Donnez aux Tours le Feu Grégeois (Université, Âge Impérial)', type:'secondaire',
+      test:M=>M.rechercheEquipe('feu_gregeois') },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'demes', si:M=>M.temps()>=16, alors:M=>M.dire('demes') },
+    { id:'horde', si:M=>M.temps()>=420, alors:M=>{
+        M.dire('horde'); M.objectif('piege','ajout');
+        M.vague('ia',[[UT.ENEMI_C,9],[UT.ENEMI,12],[UT.ENEMIA,6]],'steppe',{tag:'horde',vers:'cite',via:['melantias','porte_c']});
+      } },
+    // Les vétérans sortent des bois quand la horde est dans la plaine.
+    { id:'embuscade', si:M=>M.tagDansZone('horde','melantias',4), alors:M=>{
+        M.dire('embuscade');
+        M.renfort('p1',[[UT.CATA,4],[UT.ARC,3]],'bois_n',{vers:'melantias',tag:'veterans'});
+        M.renfort('p1',[[UT.CATA,3],[UT.ARC,3]],'bois_s',{vers:'melantias',tag:'veterans'});
+      } },
+    { id:'raids', repete:true, intervalle:120, si:M=>M.temps()>=540&&M.temps()<1150,
+      alors:M=>{
+        const n=M.tirs('raids');
+        M.vague('ia',[[UT.ENEMI_C,3+n],[UT.ENEMI,5+n],[UT.ENEMIA,2+Math.floor(n/2)]],n%2?'bord_nord':'bord_sud',{vers:'cite',via:[n%2?'porte_n':'porte_s']});
+        if(n===1) M.dire('raids');
+      } },
+    // Zabergan jette ses dernières forces avant que l'hiver ne le renvoie.
+    { id:'derniere', si:M=>M.temps()>=960, alors:M=>{
+        M.dire('derniere');
+        M.vague('ia',[[UT.ENEMI_C,8],[UT.ENEMI,10],[UT.ENEMI_G,2],[UT.ENEMIA,6]],'steppe',{vers:'cite',via:['melantias','porte_c']});
+      } },
+    { id:'imperial', si:M=>M.age('p1')>=3, alors:M=>M.dire('imperial') },
+    { id:'piege_ok', si:M=>M.fait('piege'), alors:M=>M.dire('piege_ok') },
+  ],
+  orateurs:{
+    belisaire:{ nom:'Bélisaire', ico:'🛡️' },
+    demes:    { nom:'Les Dèmes', ico:'🏛️' },
+    zabergan: { nom:'Zabergan',  ico:'🐎' },
+    ingenieur:{ nom:"L'ingénieur", ico:'🔥' },
+  },
+  dialogues:{
+    intro:[
+      ['zabergan',"On dit que Byzance n'a plus que des vieillards pour la défendre. Nous verrons s'ils savent encore courir."],
+      ['belisaire',"Qu'il le croie. Les paysans traîneront des branches derrière les chariots : que sa horde voie une armée là où il n'y a que de la poussière."],
+    ],
+    demes:[['demes',"Les Dèmes de la Cité tiennent le nord. Nous n'avons pas combattu depuis Nika, mais nous nous souvenons de qui nous a épargnés."]],
+    horde:[['belisaire',"La horde s'avance vers la plaine de Mélantias. Que personne ne bouge avant qu'ils y soient."]],
+    embuscade:[['belisaire',"Maintenant ! Sortez des bois !"]],
+    raids:[['demes',"Des cavaliers koutrigoures longent les côtes pour contourner les murs !"]],
+    derniere:[['zabergan',"Tout ce qui a encore un cheval, en selle ! La Cité tombera avant l'hiver !"]],
+    imperial:[['ingenieur',"L'Âge Impérial ! À l'Université, je peux donner à vos Tours le feu grégeois — il brûle même sur l'eau."]],
+    piege_ok:[['belisaire',"La horde est brisée. Zabergan croyait trouver des vieillards."]],
+  },
+  etoiles:['victoire', M=>M.fait('piege'), M=>M.fait('feu')],
+  victoire:"Zabergan repasse le Danube. Pour la dernière fois, Bélisaire a sauvé la Cité — et la Cité lui a rendu hommage.",
 };
 
 // Retour d'une fin de mission : rouvre le briefing laissé en partant (voir

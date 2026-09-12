@@ -53,7 +53,7 @@ préservent.
 node tests/run.js
 ```
 
-267 tests, 18 groupes, ~45 s, sans dépendance ni build — comme le jeu. Ils
+277 tests, 18 groupes, ~45 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, le fait
@@ -74,7 +74,7 @@ quoi.
 |---|---|---|
 | 🎮 **Solo** | Survie · Conquête · 2 rivaux | ⚔️ *Commencer la partie* |
 | 👥 **Multijoueur** | Conquête · 2 rivaux · 2v1 Coop | 👥 *Jouer avec un ami* |
-| 📜 **Campagne** | les campagnes qui ont des missions (Francs pour l'instant) | ⚔️ *Jouer seul*, sur le briefing de la mission |
+| 📜 **Campagne** | les campagnes qui ont des missions (Francs pour l'instant) | ⚔️ *Jouer seul* ou 👥 *Jouer avec un ami*, sur le briefing de la mission |
 
 Une mission impose sa carte, sa graine et les civilisations ; seule la
 difficulté se choisit, sur son briefing. Les missions s'ouvrent l'une après

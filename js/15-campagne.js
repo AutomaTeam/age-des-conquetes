@@ -39,6 +39,10 @@ const MISSIONS = {};
 // ou à la main depuis la console : `lancerMission('essai')`. Lue par
 // initState, comme selectedMode.
 let missionChoisie=null;
+// Mission d'un salon multijoueur ouvert depuis son briefing (voir
+// jouerMissionAvecAmi et mpOuvrir). Distincte de missionChoisie : elle ne
+// devient la mission de la partie qu'au LANCEMENT (demarrerPartieHote).
+let missionSalon=null;
 
 function missionCourante(){
   return (typeof G!=='undefined'&&G&&G.mission&&MISSIONS[G.mission])||null;
@@ -457,7 +461,11 @@ function installerMission(){
 // seq   : incrémenté à chaque changement visible (servira au différentiel réseau)
 function initScenario(){
   const def=missionCourante();
-  G.scn={obj:{}, decl:{}, declT:{}, tags:{}, dlg:[], rev:[], marques:[], fin:null, etoiles:0, seq:0, acc:0};
+  // `inst` : identité de CETTE partie de la mission. Chez l'invité, G.scn est
+  // remplacé par un objet neuf à chaque delta qui le porte : l'interface ne
+  // peut pas se fier à l'identité de l'objet pour savoir si elle découvre une
+  // nouvelle mission ou lit la suite de la même.
+  G.scn={inst:(Math.random()*1e9)|0, obj:{}, decl:{}, declT:{}, tags:{}, dlg:[], rev:[], marques:[], fin:null, etoiles:0, seq:0, acc:0};
   for(const o of (def.objectifs||[])) G.scn.obj[o.id]=o.cache?'cache':'actif';
 }
 
@@ -848,10 +856,21 @@ function voirMission(cle){
     +`<div class="cb-sec">Difficulté</div>`
     +`<div class="diffrow">${Object.entries(DIFFS).map(([k,d])=>
         `<button type="button" class="diffbtn${k===selectedDifficulty?' sel':''}" data-d="${k}" onclick="choisirDiffCampagne('${k}')"><span class="dico">${d.ico}</span><span class="dlabel">${d.nom}</span></button>`).join('')}</div>`
-    +`<button class="bigbtn sheen" onclick="jouerMissionSolo()">⚔️ Jouer seul</button>`;
+    +`<button class="bigbtn sheen" onclick="jouerMissionSolo()">⚔️ Jouer seul</button>`
+    // À deux seulement si la mission a un second commandant à confier.
+    +(m.roles&&m.roles.p2?`<button class="bigbtn friendbtn" onclick="jouerMissionAvecAmi()">👥 Jouer avec un ami · votre allié sera ${echapHTML(m.roles.p2.nom||'le second commandant')}</button>`:'');
   brief.style.display='flex';
 }
 function choisirDiffCampagne(k){ pickDifficulty(k); if(_missionVue) voirMission(_missionVue); }
+// Ouvre le salon multijoueur habituel, réglé sur cette mission : l'hôte y
+// crée sa partie et partage le code comme d'ordinaire ; la mission n'est
+// armée qu'au lancement (voir demarrerPartieHote).
+function jouerMissionAvecAmi(){
+  const cle=_missionVue;
+  if(!cle||!missionDebloquee(cle)||!MISSIONS[cle].roles.p2) return;
+  fermerCampagne();
+  mpOuvrir({mission:cle});
+}
 function jouerMissionSolo(){
   const cle=_missionVue;
   if(!cle||!missionDebloquee(cle)) return;
@@ -864,7 +883,7 @@ function rafraichirCampagne(){
   if(typeof selectedPlayTab!=='undefined'&&selectedPlayTab==='campagne') afficherListeCampagnes();
   if(_campOuverte&&_missionVue) voirMission(_missionVue);
 }
-Object.assign(window,{ouvrirCampagne,fermerCampagne,voirMission,choisirDiffCampagne,jouerMissionSolo});
+Object.assign(window,{ouvrirCampagne,fermerCampagne,voirMission,choisirDiffCampagne,jouerMissionSolo,jouerMissionAvecAmi});
 
 // ── FIN DE MISSION ────────────────────────────────────────
 // Après une mission, on revient à l'écran de campagne en RECHARGEANT la page
@@ -901,24 +920,32 @@ function reprendreEcranCampagne(){
 // Lecture de G.scn à chaque image (voir loop), redessinée seulement quand
 // G.scn.seq a bougé. Rien ici ne modifie l'état : c'est l'affichage du
 // scénario, que l'hôte écrit — et que l'invité recevra tel quel.
-let _scnRef=null, _scnVu=-1, _objOuvert=true;
+let _scnInst=null, _scnVu=-1, _objOuvert=true;
 let _dlgLu=0, _fileRepliques=[], _repliqueFin=0;
 // Posé par loadGame : une partie reprise rouvre sur un journal déjà joué, qu'on
 // ne rejoue pas. Un signal explicite plutôt qu'une devinette sur le temps de
 // jeu — une mission neuve peut très bien avoir déjà quelques secondes au
 // compteur quand l'interface la découvre.
 let _scnReprise=false;
+const REPLIQUE_FRAICHE=8;
 function marquerScenarioRepris(){ _scnReprise=true; }
 function majInterfaceScenario(){
   if(!G.mission||!G.scn) return;
-  if(G.scn!==_scnRef){
-    // Nouvelle mission, ou partie reprise (voir marquerScenarioRepris).
-    _scnRef=G.scn; _scnVu=-1; _fileRepliques=[]; _repliqueFin=0;
+  if(G.scn.inst!==_scnInst){
+    // Nouvelle mission, partie reprise (voir marquerScenarioRepris), ou
+    // invité qui rejoint en cours de route.
+    _scnInst=G.scn.inst; _scnVu=-1; _fileRepliques=[]; _repliqueFin=0;
     // Sur un téléphone, le panneau ouvert couvrirait un quart de la carte au
     // moment où le joueur la découvre : il démarre replié, la barre du haut
     // tient le compte (refreshConquestBar) et le bouton 📜 le rouvre.
     _objOuvert=!(typeof matchMedia==='function'&&matchMedia('(max-width:600px)').matches);
-    _dlgLu=_scnReprise?G.scn.dlg.length:0;
+    // Une sauvegarde reprise ne rejoue rien ; sinon, seules les répliques de
+    // moins de REPLIQUE_FRAICHE secondes sont dites — un invité qui rejoint
+    // (ou recharge sa page) à la 20e minute n'a pas à subir tout le récit
+    // d'un coup, mais celui qui arrive au lancement entend l'introduction.
+    _dlgLu=0;
+    if(_scnReprise) _dlgLu=G.scn.dlg.length;
+    else while(_dlgLu<G.scn.dlg.length&&G.scn.dlg[_dlgLu].t<G.gameTime-REPLIQUE_FRAICHE) _dlgLu++;
     _scnReprise=false;
     const b=document.getElementById('zobjectifs'); if(b) b.style.display='';
   }

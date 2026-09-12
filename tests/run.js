@@ -5424,6 +5424,145 @@ groupe('campagne', () => {
     ok(j.PROFILE.campagne.fr1, 'la victoire de Herstal n\'est pas inscrite au profil');
   });
 
+  // ══ À DEUX (lot L3) ══════════════════════════════
+  // Une vraie paire : l'hôte lance la mission, l'invité démarre par
+  // demarrerPartieClient — le chemin exact du jeu, qui ne passe jamais par
+  // startGame — et ne reçoit que ce que l'hôte envoie par son transport.
+  const paireMission = (cle = 'fr1', civInvite = null) => {
+    const hote = charger();
+    hote.RESEAU.actif = true; hote.RESEAU.role = 'hote';
+    hote.RESEAU.adversaire = { id: hote.FAC.P2, nom: 'Invité', civ: civInvite };
+    hote.RESEAU.tick = 0;
+    mission(hote, cle);
+    const file = [];
+    hote.RESEAU.envoi = (m) => { file.push(JSON.parse(JSON.stringify(m))); return true; };
+    const salut = JSON.parse(JSON.stringify(hote.construireSalut()));
+    const brancher = () => {
+      const c = charger();
+      c.pickDifficulty('normal');
+      c.demarrerPartieClient(JSON.parse(JSON.stringify(salut)));
+      c.RESEAU.envoi = () => true;
+      c.recevoirReseau(JSON.parse(JSON.stringify(hote.construireSnap())));
+      return c;
+    };
+    const client = brancher();
+    hote.RESEAU.pret = true;
+    const livrer = () => { while (file.length) client.recevoirReseau(file.shift()); };
+    const tour = (sec) => {
+      for (let k = 0; k < sec * 30; k++) {
+        hote.update(hote.SIM_DT); hote.pousserReseau(hote.SIM_DT);
+        livrer(); client.updateVisuel(client.SIM_DT);
+      }
+    };
+    return { hote, client, salut, livrer, tour, brancher };
+  };
+
+  test("à deux : le SALUT porte la mission, et l'invité regénère la MÊME carte, surcouche comprise", () => {
+    const { hote, client, salut } = paireMission();
+    egal(salut.mission, 'fr1', 'le SALUT ne dit pas quelle mission regénérer');
+    egal(hote.PROTO_VERSION, 8, 'la mission change le monde regénéré : PROTO_VERSION doit passer à 8');
+    egal(client.G.mission, 'fr1', "l'invité ne sait pas qu'il joue une mission");
+    egalJSON(empreinteCarte(client), empreinteCarte(hote), "la carte de l'invité n'est pas celle de l'hôte");
+  });
+
+  test("à deux : le second commandant est l'ami — sa base, ses unités, la civilisation de SON rôle", () => {
+    const { hote, client } = paireMission('fr1', 'mongols');
+    const p2 = hote.G.factions.p2;
+    egal(p2.genre, 'humain', 'le second commandant n\'est pas tenu par l\'invité');
+    egal(p2.equipe, hote.G.factions.p1.equipe, "l'invité n'est pas l'allié de l'hôte");
+    egal(p2.civ, 'francs', "l'invité garde sa civilisation de salon au lieu de celle de son rôle");
+    egal(hote.G.units.filter((u) => u.owner === 'p2' && u.type === hote.UT.KNIGHT).length, 5, 'les cavaliers de Roland ne sont pas à l\'invité');
+    egal(client.G.factions.p2.civ, 'francs', "chez l'invité, sa propre civilisation n'est pas celle du rôle");
+    ok(client.SCN_API.coop() && hote.SCN_API.coop(), 'la mission ne se sait pas jouée à deux');
+  });
+
+  test("à deux : l'état de mission voyage, et la réplique adressée au second commandant n'est dite qu'à lui", () => {
+    const { hote, client, tour } = paireMission();
+    tour(20);
+    egalJSON(client.G.scn.dlg.map((d) => d.k), hote.G.scn.dlg.map((d) => d.k), 'journal des répliques');
+    ok(hote.G.scn.dlg.some((d) => d.k === 'roland' && d.d === 'p2'), 'la réplique de Roland n\'a pas été adressée à p2');
+    egal(client.destinataireLocal('p2'), true, "l'invité n'entend pas ce qui est dit à son rôle");
+    egal(hote.destinataireLocal('p2'), false, "l'hôte entend ce qui est dit au rôle de son allié");
+    egalJSON(client.G.scn.obj, hote.G.scn.obj, 'état des objectifs');
+    client.majInterfaceScenario();
+    ok(/fermes/.test(client.__sandbox.document.getElementById('objpanel').innerHTML), "le panneau d'objectifs de l'invité est vide");
+  });
+
+  test("à deux : le delta ne renvoie l'état de mission QUE lorsqu'il change", () => {
+    const { hote, tour } = paireMission();
+    tour(3);
+    hote.construireDelta();
+    egal(hote.construireDelta().scn, undefined, "l'état de mission repart à chaque delta, changé ou non");
+    hote.SCN_API.dire('intro');
+    ok(hote.construireDelta().scn, "un changement de l'état de mission n'est pas parti");
+  });
+
+  test("à deux : l'issue tranchée par l'hôte arrive chez l'invité, qui l'inscrit à SON profil", () => {
+    const { hote, client, tour } = paireMission();
+    client.PROFILE.campagne = {};
+    tour(2);
+    const tc = hote.G.buildings.find((b) => b.owner === 'p1' && b.type === hote.BT.TC);
+    for (let i = 0; i < 6; i++) { const p = caseLibre(hote, tc.tx + 6, tc.ty, 2, 2); batir(hote, hote.BT.FARM, p.tx, p.ty, 'p1'); }
+    hote.G.factions.p1.age = 1;
+    for (const e of [...hote.G.units, ...hote.G.buildings]) if (e.tag === 'camp_nord' || e.tag === 'camp_est') e.hp = 0;
+    tour(3);
+    egal(hote.G.victory, true, "l'hôte n'a pas gagné la mission");
+    egal(client.G.victory, true, "l'invité n'a jamais vu la victoire de la mission");
+    ok(client.PROFILE.campagne.fr1, "la victoire n'est pas inscrite au profil de l'invité");
+    egal(client.PROFILE.campagne.fr1.etoiles, hote.G.scn.etoiles, "l'invité n'a pas les mêmes étoiles que l'hôte");
+  });
+
+  test("rejoindre en cours de route : l'invité reçoit tout l'état, sans subir tout le récit d'un coup", () => {
+    const { hote, tour, brancher } = paireMission();
+    tour(40);
+    const tard = brancher();
+    egal(tard.G.scn.dlg.length, hote.G.scn.dlg.length, "le SNAP n'emporte pas le journal");
+    tard.majInterfaceScenario();
+    egal(tard.__sandbox.document.getElementById('dlgbandeau').style.display === 'flex', false,
+      'un invité qui rejoint à la 40e seconde se voit rejouer des répliques anciennes');
+  });
+
+  test('en coop, les renforts ADVERSES grossissent de coopMult — pas les alliés', () => {
+    const { hote } = paireMission();
+    egal(hote.SCN_API.vague('pill', [[hote.UT.ENEMI, 10]], 'bord_est').length, 13, 'vague adverse à deux (×1,3)');
+    egal(hote.SCN_API.renfort('p1', [[hote.UT.KNIGHT, 10]], 'bord_est').length, 10, 'renfort allié à deux');
+    const solo = mission(charger(), 'fr1');
+    egal(solo.SCN_API.vague('pill', [[solo.UT.ENEMI, 10]], 'bord_est').length, 10, 'vague adverse en solo');
+  });
+
+  test("un état de mission tordu ne fait pas tomber la page de l'invité", () => {
+    const { client } = paireMission();
+    const avant = JSON.stringify(client.G.scn);
+    client.appliquerScenario({ obj: 'x' });
+    client.appliquerScenario({ obj: {}, dlg: 'pas une liste' });
+    client.appliquerDelta({ t: 'D', scn: 42 });
+    egal(JSON.stringify(client.G.scn), avant, 'un état tordu a été appliqué');
+  });
+
+  test("salon : ouvert depuis le briefing, il est coopératif et n'arme la mission qu'au LANCEMENT", () => {
+    const j = charger();
+    j.mpOuvrir({ mission: 'fr1' });
+    egal(j.lire('missionSalon'), 'fr1', 'le salon ne retient pas la mission');
+    egal(j.lire('missionChoisie'), null, "la mission est armée dès l'ouverture : « Commencer la partie » la lancerait");
+    egal(j.mpEstCoop(), true, "un salon de mission n'est pas coopératif");
+    j.mpOuvrir();
+    egal(j.lire('missionSalon'), null, "le salon ordinaire garde la mission d'avant");
+  });
+
+  test("salon rejoint : l'invité apprend la mission et son rôle, et le sélecteur de civilisation — sans effet — disparaît", () => {
+    const j = charger();
+    const row = j.__sandbox.document.getElementById('mpcivrow');
+    const chat = j.__sandbox.document.getElementById('mpchat');
+    j.recevoirReseau({ t: 'MISSION_SALON', mission: 'fr1' });
+    egal(row.style.display, 'none', "le choix de civilisation reste proposé alors que le rôle l'impose");
+    const txt = chat.children.map((c) => c.textContent).join(' | ');
+    ok(/Terres de Herstal/.test(txt) && /Roland/.test(txt), "l'invité n'apprend ni la mission ni son rôle : " + txt);
+    j.recevoirReseau({ t: 'MISSION_SALON', mission: '<img src=x>' });
+    ok(/ne connaît pas/.test(chat.children[chat.children.length - 1].textContent), 'une clé de mission inconnue ne prévient pas');
+    j.mpOuvrir();
+    egal(row.style.display, '', 'un salon ordinaire rouvert garde le sélecteur masqué');
+  });
+
   test('format : chaque mission et chaque campagne est bien formée', () => {
     const j = charger();
     const clesFac = new Set(['p1', 'p2', 'ia', 'ia2', 'pill']);

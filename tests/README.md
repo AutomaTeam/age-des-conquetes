@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**277 tests, 18 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**285 tests, 18 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -131,7 +131,16 @@ qui **ne se voit pas** :
   de route ne subit pas tout le récit d'un coup, et que les vagues adverses
   grossissent de `coopMult` — pas les renforts alliés. Deux de ces tests ont
   été passés à la contre-épreuve (mission retirée du SALUT, `d.scn` retiré du
-  delta) : ils tombent, ils mordent.
+  delta) : ils tombent, ils mordent. RÈGLES ET RÔLES D'IA (lot L4) : une
+  règle de mission (âge maximum, bâtiment, unité ou recherche interdits,
+  pas de Merveille) est refusée par `applyCommand` — ordre forgé de
+  l'invité compris — et l'interface grise EXACTEMENT les mêmes boutons,
+  parce que les deux lisent la même fonction, `regleMission`. Le bouchon DOM
+  n'agrégeant pas le `innerHTML` des enfants, ces tests lisent les boutons
+  un par un. Côté IA : un rival passif ne lance aucun assaut, armée prête et
+  minuteur à zéro, jusqu'à ce que la mission le relance ; un assaut peut
+  viser une zone ; `ageMax`, `heros:false`, `merveille:false` tiennent ; la
+  barre du haut ne promet pas l'assaut d'un rival qui n'attaquera pas.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

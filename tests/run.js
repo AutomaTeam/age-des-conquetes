@@ -5563,6 +5563,131 @@ groupe('campagne', () => {
     egal(row.style.display, '', 'un salon ordinaire rouvert garde le sélecteur masqué');
   });
 
+  // ══ RÈGLES DE MISSION ET RÔLES D'IA (lot L4) ════════════════
+  const avecRegles = (j) => variante(j, 'essai_regles', (v) => {
+    v.regles = { ageMax: 1, interdits: [j.BT.STABLE, j.UT.PIKE], recherchesInterdites: ['iron_armor'], merveille: false };
+  });
+
+  test("règles : âge, bâtiment, unité et recherche interdits sont REFUSÉS par l'hôte, avec leur raison", () => {
+    const j = mission(avecRegles(charger()), 'essai_regles');
+    riche(j, 'p1');
+    const f = j.G.factions.p1;
+    egal(f.age, 1, 'âge de départ du rôle');
+    const age = ordreDe(j, 'p1', j.ORD.AGE);
+    egal(age.raison, 'mission', "la montée au-delà de l'âge maximum de la mission passe");
+    ok(/Âge maximum/.test(age.msg), 'le refus ne dit pas pourquoi : ' + age.msg);
+    const p = caseLibre(j, 40, 60, 2, 2);
+    egal(ordreDe(j, 'p1', j.ORD.BATIR, { type: j.BT.STABLE, tx: p.tx, ty: p.ty }).raison, 'mission', "l'Écurie interdite se bâtit");
+    const cas = batir(j, j.BT.BARRACKS, p.tx, p.ty, 'p1');
+    egal(ordreDe(j, 'p1', j.ORD.FORMER, { bId: cas.id, unitType: j.UT.PIKE }).raison, 'mission', 'le Piquier interdit se forme');
+    ok(ordreDe(j, 'p1', j.ORD.FORMER, { bId: cas.id, unitType: j.UT.MIL }).ok, 'une unité AUTORISÉE est refusée elle aussi');
+    const q = caseLibre(j, 50, 60, 2, 2);
+    batir(j, j.BT.FORGE, q.tx, q.ty, 'p1');
+    egal(ordreDe(j, 'p1', j.ORD.RECHERCHE, { cle: 'iron_armor' }).raison, 'mission', 'la recherche interdite se lance');
+    f.age = 3;
+    const w = caseLibre(j, 30, 30, 3, 3);
+    egal(ordreDe(j, 'p1', j.ORD.BATIR, { type: j.BT.WONDER, tx: w.tx, ty: w.ty }).raison, 'mission', 'la Merveille se bâtit malgré merveille:false');
+  });
+
+  test("règles : un ordre FORGÉ de l'invité est refusé tout pareil", () => {
+    const { hote } = paireMission('fr1');
+    hote.MISSIONS.fr1.regles = { interdits: [hote.BT.STABLE] };
+    riche(hote, 'p2');
+    const p = caseLibre(hote, 50, 40, 2, 2);
+    const r = hote.applyCommand({ t: hote.ORD.BATIR, f: 'p2', type: hote.BT.STABLE, tx: p.tx, ty: p.ty });
+    delete hote.MISSIONS.fr1.regles;
+    egal(r.raison, 'mission', "l'invité contourne une règle de mission en forgeant l'ordre");
+  });
+
+  // Le bouchon DOM n'agrège pas le innerHTML des enfants : on lit bouton par bouton.
+  const bouton = (bar, nom) => bar.children.find((c) => (c.innerHTML || '').includes(nom));
+  test("règles : l'interface grise EXACTEMENT ce que l'hôte refuse, avec la même raison", () => {
+    const j = mission(avecRegles(charger()), 'essai_regles');
+    const bar = j.__sandbox.document.createElement('div');
+    const vil = j.G.units.find((u) => u.owner === 'p1' && u.type === j.UT.VIL);
+    j.G.buildTab = 1; // onglet Militaire : l'Écurie y est
+    j.drawUnitAct(bar, vil);
+    const ecurie = bouton(bar, 'Écurie');
+    ok(ecurie && /Interdit dans cette mission/.test(ecurie.innerHTML) && /locked/.test(ecurie.className),
+      "le menu de construction propose l'Écurie interdite");
+    const p = caseLibre(j, 40, 60, 2, 2);
+    const cas = batir(j, j.BT.BARRACKS, p.tx, p.ty, 'p1');
+    const bar2 = j.__sandbox.document.createElement('div');
+    j.drawBuildAct(bar2, cas);
+    const piq = bouton(bar2, 'Piquier'), mil = bouton(bar2, 'Milicien');
+    ok(piq && /Interdit dans cette mission/.test(piq.innerHTML) && /locked/.test(piq.className), 'la Caserne propose le Piquier interdit');
+    ok(mil && !/🚫/.test(mil.innerHTML) && !/locked/.test(mil.className), 'une unité autorisée apparaît interdite');
+    j.updateAgeBar();
+    ok(/maxage/.test(j.__sandbox.document.getElementById('agebtn').className || ''), "la barre d'âge promet l'âge suivant malgré ageMax");
+  });
+
+  const iaAvecArmee = (j, n) => {
+    const a = j.G.factions.ia;
+    for (let i = 0; i < n; i++) {
+      const u = j.mkUnit(j.UT.ENEMI, a.baseX + (i % 5) * 20, a.baseY + 60 + ((i / 5) | 0) * 20, a.id);
+      j.G.units.push(u);
+    }
+    j.rebuildIndex();
+    return a;
+  };
+  const armeeDe = (j, a) => j.G.units.filter((u) => u.owner === a.id && u.type !== j.UT.VIL && u.type !== j.UT.MONK);
+
+  test("rôle passif : armée prête et minuteur à zéro, aucun assaut — jusqu'à ce que la mission le lance", () => {
+    const j = mission(charger());
+    const a = iaAvecArmee(j, 14);
+    j.SCN_API.ia('ia', { role: 'passif' });
+    a.atkTimer = 0; a.atkMin = 4;
+    for (let k = 0; k < 20; k++) j.majPhaseAssaut(0.5, a, armeeDe(j, a));
+    ok(a.phase !== 'rassemble' && a.phase !== 'assaut', 'le rival passif a lancé un assaut');
+    j.SCN_API.ia('ia', { role: 'normal', lancer: true });
+    j.majPhaseAssaut(0.5, a, armeeDe(j, a));
+    egal(a.phase, 'rassemble', "relancé par la mission, le rival ne se met pas en marche");
+  });
+
+  test("rôle cible : l'assaut se rallie vers la zone désignée par la mission", () => {
+    const j = mission(charger());
+    const a = iaAvecArmee(j, 14);
+    j.SCN_API.ia('ia', { cible: 'camp', lancer: true });
+    a.atkMin = 4;
+    j.majPhaseAssaut(0.5, a, armeeDe(j, a));
+    const zn = j.zoneMission('camp');
+    egal(a.phase, 'rassemble', "l'assaut n'est pas parti");
+    ok(Math.hypot(a.cibleX - zn.x, a.cibleY - zn.y) < 1, "l'assaut vise autre chose que la zone de la mission");
+  });
+
+  test("consignes d'IA : pas au-delà de son âge maximum, ni Héros ni Merveille si la mission l'interdit", () => {
+    const j = mission(charger());
+    const a = j.G.factions.ia;
+    j.SCN_API.ia('ia', { ageMax: 1, heros: false, merveille: false });
+    Object.assign(a.res, { food: 99999, wood: 99999, stone: 99999, gold: 99999 });
+    a.vilTarget = 1;
+    const p = caseLibre(j, Math.round(a.baseX / j.BASE_TILE) + 6, Math.round(a.baseY / j.BASE_TILE), 3, 3);
+    batir(j, j.BT.CASTLE, p.tx, p.ty, 'ia');
+    for (let k = 0; k < 400; k++) { a.think = 0; j.updateUneIA(0.5, a); if (a.ageQ) { a.ageQ.timer = 0; } }
+    ok(a.age <= 1, `l'IA a dépassé son âge maximum (âge ${a.age})`);
+    egal(a.heroTrained, false, "l'IA a formé un Héros malgré heros:false");
+    egal(j.G.buildings.some((b) => b.owner === 'ia' && b.type === j.BT.WONDER), false, "l'IA bâtit une Merveille malgré merveille:false");
+  });
+
+  test("la barre du haut ne promet pas d'assaut d'un rival qui n'attaquera pas", () => {
+    const j = mission(charger());
+    j.SCN_API.ia('ia', { role: 'passif' });
+    const a = iaAvecArmee(j, 14);
+    a.atkTimer = 0; a.atkMin = 4;
+    j.refreshConquestBar();
+    const txt = j.__sandbox.document.getElementById('wb-conquest').innerHTML;
+    ok(!/assaut/.test(txt), 'la barre annonce un assaut : ' + txt);
+    ok(/attend son heure/.test(txt), 'la barre ne dit pas que le rival attend : ' + txt);
+  });
+
+  test("second commandant confié à l'IA : un allié, pas un second rival", () => {
+    const j = variante(charger(), 'essai_ia2', (v) => { v.roles.p2 = Object.assign({}, v.roles.p2, { solo: 'ia' }); });
+    mission(j, 'essai_ia2');
+    const p2 = j.G.factions.p2;
+    egal(p2.role, 'allie', "l'IA du second commandant n'a pas le rôle d'allié");
+    ok(j.aiTune(p2).atkEvery > j.aiTune(j.G.factions.ia).atkEvery, "l'allié attaque aussi souvent qu'un rival");
+  });
+
   test('format : chaque mission et chaque campagne est bien formée', () => {
     const j = charger();
     const clesFac = new Set(['p1', 'p2', 'ia', 'ia2', 'pill']);

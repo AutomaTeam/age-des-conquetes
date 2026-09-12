@@ -1054,6 +1054,7 @@ function confirmBuild(tx,ty){
     // toutes les deux comme « Âge des Châteaux ».
     if(r.raison==='age'){ notify(`🔒 Nécessite ${AGES[r.reqAge!=null?r.reqAge:2].nom}`,'#e74c3c'); exitBuild(); }
     else if(r.raison==='ressources'){ notify('Ressources insuffisantes !','#e74c3c'); flashResources(scaleCost(d.cost)); }
+    else if(r.raison==='mission'){ notify('🚫 '+(r.msg||'Interdit dans cette mission'),'#e67e22'); exitBuild(); }
     else notify('Placement impossible !','#e74c3c');
     return;
   }

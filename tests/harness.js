@@ -109,6 +109,7 @@ const EXPORTS = [
   'majInterfaceScenario',
   'pousserReseau', 'demarrerPartieClient', 'appliquerScenario', 'destinataireLocal',
   'mpOuvrir', 'mpEstCoop',
+  'drawUnitAct', 'drawBuildAct', 'updateAgeBar', 'refreshConquestBar', 'regleMission',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

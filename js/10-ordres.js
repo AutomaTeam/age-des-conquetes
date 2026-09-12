@@ -270,6 +270,9 @@ function applyCommand(cmd){
     // l'élimination (voir update(), "une faction sans Centre Ville est hors
     // jeu") rendue impossible puisqu'il en restait toujours un.
     if(cmd.type===BT.TC) return KO('invalide');
+    // Règles de la mission en cours (voir regleMission, js/15-campagne.js) :
+    // la raison voyage avec le refus, l'interface l'affiche telle quelle.
+    { const ban=regleMission('batir',cmd.type,cmd.f); if(ban) return KO('mission',{msg:ban}); }
     // L'âge requis VOYAGE avec le refus : deux exigences différentes se
     // cachent derrière le même motif, et l'appelant annonçait « Âge des
     // Châteaux » pour les deux — faux pour la Merveille, qui demande
@@ -304,6 +307,7 @@ function applyCommand(cmd){
     if(offre.age!=null&&f.age<offre.age) return KO('age');
     if(offre.rech&&!f.research[offre.rech]) return KO('invalide');
     if(offre.civ&&f.civ!==offre.civ) return KO('civilisation');   // unite unique d'une AUTRE civilisation
+    { const ban=regleMission('former',cmd.unitType,cmd.f); if(ban) return KO('mission',{msg:ban}); }
     // Héros : un seul par partie, même mort — pas de remplaçant (voir HEROES).
     if(cmd.unitType===UT.HERO){
       if(f.heroTrained||b.trainQ.includes(UT.HERO)) return KO('deja');
@@ -357,6 +361,7 @@ function applyCommand(cmd){
     if(r.cat==='eco'){ if(!possedeBatiment(cmd.f,BT.MILL)) return KO('cible'); }
     else if(!possedeBatiment(cmd.f, r.cat==='univ'?BT.UNIV:BT.FORGE)) return KO('cible');
     if(r.civ&&f.civ!==r.civ) return KO('civilisation');   // recherche exclusive d'une AUTRE civilisation
+    { const ban=regleMission('recherche',cmd.cle,cmd.f); if(ban) return KO('mission',{msg:ban}); }
     if(r.age!=null&&f.age<r.age) return KO('age');
     if(f.research[cmd.cle]) return KO('deja');
     if(f.researchQ.some(x=>x.type===cmd.cle)) return KO('deja');
@@ -368,6 +373,7 @@ function applyCommand(cmd){
 
   case ORD.AGE: {
     if(f.age>=AGES.length-1) return KO('max');
+    { const ban=regleMission('age',null,cmd.f); if(ban) return KO('mission',{msg:ban}); }
     if(f.ageUpQ) return KO('deja');
     if(!G.buildings.find(b=>b.type===BT.TC&&b.owner===cmd.f)) return KO('tc');
     const next=AGES[f.age+1];
@@ -603,6 +609,7 @@ function trainUnit(b,type){
       }
     }
     else if(r.raison==='deja') notify('Déjà formé cette partie !','#e67e22');
+    else if(r.raison==='mission') notify('🚫 '+(r.msg||'Interdit dans cette mission'),'#e67e22');
     return;
   }
   notify(`Formation de ${r.nom}…`,'#3498db'); buzz(8);

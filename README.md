@@ -53,7 +53,7 @@ préservent.
 node tests/run.js
 ```
 
-314 tests, 18 groupes, ~80 s, sans dépendance ni build — comme le jeu. Ils
+318 tests, 18 groupes, ~85 s, sans dépendance ni build — comme le jeu. Ils
 couvrent ce qui ne se voit pas à l'écran : la sérialisation réseau
 (instantané **et** delta), le déterminisme de la carte, la validation des
 ordres côté hôte, l'économie, les montees d'âge, la fin de partie, le fait
@@ -74,7 +74,7 @@ quoi.
 |---|---|---|
 | 🎮 **Solo** | Survie · Conquête · 2 rivaux | ⚔️ *Commencer la partie* |
 | 👥 **Multijoueur** | Conquête · 2 rivaux · 2v1 Coop | 👥 *Jouer avec un ami* |
-| 📜 **Campagne** | les campagnes qui ont des missions — Francs : de Herstal (768) à la couronne d'Occident (800) ; Byzantins : de Dara (530) à Mélantias (559) ; Mongols : de Temüjin (1184) au Bout du Monde (1227) ; Chinois : de l'Art de la Guerre (512 av. J.-C.) à Kuaiji (494 av. J.-C.) — six missions chacune | ⚔️ *Jouer seul* ou 👥 *Jouer avec un ami*, sur le briefing de la mission |
+| 📜 **Campagne** | les campagnes qui ont des missions — Francs : de Herstal (768) à la couronne d'Occident (800) ; Byzantins : de Dara (530) à Mélantias (559) ; Mongols : de Temüjin (1184) au Bout du Monde (1227) ; Chinois : de l'Art de la Guerre (512 av. J.-C.) à Kuaiji (494 av. J.-C.) ; Gitanos : de la Caravane (1425) au Grand Rassemblement (1480) — six missions chacune | ⚔️ *Jouer seul* ou 👥 *Jouer avec un ami*, sur le briefing de la mission |
 
 Une mission impose sa carte, sa graine et les civilisations ; seule la
 difficulté se choisit, sur son briefing. Les missions s'ouvrent l'une après

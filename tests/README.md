@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**314 tests, 18 groupes, ~80 s.** Les groupes `ia` et `delta` comptent pour
+**318 tests, 18 groupes, ~85 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -185,6 +185,11 @@ qui **ne se voit pas** :
   M.coupe dit qu'une muraille est fermée, et un portail ouvert la rouvre ;
   seul l'or des caravanes compte au commerce (`tradeGold`), pas celui des
   mines.
+  CAMPAGNE DES GITANOS (lot L9) : le décret se rachète par la Diplomatie (le
+  tribut est prélevé, la mission gagnée) ; le péage barre VRAIMENT le col
+  (M.coupe : aucun chemin vers le sud tant que la palissade tient, une
+  brèche le rouvre) ; une route commerciale jusqu'au Marché bâti dans une
+  ville la rallie, et ses bâtiments passent à la compagnie.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

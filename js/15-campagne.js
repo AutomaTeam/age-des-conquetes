@@ -902,6 +902,19 @@ const SCN_API = {
     }
     return true;
   },
+  // Une route commerciale du camp du joueur aboutit-elle à un Marché de la
+  // zone (à l'une ou l'autre de ses extrémités) ? Une ville se rallie ainsi
+  // par le commerce.
+  routeVers(zone){
+    const zn=zoneMission(zone); if(!zn) return false;
+    const ids=campJoueur();
+    for(const b of G.buildings){
+      if(b.type!==BT.MARKET||!ids.has(b.owner)||!b.tradeRoute||b.hp<=0) continue;
+      const to=bldById(b.tradeRoute.toId); if(!to) continue;
+      if(dansZoneMonde(zn,b.x,b.y)||dansZoneMonde(zn,to.x,to.y)) return true;
+    }
+    return false;
+  },
   // Combien d'entités vivantes de cette étiquette dans la zone (pour un compteur).
   tagCompteZone(tag,zone){
     const zn=zoneMission(zone); if(!zn) return 0;

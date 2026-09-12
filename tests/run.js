@@ -5992,6 +5992,90 @@ groupe('campagne', () => {
     ok(j.G.units.filter((u) => u.tag === 'veterans' && u.owner === 'p1').length >= 10, 'les vétérans ne sortent pas des bois');
   });
 
+  // ══ CAMPAGNE DES MONGOLS (lot L7) ══════════════════════════
+  test("Temüjin : sans Centre Ville au départ, le campement est dressé à l'arrivée de Temüjin — et le clan devient éliminable", () => {
+    const j = mission(charger(), 'mo1');
+    egal(j.G.buildings.filter((b) => b.owner === 'p1' && b.type === j.BT.TC).length, 0, 'le clan a déjà un Centre Ville');
+    ok(j.G.factions.p1.sansElimination, "le clan sans Centre Ville n'est pas dispensé d'élimination");
+    const t = j.G.units.find((u) => u.tag === 'temujin'), onon = j.zoneMission('onon');
+    t.x = onon.x; t.y = onon.y;
+    jusquA(j, 1);
+    ok(j.SCN_API.bati(j.BT.TC, 'onon'), "le campement n'est pas dressé au bord de l'Onon");
+    egal(j.G.factions.p1.sansElimination, false, 'le clan qui a un foyer ne peut toujours pas le perdre');
+    egal(j.G.scn.obj.campement, 'fait', "l'objectif du campement ne se coche pas");
+  });
+
+  test("Union des Clans : Toghrul traite contre son tribut (prélevé), puis marche sur les Naimans", () => {
+    const j = mission(charger(), 'mo2');
+    const p1 = j.G.factions.p1;
+    p1.res.food = 100; p1.res.gold = 50;
+    const refus = j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia2', action: 'proposer' });
+    egal(refus.raison, 'refuse', 'Toghrul traite sans tribut');
+    ok(/400/.test(refus.msg || '') && /200/.test(refus.msg || ''), 'le refus ne dit pas le tribut : ' + refus.msg);
+    egal(j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia', action: 'proposer' }).raison, 'mission', 'les Naimans traitent : la mission n\'a plus d\'adversaire');
+    p1.res.food = 450; p1.res.gold = 250;
+    ok(j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia2', action: 'proposer' }).ok, 'le tribut payé ne suffit pas');
+    egal(p1.res.food, 50, 'la nourriture du tribut n\'est pas prélevée');
+    egal(p1.res.gold, 50, 'l\'or du tribut n\'est pas prélevé');
+    jusquA(j, 1);
+    egal(j.G.scn.obj.kereits, 'fait', "l'alliance ne remplit pas son objectif");
+    const k = j.G.factions.ia2;
+    egal(k.role, 'normal', 'les Kereits alliés restent passifs');
+    egal(k.cible, 'naiman', "les Kereits alliés ne visent pas les Naimans");
+  });
+
+  test("Raid sur les Xia : pas d'Atelier de Siège — et chaque grenier tombé paie son butin, une seule fois", () => {
+    const j = mission(charger(), 'mo3');
+    ok(j.regleMission('batir', j.BT.SIEGE, 'p1'), "l'Atelier de Siège est permis dans un raid de cavaliers");
+    jusquA(j, 1);
+    const f = j.G.factions.p1, avant = { food: f.res.food, gold: f.res.gold };
+    const g = j.G.buildings.filter((b) => b.tag === 'greniers');
+    g[0].hp = 0; g[1].hp = 0;
+    jusquA(j, 2);
+    egal(f.res.food - avant.food, 240, 'le butin de deux greniers (nourriture)');
+    egal(f.res.gold - avant.gold, 120, 'le butin de deux greniers (or)');
+    jusquA(j, 2);
+    egal(f.res.gold - avant.gold, 120, 'le butin est payé plusieurs fois');
+    egalJSON(j.G.scn.prog.pillage, [2, 6], "l'avancement du pillage");
+  });
+
+  test("La Kalka : la provocation lâche les princes, qui POURSUIVENT l'avant-garde — et le piège se referme dans la plaine", () => {
+    const j = mission(charger(), 'mo4');
+    const rus = j.G.units.filter((u) => u.tag === 'rus');
+    const av = j.zoneMission('avantposte'), kalka = j.zoneMission('kalka');
+    const cav = j.G.units.filter((u) => u.owner === 'p1' && u.type === j.UT.CAVARC);
+    cav[0].x = av.x; cav[0].y = av.y;
+    jusquA(j, 1);
+    ok(j.SCN_API.tire('provocation'), 'la provocation ne se déclenche pas');
+    cav[0].x = kalka.x + 200; cav[0].y = kalka.y;   // l'avant-garde a reculé
+    jusquA(j, 3);
+    // Chaque prince prend pour poste le cavalier le plus proche de LUI.
+    const proies = j.G.units.filter((u) => u.owner === 'p1' && u.hp > 0);
+    const poursuivants = rus.filter((u) => u.hp > 0 && u.camp != null && proies.some((p) => Math.hypot(u.campX - p.x, u.campY - p.y) < 3 * j.BASE_TILE));
+    ok(poursuivants.length >= rus.length * 0.8, `les princes ne poursuivent pas l'avant-garde (${poursuivants.length}/${rus.length})`);
+    rus.slice(0, 6).forEach((u, i) => { u.x = kalka.x + i * 10; u.y = kalka.y; });
+    const avantP1 = j.G.units.filter((u) => u.owner === 'p1').length;
+    jusquA(j, 1);
+    ok(j.SCN_API.tire('embuscade'), "le piège ne se referme pas quand l'armée est dans la plaine");
+    ok(j.G.units.filter((u) => u.owner === 'p1').length >= avantP1 + 20, "l'armée de Subötei ne sort pas des bois");
+  });
+
+  test("Samarcande : les Kanglis changent de camp aux faubourgs — sans fausser la population de personne", () => {
+    const j = mission(charger(), 'mo5');
+    const k = j.G.units.filter((u) => u.tag === 'kanglis');
+    ok(k.length >= 9 && k.every((u) => u.owner === 'ia' && u.horsArmee), 'la garnison kangli manque, ou sert dans l\'armée du Shah');
+    const fb = j.zoneMission('faubourg');
+    const cav = j.G.units.filter((u) => u.owner === 'p1' && u.type === j.UT.KNIGHT).slice(0, 6);
+    cav.forEach((u, i) => { u.x = fb.x + (i % 3) * 12; u.y = fb.y + 20 + ((i / 3) | 0) * 12; });
+    const popAvant = j.G.factions.p1.pop;
+    jusquA(j, 1);
+    ok(k.every((u) => u.hp <= 0 || u.owner === 'p1'), 'les Kanglis restent au Shah');
+    ok(k.filter((u) => u.hp > 0).every((u) => !u.horsArmee && u.camp == null), 'un Kangli rallié garde son statut de troupe du Shah');
+    egal(j.G.factions.p1.pop, popAvant + k.filter((u) => u.hp > 0).length, 'la population du joueur ne compte pas les Kanglis ralliés');
+    jusquA(j, 1);
+    egal(j.G.factions.ia.pop, j.G.units.filter((u) => u.owner === 'ia' && !u.horsArmee).length, 'la population du Shah est faussée par la défection');
+  });
+
   test('format : chaque mission et chaque campagne est bien formée', () => {
     const j = charger();
     const clesFac = new Set(['p1', 'p2', 'ia', 'ia2', 'pill']);

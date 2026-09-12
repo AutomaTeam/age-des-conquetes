@@ -51,7 +51,7 @@ Object.assign(CAMPAGNES, {
   francs:    { nom:'Le Marteau et la Couronne', heros:'francs',    ico:'👑', missions:['fr1','fr2','fr3','fr4','fr5','fr6'] },
   byzantins: { nom:'Le Rempart du Monde',       heros:'byzantins', ico:'🛡️', missions:['by1','by2','by3','by4','by5','by6'] },
   chinois:   { nom:'Le Mandat du Ciel',         heros:'chinois',   ico:'📯', missions:[] },
-  mongols:   { nom:'Les Cavaliers de la Steppe', heros:'mongols',  ico:'🏇', missions:[] },
+  mongols:   { nom:'Les Cavaliers de la Steppe', heros:'mongols',  ico:'🏇', missions:['mo1','mo2','mo3','mo4','mo5','mo6'] },
   gitanos:   { nom:'La Route',                  heros:'gitanos',   ico:'🎻', missions:[] },
 });
 
@@ -1311,6 +1311,540 @@ MISSIONS.by6 = {
   },
   etoiles:['victoire', M=>M.fait('piege'), M=>M.fait('feu')],
   victoire:"Zabergan repasse le Danube. Pour la dernière fois, Bélisaire a sauvé la Cité — et la Cité lui a rendu hommage.",
+};
+
+// ══════════════════════════════════════════════════════════
+//  CAMPAGNE DES MONGOLS — « Les Cavaliers de la Steppe »
+// ══════════════════════════════════════════════════════════
+// Temüjin, de l'orphelin traqué des bords de l'Onon au Khan qui meurt en
+// campagne chez les Xia. Mécaniques vedettes : chasse (×2), Cavalier-Archer,
+// raid sans siège, retraite simulée, diplomatie à tribut, deux fronts.
+
+// ── 1. Temüjin ───────────────────────────────────────────
+// Sans Centre Ville (~15 min) : une bande de cavaliers, une famille, deux
+// yourtes. On chasse, on conduit Temüjin jusqu'au site du campement — il y
+// est dressé par la mission (un Centre Ville ne se bâtit pas) —, puis on
+// délivre Börte, enlevée par les Merkits.
+MISSIONS.mo1 = {
+  campagne:'mongols', num:1,
+  titre:'Temüjin', lieu:"Les rives de l'Onon", date:'1184',
+  briefing:[
+    "Son père empoisonné, son clan dispersé, Temüjin a grandi en fuyant. Il n'a plus qu'une poignée de fidèles, deux yourtes — et la steppe.",
+    "Chassez pour nourrir les vôtres, menez Temüjin jusqu'au bord de l'Onon où le campement sera dressé, et ramenez Börte, sa femme, que les Merkits ont enlevée.",
+  ],
+  carte:{ graine:1184031, type:'plaines', taille:'petite', reliques:false },
+  zones:{
+    onon:     { x:0.62, y:0.36, r:0.05 },
+    merkit:   { x:0.84, y:0.78, r:0.05 },
+    chasse_n: { x:0.28, y:0.20, r:0.08 },
+    chasse_s: { x:0.44, y:0.76, r:0.07 },
+    bord_est: { x:0.97, y:0.55, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'mongols', nom:'Temüjin', age:1, res:{food:80,wood:260,stone:60,gold:40},
+         depart:[0.18,0.60], base:'rien',
+         unites:[[UT.VIL,6],[UT.HERO,1,'temujin'],[UT.CAVARC,3],[UT.SCOUT,2]],
+         batiments:[[BT.HOUSE,2,0],[BT.HOUSE,4,1]] },
+    p2:{ civ:'mongols', nom:'Djamuqa', solo:'fusion', age:1, res:{food:50,wood:100,stone:0,gold:0},
+         depart:[0.26,0.86], base:'rien',
+         unites:[[UT.CAVARC,4],[UT.SCOUT,2]] },
+  },
+  factions:{
+    pill:{
+      batiments:[{ type:BT.OUTPOST, zone:'merkit', tag:'merkit' }, { type:BT.OUTPOST, zone:'merkit', tag:'merkit' }],
+      unites:[
+        { type:UT.ENEMI,   n:4, zone:'merkit', tag:'merkit', garde:true },
+        { type:UT.ENEMIA,  n:3, zone:'merkit', tag:'merkit', garde:true },
+        { type:UT.ENEMI_C, n:2, zone:'merkit', tag:'merkit', garde:true },
+      ],
+    },
+  },
+  regles:{ ageMax:1 },
+  surcouche:[
+    // L'Onon, de l'ouest à l'est, au nord du futur campement.
+    { op:'eau', trace:[[0.46,0.24],[0.7,0.28],[1,0.25]], largeur:0.012 },
+    { op:'degager', zone:'onon' }, { op:'degager', zone:'merkit' },
+    { op:'baies', zone:{ x:0.68, y:0.42, r:0.03 }, n:6 },
+    { op:'foret', zone:{ x:0.52, y:0.46, r:0.05 }, n:26 },
+    { op:'gisement', zone:{ x:0.74, y:0.44, r:0.03 }, type:RT.GOLD, n:4, amt:400 },
+    { op:'faune', zone:'chasse_n', type:'deer', n:7 },
+    { op:'faune', zone:'chasse_s', type:'deer', n:5 },
+    { op:'faune', zone:'chasse_s', type:'boar', n:3 },
+  ],
+  objectifs:[
+    { id:'chasse',    txt:'Nourrissez le clan : chassez 8 bêtes', test:M=>M.statsEquipe('wildlifeHunted')>=8,
+      compte:M=>[M.statsEquipe('wildlifeHunted'),8] },
+    { id:'campement', txt:"Menez Temüjin sur la rive de l'Onon : le campement y sera dressé", zone:'onon',
+      test:M=>M.tire('fondation') },
+    { id:'borte',     txt:'Délivrez Börte : abattez le camp des Merkits', zone:'merkit', test:M=>M.detruit('merkit') },
+    { id:'temujin',   txt:'Temüjin doit survivre', echec:M=>M.mort('temujin'),
+      echecTxt:"Temüjin est tombé. La steppe l'oubliera avant l'hiver." },
+    { id:'grande',    txt:'Grande chasse : 14 bêtes', type:'secondaire', test:M=>M.statsEquipe('wildlifeHunted')>=14,
+      compte:M=>[M.statsEquipe('wildlifeHunted'),14] },
+  ],
+  declencheurs:[
+    { id:'intro',   si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'djamuqa', si:M=>M.temps()>=16, alors:M=>M.dire('djamuqa','p2') },
+    // Le campement : dressé par la mission quand Temüjin arrive — et le clan,
+    // qui a désormais un foyer, peut le perdre (M.eliminable).
+    { id:'fondation', si:M=>M.tagDansZone('temujin','onon',1), alors:M=>{
+        M.poser('p1',BT.TC,'onon'); M.eliminable('p1',true); M.dire('fondation');
+      } },
+    { id:'raid1', si:M=>M.temps()>=300, alors:M=>{ M.dire('raid'); M.vague('pill',[[UT.ENEMI_C,2],[UT.ENEMI,2]],'bord_est'); } },
+    { id:'raid2', si:M=>M.temps()>=560, alors:M=>M.vague('pill',[[UT.ENEMI_C,3],[UT.ENEMI,3],[UT.ENEMIA,2]],'bord_est') },
+    { id:'borte_ok', si:M=>M.fait('borte'), alors:M=>{ M.renfort('p1',[[UT.VIL,1,'borte']],'merkit'); M.dire('borte_ok'); } },
+    { id:'chasse_ok', si:M=>M.fait('chasse'), alors:M=>M.dire('chasse_ok') },
+  ],
+  orateurs:{
+    temujin:{ nom:'Temüjin', ico:'🏇' },
+    djamuqa:{ nom:'Djamuqa', ico:'🏹' },
+    hoelun: { nom:'Hoelun, sa mère', ico:'🔥' },
+    borte:  { nom:'Börte', ico:'🌙' },
+  },
+  dialogues:{
+    intro:[
+      ['hoelun',"Nous n'avons plus de troupeaux, mon fils. Il faudra vivre de ce que la steppe donne : le cerf, le sanglier, la baie."],
+      ['temujin',"Alors nous chasserons — les cavaliers abattent le gibier, un Moulin près des yourtes recevra la viande. Et nous dresserons le camp au bord de l'Onon."],
+    ],
+    djamuqa:[['djamuqa',"Mon anda ! Mes cavaliers sont avec toi. Les Merkits tiennent Börte au sud-est : dis un mot, et nous y allons."]],
+    fondation:[['hoelun',"Les yourtes sont dressées au bord de l'eau. Nous avons un foyer, à nouveau — il faudra le défendre."]],
+    raid:[['djamuqa',"Des cavaliers merkits rôdent autour du camp ! Ils cherchent nos bêtes et nos gens."]],
+    borte_ok:[['borte',"Temüjin ! Je savais que tu viendrais."]],
+    chasse_ok:[['hoelun',"Assez de viande séchée pour l'hiver. Personne n'aura faim."]],
+  },
+  etoiles:['victoire', M=>M.fait('grande'), M=>M.temps()<14*60],
+  victoire:"Börte est revenue, le camp est dressé. Les familles dispersées de la steppe commencent à parler d'un certain Temüjin.",
+};
+
+// ── 2. L'Union des Clans ─────────────────────────────────
+// Diplomatie à tribut (~30 min) : les Kereits de Toghrul se rallient contre
+// 400 🍖 et 200 💰 — le prix se lit sur le bouton, il est prélevé à l'accord
+// —, les Naimans doivent être soumis. Une alliance n'est jamais sûre : Toghrul
+// peut trahir s'il devient bien plus fort que vous (la trahison de l'IA alliée,
+// voir js/08-ia.js) — comme il l'a fait en 1203.
+MISSIONS.mo2 = {
+  campagne:'mongols', num:2,
+  titre:"L'Union des Clans", lieu:'La steppe mongole', date:'1204',
+  briefing:[
+    "Deux puissances se partagent encore la steppe : les Kereits de Toghrul, le vieux protecteur de Temüjin, et les Naimans de Tayang Khan, qui ont accueilli Djamuqa devenu rival.",
+    "Ralliez les Kereits — Toghrul ne donne rien pour rien : ouvrez la Diplomatie, le tribut est sur le bouton — et soumettez les Naimans. Méfiez-vous des vieux protecteurs qui deviennent trop forts.",
+  ],
+  carte:{ graine:1204017, type:'plaines', taille:'moyenne' },
+  zones:{
+    ordu:  { x:0.18, y:0.46, r:0.05 },
+    kereit:{ x:0.40, y:0.84, r:0.05 },
+    naiman:{ x:0.84, y:0.30, r:0.05 },
+  },
+  roles:{
+    p1:{ civ:'mongols', nom:'Temüjin', age:1, res:{food:450,wood:450,stone:150,gold:250},
+         depart:[0.18,0.46], base:'village',
+         unites:[[UT.VIL,10],[UT.CAVARC,6],[UT.SCOUT,3],[UT.ARC,4],[UT.HERO,1,'temujin']],
+         batiments:[[BT.STABLE,6,-5],[BT.BARRACKS,-6,5]] },
+    p2:{ civ:'mongols', nom:'Qasar', solo:'fusion', age:1, res:{food:150,wood:150,stone:50,gold:50},
+         depart:[0.26,0.24], base:'tc',
+         unites:[[UT.VIL,4],[UT.CAVARC,4],[UT.SCOUT,2]] },
+  },
+  factions:{
+    ia: { civ:'chinois', nom:'Naimans de Tayang Khan', equipe:3, depart:[0.84,0.30], age:1, ageMax:2,
+          heros:false, merveille:false, cible:'ordu', tune:{ firstAtk:540, atkEvery:170 },
+          unites:[{ type:UT.ENEMI_C, n:1, tag:'djamuqa', pv:3 }] },
+    ia2:{ civ:'mongols', nom:'Kereits de Toghrul', equipe:4, depart:[0.40,0.84], age:1, ageMax:2,
+          heros:false, merveille:false, role:'passif',
+          diplomatie:{ prix:{ food:400, gold:200 }, refus:'Toghrul ne donne rien pour rien.' } },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    { op:'gisement', zone:{ x:0.10, y:0.30, r:0.04 }, type:RT.GOLD, n:6, amt:600 },
+    { op:'faune', zone:{ x:0.30, y:0.60, r:0.08 }, type:'deer', n:6 },
+  ],
+  objectifs:[
+    { id:'kereits', txt:'Ralliez les Kereits de Toghrul (Diplomatie, dans le menu ⏸)', zone:'kereit',
+      test:M=>M.allie('ia2'), echec:M=>M.vaincu('ia2'),
+      echecTxt:"Les Kereits sont tombés avant d'avoir juré alliance. Seul, Temüjin n'unira pas la steppe." },
+    { id:'naimans', txt:'Soumettez les Naimans : rasez le Centre Ville de Tayang Khan', zone:'naiman', test:M=>M.vaincu('ia') },
+    { id:'temujin', txt:'Temüjin doit survivre', echec:M=>M.mort('temujin'),
+      echecTxt:"Temüjin est tombé. Les clans retournent à leurs querelles." },
+    { id:'djamuqa', txt:'Capturez Djamuqa, le frère juré devenu rival', type:'secondaire', test:M=>M.detruit('djamuqa') },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'qasar', si:M=>M.temps()>=16, alors:M=>M.dire('qasar','p2') },
+    // Le passif ne tient que tant qu'on ne l'a pas rallié : allié, Toghrul
+    // part en guerre contre les Naimans à nos côtés.
+    { id:'alliance', si:M=>M.allie('ia2'), alors:M=>{ M.dire('alliance'); M.ia('ia2',{role:'normal',cible:'naiman',lancer:true}); } },
+    { id:'trahison', si:M=>M.fait('kereits')&&!M.allie('ia2')&&!M.vaincu('ia2'), alors:M=>M.dire('trahison') },
+    { id:'naimans_ok', si:M=>M.fait('naimans'), alors:M=>M.dire('naimans_ok') },
+  ],
+  orateurs:{
+    temujin:{ nom:'Temüjin', ico:'🏇' },
+    qasar:  { nom:'Qasar',   ico:'🏹' },
+    toghrul:{ nom:'Toghrul', ico:'🐺' },
+    tayang: { nom:'Tayang Khan', ico:'🦅' },
+  },
+  dialogues:{
+    intro:[
+      ['tayang',"Il n'y a qu'un soleil dans le ciel. Il n'y aura qu'un khan dans la steppe, et ce sera moi."],
+      ['temujin',"Toghrul fut l'ami de mon père. Il sait ce qu'il en coûte de m'avoir pour allié — et pour ennemi."],
+    ],
+    qasar:[['qasar',"Mon frère, je tiens les pâturages du nord. Si les Naimans passent, ils passeront sur moi."]],
+    alliance:[['toghrul',"Les Kereits chevaucheront avec toi, fils de Yesügei. Contre les Naimans — pour commencer."]],
+    trahison:[['qasar',"Toghrul a rompu l'alliance ! Ses cavaliers se retournent contre nous !"]],
+    naimans_ok:[['temujin',"Tayang Khan est tombé. Il n'y a plus qu'un soleil dans la steppe."]],
+  },
+  etoiles:['victoire', M=>M.fait('djamuqa'), M=>M.allie('ia2')],
+  victoire:"Au printemps 1206, sur les bords de l'Onon, les clans réunis en kurultaï proclament Temüjin souverain universel : Gengis Khan.",
+};
+
+// ── 3. Le Raid sur les Xia ───────────────────────────────
+// Raid sans siège (~15 min) : Yinchuan, derrière ses murs, est imprenable
+// pour une armée de cavaliers — la mission interdit l'Atelier de Siège. On
+// pille ses champs et ses moulins hors les murs, puis on rentre au camp avant
+// que l'armée des Xia ne revienne de la frontière.
+MISSIONS.mo3 = {
+  campagne:'mongols', num:3,
+  titre:'Le Raid sur les Xia', lieu:'Le royaume Xia, sur le fleuve Jaune', date:'1209',
+  briefing:[
+    "Le royaume tangoute des Xia est riche, et sa capitale, Yinchuan, derrière ses murs, ne craint pas des cavaliers sans machines.",
+    "Alors ne prenez pas la ville : prenez ce qui la nourrit. Pillez six de ses fermes et de ses moulins, hors les murs, et ramenez l'armée au camp avant que l'armée des Xia ne revienne de la frontière.",
+  ],
+  carte:{ graine:1209055, type:'arides', taille:'moyenne', reliques:false },
+  zones:{
+    camp:    { x:0.14, y:0.50, r:0.06 },
+    yinchuan:{ x:0.74, y:0.40, r:0.06 },
+    champs1: { x:0.56, y:0.66, r:0.05 },
+    champs2: { x:0.88, y:0.72, r:0.05 },
+    champs3: { x:0.60, y:0.16, r:0.04 },
+    sud:     { x:0.70, y:0.97, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'mongols', nom:'Gengis Khan', age:2, res:{food:300,wood:300,stone:100,gold:200},
+         depart:[0.14,0.50], base:'tc',
+         unites:[[UT.VIL,6],[UT.CAVARC,10],[UT.SCOUT,4],[UT.KNIGHT,4],[UT.HERO,1,'gengis']],
+         batiments:[[BT.STABLE,6,-4],[BT.HOUSE,-3,3],[BT.HOUSE,-3,5],[BT.HOUSE,-5,4]] },
+    p2:{ civ:'mongols', nom:'Subötei', solo:'fusion', age:2, res:{food:100,wood:100,stone:0,gold:100},
+         depart:[0.20,0.80], base:'rien',
+         unites:[[UT.CAVARC,6],[UT.SCOUT,2]] },
+  },
+  factions:{
+    ia:{ civ:'chinois', nom:'Royaume Xia', equipe:3, depart:[0.74,0.40], age:2,
+         role:'forteresse', ageMax:2, heros:false, merveille:false, enceinte:true, tune:{ vilTarget:8 },
+         batiments:[[BT.CASTLE,-5,-8],[BT.TOWER,8,-5],[BT.TOWER,-7,6],
+           { type:BT.FARM, zone:'champs1', tag:'greniers' }, { type:BT.FARM, zone:'champs1', tag:'greniers' },
+           { type:BT.MILL, zone:'champs1', tag:'greniers' },
+           { type:BT.FARM, zone:'champs2', tag:'greniers' }, { type:BT.MILL, zone:'champs2', tag:'greniers' },
+           { type:BT.FARM, zone:'champs3', tag:'greniers' }, { type:BT.MILL, zone:'champs3', tag:'greniers' }],
+         unites:[[UT.ENEMIA,4],[UT.ENEMI,4],
+           { type:UT.ENEMI, n:3, zone:'champs1', garde:true }, { type:UT.ENEMIA, n:2, zone:'champs1', garde:true },
+           { type:UT.ENEMI, n:3, zone:'champs2', garde:true }, { type:UT.ENEMIA, n:2, zone:'champs2', garde:true },
+           { type:UT.ENEMIA, n:3, zone:'champs3', garde:true }] },
+  },
+  regles:{ ageMax:2, interdits:[BT.SIEGE] },
+  surcouche:[
+    { op:'degager', zone:'champs1' }, { op:'degager', zone:'champs2' }, { op:'degager', zone:'champs3' },
+    { op:'foret', zone:{ x:0.22, y:0.30, r:0.05 }, n:26 },
+  ],
+  objectifs:[
+    { id:'pillage', txt:'Pillez 6 greniers des Xia : fermes et moulins, hors les murs',
+      test:M=>7-M.restants('greniers')>=6, compte:M=>[7-M.restants('greniers'),6] },
+    { id:'retour',  txt:"Ramenez l'armée au camp : 12 cavaliers au camp", cache:true, zone:'camp',
+      test:M=>M.armeeDansZone('camp',12) },
+    { id:'gengis',  txt:'Gengis Khan doit survivre', echec:M=>M.mort('gengis'),
+      echecTxt:"Gengis Khan est tombé sous les murs de Yinchuan." },
+    { id:'camp',    txt:'Le camp doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"L'armée des Xia a brûlé le camp. Le butin est perdu." },
+    { id:'vite',    txt:"Pillez tout avant le retour de l'armée des Xia (12 min)", type:'secondaire',
+      test:M=>M.fait('pillage'), echec:M=>M.temps()>=720&&!M.fait('pillage') },
+  ],
+  declencheurs:[
+    { id:'intro',   si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'subotei', si:M=>M.temps()>=16, alors:M=>M.dire('subotei','p2') },
+    // Chaque grenier tombé paie son butin, sur-le-champ.
+    { id:'butin', repete:true, intervalle:0.5, si:M=>7-M.restants('greniers')>M.tirs('butin'),
+      alors:M=>M.donner('p1',{food:120,gold:60}) },
+    { id:'pillage_ok', si:M=>M.fait('pillage'), alors:M=>{ M.dire('pillage_ok'); M.objectif('retour','ajout'); } },
+    { id:'armee_xia', si:M=>M.temps()>=720, alors:M=>{
+        M.dire('armee_xia');
+        M.vague('ia',[[UT.ENEMI_C,6],[UT.ENEMI,10],[UT.ENEMIA,6],[UT.ENEMI_G,1]],'sud',{vers:'camp',tag:'armee_xia'});
+      } },
+    { id:'murs', si:M=>M.equipeDansZone('yinchuan',1), alors:M=>M.dire('murs') },
+  ],
+  orateurs:{
+    gengis: { nom:'Gengis Khan', ico:'🏇' },
+    subotei:{ nom:'Subötei', ico:'🏹' },
+    eclaireur:{ nom:'Un éclaireur', ico:'🦅' },
+  },
+  dialogues:{
+    intro:[
+      ['gengis',"Leurs murs sont hauts et nous n'avons pas de machines. Tant mieux : nous ne sommes pas venus pour leurs murs."],
+      ['eclaireur',"Les champs et les moulins sont hors de la ville, peu gardés. L'armée des Xia est à la frontière — elle reviendra."],
+    ],
+    subotei:[['subotei',"Mes archers montés prennent les champs du sud. Frappez vite, ne vous attardez pas."]],
+    pillage_ok:[['gengis',"Assez ! Les chariots sont pleins. Tout le monde au camp, avant que leur armée ne revienne."]],
+    armee_xia:[['eclaireur',"L'armée des Xia arrive par le sud ! Elle marche droit sur le camp !"]],
+    murs:[['subotei',"Pas sous les murs, Khan ! Leurs tours tirent loin, et nous n'avons rien pour les abattre."]],
+  },
+  etoiles:['victoire', M=>M.fait('vite'), M=>M.statsEquipe('lost')<=6],
+  victoire:"Les Xia paient tribut et livrent des chameaux, des soieries et des faucons. La porte de la Chine est entrouverte.",
+};
+
+// ── 4. La Kalka ──────────────────────────────────────────
+// Retraite simulée (~15 min) : l'avant-garde de Djebe provoque l'armée des
+// princes russes, puis recule jusqu'à la rivière Kalka, où Subötei attend.
+// La poursuite est scriptée (M.traquer) : une troupe lâchée ne court après
+// une armée sans base que si on lui dit où elle est.
+MISSIONS.mo4 = {
+  campagne:'mongols', num:4,
+  titre:'La Kalka', lieu:'La rivière Kalka, au nord de la mer Noire', date:'1223',
+  briefing:[
+    "Djebe et Subötei poursuivent le Shah jusqu'au bout du monde connu. Les princes russes, alliés aux Coumans, ont réuni une armée trois fois plus nombreuse que la leur.",
+    "Djebe les provoquera, puis reculera — des jours s'il le faut — jusqu'à la rivière Kalka, où Subötei attend. Faites entrer l'armée des princes dans la plaine de la Kalka : le piège fera le reste.",
+  ],
+  carte:{ graine:1223531, type:'plaines', taille:'moyenne', reliques:false },
+  zones:{
+    avantposte:{ x:0.70, y:0.50, r:0.05 },
+    rus:       { x:0.84, y:0.50, r:0.06 },
+    kalka:     { x:0.28, y:0.50, r:0.08 },
+    bois_n:    { x:0.24, y:0.22, r:0.04 },
+    bois_s:    { x:0.24, y:0.78, r:0.04 },
+    gue:       { x:0.40, y:0.50, r:0.04 },
+  },
+  roles:{
+    p1:{ civ:'mongols', nom:'Djebe', age:2, res:{food:0,wood:0,stone:0,gold:0},
+         depart:[0.56,0.50], base:'rien',
+         unites:[[UT.CAVARC,9,'avantgarde'],[UT.SCOUT,3,'avantgarde']] },
+    p2:{ civ:'mongols', nom:'Subötei', solo:'fusion', age:2, res:{food:0,wood:0,stone:0,gold:0},
+         depart:[0.12,0.50], base:'rien',
+         unites:[[UT.SCOUT,3]] },
+  },
+  factions:{
+    pill:{
+      batiments:[{ type:BT.OUTPOST, zone:'rus' }, { type:BT.OUTPOST, zone:'rus' }],
+      unites:[
+        { type:UT.ENEMI,   n:14, zone:'rus', tag:'rus', garde:true },
+        { type:UT.ENEMIA,  n:7,  zone:'rus', tag:'rus', garde:true },
+        { type:UT.ENEMI_C, n:4,  zone:'rus', tag:'rus', garde:true },
+        { type:UT.ENEMI_G, n:1,  zone:'rus', tag:'mstislav', garde:true, pv:1.5 },
+      ],
+    },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    // La Kalka, du nord au sud, et son gué : le piège se referme de l'autre côté.
+    { op:'eau', trace:[[0.40,0],[0.38,0.3],[0.41,0.7],[0.39,1]], largeur:0.012 },
+    { op:'gue', zone:'gue' },
+    { op:'foret', zone:'bois_n', n:24 }, { op:'foret', zone:'bois_s', n:24 },
+    { op:'degager', zone:'kalka' }, { op:'degager', zone:'rus' },
+  ],
+  objectifs:[
+    { id:'rus',   txt:"Écrasez l'armée des princes", test:M=>M.detruit('rus')&&M.detruit('mstislav'),
+      compte:M=>[27-M.restants('rus')-M.restants('mstislav'),27] },
+    // Le piège est la leçon, pas une porte fermée : une avant-garde qui
+    // écrase les princes sans lui (possible en Facile) doit pouvoir gagner.
+    { id:'piege', txt:"Attirez l'armée des princes au-delà de la Kalka, dans la plaine", type:'secondaire', zone:'kalka',
+      test:M=>M.tire('embuscade'), echec:M=>!M.tire('embuscade')&&M.detruit('rus')&&M.detruit('mstislav') },
+    // L'avant-garde de DJEBE : les éclaireurs de Subötei, postés derrière la
+    // rivière, ne comptent pas — sans quoi, l'avant-garde tombée, les princes
+    // poursuivaient ces éclaireurs jusque dans le piège, et un joueur qui ne
+    // faisait rien gagnait la mission (mesuré à la sonde).
+    { id:'avantgarde', txt:"L'avant-garde de Djebe ne doit pas être anéantie avant le piège",
+      echec:M=>!M.tire('embuscade')&&!M.vivant('avantgarde'),
+      echecTxt:"L'avant-garde de Djebe a été rattrapée et taillée en pièces." },
+    { id:'mstislav', txt:'Abattez le prince Mstislav', type:'secondaire', test:M=>M.detruit('mstislav') },
+  ],
+  declencheurs:[
+    { id:'intro',  si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'subotei',si:M=>M.temps()>=16, alors:M=>M.dire('subotei','p2') },
+    // La provocation lâche les princes ; passé huit minutes, ils perdent
+    // patience et marchent d'eux-mêmes.
+    { id:'provocation', si:M=>M.equipeDansZone('avantposte',1)||M.temps()>=480, alors:M=>{
+        M.dire('provocation'); M.lacher('rus'); M.lacher('mstislav');
+      } },
+    { id:'poursuite', repete:true, intervalle:2, si:M=>M.tire('provocation')&&(M.vivant('rus')||M.vivant('mstislav')),
+      alors:M=>{ M.traquer('rus'); M.traquer('mstislav'); } },
+    { id:'embuscade', si:M=>M.dansZone('kalka','pill',6), alors:M=>{
+        M.dire('embuscade');
+        M.renfort('p2',[[UT.CAVARC,8],[UT.KNIGHT,5]],'bois_n',{vers:'kalka'});
+        M.renfort('p2',[[UT.CAVARC,8],[UT.KNIGHT,5]],'bois_s',{vers:'kalka'});
+      } },
+    { id:'mstislav_ok', si:M=>M.fait('mstislav'), alors:M=>M.dire('mstislav_ok') },
+  ],
+  orateurs:{
+    djebe:  { nom:'Djebe',   ico:'🏹' },
+    subotei:{ nom:'Subötei', ico:'🦅' },
+    mstislav:{ nom:'Mstislav', ico:'⚔️' },
+  },
+  dialogues:{
+    intro:[
+      ['djebe',"Ils sont trois fois plus nombreux que nous. Parfait : un grand troupeau se mène plus facilement qu'un petit."],
+      ['subotei',"Montre-toi, frappe, et recule. Ne te retourne pas avant d'avoir passé la Kalka."],
+    ],
+    subotei:[['subotei',"Mes hommes sont dans les bois, au-delà de la rivière. Pas un feu, pas un cheval qui hennit."]],
+    provocation:[['mstislav',"Les voilà, les cavaliers du Diable ! Ils fuient déjà ! Tous à leurs trousses !"]],
+    embuscade:[['subotei',"Ils sont dans la plaine. Maintenant !"]],
+    mstislav_ok:[['djebe',"Le prince est tombé. La steppe s'en souviendra."]],
+  },
+  etoiles:['victoire', M=>M.fait('piege'), M=>M.statsEquipe('lost')<=8],
+  victoire:"L'armée des princes est brisée sur la Kalka. Djebe et Subötei ont parcouru plus de cinq mille kilomètres — et repartent vers l'est.",
+};
+
+// ── 5. Samarcande ────────────────────────────────────────
+// Siège (~30 min) : la plus riche cité du Khwarezm, derrière ses murs. Les
+// Kanglis, mercenaires turcs de la garnison, changent de camp quand l'armée
+// mongole est aux faubourgs (M.convertir). Le Shah tente de fuir vers le sud.
+MISSIONS.mo5 = {
+  campagne:'mongols', num:5,
+  titre:'Samarcande', lieu:'Samarcande, en Transoxiane', date:'1220',
+  briefing:[
+    "Le Shah du Khwarezm a fait massacrer une caravane de marchands mongols, puis tuer les ambassadeurs venus demander justice. Gengis Khan est venu en personne.",
+    "Samarcande a des murs, une citadelle et une garnison de mercenaires kanglis qui n'aiment pas beaucoup le Shah. Amenez vos Béliers, approchez des faubourgs — et gardez un œil sur la route du sud.",
+  ],
+  carte:{ graine:1220314, type:'arides', taille:'moyenne' },
+  zones:{
+    samarcande:{ x:0.74, y:0.44, r:0.06 },
+    faubourg:  { x:0.58, y:0.44, r:0.05 },
+    porte_est: { x:0.86, y:0.46, r:0.03 },
+    fuite:     { x:0.96, y:0.94, r:0.04 },
+  },
+  roles:{
+    p1:{ civ:'mongols', nom:'Gengis Khan', age:2, res:{food:700,wood:900,stone:300,gold:500},
+         depart:[0.16,0.46], base:'village',
+         unites:[[UT.VIL,10],[UT.CAVARC,8],[UT.KNIGHT,6],[UT.PIKE,6],[UT.RAM,3],[UT.HERO,1,'gengis']],
+         batiments:[[BT.SIEGE,6,5],[BT.STABLE,6,-5],[BT.BARRACKS,-6,5]] },
+    p2:{ civ:'mongols', nom:'Djebe', solo:'fusion', age:2, res:{food:200,wood:200,stone:0,gold:100},
+         depart:[0.44,0.86], base:'rien',
+         unites:[[UT.SCOUT,4],[UT.CAVARC,6]] },
+  },
+  factions:{
+    ia:{ civ:'chinois', nom:'Khwarezm', equipe:3, depart:[0.74,0.44], age:2,
+         role:'forteresse', ageMax:2, heros:false, merveille:false, enceinte:true, tune:{ vilTarget:8 },
+         batiments:[[BT.CASTLE,-5,-8],[BT.TOWER,8,-6],[BT.TOWER,8,7],[BT.BARRACKS,-7,4]],
+         unites:[[UT.ENEMI_C,4],[UT.ENEMIA,6],[UT.ENEMI,6],
+           { type:UT.ENEMI,  n:6, zone:'faubourg', tag:'kanglis', garde:true },
+           { type:UT.ENEMI_C,n:3, zone:'faubourg', tag:'kanglis', garde:true }] },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    { op:'degager', zone:'faubourg' },
+    { op:'gisement', zone:{ x:0.10, y:0.26, r:0.04 }, type:RT.STONE, n:6, amt:600 },
+  ],
+  objectifs:[
+    { id:'samarcande', txt:'Prenez Samarcande : rasez le Centre Ville du Khwarezm', zone:'samarcande', test:M=>M.vaincu('ia') },
+    { id:'gengis',     txt:'Gengis Khan doit survivre', echec:M=>M.mort('gengis'),
+      echecTxt:"Gengis Khan est tombé devant Samarcande. Le siège est levé." },
+    { id:'kanglis',    txt:'Approchez des faubourgs : les Kanglis pourraient changer de camp', type:'secondaire', zone:'faubourg',
+      test:M=>M.tire('defection') },
+    { id:'shah',       txt:"Rattrapez le Shah avant qu'il ne s'enfuie par le sud", type:'secondaire', cache:true,
+      test:M=>M.detruit('shah'), echec:M=>M.tagDansZone('shah','fuite',1) },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'djebe', si:M=>M.temps()>=16, alors:M=>M.dire('djebe','p2') },
+    { id:'defection', si:M=>M.armeeDansZone('faubourg',6)&&M.vivant('kanglis'), alors:M=>{
+        M.convertir('kanglis','p1'); M.dire('defection');
+      } },
+    { id:'shah', si:M=>M.temps()>=420, alors:M=>{
+        M.dire('shah'); M.objectif('shah','ajout');
+        M.renfort('ia',[{ type:UT.ENEMI_C, n:1, tag:'shah', pv:3 }],'porte_est',{vers:'fuite'});
+        M.renfort('ia',[[UT.ENEMI_C,4]],'porte_est',{vers:'fuite'});
+      } },
+    { id:'shah_ok', si:M=>M.fait('shah'), alors:M=>M.dire('shah_ok') },
+    { id:'breche', si:M=>M.compte('ia',BT.WALL)+M.compte('ia',BT.GATE)<24, alors:M=>M.dire('breche') },
+  ],
+  orateurs:{
+    gengis:{ nom:'Gengis Khan', ico:'🏇' },
+    djebe: { nom:'Djebe', ico:'🏹' },
+    kangli:{ nom:'Un chef kangli', ico:'🗡️' },
+  },
+  dialogues:{
+    intro:[
+      ['gengis',"Les Béliers aux portes, les archers derrière. Et que la cavalerie reste hors de portée des tours."],
+      ['djebe',"Je tiens la route du sud. Si le Shah tente de fuir, il passera par là."],
+    ],
+    djebe:[['djebe',"Mes éclaireurs sont en place au sud. Rien ne sortira de la ville sans que je le voie."]],
+    defection:[['kangli',"Le Shah nous paie mal et nous méprise. Les Kanglis ouvrent leurs rangs au Khan !"]],
+    shah:[['djebe',"Une colonne sort par la porte est et file vers le sud ! Le Shah est avec eux !"]],
+    shah_ok:[['djebe',"Le Shah ne fuira plus."]],
+    breche:[['gengis',"La muraille cède ! Par la brèche !"]],
+  },
+  etoiles:['victoire', M=>M.fait('shah'), M=>M.fait('kanglis')],
+  victoire:"Samarcande est tombée. Le Khwarezm, qui se croyait l'empire le plus puissant de l'Islam, n'a pas tenu un an.",
+};
+
+// ── 6. Le Bout du Monde ──────────────────────────────────
+// Finale à deux fronts (~50 min) : le fils du Shah, Djalal ad-Din, à l'ouest ;
+// le royaume Xia, qui a rompu son serment, à l'est. Le second commandant tient
+// l'est — l'ami en coop, une IA alliée en solo.
+MISSIONS.mo6 = {
+  campagne:'mongols', num:6,
+  titre:'Le Bout du Monde', lieu:"De l'Indus au fleuve Jaune", date:'1227',
+  briefing:[
+    "L'empire s'étend de la Chine à la Perse, mais il brûle aux deux bouts : Djalal ad-Din, le fils du Shah, a levé une armée à l'ouest ; les Xia ont renié leur serment à l'est.",
+    "Gengis Khan tient l'ouest, Mukhali tient l'est. Les deux capitales doivent tomber — et le vieux Khan doit voir la fin de cette guerre.",
+  ],
+  carte:{ graine:1227818, type:'plaines', taille:'normale' },
+  zones:{
+    ouest:{ x:0.08, y:0.50, r:0.05 },
+    est:  { x:0.92, y:0.50, r:0.05 },
+  },
+  roles:{
+    p1:{ civ:'mongols', nom:'Gengis Khan', age:2, res:{food:900,wood:1000,stone:500,gold:700},
+         depart:[0.34,0.50], base:'village',
+         unites:[[UT.VIL,14],[UT.CAVARC,8],[UT.KNIGHT,6],[UT.PIKE,4],[UT.HERO,1,'gengis']],
+         batiments:[[BT.STABLE,6,-5],[BT.BARRACKS,-6,5],[BT.SIEGE,6,5]] },
+    p2:{ civ:'mongols', nom:'Mukhali', solo:'ia', age:2, res:{food:500,wood:500,stone:250,gold:300},
+         depart:[0.66,0.50], base:'village',
+         unites:[[UT.VIL,10],[UT.CAVARC,6],[UT.KNIGHT,4]] },
+  },
+  factions:{
+    // Deux vraies puissances, bâties et armées dès le départ : parti d'un
+    // Centre Ville nu, le royaume Xia tombait à la douzième minute sous les
+    // seuls coups de l'IA alliée, sans que le joueur ait bougé (sonde).
+    ia: { civ:'francs',  nom:'Djalal ad-Din', equipe:3, depart:[0.08,0.50], age:2, ageMax:3,
+          heros:false, merveille:false, tune:{ firstAtk:540, start:{food:700,wood:700,stone:400,gold:400} },
+          batiments:[[BT.BARRACKS,6,-5],[BT.STABLE,-7,4],[BT.HLM,7,2],[BT.HOUSE,-4,-6],[BT.HOUSE,-6,-6]],
+          unites:[[UT.VIL,10],[UT.ENEMI_C,6],[UT.ENEMI,8],[UT.ENEMIA,6]] },
+    ia2:{ civ:'chinois', nom:'Royaume Xia', equipe:3, depart:[0.92,0.50], age:2, ageMax:3,
+          heros:false, merveille:false, tune:{ firstAtk:660, start:{food:700,wood:700,stone:400,gold:400} },
+          batiments:[[BT.BARRACKS,-6,-5],[BT.STABLE,7,4],[BT.HLM,-7,2],[BT.HOUSE,4,-6],[BT.HOUSE,6,-6],[BT.TOWER,-5,5]],
+          unites:[[UT.VIL,10],[UT.ENEMI,8],[UT.ENEMIA,8],[UT.ENEMI_C,4]] },
+  },
+  regles:{ ageMax:3 },
+  surcouche:[
+    { op:'gisement', zone:{ x:0.30, y:0.30, r:0.04 }, type:RT.GOLD, n:8, amt:700 },
+    { op:'gisement', zone:{ x:0.70, y:0.70, r:0.04 }, type:RT.GOLD, n:8, amt:700 },
+  ],
+  objectifs:[
+    { id:'deux', txt:"Faites tomber les deux capitales : Djalal ad-Din à l'ouest, les Xia à l'est",
+      test:M=>M.vaincu('ia')&&M.vaincu('ia2'), compte:M=>[(M.vaincu('ia')?1:0)+(M.vaincu('ia2')?1:0),2] },
+    { id:'gengis', txt:'Gengis Khan doit survivre', echec:M=>M.mort('gengis'),
+      echecTxt:"Le Khan est tombé. L'empire se déchire entre ses fils." },
+    { id:'etriers', txt:"Donnez à la cavalerie les Étriers de Fer (Université, Âge Impérial)", type:'secondaire',
+      test:M=>M.rechercheEquipe('etriers') },
+  ],
+  declencheurs:[
+    { id:'intro',   si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'mukhali', si:M=>M.temps()>=16, alors:M=>M.dire('mukhali') },
+    { id:'ouest_ok', si:M=>M.vaincu('ia'),  alors:M=>M.dire('ouest_ok') },
+    { id:'est_ok',   si:M=>M.vaincu('ia2'), alors:M=>M.dire('est_ok') },
+    { id:'imperial', si:M=>M.age('p1')>=3, alors:M=>M.dire('imperial') },
+  ],
+  orateurs:{
+    gengis: { nom:'Gengis Khan', ico:'🏇' },
+    mukhali:{ nom:'Mukhali', ico:'🦅' },
+    djalal: { nom:'Djalal ad-Din', ico:'⚔️' },
+  },
+  dialogues:{
+    intro:[
+      ['djalal',"Mon père a fui devant toi. Moi, je ne fuirai pas."],
+      ['gengis',"Ton père aussi disait cela, avant Samarcande."],
+    ],
+    mukhali:[['mukhali',"Je tiens l'est, Khan. Les Xia ne passeront pas le fleuve tant que je vivrai."]],
+    ouest_ok:[['gengis',"Djalal ad-Din a traversé l'Indus à la nage pour m'échapper. Voilà un fils que j'aurais aimé avoir."]],
+    est_ok:[['mukhali',"Yinchuan est tombée. Les Xia ne renieront plus de serment."]],
+    imperial:[['gengis',"À l'Université, qu'on forge des étriers de fer : nos cavaliers iront plus vite que la nouvelle de leur arrivée."]],
+  },
+  etoiles:['victoire', M=>M.fait('etriers'), M=>M.temps()<40*60],
+  victoire:"Les deux capitales sont tombées. Gengis Khan meurt peu après, au milieu de son armée ; il laisse à ses fils le plus grand empire d'un seul tenant que le monde ait connu.",
 };
 
 // Retour d'une fin de mission : rouvre le briefing laissé en partant (voir

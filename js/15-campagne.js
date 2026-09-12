@@ -877,6 +877,12 @@ const SCN_API = {
     for(const e of entitesTag(tag)) if(dansZoneMonde(zn,e.x,e.y)&&++c>=(n||1)) return true;
     return false;
   },
+  // Combien d'entités vivantes de cette étiquette dans la zone (pour un compteur).
+  tagCompteZone(tag,zone){
+    const zn=zoneMission(zone); if(!zn) return 0;
+    let c=0; for(const e of entitesTag(tag)) if(dansZoneMonde(zn,e.x,e.y)) c++;
+    return c;
+  },
   vaincu(k){ const f=G.factions[facMission(k)]; return !f||!!f.vaincu; },
   coop(){ return modeSecondCommandant()==='coop'; },
   // Au moins `n` unités du camp du joueur (les deux commandants) dans la zone.
@@ -884,6 +890,14 @@ const SCN_API = {
     const zn=zoneMission(zone); if(!zn) return false;
     const ids=campJoueur(); let c=0;
     for(const u of G.units) if(u.hp>0&&ids.has(u.owner)&&dansZoneMonde(zn,u.x,u.y)&&++c>=(n||1)) return true;
+    return false;
+  },
+  // Même chose pour les seules unités MILITAIRES (une armée revenue au camp :
+  // les villageois qui y travaillent ne comptent pas).
+  armeeDansZone(zone,n){
+    const zn=zoneMission(zone); if(!zn) return false;
+    const ids=campJoueur(); let c=0;
+    for(const u of G.units) if(u.hp>0&&ids.has(u.owner)&&isMilitary(u.type)&&dansZoneMonde(zn,u.x,u.y)&&++c>=(n||1)) return true;
     return false;
   },
   // Combien d'unités HOSTILES au joueur dans la zone (garnison, pillards,
@@ -990,6 +1004,26 @@ const SCN_API = {
   // Lâche une garde : ses unités cessent de tenir leur poste et partent
   // chasser (la logique de ciblage adverse, updateEnemyAI, prend le relais).
   lacher(tag){ for(const u of entitesTag(tag)) if(u.camp!=null){ u.camp=null; u.target=null; u.state='idle'; } },
+  // Poursuite : chaque unité de l'étiquette prend pour poste l'unité du camp
+  // du joueur la plus proche d'elle. À appeler par un déclencheur `repete` :
+  // une troupe lâchée ne chasse d'elle-même que des BÂTIMENTS au loin (voir
+  // updateEnemyAI) — face à une armée sans base qui recule, elle resterait
+  // plantée. Rend le nombre de poursuivants.
+  traquer(tag){
+    const ids=campJoueur();
+    const proies=G.units.filter(u=>u.hp>0&&ids.has(u.owner)&&u.state!=='garrison');
+    if(!proies.length) return 0;
+    let n=0;
+    for(const u of entitesTag(tag)){
+      if(!u.owner||!G.factions[u.owner]||G.factions[u.owner].genre==='humain'||u.w) continue;
+      let best=null, bd=Infinity;
+      for(const p of proies){ const d=(p.x-u.x)*(p.x-u.x)+(p.y-u.y)*(p.y-u.y); if(d<bd){ bd=d; best=p; } }
+      u.camp=u.owner; u.campX=best.x; u.campY=best.y;
+      marquerHorsArmee(u);
+      n++;
+    }
+    return n;
+  },
   poser(k,type,zone,tag){
     const zn=zoneMission(zone); if(!zn) return null;
     const b=poserBatimentScn(type,zn.tx,zn.ty,facMission(k),tag);

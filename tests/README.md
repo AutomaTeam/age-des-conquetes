@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**304 tests, 18 groupes, ~70 s.** Les groupes `ia` et `delta` comptent pour
+**310 tests, 18 groupes, ~75 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -170,6 +170,14 @@ qui **ne se voit pas** :
   joueur CHEZ L'INVITÉ AUSSI (remplacement, le propriétaire d'un bâtiment ne
   voyage pas) ; une colonne suit ses étapes (`via`) au lieu de rester figée
   contre un lac ; l'élimination en mission passe par la fin de mission.
+  CAMPAGNE DES MONGOLS (lot L7) : un clan sans Centre Ville reçoit son
+  campement à l'arrivée du héros (et devient éliminable) ; la diplomatie à
+  tribut prélève son prix à l'accord, et l'allié rallié marche sur la cible
+  que la mission lui donne ; un raid sans siège paie son butin grenier par
+  grenier, une seule fois ; à la Kalka, les princes lâchés POURSUIVENT
+  (M.traquer — une troupe lâchée ne chasse d'elle-même que des bâtiments, et
+  l'avant-garde n'en a pas) et le piège se referme dans la plaine ; une
+  garnison qui change de camp (Kanglis) ne fausse la population de personne.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

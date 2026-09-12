@@ -5688,6 +5688,112 @@ groupe('campagne', () => {
     ok(j.aiTune(p2).atkEvery > j.aiTune(j.G.factions.ia).atkEvery, "l'allié attaque aussi souvent qu'un rival");
   });
 
+  // ══ CAMPAGNE DES FRANCS (lot L5) ═══════════════════════════
+  // Terrain connexe : le parcours en largeur ne bute que sur l'EAU. Les
+  // palissades et abattis (bmap 3 eux aussi) s'abattent, ils ne doivent pas
+  // faire croire qu'une zone est inaccessible.
+  const relie = (j, a, b) => {
+    const C = j.lire('COLS'), R = j.lire('ROWS');
+    const vu = new Uint8Array(C * R), file = [a.tx + a.ty * C];
+    vu[file[0]] = 1;
+    for (let i = 0; i < file.length; i++) {
+      const c = file[i], x = c % C, y = (c / C) | 0;
+      if (Math.abs(x - b.tx) <= Math.max(1, b.r) && Math.abs(y - b.ty) <= Math.max(1, b.r)) return true;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy, n = nx + ny * C;
+        if (nx < 0 || ny < 0 || nx >= C || ny >= R || vu[n] || j.G.tiles[ny][nx] === j.T_WATER) continue;
+        vu[n] = 1; file.push(n);
+      }
+    }
+    return false;
+  };
+
+  test('Francs : les six missions se lancent, aucun camp ne tombe d\'office, et chaque lieu nommé est accessible par la terre', () => {
+    const cles = charger().CAMPAGNES.francs.missions;
+    egal(cles.length, 6, 'la campagne des Francs n\'a pas ses six missions');
+    for (const cle of cles) {
+      const j = mission(charger(), cle);
+      const p1 = j.G.units.find((u) => u.owner === 'p1');
+      const dep = { tx: (p1.x / j.BASE_TILE) | 0, ty: (p1.y / j.BASE_TILE) | 0 };
+      for (const z of Object.keys(j.MISSIONS[cle].zones || {})) {
+        ok(relie(j, dep, j.zoneMission(z)), `${cle} : la zone « ${z} » est coupée du départ par l'eau`);
+      }
+      jusquA(j, 3);
+      for (const f of Object.values(j.G.factions)) egal(f.vaincu, false, `${cle} : ${f.id} vaincu dès le départ`);
+      egal(j.G.gameOver, false, `${cle} : mission perdue dès le départ`);
+    }
+  });
+
+  test("Marche de Saxe : un joueur inactif tient au moins quatre minutes en Normal (le temps de réagir)", () => {
+    const j = mission(charger(), 'fr2');
+    jusquA(j, 240, () => j.G.gameOver);
+    egal(j.G.gameOver, false, 'Eresburg tombe avant quatre minutes sans laisser le temps de réagir');
+    ok(j.SCN_API.tirs('vague') >= 2, 'les vagues saxonnes ne sont pas parties');
+  });
+
+  test("Roncevaux : une vague lancée vers une ÉTIQUETTE marche sur elle au lieu de rester plantée", () => {
+    const j = mission(charger(), 'fr3');
+    const roland = j.G.units.find((u) => u.tag === 'roland');
+    const poses = j.SCN_API.vague('pill', [[j.UT.ENEMI, 3]], 'e3', { vers: 'roland' });
+    ok(poses.length >= 3, 'la vague n\'est pas posée');
+    for (const u of poses) ok(Math.hypot(u.campX - roland.x, u.campY - roland.y) < 1, 'la vague ne vise pas Roland');
+    ok(j.G.buildings.filter((b) => b.tag === 'abattis1').length >= 10, "l'abattis ne barre pas le défilé");
+  });
+
+  test("Reliques d'Aix : le rival passif plafonne son armée, puis se réveille à la deuxième relique", () => {
+    const j = mission(charger(), 'fr4');
+    const a = j.G.factions.ia;
+    egal(a.role, 'passif', 'les Saxons ne démarrent pas passifs');
+    // Garnison au complet, caisse pleine, Caserne bâtie : il ne forme plus rien
+    // de militaire. (Mesuré sans ce plafond : 73 unités à la 19e minute.)
+    iaAvecArmee(j, 12);
+    Object.assign(a.res, { food: 99999, wood: 99999, stone: 99999, gold: 99999 });
+    a.vilTarget = 1;
+    // De la place pour loger : l'IA recalcule son plafond de population à
+    // chaque décision (depuis ses bâtiments), un maxPop posé à la main ne
+    // tiendrait pas — et faute de logement elle ne formerait rien, plafond
+    // d'armée ou pas : le test ne prouverait rien.
+    const bx = Math.round(a.baseX / j.BASE_TILE), by = Math.round(a.baseY / j.BASE_TILE);
+    for (let i = 0; i < 2; i++) { const h = caseLibre(j, bx - 6, by + 6 * i, 2, 2); batir(j, j.BT.HLM, h.tx, h.ty, 'ia'); }
+    const p = caseLibre(j, bx + 5, by, 2, 2);
+    const cas = batir(j, j.BT.BARRACKS, p.tx, p.ty, 'ia');
+    for (let k = 0; k < 6; k++) { a.think = 0; j.updateUneIA(0.5, a); }
+    egal(cas.trainQ.length, 0, 'le rival passif, garnison au complet, forme encore des soldats');
+    for (const r of j.G.relics.slice(0, 2)) r.bankedBy = 'p1';
+    jusquA(j, 1);
+    egal(a.role, 'normal', 'deux reliques à l\'abri et les Saxons dorment encore');
+  });
+
+  test("Ring des Avars : une place forte ceinte, qui ne sort jamais, et dont les secours cessent avec le Marché", () => {
+    const j = mission(charger(), 'fr5');
+    ok(j.G.buildings.filter((b) => b.owner === 'ia' && (b.type === j.BT.WALL || b.type === j.BT.GATE)).length >= 20, "le Ring n'a pas d'enceinte");
+    ok(j.G.buildings.some((b) => b.tag === 'marche'), 'le Marché des Avars manque');
+    jusquA(j, 300);
+    egal(j.G.factions.ia.raids || 0, 0, 'la forteresse a lancé un assaut');
+    const avant = j.SCN_API.tirs('secours');
+    ok(avant >= 1, 'aucune colonne de secours');
+    for (const b of j.G.buildings.filter((b) => b.tag === 'marche')) b.hp = 0;
+    jusquA(j, 260);
+    egal(j.SCN_API.tirs('secours'), avant, 'les secours arrivent encore après la chute du Marché');
+  });
+
+  test("Couronne d'Occident : SA Merveille tenue gagne la mission par la fin de mission — celle d'un rival la perd", () => {
+    const j = mission(charger(), 'fr6');
+    jusquA(j, 1);
+    j.G.factions.p1.merveilleAchevee = true;
+    j.checkMerveilleVictory();
+    egal(j.G.victory, true, 'la Merveille achevée ne gagne pas la mission');
+    egal(j.G.scn.fin && j.G.scn.fin.issue, 'victoire', 'la victoire par Merveille contourne la fin de mission (ni étoiles ni progression)');
+    ok(j.G.scn.etoiles >= 1, 'aucune étoile comptée');
+    const k = mission(charger(), 'fr6');
+    jusquA(k, 1);
+    k.G.factions.ia2.merveilleAchevee = true;
+    k.checkMerveilleVictory();
+    egal(k.G.gameOver, true, 'la Merveille danoise ne perd pas la mission');
+    egal(k.G.scn.fin.cause, 'merveille', 'cause de la défaite');
+    ok(/Merveille/.test(k.texteFinMission()), 'le texte de fin ne dit pas pourquoi : ' + k.texteFinMission());
+  });
+
   test('format : chaque mission et chaque campagne est bien formée', () => {
     const j = charger();
     const clesFac = new Set(['p1', 'p2', 'ia', 'ia2', 'pill']);

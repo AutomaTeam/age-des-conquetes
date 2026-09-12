@@ -365,6 +365,21 @@ function poserApports(owner,spec,tx,ty){
     const bx=zn?zn.tx:tx+(o.dx||0), by=zn?zn.ty:ty+(o.dy||0);
     poserBatimentScn(o.type,bx,by,owner,o.tag);
   }
+  // `murs` : des lignes de palissade (abattis, barrage) d'un point à un autre,
+  // en fractions de carte. Les cases d'eau ou déjà bâties sont sautées.
+  for(const m of (spec.murs||[])){
+    const a=zoneMission(m.de), z=zoneMission(m.a);
+    if(!a||!z) continue;
+    const pas=Math.max(Math.abs(z.tx-a.tx),Math.abs(z.ty-a.ty),1);
+    for(let i=0;i<=pas;i++){
+      const x=Math.round(a.tx+(z.tx-a.tx)*i/pas), y=Math.round(a.ty+(z.ty-a.ty)*i/pas);
+      if(!libreRect(x,y,1,1)) continue;
+      const b=mkBuilding(BT.WALL,x,y,owner);
+      b.constructing=false; b.progress=1;
+      if(m.tag){ b.tag=m.tag; compterTag(m.tag); }
+      placeBuilding(b);
+    }
+  }
   for(const e of (spec.unites||[])){
     const g=groupeUnites(e);
     const zn=g.zone?zoneMission(g.zone):null;
@@ -435,7 +450,13 @@ function installerMission(){
     const p=depIA[i++]; if(!p) continue;
     const a=initAI(dep[0][0],dep[0][1],idsIA[k],fd.nom||'Seigneur rival',[],
       {pos:p, civ:fd.civ, equipe:fd.equipe, age:fd.age, tune:fd.tune});
-    if(a){ poserApports(a.id,fd,p[0],p[1]); reglerIA(a,fd); }
+    if(a){
+      // `enceinte` : palissade à portails autour du Centre Ville (le gabarit
+      // de l'Arène, voir poserMursArene) — une place forte à assiéger.
+      const tc=bldById(a.tcId)||G.buildings.find(b=>b.id===a.tcId);
+      if(fd.enceinte&&tc) poserMursArene(tc.tx,tc.ty,tc.w,tc.h,a.id);
+      poserApports(a.id,fd,p[0],p[1]); reglerIA(a,fd);
+    }
   }
   // Pillards : camps, garnisons, tentes — tout ce que la mission leur donne.
   if(def.factions&&def.factions.pill){
@@ -563,7 +584,9 @@ function texteFinMission(){
     const o=objectifDef(fin.cause.slice(4));
     if(o) return o.echecTxt||`Objectif manqué : ${o.txt}`;
   }
-  return (def.causes&&def.causes[fin.cause])||def.defaite||'La mission a échoué.';
+  if(def.causes&&def.causes[fin.cause]) return def.causes[fin.cause];
+  if(fin.cause==='merveille') return "Un rival a achevé sa Merveille et l'a gardée debout : la mission est perdue.";
+  return def.defaite||'La mission a échoué.';
 }
 
 // ── RÈGLES DE MISSION ─────────────────────────────────────
@@ -609,6 +632,7 @@ function reglerIA(f,o){
   if(o.role!=null&&ROLES_IA.has(o.role)) f.role=o.role;
   if('cible' in o) f.cible=o.cible||null;
   if(o.ageMax!=null&&AGES[o.ageMax]) f.ageMax=o.ageMax;
+  if(o.armeeMax!=null) f.armeeMax=o.armeeMax;   // plafond d'armée d'une IA retenue (voir aiArmeeMax)
   if(o.heros===false) f.heros=false;
   if(o.merveille===false) f.merveille=false;
   if(o.tune) f.tune=Object.assign({},f.tune||{},o.tune);
@@ -657,6 +681,9 @@ const SCN_API = {
   echoue(id){ return !!G.scn&&G.scn.obj[id]==='echec'; },
   etat(id){ return G.scn?G.scn.obj[id]:undefined; },
   tire(id){ return !!G.scn&&(G.scn.decl[id]||0)>0; },
+  // Combien de fois un déclencheur `repete` a tiré : de quoi faire grossir
+  // des vagues successives sans tenir un compteur à part.
+  tirs(id){ return G.scn?(G.scn.decl[id]||0):0; },
   vivant(tag){ return entitesTag(tag).length>0; },
   // « Mort » suppose d'avoir existé : un tag jamais posé n'est pas mort.
   mort(tag){ return !!G.scn&&(G.scn.tags[tag]||0)>0&&entitesTag(tag).length===0; },
@@ -690,6 +717,15 @@ const SCN_API = {
   res(k,r){ const f=G.factions[facMission(k)]; return f&&f.res?(f.res[r]||0):0; },
   stats(k,cle){ const f=G.factions[facMission(k)]; return f&&f.stats?(f.stats[cle]||0):0; },
   reliques(k){ const id=facMission(k); return (G.relics||[]).filter(r=>r.bankedBy===id).length; },
+  reliquesEquipe(){ const ids=campJoueur(); return (G.relics||[]).filter(r=>ids.has(r.bankedBy)).length; },
+  // Au moins `n` entités vivantes de cette étiquette dans la zone (un convoi
+  // arrivé, une garde en place).
+  tagDansZone(tag,zone,n){
+    const zn=zoneMission(zone); if(!zn) return false;
+    let c=0;
+    for(const e of entitesTag(tag)) if(dansZoneMonde(zn,e.x,e.y)&&++c>=(n||1)) return true;
+    return false;
+  },
   vaincu(k){ const f=G.factions[facMission(k)]; return !f||!!f.vaincu; },
   coop(){ return modeSecondCommandant()==='coop'; },
   difficulte(){ return G.difficulty; },
@@ -714,7 +750,15 @@ const SCN_API = {
     const diff=DIFFS[G.difficulty]||DIFFS.normal;
     const def=missionCourante();
     const mult=adverse?diff.enemyCount*(SCN_API.coop()?((def.regles&&def.regles.coopMult)||1.3):1):1;
-    const vers=o.vers?zoneMission(o.vers):null;
+    // `vers` : une zone, ou une ÉTIQUETTE — la position actuelle de ce qu'elle
+    // désigne (un convoi en marche). Indispensable là où le joueur n'a aucun
+    // bâtiment : une vague libre cherche d'abord un bâtiment à abattre, et
+    // sans cible elle resterait plantée à son point d'apparition.
+    let vers=o.vers?zoneMission(o.vers):null;
+    if(!vers&&typeof o.vers==='string'){
+      const cibles=entitesTag(o.vers);
+      if(cibles.length){ const c=cibles[(cibles.length/2)|0]; vers={x:c.x,y:c.y}; }
+    }
     const poses=[];
     for(const e of compo){
       const g=groupeUnites(e);

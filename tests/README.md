@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**285 tests, 18 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**291 tests, 18 groupes, ~60 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -141,6 +141,20 @@ qui **ne se voit pas** :
   minuteur à zéro, jusqu'à ce que la mission le relance ; un assaut peut
   viser une zone ; `ageMax`, `heros:false`, `merveille:false` tiennent ; la
   barre du haut ne promet pas l'assaut d'un rival qui n'attaquera pas.
+  CAMPAGNE DES FRANCS (lot L5) : les six missions se lancent sans camp
+  vaincu d'office, et chaque lieu nommé est relié au départ par la terre
+  (le parcours ne bute que sur l'eau : palissades et abattis s'abattent).
+  Puis une mécanique par mission : Eresburg laisse quatre minutes pour
+  réagir ; une vague lancée vers une ÉTIQUETTE marche sur elle (à Roncevaux,
+  sans aucun bâtiment du joueur, une vague libre restait plantée — 226
+  Basques entassés à la 20e minute, trouvé par une sonde) ; un rival passif
+  plafonne son armée (sans plafond : 73 unités à son réveil) ; le Ring ne
+  sort jamais et ses secours cessent avec son Marché ; une Merveille tranche
+  une mission par la FIN DE MISSION (étoiles, progression), pas par la
+  victoire générique. Les sondes d'équilibrage (joueur inactif, escorte
+  scriptée, assaut frontal sans économie) sont hors de la suite : elles
+  mesurent, elles ne gardent pas — leurs résultats sont dans le message du
+  commit.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

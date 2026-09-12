@@ -1640,6 +1640,15 @@ function checkMerveilleVictory(){
   if(G.victory||G.gameOver) return false;
   const gagnant=factionsJouantes().find(f=>f.merveilleAchevee);
   if(!gagnant) return false;
+  // Mission : la Merveille tranche AUSSI, mais par la fin de mission (étoiles,
+  // texte, progression — voir finMission), et chez l'hôte seul : l'invité
+  // lit l'issue répliquée, il ne la décide pas (voir updateVisuel).
+  if(G.mission){
+    if(!estHote()||!G.scn||G.scn.fin) return false;
+    const notre=gagnant.id===G.me||gagnant.equipe===(moi()?moi().equipe:-1);
+    finMission(notre?'victoire':'defaite',notre?null:'merveille');
+    return true;
+  }
   // Même comparaison d'équipe que la victoire par élimination (update()) :
   // sans elle, un ALLIÉ qui achève sa Merveille (mode coop ou alliance
   // conclue via ORD.DIPLOMATIE) affichait un écran de DÉFAITE au joueur

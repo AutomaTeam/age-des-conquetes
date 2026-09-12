@@ -50,7 +50,7 @@
 Object.assign(CAMPAGNES, {
   francs:    { nom:'Le Marteau et la Couronne', heros:'francs',    ico:'👑', missions:['fr1','fr2','fr3','fr4','fr5','fr6'] },
   byzantins: { nom:'Le Rempart du Monde',       heros:'byzantins', ico:'🛡️', missions:['by1','by2','by3','by4','by5','by6'] },
-  chinois:   { nom:'Le Mandat du Ciel',         heros:'chinois',   ico:'📯', missions:[] },
+  chinois:   { nom:'Le Mandat du Ciel',         heros:'chinois',   ico:'📯', missions:['ch1','ch2','ch3','ch4','ch5','ch6'] },
   mongols:   { nom:'Les Cavaliers de la Steppe', heros:'mongols',  ico:'🏇', missions:['mo1','mo2','mo3','mo4','mo5','mo6'] },
   gitanos:   { nom:'La Route',                  heros:'gitanos',   ico:'🎻', missions:[] },
 });
@@ -1845,6 +1845,503 @@ MISSIONS.mo6 = {
   },
   etoiles:['victoire', M=>M.fait('etriers'), M=>M.temps()<40*60],
   victoire:"Les deux capitales sont tombées. Gengis Khan meurt peu après, au milieu de son armée ; il laisse à ses fils le plus grand empire d'un seul tenant que le monde ait connu.",
+};
+
+// ══════════════════════════════════════════════════════════
+//  CAMPAGNE DES CHINOIS — « Le Mandat du Ciel »
+// ══════════════════════════════════════════════════════════
+// Sun Tzu au service du royaume de Wu, de l'épreuve devant le roi Helü
+// (512 av. J.-C.) au siège de Kuaiji (494). Le plan d'origine citait la
+// Route de la Soie, qui s'ouvre trois siècles plus tard : la mission du
+// commerce devient une route de marchands entre Wu et le royaume de Qi.
+// Mécaniques vedettes : la table des contres (exercices), récolte, murailles,
+// commerce, diplomatie à plusieurs rivaux, Arbalétrier à Répétition, siège.
+
+// Les quatre exercices de la première mission : une troupe, un adversaire à
+// armes égales (sans mise à l'échelle de difficulté : c'est la table des
+// contres qu'on apprend), un lieu. Une troupe anéantie est rendue — la leçon
+// se recommence, ce n'est pas une défaite.
+const EXERCICES_SUNTZU = [
+  { id:'d1', zone:'terrain1', depuis:'e1', troupe:[[UT.PIKE,8]],   adverse:[[UT.ENEMI_C,5]] },
+  { id:'d2', zone:'terrain2', depuis:'e2', troupe:[[UT.ARC,10]],   adverse:[[UT.ENEMI,9]] },
+  { id:'d3', zone:'terrain3', depuis:'e3', troupe:[[UT.KNIGHT,6]], adverse:[[UT.ENEMIA,12]] },
+];
+
+// ── 1. L'Art de la Guerre ────────────────────────────────
+MISSIONS.ch1 = {
+  campagne:'chinois', num:1,
+  titre:"L'Art de la Guerre", lieu:'Gusu, capitale du royaume de Wu', date:'512 av. J.-C.',
+  briefing:[
+    "Un lettré de Qi a écrit treize chapitres sur la guerre. Le roi Helü de Wu les a lus, et veut voir si leur auteur, Sun Tzu, sait aussi commander.",
+    "Trois exercices, puis une vraie bataille. Chaque arme a son contre : la pique arrête la charge, la flèche use l'infanterie, le cavalier fond sur les archers. Choisissez la bonne troupe pour chaque adversaire.",
+  ],
+  carte:{ graine:5120401, type:'plaines', taille:'petite', reliques:false, faune:false },
+  zones:{
+    camp:     { x:0.18, y:0.50, r:0.05 },
+    terrain1: { x:0.44, y:0.24, r:0.04 },
+    terrain2: { x:0.44, y:0.76, r:0.04 },
+    terrain3: { x:0.68, y:0.50, r:0.04 },
+    e1:       { x:0.62, y:0.20, r:0.03 },
+    e2:       { x:0.62, y:0.80, r:0.03 },
+    e3:       { x:0.88, y:0.50, r:0.03 },
+    bord_est: { x:0.97, y:0.50, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'chinois', nom:'Sun Tzu', age:1, res:{food:0,wood:0,stone:0,gold:0},
+         depart:[0.18,0.50], base:'rien',
+         unites:[[UT.HERO,1,'suntzu']] },
+    p2:{ civ:'chinois', nom:'Wu Zixu', solo:'fusion', age:1, res:{food:0,wood:0,stone:0,gold:0},
+         depart:[0.22,0.40], base:'rien',
+         unites:[[UT.SCOUT,2]] },
+  },
+  regles:{ ageMax:1 },
+  surcouche:[
+    { op:'degager', zone:'terrain1' }, { op:'degager', zone:'terrain2' }, { op:'degager', zone:'terrain3' },
+  ],
+  objectifs:[
+    { id:'d1', txt:'Premier exercice : brisez la charge des cavaliers avec les Piquiers', cache:true, zone:'terrain1',
+      test:M=>M.tire('ex_d1')&&M.detruit('e_d1') },
+    { id:'d2', txt:"Deuxième exercice : usez l'infanterie avec les Archers", cache:true, zone:'terrain2',
+      test:M=>M.tire('ex_d2')&&M.detruit('e_d2') },
+    { id:'d3', txt:'Troisième exercice : fondez sur les archers avec les Chevaliers', cache:true, zone:'terrain3',
+      test:M=>M.tire('ex_d3')&&M.detruit('e_d3') },
+    { id:'bataille', txt:"La bataille : repoussez l'armée de Chu avec toutes les armes", cache:true, zone:'camp',
+      test:M=>M.tire('bataille')&&M.detruit('chu') },
+    { id:'suntzu', txt:'Sun Tzu doit survivre', echec:M=>M.mort('suntzu'),
+      echecTxt:"Sun Tzu est tombé. Le roi Helü referme le livre des treize chapitres." },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2, alors:M=>M.dire('intro') },
+    // Les exercices s'enchaînent : chacun s'ouvre quand le précédent est
+    // accompli (le premier au départ).
+    ...EXERCICES_SUNTZU.map((ex,i)=>({ id:'ex_'+ex.id,
+      si:M=>M.temps()>=6&&(i===0||M.fait(EXERCICES_SUNTZU[i-1].id)),
+      alors:M=>{
+        M.dire(ex.id); M.objectif(ex.id,'ajout');
+        M.renfort('p1',ex.troupe,ex.zone,{tag:'t_'+ex.id});
+        // L'adversaire attend à son poste : c'est au joueur d'y mener la
+        // bonne troupe (lâché sur elle, il gagnait l'exercice tout seul).
+        M.renfort('pill',ex.adverse,ex.depuis,{tag:'e_'+ex.id,garde:true,egal:true});
+      } })),
+    // Une troupe anéantie avant d'avoir vaincu : on la rend, la leçon recommence.
+    ...EXERCICES_SUNTZU.map(ex=>({ id:'reprise_'+ex.id, repete:true, intervalle:4,
+      si:M=>M.tire('ex_'+ex.id)&&!M.fait(ex.id)&&!M.vivant('t_'+ex.id)&&M.vivant('e_'+ex.id),
+      alors:M=>{ M.dire('reprise'); M.renfort('p1',ex.troupe,ex.zone,{tag:'t_'+ex.id}); } })),
+    { id:'bataille', si:M=>M.fait('d3'), alors:M=>{
+        M.dire('bataille'); M.objectif('bataille','ajout');
+        M.renfort('p1',[[UT.PIKE,6],[UT.ARC,8],[UT.KNIGHT,4],[UT.ARBRAP,4]],'camp');
+        M.vague('pill',[[UT.ENEMI,10],[UT.ENEMIA,6],[UT.ENEMI_C,4]],'bord_est',{tag:'chu',vers:'camp'});
+      } },
+  ],
+  orateurs:{
+    suntzu:{ nom:'Sun Tzu', ico:'📯' },
+    helu:  { nom:'Le roi Helü', ico:'👑' },
+    wuzixu:{ nom:'Wu Zixu', ico:'🗡️' },
+  },
+  dialogues:{
+    intro:[
+      ['helu',"J'ai lu vos treize chapitres. Montrez-moi qu'ils valent plus que l'encre qui les a écrits."],
+      ['suntzu',"Connais l'ennemi et connais-toi toi-même : en cent batailles, tu ne seras jamais en péril. Commençons par connaître nos armes."],
+    ],
+    d1:[['suntzu',"Des cavaliers campent au-delà du premier terrain. Menez-y les Piquiers : la pique longue arrête la charge, un Piquier frappe la cavalerie bien plus fort que tout autre."]],
+    d2:[['suntzu',"De l'infanterie tient le deuxième terrain. Approchez les Archers à portée et tirez : chaque trait l'use avant le contact."]],
+    d3:[['suntzu',"Des archers tiennent le troisième terrain. Ils fondent au corps à corps : envoyez les Chevaliers droit sur eux, sans leur laisser le temps de tirer."]],
+    reprise:[['wuzixu',"La troupe est tombée. Le maître en envoie une autre : recommencez, et choisissez mieux votre approche."]],
+    bataille:[['helu',"Assez d'exercices. L'armée de Chu franchit la frontière — toutes les armes, maintenant !"]],
+  },
+  etoiles:['victoire', M=>!EXERCICES_SUNTZU.some(ex=>M.tirs('reprise_'+ex.id)>0), M=>M.temps()<10*60],
+  victoire:"Le roi Helü fait de Sun Tzu son général. Les treize chapitres deviendront L'Art de la Guerre.",
+};
+
+// ── 2. Les Greniers de Wu ────────────────────────────────
+// Course économique (~20 min) : 3 000 de nourriture récoltée avant l'hiver,
+// sous des raids qui visent les champs. La récolte chinoise (+15 %) et les
+// deux villageois de plus au départ font la différence.
+MISSIONS.ch2 = {
+  campagne:'chinois', num:2,
+  titre:'Les Greniers de Wu', lieu:'Les rizières du lac Tai', date:'511 av. J.-C.',
+  briefing:[
+    "Une armée se nourrit avant de se battre, disent les treize chapitres. Avant de marcher sur Chu, Wu doit remplir ses greniers.",
+    "Récoltez 3 000 de nourriture et 600 d'or avant l'hiver — vingt minutes. Des pillards de Yue viendront brûler les champs : Wu Zixu tient les archers.",
+  ],
+  carte:{ graine:5110722, type:'lacs', taille:'moyenne', reliques:false },
+  zones:{
+    grenier:  { x:0.30, y:0.56, r:0.06 },
+    bord_sud: { x:0.60, y:0.97, r:0.03 },
+    bord_est: { x:0.97, y:0.44, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'chinois', nom:'Sun Tzu', age:1, res:{food:200,wood:450,stone:100,gold:100},
+         depart:[0.30,0.56], base:'village',
+         unites:[[UT.VIL,12],[UT.HERO,1,'suntzu']] },
+    p2:{ civ:'chinois', nom:'Wu Zixu', solo:'fusion', age:1, res:{food:100,wood:150,stone:50,gold:50},
+         depart:[0.44,0.70], base:'rien',
+         unites:[[UT.ARC,6],[UT.PIKE,3]],
+         batiments:[{ type:BT.TOWER, zone:{ x:0.46, y:0.72, r:0 } }] },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    { op:'terre', zone:'grenier' },
+    { op:'gisement', zone:{ x:0.18, y:0.40, r:0.04 }, type:RT.GOLD, n:6, amt:500 },
+    { op:'baies', zone:{ x:0.40, y:0.46, r:0.03 }, n:8 },
+  ],
+  objectifs:[
+    { id:'vivres', txt:"Récoltez 3 000 de nourriture avant l'hiver (20 min)", test:M=>M.recolte('food')>=3000,
+      echec:M=>M.temps()>=1200&&M.recolte('food')<3000, compte:M=>[M.recolte('food'),3000],
+      echecTxt:"L'hiver est venu, les greniers à moitié vides. L'armée ne marchera pas cette année." },
+    { id:'or',     txt:"Récoltez 600 d'or", test:M=>M.recolte('gold')>=600, compte:M=>[M.recolte('gold'),600] },
+    { id:'village',txt:'Le village doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"Les pillards de Yue ont brûlé le village." },
+    { id:'fermes', txt:'Faites pousser 12 fermes', type:'secondaire', test:M=>M.compteEquipe(BT.FARM)>=12,
+      compte:M=>[M.compteEquipe(BT.FARM),12] },
+  ],
+  declencheurs:[
+    { id:'intro',  si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'wuzixu', si:M=>M.temps()>=16, alors:M=>M.dire('wuzixu','p2') },
+    { id:'raid', repete:true, intervalle:100, si:M=>M.temps()>=240&&M.temps()<1150,
+      alors:M=>{
+        const n=M.tirs('raid');
+        const compo=[[UT.ENEMI,2+n]];
+        if(n>=2) compo.push([UT.ENEMIA,1+Math.floor(n/2)]);
+        if(n>=5) compo.push([UT.ENEMI_C,Math.floor(n/3)]);
+        M.vague('pill',compo,n%2?'bord_sud':'bord_est');
+        if(n===1) M.dire('raid');
+      } },
+    { id:'mi_chemin', si:M=>M.recolte('food')>=1500, alors:M=>M.dire('mi_chemin') },
+    { id:'hiver', si:M=>M.temps()>=1080&&!M.fait('vivres'), alors:M=>M.dire('hiver') },
+  ],
+  orateurs:{
+    suntzu:{ nom:'Sun Tzu', ico:'📯' },
+    wuzixu:{ nom:'Wu Zixu', ico:'🗡️' },
+    intendant:{ nom:"L'intendant des greniers", ico:'🌾' },
+  },
+  dialogues:{
+    intro:[
+      ['suntzu',"Celui qui transporte ses vivres sur mille li épuise son peuple. Nourrissons l'armée ici, avant de partir."],
+      ['intendant',"Trois mille mesures, seigneur, et de l'or pour les forges. Les rizières sont bonnes, si on les défend."],
+    ],
+    wuzixu:[['wuzixu',"Mes archers gardent les champs au sud. Qu'on me prévienne si la fumée monte ailleurs."]],
+    raid:[['wuzixu',"Les pillards de Yue ! Ils brûlent tout ce qui pousse !"]],
+    mi_chemin:[['intendant',"La moitié des greniers est pleine. Encore un effort avant l'hiver."]],
+    hiver:[['intendant',"Les premières gelées arrivent, seigneur. Il reste peu de temps."]],
+  },
+  etoiles:['victoire', M=>M.fait('fermes'), M=>M.statsEquipe('bldLost')===0],
+  victoire:"Les greniers de Wu débordent. L'armée peut marcher — et elle ne mangera pas le blé de ses propres paysans.",
+};
+
+// ── 3. La Muraille du Nord ───────────────────────────────
+// Fortification (~16 min) : deux lacs, une trouée entre eux. Une palissade
+// continue — portails fermés — doit la barrer avant l'arrivée des cavaliers
+// (M.coupe : plus AUCUN chemin praticable entre le nord et le sud).
+MISSIONS.ch3 = {
+  campagne:'chinois', num:3,
+  titre:'La Muraille du Nord', lieu:'La frontière du Nord', date:'508 av. J.-C.',
+  briefing:[
+    "Des cavaliers des steppes descendent chaque automne piller les marches du Nord. Entre deux grands lacs, une seule trouée leur ouvre le chemin.",
+    "Fermez-la : une palissade continue, d'un lac à l'autre, et des portails fermés. Puis tenez-la jusqu'à ce que les cavaliers renoncent.",
+  ],
+  carte:{ graine:5080312, type:'plaines', taille:'moyenne', reliques:false },
+  zones:{
+    steppe: { x:0.50, y:0.08, r:0.04 },
+    wu:     { x:0.50, y:0.74, r:0.05 },
+    trouee: { x:0.50, y:0.42, r:0.07 },
+    nord_o: { x:0.30, y:0.03, r:0.03 },
+    nord_e: { x:0.70, y:0.03, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'chinois', nom:'Sun Tzu', age:1, res:{food:300,wood:700,stone:250,gold:100},
+         depart:[0.50,0.70], base:'village',
+         unites:[[UT.VIL,12],[UT.ARC,4],[UT.PIKE,4],[UT.HERO,1,'suntzu']],
+         batiments:[[BT.BARRACKS,6,-5]] },
+    p2:{ civ:'chinois', nom:'Wu Zixu', solo:'fusion', age:1, res:{food:100,wood:200,stone:100,gold:0},
+         depart:[0.36,0.54], base:'rien',
+         unites:[[UT.VIL,4],[UT.ARC,4]] },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    // Deux lacs allongés d'un bord à l'autre, et la trouée entre eux.
+    { op:'eau', trace:[[0,0.42],[0.40,0.42]], largeur:0.025 },
+    { op:'eau', trace:[[0.60,0.42],[1,0.42]], largeur:0.025 },
+    { op:'degager', zone:'trouee' },
+    { op:'foret', zone:{ x:0.30, y:0.62, r:0.06 }, n:40 },
+    { op:'gisement', zone:{ x:0.66, y:0.62, r:0.04 }, type:RT.STONE, n:6, amt:600 },
+  ],
+  objectifs:[
+    { id:'muraille', txt:"Fermez la trouée : une palissade continue d'un lac à l'autre, portails fermés", zone:'trouee',
+      test:M=>M.coupe('steppe','wu') },
+    { id:'tenir',    txt:"Tenez la frontière jusqu'au départ des cavaliers (16 min)", test:M=>M.temps()>=960,
+      compte:M=>[M.temps()/60,16] },
+    { id:'village',  txt:'Le village doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"Les cavaliers ont passé la trouée et brûlé le village." },
+    { id:'tot',      txt:'Muraille fermée avant la première charge (6 min)', type:'secondaire',
+      test:M=>M.fait('muraille'), echec:M=>M.temps()>=360&&!M.fait('muraille') },
+  ],
+  declencheurs:[
+    { id:'intro',  si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'wuzixu', si:M=>M.temps()>=16, alors:M=>M.dire('wuzixu','p2') },
+    { id:'muraille_ok', si:M=>M.fait('muraille'), alors:M=>M.dire('muraille_ok') },
+    { id:'charge', repete:true, intervalle:80, si:M=>M.temps()>=360&&M.temps()<930,
+      alors:M=>{
+        const n=M.tirs('charge');
+        const compo=[[UT.ENEMI_C,2+n],[UT.ENEMI,2+Math.floor(n/2)]];
+        if(n>=3) compo.push([UT.ENEMI_G,1]);
+        M.vague('pill',compo,n%2?'nord_o':'nord_e');
+        if(n===1) M.dire('charge');
+      } },
+    { id:'breche', si:M=>M.fait('muraille')&&!M.coupe('steppe','wu'), alors:M=>M.dire('breche') },
+  ],
+  orateurs:{
+    suntzu:{ nom:'Sun Tzu', ico:'📯' },
+    wuzixu:{ nom:'Wu Zixu', ico:'🗡️' },
+    guetteur:{ nom:'Un guetteur', ico:'🔭' },
+  },
+  dialogues:{
+    intro:[
+      ['suntzu',"L'invincibilité dépend de nous ; la vulnérabilité de l'ennemi dépend de lui. Fermons la trouée, et laissons-les se briser dessus."],
+      ['guetteur',"Les lacs sont infranchissables. Il n'y a que la trouée : une palissade bien jointe, et des portails qu'on garde fermés."],
+    ],
+    wuzixu:[['wuzixu',"Mes bûcherons sont à l'ouest. Du bois pour mille pas de palissade, s'il le faut."]],
+    muraille_ok:[['guetteur',"La trouée est fermée ! Plus rien ne passe du nord au sud."]],
+    charge:[['guetteur',"Les cavaliers des steppes ! Ils foncent sur la trouée !"]],
+    breche:[['wuzixu',"Brèche dans la muraille ! Qu'on la referme, vite !"]],
+  },
+  etoiles:['victoire', M=>M.fait('tot'), M=>M.statsEquipe('bldLost')<=5],
+  victoire:"Les cavaliers repartent vers le nord, les mains vides. La muraille tient — et tiendra encore des siècles, sous d'autres noms.",
+};
+
+// ── 4. La Route des Marchands ────────────────────────────
+// Commerce (~20 min) : une route entre deux Marchés éloignés, à faire
+// rapporter 1 000 d'or. Le relais de l'est est isolé : Wu Zixu le tient.
+MISSIONS.ch4 = {
+  campagne:'chinois', num:4,
+  titre:'La Route des Marchands', lieu:'De Gusu au royaume de Qi', date:'507 av. J.-C.',
+  briefing:[
+    "Une guerre coûte mille pièces d'or par jour, disent les treize chapitres. Wu n'a pas cet or : il faut le faire venir.",
+    "Ouvrez une route commerciale entre le Marché de Gusu et celui du relais de l'est, et qu'elle rapporte 1 000 d'or. Les pillards ont vu passer les caravanes : le relais devra tenir.",
+  ],
+  carte:{ graine:5070915, type:'plaines', taille:'moyenne' },
+  zones:{
+    gusu:   { x:0.16, y:0.50, r:0.05 },
+    relais: { x:0.84, y:0.44, r:0.05 },
+    nord:   { x:0.60, y:0.03, r:0.03 },
+    sud:    { x:0.66, y:0.97, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'chinois', nom:'Sun Tzu', age:1, res:{food:300,wood:500,stone:100,gold:150},
+         depart:[0.16,0.50], base:'village',
+         unites:[[UT.VIL,10],[UT.ARC,3],[UT.HERO,1,'suntzu']] },
+    p2:{ civ:'chinois', nom:'Wu Zixu', solo:'fusion', age:1, res:{food:150,wood:250,stone:100,gold:50},
+         depart:[0.84,0.44], base:'tc',
+         unites:[[UT.VIL,4],[UT.ARC,5],[UT.PIKE,3]],
+         batiments:[[BT.MARKET,4,-4],[BT.TOWER,-3,4]] },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    { op:'degager', zone:'relais' },
+  ],
+  objectifs:[
+    { id:'route',  txt:"Faites rapporter 1 000 d'or à vos caravanes (Marché → route commerciale)",
+      test:M=>M.statsEquipe('tradeGold')>=1000, compte:M=>[M.statsEquipe('tradeGold'),1000] },
+    { id:'relais', txt:"Le relais de l'est doit tenir", zone:'relais', echec:M=>!M.bati(BT.TC,'relais'),
+      echecTxt:"Le relais de l'est est tombé. La route est coupée." },
+    { id:'suntzu', txt:'Sun Tzu doit survivre', echec:M=>M.mort('suntzu'),
+      echecTxt:"Sun Tzu est tombé sur la route." },
+    { id:'trois',  txt:'Ouvrez une seconde route : trois Marchés', type:'secondaire', test:M=>M.compteEquipe(BT.MARKET)>=3,
+      compte:M=>[M.compteEquipe(BT.MARKET),3] },
+  ],
+  declencheurs:[
+    { id:'intro',  si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'wuzixu', si:M=>M.temps()>=16, alors:M=>M.dire('wuzixu','p2') },
+    { id:'premiere', si:M=>M.statsEquipe('tradeGold')>0, alors:M=>M.dire('premiere') },
+    { id:'pillards', repete:true, intervalle:110, si:M=>M.temps()>=300&&!M.fait('route'),
+      alors:M=>{
+        const n=M.tirs('pillards');
+        M.vague('pill',[[UT.ENEMI,3+n],[UT.ENEMIA,1+Math.floor(n/2)]],n%2?'nord':'sud',{vers:'relais'});
+        if(n===1) M.dire('pillards');
+      } },
+  ],
+  orateurs:{
+    suntzu:{ nom:'Sun Tzu', ico:'📯' },
+    wuzixu:{ nom:'Wu Zixu', ico:'🗡️' },
+    marchand:{ nom:'Un marchand de Qi', ico:'💰' },
+  },
+  dialogues:{
+    intro:[
+      ['marchand',"Le sel de Qi contre la soie de Wu : les deux marchés s'enrichiront. Plus la route est longue, plus la caravane rapporte."],
+      ['suntzu',"Sélectionnez un Marché, choisissez l'autre comme destination : les caravanes feront le reste."],
+    ],
+    wuzixu:[['wuzixu',"Le relais de l'est a son Marché. Je le tiens — mais il est loin de tout."]],
+    premiere:[['marchand',"La première caravane est arrivée ! L'or commence à couler."]],
+    pillards:[['wuzixu',"Des pillards convergent vers le relais ! Ils en veulent aux caravanes !"]],
+  },
+  etoiles:['victoire', M=>M.fait('trois'), M=>M.temps()<16*60],
+  victoire:"Les caravanes vont et viennent entre Wu et Qi. Le trésor de guerre est plein.",
+};
+
+// ── 5. Boju ──────────────────────────────────────────────
+// Conquête à trois (~40 min) : prendre Ying, la capitale de Chu, pendant que
+// Yue attaque Wu dans le dos. Yue peut être apaisé par la diplomatie (la
+// règle ordinaire : il n'accepte que s'il n'est pas le plus fort) — et peut
+// trahir s'il le devient.
+MISSIONS.ch5 = {
+  campagne:'chinois', num:5,
+  titre:'Boju', lieu:'Du royaume de Wu à Ying, capitale de Chu', date:'506 av. J.-C.',
+  briefing:[
+    "Chu est le plus grand royaume du Sud. Sun Tzu a remonté la rivière Han, battu son armée à Boju, et marche sur Ying.",
+    "Prenez Ying. Pendant ce temps, Yue attaque Wu dans le dos : Fugai tient la frontière. Yue acceptera peut-être une trêve — s'il n'est pas le plus fort.",
+  ],
+  carte:{ graine:5061122, type:'plaines', taille:'normale' },
+  zones:{
+    ying:  { x:0.84, y:0.34, r:0.06 },
+    wu:    { x:0.18, y:0.46, r:0.05 },
+    yue:   { x:0.34, y:0.88, r:0.05 },
+    gue_han:{ x:0.56, y:0.40, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'chinois', nom:'Sun Tzu', age:2, res:{food:700,wood:800,stone:400,gold:500},
+         depart:[0.18,0.46], base:'village',
+         unites:[[UT.VIL,14],[UT.ARBRAP,6],[UT.PIKE,6],[UT.KNIGHT,4],[UT.HERO,1,'suntzu']],
+         batiments:[[BT.BARRACKS,6,-5],[BT.CASTLE,-7,4]] },
+    p2:{ civ:'chinois', nom:'Fugai', solo:'fusion', age:2, res:{food:250,wood:250,stone:150,gold:150},
+         depart:[0.26,0.70], base:'tc',
+         unites:[[UT.VIL,5],[UT.ARC,6],[UT.PIKE,4]],
+         batiments:[[BT.TOWER,5,4]] },
+  },
+  factions:{
+    // Deux royaumes bâtis et armés dès le départ (partis d'un Centre Ville nu,
+    // un joueur inactif tenait encore à la 21e minute en Normal — sonde).
+    ia: { civ:'francs',  nom:'Royaume de Chu', equipe:3, depart:[0.84,0.34], age:2, ageMax:3,
+          heros:false, merveille:false, tune:{ firstAtk:600, start:{food:700,wood:700,stone:400,gold:400} },
+          batiments:[[BT.BARRACKS,-6,-5],[BT.STABLE,7,4],[BT.HLM,-7,2],[BT.HOUSE,4,-6],[BT.HOUSE,6,-6],[BT.TOWER,-5,5]],
+          unites:[[UT.VIL,10],[UT.ENEMI,8],[UT.ENEMIA,6],[UT.ENEMI_C,4]] },
+    ia2:{ civ:'mongols', nom:'Royaume de Yue', equipe:4, depart:[0.34,0.88], age:2, ageMax:3,
+          heros:false, merveille:false, cible:'wu', diplomatie:true,
+          tune:{ firstAtk:480, start:{food:500,wood:500,stone:250,gold:250} },
+          batiments:[[BT.BARRACKS,6,-5],[BT.HLM,-7,2],[BT.HOUSE,4,5]],
+          unites:[[UT.VIL,8],[UT.ENEMI,6],[UT.ENEMIA,4],[UT.ENEMI_C,2]] },
+  },
+  regles:{ ageMax:3 },
+  surcouche:[
+    // La rivière Han, du nord au sud, entre Wu et Chu.
+    { op:'eau', trace:[[0.58,0],[0.56,0.4],[0.60,0.7],[0.58,1]], largeur:0.012 },
+    { op:'gue', zone:'gue_han' },
+    { op:'gue', zone:{ x:0.60, y:0.74, r:0.03 } },
+  ],
+  objectifs:[
+    { id:'ying',   txt:'Prenez Ying : rasez le Centre Ville de Chu', zone:'ying', test:M=>M.vaincu('ia') },
+    { id:'wu',     txt:'Wu doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"Yue a brûlé la capitale de Wu pendant que l'armée était au loin." },
+    { id:'suntzu', txt:'Sun Tzu doit survivre', echec:M=>M.mort('suntzu'),
+      echecTxt:"Sun Tzu est tombé sur la route de Ying." },
+    { id:'yue',    txt:'Réglez le sort de Yue : une trêve (Diplomatie), ou sa défaite', type:'secondaire', zone:'yue',
+      test:M=>M.allie('ia2')||M.vaincu('ia2') },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'fugai', si:M=>M.temps()>=16, alors:M=>M.dire('fugai','p2') },
+    { id:'yue_attaque', si:M=>M.temps()>=460, alors:M=>M.dire('yue_attaque') },
+    { id:'treve', si:M=>M.allie('ia2'), alors:M=>M.dire('treve') },
+    { id:'trahison', si:M=>M.tire('treve')&&!M.allie('ia2')&&!M.vaincu('ia2'), alors:M=>M.dire('trahison') },
+    { id:'imperial', si:M=>M.age('p1')>=3, alors:M=>M.dire('imperial') },
+  ],
+  orateurs:{
+    suntzu:{ nom:'Sun Tzu', ico:'📯' },
+    fugai: { nom:'Fugai', ico:'🗡️' },
+    helu:  { nom:'Le roi Helü', ico:'👑' },
+  },
+  dialogues:{
+    intro:[
+      ['helu',"Chu nous a humiliés pendant trois générations. Qu'elle apprenne ce que vaut Wu."],
+      ['suntzu',"La guerre est tout entière fondée sur la ruse. Frappons là où ils ne nous attendent pas : par le gué de la Han."],
+    ],
+    fugai:[['fugai',"Je tiens la frontière du sud. Si Yue bouge, je le verrai."]],
+    yue_attaque:[['fugai',"Yue a franchi la frontière ! Leurs colonnes marchent sur Wu !"]],
+    treve:[['fugai',"Yue accepte une trêve. Pour combien de temps, je ne sais pas."]],
+    trahison:[['fugai',"Yue a rompu la trêve ! Ils nous attaquent à nouveau !"]],
+    imperial:[['suntzu',"À l'Université, qu'on étudie l'arc composite : nos tireurs porteront plus loin que les leurs."]],
+  },
+  etoiles:['victoire', M=>M.fait('yue'), M=>M.temps()<35*60],
+  victoire:"Ying est tombée. Pour la première fois, Wu est la première puissance du Sud.",
+};
+
+// ── 6. Kuaiji ────────────────────────────────────────────
+// Siège final (~45 min) : le roi Goujian de Yue s'est retranché sur le mont
+// Kuaiji. Âge Impérial autorisé : Trébuchets, Arbalétriers à Répétition, Arc
+// Composite. Chu envoie une armée de secours.
+MISSIONS.ch6 = {
+  campagne:'chinois', num:6,
+  titre:'Kuaiji', lieu:'Le mont Kuaiji, au royaume de Yue', date:'494 av. J.-C.',
+  briefing:[
+    "Le vieux roi Helü est mort d'une blessure reçue contre Yue. Son fils Fuchai a juré de le venger, et Sun Tzu marche une dernière fois.",
+    "Le roi Goujian s'est retranché sur le mont Kuaiji, derrière une enceinte et un château. Montez à l'Âge Impérial, amenez les Trébuchets — et gardez un œil sur l'armée de secours de Chu.",
+  ],
+  carte:{ graine:4941030, type:'foret', taille:'normale' },
+  zones:{
+    kuaiji: { x:0.80, y:0.66, r:0.06 },
+    wu:     { x:0.18, y:0.30, r:0.05 },
+    chu:    { x:0.80, y:0.14, r:0.05 },
+  },
+  roles:{
+    p1:{ civ:'chinois', nom:'Sun Tzu', age:2, res:{food:1000,wood:1200,stone:700,gold:900},
+         depart:[0.18,0.30], base:'village',
+         unites:[[UT.VIL,16],[UT.ARBRAP,8],[UT.PIKE,6],[UT.KNIGHT,6],[UT.RAM,2],[UT.HERO,1,'suntzu']],
+         batiments:[[BT.BARRACKS,6,-5],[BT.CASTLE,-7,4],[BT.SIEGE,7,4],[BT.UNIV,-6,-6]] },
+    p2:{ civ:'chinois', nom:'Fuchai', solo:'fusion', age:2, res:{food:300,wood:300,stone:200,gold:200},
+         depart:[0.26,0.64], base:'tc',
+         unites:[[UT.VIL,5],[UT.ARC,6],[UT.KNIGHT,4]] },
+  },
+  factions:{
+    ia: { civ:'mongols', nom:'Yue de Goujian', equipe:3, depart:[0.80,0.66], age:3,
+          role:'forteresse', heros:false, merveille:false, enceinte:true, tune:{ vilTarget:10 },
+          batiments:[[BT.CASTLE,-5,-8],[BT.TOWER,8,-6],[BT.TOWER,8,7],[BT.TOWER,-7,7],[BT.BARRACKS,-8,3]],
+          unites:[[UT.ENEMI_C,6],[UT.ENEMIA,6],[UT.ENEMI,8]] },
+    // Une armée de secours, pas un village : bâtie et armée dès le départ
+    // (partie d'un Centre Ville nu, elle ne menaçait personne en 21 minutes).
+    ia2:{ civ:'francs', nom:'Armée de secours de Chu', equipe:3, depart:[0.80,0.14], age:2, ageMax:3,
+          heros:false, merveille:false, cible:'wu', tune:{ firstAtk:600, start:{food:700,wood:700,stone:400,gold:400} },
+          batiments:[[BT.BARRACKS,-6,4],[BT.STABLE,7,4],[BT.HLM,-7,-2],[BT.HOUSE,4,-4]],
+          unites:[[UT.VIL,10],[UT.ENEMI,10],[UT.ENEMIA,6],[UT.ENEMI_C,6]] },
+  },
+  regles:{ ageMax:3 },
+  surcouche:[
+    { op:'degager', zone:'kuaiji' },
+    { op:'gisement', zone:{ x:0.10, y:0.46, r:0.04 }, type:RT.STONE, n:8, amt:700 },
+    { op:'gisement', zone:{ x:0.30, y:0.14, r:0.04 }, type:RT.GOLD, n:8, amt:700 },
+  ],
+  objectifs:[
+    { id:'kuaiji', txt:'Prenez Kuaiji : rasez le Centre Ville de Goujian', zone:'kuaiji', test:M=>M.vaincu('ia') },
+    { id:'suntzu', txt:'Sun Tzu doit survivre', echec:M=>M.mort('suntzu'),
+      echecTxt:"Sun Tzu est tombé au pied du mont Kuaiji." },
+    { id:'wu',     txt:'Wu doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"L'armée de Chu a brûlé la capitale de Wu." },
+    { id:'arc',    txt:"Étudiez l'Arc Composite (Université, Âge Impérial)", type:'secondaire',
+      test:M=>M.rechercheEquipe('arc_composite') },
+    { id:'chu',    txt:"Brisez l'armée de secours de Chu", type:'secondaire', test:M=>M.vaincu('ia2') },
+  ],
+  declencheurs:[
+    { id:'intro',  si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'fuchai', si:M=>M.temps()>=16, alors:M=>M.dire('fuchai','p2') },
+    { id:'imperial', si:M=>M.age('p1')>=3, alors:M=>M.dire('imperial') },
+    { id:'secours', si:M=>M.temps()>=700, alors:M=>M.dire('secours') },
+    { id:'breche', si:M=>M.compte('ia',BT.WALL)+M.compte('ia',BT.GATE)<24, alors:M=>M.dire('breche') },
+  ],
+  orateurs:{
+    suntzu:  { nom:'Sun Tzu', ico:'📯' },
+    fuchai:  { nom:'Fuchai',  ico:'👑' },
+    goujian: { nom:'Goujian', ico:'🐍' },
+  },
+  dialogues:{
+    intro:[
+      ['goujian',"Wu a perdu son roi. Qu'elle perde aussi son général sur ma montagne."],
+      ['suntzu',"Assiéger une ville fortifiée est le pire des partis. Mais quand il le faut, qu'on amène les trébuchets, et qu'on ne laisse aucune issue."],
+    ],
+    fuchai:[['fuchai',"Je n'oublierai pas mon père. Je tiens Wu pendant que vous montez à Kuaiji."]],
+    imperial:[['suntzu',"L'Âge Impérial : les Trébuchets portent plus loin que leurs tours. Et à l'Université, l'arc composite."]],
+    secours:[['fuchai',"L'armée de Chu descend du nord ! Elle marche sur Wu !"]],
+    breche:[['suntzu',"L'enceinte est ouverte. Ne laissez pas Goujian s'échapper."]],
+  },
+  etoiles:['victoire', M=>M.fait('arc'), M=>M.fait('chu')],
+  victoire:"Goujian se rend et devient le serviteur de Fuchai. On dit que Sun Tzu se retira alors, loin des cours — laissant ses treize chapitres au monde.",
 };
 
 // Retour d'une fin de mission : rouvre le briefing laissé en partant (voir

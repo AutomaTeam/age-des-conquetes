@@ -6146,6 +6146,45 @@ groupe('campagne', () => {
     egal(j.SCN_API.statsEquipe('tradeGold'), j.gainCaravane(m2), "le commerce compté n'est pas l'or payé par la caravane");
   });
 
+  // ══ CAMPAGNE DES GITANOS (lot L9) ══════════════════════════
+  test("Le Décret : racheté par la Diplomatie — 800 d'or prélevés, et la mission est gagnée", () => {
+    const j = mission(charger(), 'gi3');
+    const p1 = j.G.factions.p1;
+    p1.res.gold = 500;
+    const refus = j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia', action: 'proposer' });
+    ok(refus.raison === 'refuse' && /800/.test(refus.msg || ''), 'le comte traite sans ses 800 d\'or : ' + JSON.stringify(refus));
+    p1.res.gold = 900;
+    ok(j.applyCommand({ t: j.ORD.DIPLOMATIE, f: 'p1', cibleId: 'ia', action: 'proposer' }).ok, 'le rachat du décret est refusé');
+    egal(p1.res.gold, 100, 'le rachat n\'a pas prélevé ses 800 d\'or');
+    jusquA(j, 2, () => j.G.victory);
+    egal(j.G.victory, true, 'le décret racheté ne gagne pas la mission');
+  });
+
+  test("Les Roues Cerclées : le péage barre VRAIMENT le col — aucun chemin vers le sud tant que la palissade tient", () => {
+    const j = mission(charger(), 'gi4');
+    egal(j.SCN_API.coupe('campement', 'sud'), true, 'on passe au sud sans briser le péage : le col a une brèche');
+    for (const b of j.G.buildings.filter((b) => b.tag === 'barriere').slice(10, 14)) {
+      b.hp = 0; j.G.bmap[b.ty][b.tx] = 0;
+    }
+    egal(j.SCN_API.coupe('campement', 'sud'), false, 'une brèche dans la palissade ne rouvre pas le col');
+  });
+
+  test("L'Alliance des Routes : une route commerciale jusqu'au Marché bâti dans la ville la rallie — ses bâtiments passent à la compagnie", () => {
+    const j = mission(charger(), 'gi5');
+    const nouveau = j.G.buildings.find((b) => b.owner === 'p1' && b.type === j.BT.MARKET);
+    ok(nouveau, 'le campement n\'a pas son Marché');
+    const v = j.zoneMission('valence');
+    const p = caseLibre(j, v.tx + 3, v.ty + 3, 2, 2);
+    const m = batir(j, j.BT.MARKET, p.tx, p.ty, 'p1');
+    jusquA(j, 1);
+    egal(j.SCN_API.tire('ralliement_valence'), false, 'la ville se rallie sans route commerciale');
+    ok(ordreDe(j, 'p1', j.ORD.ROUTE_COMMERCIALE, { bId: nouveau.id, toId: m.id }).ok, 'la route vers Valence est refusée');
+    jusquA(j, 1);
+    ok(j.SCN_API.tire('ralliement_valence'), 'la route commerciale ne rallie pas Valence');
+    ok(j.G.buildings.filter((b) => b.tag === 'valence').every((b) => b.owner === 'p1'), 'les bâtiments de Valence ne passent pas à la compagnie');
+    egal(j.G.factions.ia.atkTimer, 0, 'le comte ne réagit pas au ralliement');
+  });
+
   test('format : chaque mission et chaque campagne est bien formée', () => {
     const j = charger();
     const clesFac = new Set(['p1', 'p2', 'ia', 'ia2', 'pill']);

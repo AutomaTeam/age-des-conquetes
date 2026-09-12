@@ -52,7 +52,7 @@ Object.assign(CAMPAGNES, {
   byzantins: { nom:'Le Rempart du Monde',       heros:'byzantins', ico:'🛡️', missions:['by1','by2','by3','by4','by5','by6'] },
   chinois:   { nom:'Le Mandat du Ciel',         heros:'chinois',   ico:'📯', missions:['ch1','ch2','ch3','ch4','ch5','ch6'] },
   mongols:   { nom:'Les Cavaliers de la Steppe', heros:'mongols',  ico:'🏇', missions:['mo1','mo2','mo3','mo4','mo5','mo6'] },
-  gitanos:   { nom:'La Route',                  heros:'gitanos',   ico:'🎻', missions:[] },
+  gitanos:   { nom:'La Route',                  heros:'gitanos',   ico:'🎻', missions:['gi1','gi2','gi3','gi4','gi5','gi6'] },
 });
 
 // ── MISSION D'ESSAI DU MOTEUR ─────────────────────────────
@@ -2342,6 +2342,555 @@ MISSIONS.ch6 = {
   },
   etoiles:['victoire', M=>M.fait('arc'), M=>M.fait('chu')],
   victoire:"Goujian se rend et devient le serviteur de Fuchai. On dit que Sun Tzu se retira alors, loin des cours — laissant ses treize chapitres au monde.",
+};
+
+// ══════════════════════════════════════════════════════════
+//  CAMPAGNE DES GITANOS — « La Route »
+// ══════════════════════════════════════════════════════════
+// Zaïda la Voyageuse, meneuse de caravane, de l'arrivée en Aragon (1425, un
+// sauf-conduit du roi Alphonse V) au Grand Rassemblement. Consigne d'écriture,
+// tenue pour chaque réplique : un peuple de la route, de marchands, de
+// forgerons, de maquignons et de musiciens ; la famille, la parole donnée,
+// l'hospitalité. Jamais de vol, de malédiction ni de « diseuse » : les
+// adversaires sont des seigneurs qui veulent les chasser, pas l'inverse.
+// Mécaniques vedettes : escorte de Roulottes, commerce (+50 %), Hospice,
+// diplomatie à tribut, Roues Cerclées, ralliement par le commerce, Merveille.
+
+// ── 1. La Caravane ───────────────────────────────────────
+// Escorte sans base (~12 min) : quatre roulottes et les familles, des
+// Pyrénées à Saragosse. Un abattis de routiers barre le gué ; au poste
+// frontière, les roulottes doivent attendre qu'on vise le sauf-conduit —
+// une minute sous les coups. Les routiers POURSUIVENT le convoi
+// (M.traquer) : lancée sur sa position du moment, une embuscade arrivait
+// derrière un convoi déjà passé (mesuré : Saragosse en 116 s, Brutal, sans
+// une perte).
+MISSIONS.gi1 = {
+  campagne:'gitanos', num:1,
+  titre:'La Caravane', lieu:"Des Pyrénées à Saragosse", date:'1425',
+  briefing:[
+    "Après des années de route, la compagnie de Zaïda arrive aux portes de l'Aragon. Le roi Alphonse a signé un sauf-conduit : ils peuvent voyager librement dans tout le royaume.",
+    "Encore faut-il arriver. Faites viser le sauf-conduit au poste frontière, puis menez les roulottes jusqu'à Saragosse — au moins trois sur quatre. Des bandes de routiers, qui ne savent pas lire les sceaux royaux, guettent la route.",
+  ],
+  carte:{ graine:1425061, type:'foret', taille:'moyenne', reliques:false },
+  zones:{
+    col:       { x:0.06, y:0.18, r:0.04 },
+    approche:  { x:0.30, y:0.36, r:0.07 },
+    gue:       { x:0.40, y:0.44, r:0.03 },
+    poste:     { x:0.58, y:0.60, r:0.04 },
+    a1:        { x:0.36, y:0.18, r:0.03 },
+    a2:        { x:0.78, y:0.46, r:0.03 },
+    a3:        { x:0.50, y:0.86, r:0.03 },
+    saragosse: { x:0.92, y:0.82, r:0.05 },
+  },
+  roles:{
+    p1:{ civ:'gitanos', nom:'Zaïda', age:1, res:{food:0,wood:0,stone:0,gold:0},
+         depart:[0.08,0.20], base:'rien',
+         unites:[[UT.ROUL,4,'caravane'],[UT.VIL,6,'famille'],[UT.HERO,1,'zaida'],[UT.MIL,5]] },
+    p2:{ civ:'gitanos', nom:'Tomás', solo:'fusion', age:1, res:{food:0,wood:0,stone:0,gold:0},
+         depart:[0.14,0.26], base:'rien',
+         unites:[[UT.SCOUT,3],[UT.ARC,4]] },
+  },
+  factions:{
+    pill:{
+      // L'abattis des routiers en travers du gué, leurs archers derrière.
+      murs:[{ de:[0.41,0.40], a:[0.41,0.48], tag:'abattis' }],
+      unites:[
+        { type:UT.ENEMIA, n:4, zone:{ x:0.45, y:0.44, r:0.01 }, tag:'gue_garde', garde:true },
+        { type:UT.ENEMI,  n:3, zone:{ x:0.45, y:0.44, r:0.01 }, tag:'gue_garde', garde:true },
+      ],
+    },
+  },
+  regles:{ ageMax:1 },
+  surcouche:[
+    // Le Gállego, qu'on passe à gué.
+    { op:'eau', trace:[[0.42,0],[0.40,0.44],[0.44,1]], largeur:0.012 },
+    { op:'gue', zone:'gue' },
+    { op:'degager', zone:'gue' },
+    { op:'degager', zone:'poste' },
+    { op:'degager', zone:'saragosse' },
+  ],
+  objectifs:[
+    { id:'poste',   txt:"Faites viser le sauf-conduit : 3 roulottes au poste frontière, le temps qu'il faut", zone:'poste',
+      test:M=>M.tirs('attente')>=60, compte:M=>[M.tirs('attente'),60] },
+    { id:'arrivee', txt:"Menez au moins 3 roulottes jusqu'à Saragosse", zone:'saragosse',
+      test:M=>M.tagDansZone('caravane','saragosse',3), echec:M=>M.restants('caravane')<3,
+      compte:M=>[M.tagCompteZone('caravane','saragosse'),3],
+      echecTxt:"Trop de roulottes sont perdues. La compagnie repartira — mais plus pauvre, et plus seule." },
+    { id:'zaida',   txt:'Zaïda doit survivre', echec:M=>M.mort('zaida'),
+      echecTxt:"Zaïda est tombée sur la route. La compagnie se disperse." },
+    { id:'tous',    txt:'Personne en arrière : les quatre roulottes à Saragosse', type:'secondaire',
+      test:M=>M.tagDansZone('caravane','saragosse',4) },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'tomas', si:M=>M.temps()>=16, alors:M=>M.dire('tomas','p2') },
+    { id:'approche', si:M=>M.equipeDansZone('approche',1), alors:M=>{
+        M.dire('approche'); M.vague('pill',[[UT.ENEMI,4],[UT.ENEMIA,2]],'a1',{tag:'routiers'});
+      } },
+    // Le gué est ouvert dès qu'un chemin passe de nouveau d'une rive à l'autre.
+    { id:'abattis_ok', si:M=>!M.coupe('col','poste'), alors:M=>M.dire('abattis_ok') },
+    // Le visa du sauf-conduit : une seconde de plus à chaque seconde passée au
+    // poste avec au moins trois roulottes. À la première, l'embuscade.
+    { id:'attente', repete:true, intervalle:1, si:M=>!M.fait('poste')&&M.tagCompteZone('caravane','poste')>=3,
+      alors:M=>{
+        if(M.tirs('attente')===1){
+          M.dire('poste');
+          M.vague('pill',[[UT.ENEMI,4],[UT.ENEMIA,3]],'a2',{tag:'routiers'});
+          M.vague('pill',[[UT.ENEMI,3],[UT.ENEMI_C,2]],'a3',{tag:'routiers'});
+        }
+        if(M.tirs('attente')===30){
+          M.dire('renfort_routiers');
+          M.vague('pill',[[UT.ENEMI,3],[UT.ENEMIA,2]],'a2',{tag:'routiers'});
+        }
+      } },
+    // Les routiers lâchés courent après le convoi, où qu'il soit.
+    { id:'poursuite', repete:true, intervalle:2, si:M=>M.vivant('routiers'), alors:M=>M.traquer('routiers') },
+    { id:'poste_ok', si:M=>M.fait('poste'), alors:M=>M.dire('poste_ok') },
+    { id:'saragosse', si:M=>M.tagDansZone('caravane','saragosse',1), alors:M=>M.dire('saragosse') },
+  ],
+  orateurs:{
+    zaida:   { nom:'Zaïda', ico:'🎻' },
+    tomas:   { nom:'Tomás', ico:'🐎' },
+    abuela:  { nom:'La grand-mère Rosa', ico:'🧶' },
+    capitaine:{ nom:'Le capitaine du poste', ico:'📜' },
+  },
+  dialogues:{
+    intro:[
+      ['zaida',"Le sceau du roi est sur ce parchemin. Mais un parchemin n'arrête pas une flèche : on reste groupés, les roulottes au milieu."],
+      ['abuela',"J'ai passé plus de montagnes que tu n'as vu d'hivers, ma fille. Celle-là ne sera pas la dernière."],
+    ],
+    tomas:[['tomas',"Je pars devant avec les cavaliers. Des routiers ont barré le gué d'un abattis : il faudra l'abattre avant de passer."]],
+    approche:[['tomas',"Des routiers sortent des bois ! Ils en veulent aux roulottes !"]],
+    abattis_ok:[['zaida',"L'abattis cède ! Faites passer les roulottes, vite."]],
+    poste:[
+      ['capitaine',"Un sauf-conduit du roi ? Voyons ce sceau... Attendez ici. Cela prendra le temps qu'il faudra."],
+      ['tomas',"Pendant qu'il lit, les routiers attaquent de deux côtés ! Protégez les roulottes !"],
+    ],
+    renfort_routiers:[['abuela',"Encore des routiers ! Tenez bon, le capitaine n'a pas fini de lire."]],
+    poste_ok:[['capitaine',"Le sceau est bon. Passez, et que Dieu vous garde sur la route de Saragosse."]],
+    saragosse:[['zaida',"Les tours de Saragosse ! On est arrivés. Ce soir, on joue et on danse."]],
+  },
+  etoiles:['victoire', M=>M.fait('tous'), M=>M.tagDansZone('famille','saragosse',6)],
+  victoire:"La compagnie entre dans Saragosse au son des violons. Les gens de la ville sortent pour voir passer ces voyageurs venus de si loin.",
+};
+
+// ── 2. La Foire de Saint-Jacques ─────────────────────────
+// Commerce (~20 min) : un campement dressé près de la foire, deux Marchés
+// éloignés, 800 d'or de commerce — le +50 % des Gitanos fait la moitié du
+// chemin. Un Hospice pour les pèlerins, en secondaire.
+MISSIONS.gi2 = {
+  campagne:'gitanos', num:2,
+  titre:'La Foire de Saint-Jacques', lieu:'Sur le chemin de Compostelle', date:'1430',
+  briefing:[
+    "Chaque été, la grande foire du chemin de Saint-Jacques attire des marchands de tout le royaume. La compagnie de Zaïda y a monté son campement.",
+    "Chevaux, chaudrons, musique : il y a de quoi faire. Élevez deux Marchés, l'un au campement et l'autre à la foire, et que les caravanes rapportent 800 d'or. Des brigands rôdent sur les chemins.",
+  ],
+  carte:{ graine:1430720, type:'plaines', taille:'moyenne' },
+  zones:{
+    campement:{ x:0.18, y:0.62, r:0.05 },
+    foire:    { x:0.82, y:0.34, r:0.06 },
+    bois:     { x:0.50, y:0.10, r:0.04 },
+    sud:      { x:0.60, y:0.97, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'gitanos', nom:'Zaïda', age:1, res:{food:250,wood:450,stone:100,gold:150},
+         depart:[0.18,0.62], base:'village',
+         unites:[[UT.VIL,10],[UT.MIL,3],[UT.HERO,1,'zaida']] },
+    p2:{ civ:'gitanos', nom:'Tomás', solo:'fusion', age:1, res:{food:100,wood:200,stone:50,gold:100},
+         depart:[0.76,0.40], base:'rien',
+         unites:[[UT.VIL,4],[UT.ARC,4],[UT.SCOUT,2]] },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    { op:'degager', zone:'foire' },
+  ],
+  objectifs:[
+    { id:'marches',  txt:'Élevez deux Marchés : un au campement, un à la foire', zone:'foire',
+      test:M=>M.bati(BT.MARKET,'foire')&&M.compteEquipe(BT.MARKET)>=2, compte:M=>[M.compteEquipe(BT.MARKET),2] },
+    { id:'commerce', txt:"Faites rapporter 800 d'or aux caravanes", test:M=>M.statsEquipe('tradeGold')>=800,
+      compte:M=>[M.statsEquipe('tradeGold'),800] },
+    { id:'zaida',    txt:'Zaïda doit survivre', echec:M=>M.mort('zaida'),
+      echecTxt:"Zaïda est tombée. La foire se termine dans le silence." },
+    { id:'hospice',  txt:'Élevez un Hospice pour les pèlerins du chemin', type:'secondaire', test:M=>M.compteEquipe(BT.HOSPICE)>=1 },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'tomas', si:M=>M.temps()>=16, alors:M=>M.dire('tomas','p2') },
+    { id:'route', si:M=>M.statsEquipe('tradeGold')>0, alors:M=>M.dire('route') },
+    { id:'brigands', repete:true, intervalle:110, si:M=>M.temps()>=300&&!M.fait('commerce'),
+      alors:M=>{
+        const n=M.tirs('brigands');
+        M.vague('pill',[[UT.ENEMI,3+n],[UT.ENEMIA,1+Math.floor(n/2)]],n%2?'bois':'sud',{vers:'foire'});
+        if(n===1) M.dire('brigands');
+      } },
+    { id:'hospice_ok', si:M=>M.fait('hospice'), alors:M=>M.dire('hospice_ok') },
+  ],
+  orateurs:{
+    zaida:{ nom:'Zaïda', ico:'🎻' },
+    tomas:{ nom:'Tomás', ico:'🐎' },
+    pelerin:{ nom:'Un pèlerin', ico:'🐚' },
+  },
+  dialogues:{
+    intro:[
+      ['zaida',"Les meilleurs chevaux de la foire viendront de chez nous, et les meilleurs chaudrons aussi. Qu'on nous voie, qu'on nous entende."],
+      ['tomas',"Un Marché au campement, un autre à la foire : plus la route entre les deux est longue, plus elle rapporte."],
+    ],
+    tomas:[['tomas',"Je suis à la foire avec quelques-uns des nôtres. Il y a de la place pour un Marché, près des étals."]],
+    route:[['zaida',"La première caravane est arrivée ! Les pièces sonnent mieux que les tambourins."]],
+    brigands:[['tomas',"Des brigands sortent des bois ! Ils vont droit sur la foire !"]],
+    hospice_ok:[['pelerin',"Un toit et une soupe chaude sur le chemin... Que Dieu garde votre compagnie."]],
+  },
+  etoiles:['victoire', M=>M.fait('hospice'), M=>M.temps()<16*60],
+  victoire:"La foire se termine en musique. Les marchands de tout le royaume parlent maintenant de la compagnie de Zaïda — et de ses chevaux.",
+};
+
+// ── 3. Le Décret ─────────────────────────────────────────
+// Deux façons de gagner (~20 min) : tenir le campement jusqu'à ce que le
+// décret tombe de lui-même, ou le racheter — la Diplomatie d'un seigneur qui
+// accepte de traiter contre 800 d'or (le prix est sur le bouton).
+MISSIONS.gi3 = {
+  campagne:'gitanos', num:3,
+  titre:'Le Décret', lieu:'La vallée de l\'Èbre', date:'1452',
+  briefing:[
+    "Le comte de la vallée a changé d'avis : il a signé un décret qui chasse la compagnie de ses terres, sauf-conduit royal ou pas. Ses hommes d'armes sont en route.",
+    "Deux chemins. Tenir le campement vingt minutes, jusqu'à ce que le roi, alerté, fasse annuler le décret. Ou le racheter : le comte traitera contre 800 d'or — la Diplomatie est dans le menu ⏸.",
+  ],
+  carte:{ graine:1452318, type:'plaines', taille:'moyenne' },
+  zones:{
+    campement:{ x:0.24, y:0.56, r:0.05 },
+    chateau:  { x:0.80, y:0.40, r:0.05 },
+    marche2:  { x:0.30, y:0.14, r:0.05 },
+  },
+  roles:{
+    p1:{ civ:'gitanos', nom:'Zaïda', age:1, res:{food:300,wood:400,stone:150,gold:250},
+         depart:[0.24,0.56], base:'village',
+         unites:[[UT.VIL,10],[UT.MIL,4],[UT.ARC,4],[UT.HERO,1,'zaida']],
+         batiments:[[BT.MARKET,5,4]] },
+    p2:{ civ:'gitanos', nom:'Tomás', solo:'fusion', age:1, res:{food:150,wood:150,stone:50,gold:100},
+         depart:[0.30,0.80], base:'rien',
+         unites:[[UT.ARC,4],[UT.PIKE,3]] },
+  },
+  factions:{
+    ia:{ civ:'francs', nom:'Le comte de la vallée', equipe:3, depart:[0.80,0.40], age:1, ageMax:2,
+         heros:false, merveille:false, cible:'campement',
+         tune:{ firstAtk:300, atkEvery:130, start:{food:450,wood:450,stone:200,gold:200} },
+         batiments:[[BT.BARRACKS,-6,-5],[BT.HOUSE,4,5],[BT.HOUSE,6,5],[BT.HOUSE,-4,6]],
+         unites:[[UT.VIL,8],[UT.ENEMI,6],[UT.ENEMIA,4],[UT.ENEMI_C,2]],
+         diplomatie:{ prix:{ gold:800 }, refus:'Le comte veut 800 d’or pour lever le décret.' } },
+  },
+  regles:{ ageMax:2 },
+  surcouche:[
+    { op:'degager', zone:'marche2' },
+    { op:'gisement', zone:{ x:0.12, y:0.40, r:0.04 }, type:RT.GOLD, n:5, amt:500 },
+  ],
+  objectifs:[
+    { id:'decret',    txt:"Tenez 20 minutes — ou rachetez le décret (Diplomatie, 800 d'or)",
+      test:M=>M.temps()>=1200||M.allie('ia'), compte:M=>[M.temps()/60,20] },
+    { id:'campement', txt:'Le campement doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"Le campement est brûlé. La compagnie reprend la route, le cœur lourd." },
+    { id:'zaida',     txt:'Zaïda doit survivre', echec:M=>M.mort('zaida'),
+      echecTxt:"Zaïda est tombée en défendant les siens." },
+    { id:'route',     txt:"Ouvrez une route commerciale jusqu'au marché du nord", type:'secondaire', zone:'marche2',
+      test:M=>M.bati(BT.MARKET,'marche2')&&M.statsEquipe('tradeGold')>0 },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'tomas', si:M=>M.temps()>=16, alors:M=>M.dire('tomas','p2') },
+    // Les hommes d'armes du comte, colonne après colonne, jusqu'à ce que le
+    // décret tombe (inactif, le campement tenait vingt minutes même en
+    // Brutal sous les seuls assauts du seigneur — sonde).
+    { id:'hommes', repete:true, intervalle:95, si:M=>M.temps()>=180&&M.temps()<1140&&!M.allie('ia'),
+      alors:M=>{
+        const n=M.tirs('hommes');
+        const compo=[[UT.ENEMI,3+n]];
+        if(n>=2) compo.push([UT.ENEMIA,1+Math.floor(n/2)]);
+        if(n>=4) compo.push([UT.ENEMI_C,Math.floor(n/3)]);
+        M.vague('ia',compo,'chateau',{vers:'campement'});
+        if(n===1) M.dire('hommes');
+      } },
+    { id:'or_pret', si:M=>M.res('p1','gold')>=800&&!M.allie('ia'), alors:M=>M.dire('or_pret') },
+    { id:'rachat', si:M=>M.allie('ia'), alors:M=>M.dire('rachat') },
+    { id:'roi', si:M=>M.temps()>=1140&&!M.allie('ia'), alors:M=>M.dire('roi') },
+  ],
+  orateurs:{
+    zaida:{ nom:'Zaïda', ico:'🎻' },
+    tomas:{ nom:'Tomás', ico:'🐎' },
+    comte:{ nom:'Le comte', ico:'🏰' },
+  },
+  dialogues:{
+    intro:[
+      ['comte',"Sauf-conduit ou pas, je ne veux pas de vous sur mes terres. Partez, ou mes hommes vous feront partir."],
+      ['zaida',"On ne part pas sous la menace. Mais un comte qui aime tant son or l'aimera peut-être plus que son décret."],
+    ],
+    tomas:[['tomas',"Je tiens le sud du campement. Le marché du nord achète nos chevaux : une route jusque-là rapporterait vite."]],
+    hommes:[['tomas',"Les hommes d'armes du comte sortent du château ! Ils marchent sur le campement."]],
+    or_pret:[['zaida',"Nous avons les 800 pièces. Si on veut racheter le décret, c'est dans la Diplomatie, maintenant."]],
+    rachat:[['comte',"Hum. Tout bien réfléchi, votre compagnie peut rester. Pour cette saison."]],
+    roi:[['tomas',"Un messager du roi ! Le décret est annulé : le sauf-conduit vaut sur toutes les terres du royaume."]],
+  },
+  etoiles:['victoire', M=>M.allie('ia'), M=>M.fait('route')],
+  victoire:"Le décret est levé. Ce soir, dans le campement, on chante plus fort que d'habitude.",
+};
+
+// ── 4. Les Roues Cerclées ────────────────────────────────
+// Technologie et percée (~25 min) : passer à l'Âge Impérial, rechercher les
+// Roues Cerclées, former des Roulottes de Guerre, et briser le péage fortifié
+// qui barre la route du sud.
+MISSIONS.gi4 = {
+  campagne:'gitanos', num:4,
+  titre:'Les Roues Cerclées', lieu:'Le col du Péage', date:'1460',
+  briefing:[
+    "Un seigneur a barré le seul col vers le sud d'un péage fortifié : des tours, une palissade, et un droit de passage que personne ne peut payer.",
+    "Les forgerons de la compagnie ont une idée : des roues cerclées de fer, qui rendront les roulottes assez rapides pour passer sous les flèches. Âge Impérial, Université, Château — et six Roulottes de Guerre pour briser le péage.",
+  ],
+  carte:{ graine:1460907, type:'arides', taille:'moyenne', reliques:false },
+  zones:{
+    campement:{ x:0.20, y:0.36, r:0.05 },
+    peage:    { x:0.66, y:0.66, r:0.06 },
+    sud:      { x:0.86, y:0.90, r:0.04 },
+    nord:     { x:0.50, y:0.04, r:0.03 },
+  },
+  roles:{
+    p1:{ civ:'gitanos', nom:'Zaïda', age:2, res:{food:1400,wood:900,stone:500,gold:900},
+         depart:[0.20,0.36], base:'village',
+         unites:[[UT.VIL,14],[UT.MIL,4],[UT.ARC,4],[UT.ROUL,2],[UT.HERO,1,'zaida']],
+         batiments:[[BT.CASTLE,6,-6],[BT.UNIV,-6,5]] },
+    p2:{ civ:'gitanos', nom:'Tomás', solo:'fusion', age:2, res:{food:200,wood:200,stone:100,gold:100},
+         depart:[0.34,0.20], base:'rien',
+         unites:[[UT.SCOUT,3],[UT.PIKE,4]] },
+  },
+  factions:{
+    // Le péage barre le col d'un à-pic à l'autre : une palissade, trois
+    // tours derrière elle. Il n'y a pas d'autre passage vers le sud.
+    pill:{
+      murs:[{ de:[0.70,0.50], a:[0.50,0.70], tag:'barriere' }],
+      batiments:[
+        { type:BT.TOWER, zone:{ x:0.64, y:0.64, r:0 }, tag:'peage' },
+        { type:BT.TOWER, zone:{ x:0.71, y:0.58, r:0 }, tag:'peage' },
+        { type:BT.TOWER, zone:{ x:0.58, y:0.71, r:0 }, tag:'peage' },
+        { type:BT.OUTPOST, zone:'peage', tag:'peage' },
+      ],
+      unites:[
+        { type:UT.ENEMIA, n:8, zone:'peage', garde:true }, { type:UT.ENEMI, n:6, zone:'peage', garde:true },
+        { type:UT.ENEMI_C, n:3, zone:'peage', garde:true },
+      ],
+    },
+  },
+  regles:{ ageMax:3 },
+  surcouche:[
+    // Les deux à-pics du col, jusqu'aux bords de la carte.
+    { op:'eau', trace:[[0.70,0.50],[1,0.18]], largeur:0.02 },
+    { op:'eau', trace:[[0.50,0.70],[0.18,1]], largeur:0.02 },
+    { op:'degager', zone:'peage' },
+    { op:'degager', zone:{ x:0.60, y:0.60, r:0.06 } },
+    { op:'foret', zone:{ x:0.10, y:0.60, r:0.06 }, n:40 },
+  ],
+  objectifs:[
+    { id:'roues',     txt:"Recherchez les Roues Cerclées (Université, Âge Impérial)", test:M=>M.rechercheEquipe('roues_cerclees') },
+    { id:'roulottes', txt:'Formez 6 Roulottes de Guerre (Château)', test:M=>M.compteEquipe(UT.ROUL)>=6,
+      compte:M=>[M.compteEquipe(UT.ROUL),6] },
+    { id:'peage',     txt:'Brisez le péage : abattez ses trois tours', zone:'peage', test:M=>M.detruit('peage') },
+    { id:'zaida',     txt:'Zaïda doit survivre', echec:M=>M.mort('zaida'),
+      echecTxt:"Zaïda est tombée devant le péage." },
+    { id:'sud',       txt:'Faites passer une Roulotte de Guerre au-delà du col', type:'secondaire', zone:'sud',
+      test:M=>M.dansZone('sud','p1')||M.dansZone('sud','p2') },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'tomas', si:M=>M.temps()>=16, alors:M=>M.dire('tomas','p2') },
+    { id:'imperial', si:M=>M.age('p1')>=3, alors:M=>M.dire('imperial') },
+    { id:'roues_ok', si:M=>M.fait('roues'), alors:M=>M.dire('roues_ok') },
+    // Les hommes du seigneur battent la campagne au nord du col.
+    { id:'patrouilles', repete:true, intervalle:130, si:M=>M.temps()>=420&&M.vivant('peage'),
+      alors:M=>{ M.vague('pill',[[UT.ENEMI,3+M.tirs('patrouilles')],[UT.ENEMI_C,1]],'nord',{vers:'campement'}); } },
+    { id:'peage_ok', si:M=>M.fait('peage'), alors:M=>M.dire('peage_ok') },
+  ],
+  orateurs:{
+    zaida:  { nom:'Zaïda', ico:'🎻' },
+    tomas:  { nom:'Tomás', ico:'🐎' },
+    forgeron:{ nom:'Le forgeron Andrés', ico:'⚒️' },
+  },
+  dialogues:{
+    intro:[
+      ['forgeron',"Des roues cerclées de fer, Zaïda. Plus lourdes à forger, mais la roulotte file comme un cheval. Il me faut l'Âge Impérial et l'Université."],
+      ['zaida',"Alors on forge. Et quand elles rouleront, le péage verra passer la compagnie sans payer."],
+    ],
+    tomas:[['tomas',"Je surveille le col. Leurs archers sont nombreux, mais ils ne sortent guère de derrière leurs pieux."]],
+    imperial:[['forgeron',"L'Âge Impérial ! Passez à l'Université : les Roues Cerclées sont prêtes à forger."]],
+    roues_ok:[['forgeron',"Les roues sont cerclées ! Au Château, qu'on attelle les Roulottes de Guerre."]],
+    peage_ok:[['zaida',"Le péage est tombé. La route du sud est ouverte — pour tout le monde."]],
+  },
+  etoiles:['victoire', M=>M.fait('sud'), M=>M.temps()<22*60],
+  victoire:"Les roulottes passent le col en chantant. Derrière elles, marchands et pèlerins empruntent la route libérée.",
+};
+
+// ── 5. L'Alliance des Routes ─────────────────────────────
+// Ralliement par le commerce (~25 min) : deux villes neutres, que le comte
+// veut soumettre. Une ville se rallie quand une route commerciale de la
+// compagnie aboutit à un Marché bâti chez elle (M.routeVers) : ses bâtiments
+// passent alors à Zaïda.
+MISSIONS.gi5 = {
+  campagne:'gitanos', num:5,
+  titre:"L'Alliance des Routes", lieu:'Les villes du Levant', date:'1471',
+  briefing:[
+    "Le comte de Lanza veut soumettre les deux villes libres du Levant, et fermer leurs marchés aux voyageurs. Les villes hésitent : qui les défendra ?",
+    "Ceux qui font vivre leurs marchés. Bâtissez un Marché dans chaque ville et reliez-le au vôtre par une route commerciale : la ville ralliera la compagnie. Tenez tête au comte pendant ce temps.",
+  ],
+  carte:{ graine:1471512, type:'plaines', taille:'normale' },
+  zones:{
+    campement:{ x:0.16, y:0.50, r:0.05 },
+    valence:  { x:0.52, y:0.18, r:0.07 },
+    alcoy:    { x:0.56, y:0.80, r:0.07 },
+    comte:    { x:0.88, y:0.50, r:0.05 },
+  },
+  roles:{
+    p1:{ civ:'gitanos', nom:'Zaïda', age:2, res:{food:600,wood:700,stone:300,gold:400},
+         depart:[0.16,0.50], base:'village',
+         unites:[[UT.VIL,12],[UT.ROUL,3],[UT.PIKE,4],[UT.ARC,4],[UT.HERO,1,'zaida']],
+         batiments:[[BT.MARKET,5,4],[BT.BARRACKS,6,-5]] },
+    p2:{ civ:'gitanos', nom:'Tomás', solo:'fusion', age:2, res:{food:200,wood:250,stone:100,gold:150},
+         depart:[0.26,0.24], base:'rien',
+         unites:[[UT.VIL,4],[UT.SCOUT,3],[UT.ARC,3]] },
+  },
+  factions:{
+    ia:{ civ:'francs', nom:'Le comte de Lanza', equipe:3, depart:[0.88,0.50], age:2, ageMax:3,
+         heros:false, merveille:false, tune:{ firstAtk:540, start:{food:700,wood:700,stone:400,gold:400} },
+         batiments:[[BT.BARRACKS,-6,-5],[BT.STABLE,7,4],[BT.HLM,-7,2],[BT.HOUSE,4,-6]],
+         unites:[[UT.VIL,10],[UT.ENEMI,8],[UT.ENEMIA,6],[UT.ENEMI_C,4]] },
+    // Les deux villes : leurs bâtiments ne combattent pas, et passeront à la
+    // compagnie quand elles se rallieront.
+    pill:{
+      batiments:[
+        { type:BT.HOUSE, zone:'valence', tag:'valence' }, { type:BT.HOUSE, zone:'valence', tag:'valence' },
+        { type:BT.HOUSE, zone:'valence', tag:'valence' }, { type:BT.MILL, zone:'valence', tag:'valence' },
+        { type:BT.HOUSE, zone:'alcoy', tag:'alcoy' }, { type:BT.HOUSE, zone:'alcoy', tag:'alcoy' },
+        { type:BT.HOUSE, zone:'alcoy', tag:'alcoy' }, { type:BT.FORGE, zone:'alcoy', tag:'alcoy' },
+      ],
+    },
+  },
+  regles:{ ageMax:3 },
+  surcouche:[
+    { op:'degager', zone:'valence' }, { op:'degager', zone:'alcoy' },
+  ],
+  objectifs:[
+    { id:'valence', txt:"Ralliez Valence : une route commerciale jusqu'à un Marché bâti dans la ville", zone:'valence',
+      test:M=>M.tire('ralliement_valence') },
+    { id:'alcoy',   txt:"Ralliez Alcoy : une route commerciale jusqu'à un Marché bâti dans la ville", zone:'alcoy',
+      test:M=>M.tire('ralliement_alcoy') },
+    { id:'zaida',   txt:'Zaïda doit survivre', echec:M=>M.mort('zaida'),
+      echecTxt:"Zaïda est tombée. Les villes n'ont plus personne en qui croire." },
+    { id:'campement', txt:'Le campement doit tenir', echec:M=>M.compteEquipe(BT.TC)===0,
+      echecTxt:"Le comte a brûlé le campement." },
+    { id:'or',      txt:"Faites rapporter 1 500 d'or aux caravanes", type:'secondaire',
+      test:M=>M.statsEquipe('tradeGold')>=1500, compte:M=>[M.statsEquipe('tradeGold'),1500] },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'tomas', si:M=>M.temps()>=16, alors:M=>M.dire('tomas','p2') },
+    { id:'ralliement_valence', si:M=>M.routeVers('valence'), alors:M=>{ M.convertir('valence','p1'); M.dire('valence'); } },
+    { id:'ralliement_alcoy',   si:M=>M.routeVers('alcoy'),   alors:M=>{ M.convertir('alcoy','p1'); M.dire('alcoy'); } },
+    // Le comte ne regarde pas faire : dès la première ville ralliée, il frappe.
+    { id:'colere', si:M=>M.tire('ralliement_valence')||M.tire('ralliement_alcoy'), alors:M=>{
+        M.dire('colere'); M.ia('ia',{lancer:true});
+      } },
+  ],
+  orateurs:{
+    zaida:{ nom:'Zaïda', ico:'🎻' },
+    tomas:{ nom:'Tomás', ico:'🐎' },
+    jurat:{ nom:'Un juré de la ville', ico:'⚖️' },
+    comte:{ nom:'Le comte de Lanza', ico:'🏰' },
+  },
+  dialogues:{
+    intro:[
+      ['jurat',"Nos villes vivent de leurs marchés. Si le comte les ferme, nous mourrons lentement — mais si nous lui résistons seuls, nous mourrons vite."],
+      ['zaida',"Alors ne restez pas seuls. Nos caravanes feront vivre vos marchés, et nous défendrons la route."],
+    ],
+    tomas:[['tomas',"Valence au nord, Alcoy au sud. Il y a de la place dans chaque ville pour un Marché."]],
+    valence:[['jurat',"Valence se range aux côtés de la compagnie ! Ses maisons et son moulin sont à vous."]],
+    alcoy:[['jurat',"Alcoy ouvre ses portes ! Ses forgerons travailleront pour vous."]],
+    colere:[['comte',"Des villes libres qui s'allient à des vagabonds ? Je vais leur rappeler qui gouverne cette province."]],
+  },
+  etoiles:['victoire', M=>M.fait('or'), M=>M.statsEquipe('bldLost')<=3],
+  victoire:"Les deux villes et la compagnie signent une charte : les routes du Levant resteront ouvertes à tous les voyageurs.",
+};
+
+// ── 6. Le Grand Rassemblement ────────────────────────────
+// Finale (~50 min) : toutes les compagnies de la route se retrouvent pour la
+// Grande Foire — une Merveille — que deux seigneurs coalisés veulent empêcher.
+// Deux façons de gagner, comme la Couronne d'Occident : la Merveille tenue
+// dix minutes, ou les deux seigneurs abattus.
+MISSIONS.gi6 = {
+  campagne:'gitanos', num:6,
+  titre:'Le Grand Rassemblement', lieu:'La plaine de la Grande Foire', date:'1480',
+  briefing:[
+    "Pour la première fois, toutes les compagnies de la route se retrouvent au même endroit : musiciens, forgerons, maquignons, familles venues de dix royaumes.",
+    "Élevez la Grande Foire — une Merveille — et gardez-la debout dix minutes ; ou abattez les deux seigneurs qui se sont coalisés pour l'empêcher. Tomás tiendra le camp de l'est.",
+  ],
+  carte:{ graine:1480801, type:'plaines', taille:'normale' },
+  zones:{
+    foire:   { x:0.34, y:0.50, r:0.06 },
+    comte_n: { x:0.82, y:0.20, r:0.05 },
+    comte_s: { x:0.82, y:0.80, r:0.05 },
+  },
+  roles:{
+    p1:{ civ:'gitanos', nom:'Zaïda', age:2, res:{food:1200,wood:1400,stone:1000,gold:900},
+         depart:[0.24,0.50], base:'village',
+         unites:[[UT.VIL,16],[UT.ROUL,4],[UT.PIKE,6],[UT.ARC,6],[UT.HERO,1,'zaida']],
+         batiments:[[BT.BARRACKS,6,-5],[BT.CASTLE,-7,4],[BT.MARKET,6,5]] },
+    p2:{ civ:'gitanos', nom:'Tomás', solo:'fusion', age:2, res:{food:300,wood:300,stone:200,gold:200},
+         depart:[0.46,0.24], base:'tc',
+         unites:[[UT.VIL,5],[UT.ARC,4],[UT.SCOUT,3]],
+         batiments:[[BT.MARKET,4,4]] },
+  },
+  factions:{
+    ia: { civ:'francs',  nom:'Le comte de Lanza', equipe:3, depart:[0.82,0.20], age:2, ageMax:3,
+          heros:false, merveille:false, cible:'foire', tune:{ firstAtk:600, start:{food:800,wood:800,stone:450,gold:450} },
+          batiments:[[BT.BARRACKS,-6,4],[BT.STABLE,7,4],[BT.HLM,-7,-2],[BT.HOUSE,4,-4]],
+          unites:[[UT.VIL,10],[UT.ENEMI,8],[UT.ENEMIA,6],[UT.ENEMI_C,4]] },
+    ia2:{ civ:'byzantins', nom:'Le marquis du Sud', equipe:3, depart:[0.82,0.80], age:2, ageMax:3,
+          heros:false, merveille:false, tune:{ firstAtk:780, start:{food:800,wood:800,stone:450,gold:450} },
+          batiments:[[BT.BARRACKS,-6,-4],[BT.STABLE,7,-4],[BT.HLM,-7,2],[BT.HOUSE,4,4]],
+          unites:[[UT.VIL,10],[UT.ENEMI,8],[UT.ENEMIA,6],[UT.ENEMI_C,4]] },
+  },
+  surcouche:[
+    { op:'degager', zone:'foire' },
+    { op:'gisement', zone:{ x:0.14, y:0.30, r:0.04 }, type:RT.STONE, n:8, amt:700 },
+    { op:'gisement', zone:{ x:0.14, y:0.70, r:0.04 }, type:RT.GOLD, n:8, amt:700 },
+  ],
+  objectifs:[
+    { id:'rassemblement', txt:"Élevez la Grande Foire (une Merveille) et gardez-la debout 10 minutes — ou abattez les deux seigneurs",
+      test:M=>M.vaincu('ia')&&M.vaincu('ia2') },
+    { id:'zaida', txt:'Zaïda doit survivre', echec:M=>M.mort('zaida'),
+      echecTxt:"Zaïda est tombée. Le Rassemblement se disperse sans elle." },
+    { id:'roues', txt:'Recherchez les Roues Cerclées', type:'secondaire', test:M=>M.rechercheEquipe('roues_cerclees') },
+  ],
+  declencheurs:[
+    { id:'intro', si:M=>M.temps()>=2,  alors:M=>M.dire('intro') },
+    { id:'tomas', si:M=>M.temps()>=16, alors:M=>M.dire('tomas','p2') },
+    { id:'imperial', si:M=>M.age('p1')>=3, alors:M=>M.dire('imperial') },
+    { id:'foire', si:M=>M.compteEquipe(BT.WONDER)>=1, alors:M=>{
+        M.dire('foire'); M.ia('ia',{lancer:true}); M.ia('ia2',{lancer:true});
+      } },
+    { id:'compagnies', repete:true, intervalle:300, si:M=>M.temps()>=600&&M.tirs('compagnies')<3,
+      alors:M=>{ M.renfort('p1',[[UT.ROUL,2],[UT.VIL,3]],'foire'); M.dire('compagnies'); } },
+  ],
+  orateurs:{
+    zaida:{ nom:'Zaïda', ico:'🎻' },
+    tomas:{ nom:'Tomás', ico:'🐎' },
+    abuela:{ nom:'La grand-mère Rosa', ico:'🧶' },
+  },
+  dialogues:{
+    intro:[
+      ['abuela',"J'ai attendu toute ma vie de voir toutes les compagnies réunies. Faites-moi une foire dont on parlera dans cent ans."],
+      ['zaida',"Une foire que deux seigneurs veulent empêcher. Tant mieux : on la fera assez grande pour qu'ils la voient de chez eux."],
+    ],
+    tomas:[['tomas',"Je tiens le camp de l'est, avec son Marché. Les caravanes passeront par chez moi."]],
+    imperial:[['zaida',"L'Âge Impérial. Il faut de la pierre et de l'or pour la Grande Foire — beaucoup."]],
+    foire:[['abuela',"La Grande Foire est debout ! Les seigneurs vont tout jeter contre elle : tenez dix minutes !"]],
+    compagnies:[['tomas',"Une nouvelle compagnie arrive par la route de l'ouest, avec ses roulottes !"]],
+  },
+  etoiles:['victoire', M=>M.fait('roues'), M=>M.statsEquipe('bldLost')<=10],
+  victoire:"La Grande Foire dure trois jours et trois nuits. On y joue, on y danse, on y marie des enfants de dix compagnies — et la route continue.",
 };
 
 // Retour d'une fin de mission : rouvre le briefing laissé en partant (voir

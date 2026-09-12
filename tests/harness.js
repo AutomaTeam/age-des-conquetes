@@ -107,6 +107,8 @@ const EXPORTS = [
   'texteFinMission', 'facMission', 'loadGame', 'initAI',
   'fusionProgression', 'missionDebloquee', 'boutonsFinMission', 'afficherListeCampagnes',
   'majInterfaceScenario',
+  'pousserReseau', 'demarrerPartieClient', 'appliquerScenario', 'destinataireLocal',
+  'mpOuvrir', 'mpEstCoop',
 ];
 
 // L'ORDRE de chargement est significatif (scripts classiques partageant une

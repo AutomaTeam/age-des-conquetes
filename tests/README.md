@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**267 tests, 18 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
+**277 tests, 18 groupes, ~45 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -120,7 +120,18 @@ qui **ne se voit pas** :
   n'apparaît que s'il y en a une, l'onglet ne montre que les campagnes qui
   ont des missions, et Herstal (mission 1 des Francs) garde des gués ouverts
   et un chemin du village à chaque camp — vérifié par un parcours en largeur
-  sur bmap, pas à l'œil.
+  sur bmap, pas à l'œil. À DEUX (lot L3) : une vraie paire, l'invité
+  démarrant par `demarrerPartieClient` — le chemin exact du jeu, qui ne
+  passe jamais par `startGame` — et ne recevant que ce que le transport de
+  l'hôte envoie. Elle garde que le SALUT porte la mission (sans elle,
+  l'invité regénère la carte SANS surcouche), que le second commandant prend
+  la civilisation de son RÔLE et non celle choisie au salon, que `G.scn`
+  voyage (et seulement quand son `seq` bouge), que l'issue tranchée par
+  l'hôte s'inscrit au profil de l'invité, qu'un invité qui rejoint en cours
+  de route ne subit pas tout le récit d'un coup, et que les vagues adverses
+  grossissent de `coopMult` — pas les renforts alliés. Deux de ces tests ont
+  été passés à la contre-épreuve (mission retirée du SALUT, `d.scn` retiré du
+  delta) : ils tombent, ils mordent.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

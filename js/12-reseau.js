@@ -86,7 +86,14 @@ window.transportLocal=transportLocal;
 // hote -- il verrait de l'eau la ou l'hote a de l'herbe, et inversement, avec
 // des unites qui marchent sur son lac. Il ne mislit pas le fil, il mislit le
 // MONDE : meme critere, meme bump.
-const PROTO_VERSION = 7;   // v4 : equipe suivie en cours de partie, autoRepair emis
+// v8 : le mode Campagne. Le SALUT porte la clé de `mission`, et c'est elle —
+// autant que la graine — qui décide du monde : sa surcouche creuse rivières
+// et gués, sème des filons et pose des reliques pendant genMap (voir
+// js/15-campagne.js). Un invité v7 ignorerait la clé et regénérerait la carte
+// SANS la surcouche. Le fil gagne aussi `scn` (état de la mission, voir
+// scnPourReseau), clé de premier niveau qu'un v7 ignorerait sans mal lire le
+// reste — ce n'est pas elle qui impose le bump, c'est la carte.
+const PROTO_VERSION = 8;   // v4 : equipe suivie en cours de partie, autoRepair emis
 const DELTA_HZ      = 10;
 const DELTA_PERIODE = 1/DELTA_HZ;
 const SEUIL_POS     = 1;    // unites-monde : en deca, on ne renvoie pas la position
@@ -376,7 +383,37 @@ function construireSnap(){
     uni:visU.map(serialiserUnite),
     bat:visB.map(serialiserBatiment),
     wave:G.wave, waveTimer:G.waveTimer, waveActive:G.waveActive,
+    scn:scnAmorce(),
   };
+}
+
+// ── ÉTAT DE MISSION SUR LE FIL ─────────────────────────────────
+// G.scn est une DÉCISION de l'hôte (objectifs, journal des répliques, zones
+// révélées, marqueurs, issue) que l'interface de l'invité lit : invariant
+// n°6, il voyage. Tout entier, mais seulement quand il a changé — son compteur
+// `seq` bouge à chaque changement visible (voir js/15-campagne.js), et le
+// reste du temps il ne coûte rien au delta. Ce qui ne sert qu'à l'hôte pour
+// ÉVALUER la mission (déclencheurs tirés, étiquettes, accumulateur de
+// cadence) reste chez lui.
+function scnPourReseau(){
+  const s=G.scn;
+  return {inst:s.inst, seq:s.seq, obj:s.obj, dlg:s.dlg, rev:s.rev, marques:s.marques,
+          fin:s.fin, etoiles:s.etoiles};
+}
+function scnAmorce(){
+  if(!G.scn) return null;
+  RESEAU.dernier.set('scn',G.scn.seq);
+  return scnPourReseau();
+}
+// Côté invité : rien de ce qui arrive n'est cru sur parole (voir liste()).
+// Un état tordu est ignoré en entier plutôt qu'appliqué à moitié — la
+// mission de l'invité se fige un instant, elle ne fait pas tomber sa page.
+function appliquerScenario(s){
+  if(!s||typeof s!=='object'||!s.obj||typeof s.obj!=='object'||!Array.isArray(s.dlg)) return;
+  G.scn={inst:s.inst, seq:s.seq|0, obj:s.obj,
+         dlg:s.dlg.filter(e=>e&&typeof e==='object'&&typeof e.k==='string'),
+         rev:liste(s.rev), marques:liste(s.marques),
+         fin:(s.fin&&typeof s.fin==='object')?s.fin:null, etoiles:s.etoiles|0};
 }
 
 // ── HOTE : delta ───────────────────────────────────────────────
@@ -575,6 +612,7 @@ function construireDelta(){
   d.p=G.projs.map(pr=>[pr.x|0,pr.y|0,pr.tx|0,pr.ty|0,pr.owner||'']);
   d.gt=+G.gameTime.toFixed(2);
   d.wave=G.wave;
+  if(G.scn&&RESEAU.dernier.get('scn')!==G.scn.seq){ d.scn=scnPourReseau(); RESEAU.dernier.set('scn',G.scn.seq); }
   return d;
 }
 
@@ -636,6 +674,7 @@ function appliquerSnap(m){
   for(const bd of liste(m.bat)) if(batValide(bd)) placeBuilding(deserialiserBatiment(bd)); // placeBuilding pousse lui-meme
   G.units=liste(m.uni).filter(uniteValide).map(deserialiserUnite);
   G.wave=m.wave; G.waveTimer=m.waveTimer; G.waveActive=m.waveActive;
+  if(m.scn) appliquerScenario(m.scn);
   // Reliques et faune tirent du MEME compteur que les unites (voir genMap) :
   // les omettre ici ne pardonnait que parce que les unites, creees apres
   // elles, portent toujours des id plus hauts. Meme durcissement que le
@@ -788,6 +827,7 @@ function appliquerDelta(m){
     const f=Array.isArray(e)&&RETOURS[e[0]];
     if(typeof f==='function'){ try{ f(e[1]||{}); }catch(err){} }
   }
+  if(m.scn) appliquerScenario(m.scn);   // état de mission (voir scnPourReseau)
 
   // Projectiles : etat complet, ils sont trop peu nombreux pour un differentiel
   if(m.p!=null){
@@ -847,8 +887,17 @@ function updateVisuel(dt){
   if(moi()&&moi().vaincu&&!G.gameOver){ G.gameOver=true; showGameOver(); }
   checkMerveilleVictory();
   if(!G.victory&&!G.gameOver){
-    const rivaux=factionsJouantes().filter(f=>f.id!==G.me&&f.equipe!==(moi()?moi().equipe:-1));
-    if(rivaux.length&&rivaux.every(f=>f.vaincu)){ G.victory=true; showVictory(); }
+    if(G.mission){
+      // Mission : l'invité ne réévalue RIEN — il lit l'issue que l'hôte a
+      // tranchée (G.scn.fin). Réévaluer ici la victoire par élimination, c'est
+      // ce qui rendait la Survie ingagnable en ligne : deux juges, deux verdicts.
+      const fin=G.scn&&G.scn.fin;
+      if(fin&&fin.issue==='victoire'){ G.victory=true; showVictory(); }
+      else if(fin){ G.gameOver=true; showGameOver(); }
+    } else {
+      const rivaux=factionsJouantes().filter(f=>f.id!==G.me&&f.equipe!==(moi()?moi().equipe:-1));
+      if(rivaux.length&&rivaux.every(f=>f.vaincu)){ G.victory=true; showVictory(); }
+    }
   }
 }
 
@@ -872,6 +921,7 @@ function recevoirReseau(m){
     case 'REJ':    traiterRejet(m); break;
     case 'BAT':    break; // pouls : dernierRecu vient d'etre rafraichi plus haut
     case 'CHAT':   break; // gere par le panneau de salon
+    case 'MISSION_SALON': annoncerMissionSalon(m.mission); break;
     case 'PAUSE':  appliquerPauseDistante(true,m.par,m.nom); break;
     case 'REPRISE':appliquerPauseDistante(false,m.par,m.nom); break;
     case 'ABANDON':traiterAbandon(m); break;
@@ -883,6 +933,22 @@ function recevoirReseau(m){
       effacerRejoinEnLigne();
       break;
   }
+}
+
+// Invité : l'hôte a ouvert son salon depuis le briefing d'une mission. Le
+// sélecteur de civilisation du salon disparaît — en mission, c'est le RÔLE
+// qui fixe la civilisation (voir initState), le choix n'aurait aucun effet et
+// le laisser affiché serait une promesse fausse. La clé reçue n'est qu'une
+// clé : on ne l'affiche que si elle désigne une mission connue.
+function annoncerMissionSalon(cle){
+  if(RESEAU.actif) return;                      // partie déjà lancée : trop tard pour le salon
+  const m=typeof cle==='string'&&MISSIONS[cle];
+  if(!m){ mpLigne('📜 L\'hôte lance une mission que votre version du jeu ne connaît pas : mettez la page à jour avant le lancement.','sys'); return; }
+  const p1=(m.roles.p1&&m.roles.p1.nom)||'l\'hôte', p2=(m.roles.p2&&m.roles.p2.nom)||'le second commandant';
+  const civ=CIVS[(m.roles.p2&&m.roles.p2.civ)||m.roles.p1.civ];
+  mpLigne(`📜 Mission « ${m.titre} » : vous serez ${p2}${civ?' ('+civ.nom+')':''}, aux côtés de ${p1}.`,'sys');
+  const row=document.getElementById('mpcivrow');
+  if(row) row.style.display='none';
 }
 
 // Hôte : un client revenu d'un rechargement de page demande l'état courant
@@ -943,6 +1009,8 @@ function construireSalut(){
     // Idem pour la TAILLE de la carte : type et taille ensemble décident du
     // monde que la graine engendre.
     seed:G.seed, carte:G.carte, taille:G.taille, gmode:G.gmode, difficulty:G.difficulty,
+    // Mission de campagne : sa surcouche fait partie du monde à regénérer.
+    mission:G.mission||null,
     cols:COLS, rows:ROWS, simHz:SIM_HZ,
     fac:factionsPour(RESEAU.adversaire&&G.factions[RESEAU.adversaire.id]),
     toi:FAC.P2,
@@ -960,6 +1028,11 @@ function demarrerPartieHote(adversaire){
                      civ:(adversaire&&adversaire.civ)||null};
   RESEAU.tick=0; RESEAU.accDelta=0; RESEAU.pret=false;
   RESEAU.pausesRestantes=3; RESEAU.finRecue=null;
+  // Salon ouvert depuis le briefing d'une mission (voir jouerMissionAvecAmi) :
+  // choisie ICI, au lancement, et pas à l'ouverture du salon — sinon elle
+  // resterait armée pendant toute l'attente, et un « Commencer la partie »
+  // solo la lancerait à la place de la partie demandée.
+  if(typeof missionSalon!=='undefined'&&missionSalon) choisirMission(missionSalon);
   startGame();
   mpVerrouillerVitesse();
   demarrerVeilleReseau();
@@ -970,6 +1043,15 @@ function demarrerPartieHote(adversaire){
 // entites et l'etat des camps voyagent, jamais les 57 600 tuiles.
 function demarrerPartieClient(m){
   if(m.proto!==PROTO_VERSION){ notify('Version de protocole incompatible','#e74c3c'); return; }
+  // Mission : choisie AVANT initState (plus bas), qui en tire graine, carte,
+  // taille et civilisations — et genMap sa surcouche. Une clé inconnue (hôte
+  // plus récent que nous) n'est pas une partie qu'on peut regénérer à
+  // l'identique : on refuse, AVANT de quitter l'écran-titre, plutôt que de
+  // jouer sur une autre carte que l'hôte.
+  if(m.mission&&!choisirMission(m.mission)){
+    notify('📜 Mission inconnue de cette version du jeu — mettez la page à jour','#e74c3c');
+    return;
+  }
   RESEAU.actif=true; RESEAU.role='client'; RESEAU.pret=false;
   RESEAU.adversaire={id:FAC.P1, nom:(m.fac.find(f=>f.i===FAC.P1)||{}).n||'Hote'};
 
@@ -1568,14 +1650,29 @@ function mpDispo(){ return !!(window.MP&&_mpEtat.dispo); }
 // Le second joueur est-il un ALLIÉ (mode 2v1 coop) ou un adversaire (1v1
 // classique) ? Avant le lancement, seul le mode choisi sur l'écran-titre le
 // dit (selectedMode) ; une fois en partie, la vérité est G.gmode.
-function mpEstCoop(){ return !!(MODES[typeof G!=='undefined'&&G&&G.gmode?G.gmode:selectedMode]||{}).coop; }
+// Un salon ouvert depuis le briefing d'une mission est TOUJOURS coopératif :
+// le second joueur y tient le rôle du second commandant.
+function mpEstCoop(){
+  if(typeof missionSalon!=='undefined'&&missionSalon&&!(typeof G!=='undefined'&&G&&G.running)) return true;
+  return !!(MODES[typeof G!=='undefined'&&G&&G.gmode?G.gmode:selectedMode]||{}).coop;
+}
 
-function mpOuvrir(){
+// `o.mission` : ouvert depuis le briefing (voir jouerMissionAvecAmi). Sans
+// lui — le bouton de l'écran-titre —, le salon oublie toute mission choisie
+// auparavant : le joueur a changé d'avis, il lance une partie ordinaire.
+function mpOuvrir(o){
+  if(typeof missionSalon!=='undefined') missionSalon=(o&&o.mission&&MISSIONS[o.mission])?o.mission:null;
+  // Masqué par un salon de mission rejoint plus tôt (voir annoncerMissionSalon) :
+  // un nouveau salon repart avec son sélecteur.
+  const civRow=document.getElementById('mpcivrow'); if(civRow) civRow.style.display='';
   document.getElementById('mppanel').style.display='flex';
   const ps=document.getElementById('mppseudo');
   if(ps&&!ps.value) ps.value=lirePseudoStocke()||'';
   const intro=document.getElementById('mpintro');
-  if(intro) intro.textContent=mpEstCoop()
+  const m=(typeof missionSalon!=='undefined'&&missionSalon)?MISSIONS[missionSalon]:null;
+  if(intro) intro.textContent=m
+    ? `📜 ${m.titre} à deux : vous serez ${m.roles.p1.nom||'le premier commandant'}, votre allié ${m.roles.p2.nom||'le second'}.`
+    : mpEstCoop()
     ? "Rejoignez-vous à un ami pour affronter ensemble un seul seigneur IA — réglez sa difficulté sur l'écran-titre."
     : "Affrontez un ami sur la même carte, avec l'IA rivale en troisième camp.";
   mpRafraichir();
@@ -1718,11 +1815,20 @@ async function mpCreer(){
   // le propose déjà plus (pickPlayTab), mais un réglage restauré d'une
   // ancienne version pourrait encore le poser : on replie ici plutôt que de
   // faire confiance au seul affichage.
-  if(!modeDispo(selectedMode,'multi')){
+  // Une mission impose tout sauf la difficulté : le garde-fou de mode ne la
+  // concerne pas (et replier le mode de l'écran-titre en son nom le
+  // changerait pour rien).
+  const mission=(typeof missionSalon!=='undefined'&&missionSalon)||null;
+  if(!mission&&!modeDispo(selectedMode,'multi')){
     const repli=Object.keys(MODES).find(k=>modeDispo(k,'multi'));
     if(repli) pickMode(repli);
   }
   try{
+    // `config` n'est qu'INFORMATIF (le vrai réglage voyage dans le SALUT) et
+    // part dans la base Firebase, dont les règles de validation vivent hors
+    // du dépôt : la mission n'y est volontairement PAS ajoutée — une clé ou
+    // une valeur inédite pourrait y faire refuser la création du salon.
+    // L'invité l'apprend au lancement, par le SALUT (pair à pair).
     const code=await window.MP.creerSalon({
       gmode:selectedMode, difficulty:selectedDifficulty,
       seed:(grainePartie!=null?grainePartie:(Math.random()*2147483646|0)+1),
@@ -1740,8 +1846,7 @@ async function mpRejoindre(){
   if(code.length!==5){ mpLigne('Le code fait 5 caract\u00e8res.','sys'); return; }
   try{
     const r=await window.MP.rejoindreSalon(code);
-    mpLigne(`Vous avez rejoint la partie de ${r.hote?r.hote.nom:'l\'h\u00f4te'}.`,'sys');
-  }catch(err){ mpLigne('Impossible de rejoindre : '+err.message,'sys'); }
+    mpLigne(`Vous avez rejoint la partie de ${r.hote?r.hote.nom:'l\'h\u00f4te'}.`,'sys');  }catch(err){ mpLigne('Impossible de rejoindre : '+err.message,'sys'); }
 }
 window.mpRejoindre=mpRejoindre;
 
@@ -1820,6 +1925,11 @@ window.mpEnvoyerChat=mpEnvoyerChat;
       // s'en sert directement plutot que d'attendre un hypothetique delta.
       if(e.connecte&&!_connecteAvant&&RESEAU.enAttenteReconnexion) sortirAttenteReconnexion();
       if(e.connecte&&!_connecteAvant&&_enAttenteResync){ _enAttenteResync=false; window.MP.envoyer({t:'RESYNC'}); }
+      // Salon de mission : l'invité l'apprend dès que le canal pair à pair
+      // s'ouvre (voir annoncerMissionSalon) — pas par la config Firebase du
+      // salon, dont les règles de validation vivent hors du dépôt.
+      if(e.connecte&&!_connecteAvant&&e.role==='hote'&&missionSalon&&!(G&&G.running))
+        window.MP.envoyer({t:'MISSION_SALON',mission:missionSalon});
       _connecteAvant=e.connecte;
       _mpEtat=e; mpRafraichir();
       // Compte unique (voir CONNEXION GOOGLE plus bas) : gAuth n'est qu'un

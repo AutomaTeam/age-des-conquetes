@@ -6190,6 +6190,41 @@ groupe('campagne', () => {
     egal(j.G.factions.ia.atkTimer, 0, 'le comte ne réagit pas au ralliement');
   });
 
+  // ══ ET SI ON JOUAIT EN INVITÉ ? (nouvelles mécaniques) ══════
+  test("invité : un refus de l'hôte arrive avec SA raison, et la diplomatie ne promet pas un accord que l'hôte n'a pas donné", () => {
+    const { hote, client, livrer, tour } = paireMission('mo2');
+    const versHote = [];
+    client.RESEAU.envoi = (m) => { versHote.push(JSON.parse(JSON.stringify(m))); return true; };
+    const relayer = () => { while (versHote.length) hote.recevoirReseau(versHote.shift()); livrer(); };
+    const notifs = () => client.__sandbox.document.getElementById('notif').children.map((c) => c.textContent).join(' | ');
+    tour(1);
+    hote.G.factions.p2.res.food = 0; hote.G.factions.p2.res.gold = 0;
+    client.diplomatieAction('ia2', 'proposer');
+    ok(!/Alliance conclue/.test(notifs()), "l'invité lit « Alliance conclue » avant que l'hôte ait décidé : " + notifs());
+    relayer();
+    ok(/400/.test(notifs()) && /200/.test(notifs()), "le refus n'arrive pas avec le tribut demandé : " + notifs());
+    Object.assign(hote.G.factions.p2.res, { food: 500, gold: 300 });
+    client.diplomatieAction('ia2', 'proposer');
+    relayer();
+    tour(1);
+    ok(hote.SCN_API.allie('ia2'), "l'hôte n'a pas conclu l'alliance payée par l'invité");
+    egal(hote.G.factions.p2.res.food, 100, "le tribut n'est pas pris sur la caisse de l'INVITÉ");
+    ok(/Alliance conclue/.test(notifs()), "l'invité n'apprend jamais que l'alliance est conclue : " + notifs());
+  });
+
+  test("invité : une règle de mission refusée par l'hôte s'affiche avec sa raison, pas « Action refusee »", () => {
+    const { hote, client, livrer } = paireMission('mo3');   // l'Atelier de Siège y est interdit
+    const versHote = [];
+    client.RESEAU.envoi = (m) => { versHote.push(JSON.parse(JSON.stringify(m))); return true; };
+    riche(hote, 'p2');
+    const p = caseLibre(hote, 30, 100, 2, 2);
+    client.emettreOrdre(client.ordre(client.ORD.BATIR, { type: client.BT.SIEGE, tx: p.tx, ty: p.ty }));
+    while (versHote.length) hote.recevoirReseau(versHote.shift());
+    livrer();
+    const txt = client.__sandbox.document.getElementById('notif').children.map((c) => c.textContent).join(' | ');
+    ok(/Interdit dans cette mission/.test(txt), "l'invité ne lit pas la raison du refus : " + txt);
+  });
+
   // ══ FINITIONS (lot L10) ═══════════════════════════════════
   const toutGagne = (j, diff, sauf) => {
     const p = {};

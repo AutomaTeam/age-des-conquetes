@@ -1774,6 +1774,11 @@ function diplomatieAction(cibleId,action){
     else notify('Action diplomatique impossible.','#e74c3c');
     return;
   }
+  // Invité : le résultat n'est qu'une prédiction, l'hôte décidera (un
+  // tribut, une condition de mission...). Annoncer « Alliance conclue » ici
+  // mentait chaque fois que l'hôte refusait — le refus arrive par REJ avec
+  // sa raison, l'accord par un message de l'hôte (voir ORD.DIPLOMATIE).
+  if(r.optimiste){ notify(`🤝 Proposition envoyée à ${r.nom||'ce camp'}…`,'#f0c040'); return; }
   notify(action==='proposer'?`🤝 Alliance conclue avec ${r.nom} — vous partagez désormais votre vision`:`⚔️ Alliance rompue avec ${r.nom}.`,
          action==='proposer'?'#2ecc71':'#e67e22');
   buzz(8);

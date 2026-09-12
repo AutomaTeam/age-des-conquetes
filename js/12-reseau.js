@@ -985,7 +985,11 @@ function traiterOrdreDistant(m){
   const cmd=m.cmd;
   if(!cmd||cmd.f!==RESEAU.adversaire.id) return;   // on ne joue pas pour l'autre
   const r=applyCommand(cmd);
-  if(!r.ok) envoyerReseau({t:'REJ',seq:cmd.seq,raison:r.raison});
+  // `msg` : la raison que l'HÔTE a décidée (règle de mission, tribut d'un
+  // seigneur...) voyage avec le refus — invariant n°6 : l'invité ne la
+  // redevine pas, et sans elle il lisait « Action refusee » là où l'hôte
+  // aurait lu « Toghrul demande 400🍖 200💰 pour traiter ».
+  if(!r.ok) envoyerReseau({t:'REJ',seq:cmd.seq,raison:r.raison,msg:typeof r.msg==='string'?r.msg.slice(0,200):undefined});
 }
 
 // Client : l'hote a refuse un ordre — on annule la prediction optimiste.
@@ -997,7 +1001,10 @@ function traiterRejet(m){
   const t={ressources:'Ressources insuffisantes !', pop:'Population maximale !',
            age:'Age requis non atteint', occupe:'Placement impossible !',
            invalide:'Action impossible', cible:'Cible invalide'};
-  notify(t[m.raison]||'Action refusee','#e74c3c');
+  // Le texte de l'hôte, s'il y en a un : affiché par notify (textContent),
+  // jamais comme du balisage, et borné.
+  const msg=typeof m.msg==='string'&&m.msg?m.msg.slice(0,200):null;
+  notify(msg?(m.raison==='mission'?'🚫 ':m.raison==='refuse'?'🤝 ':'')+msg:(t[m.raison]||'Action refusee'),'#e74c3c');
   refreshUI();
 }
 

@@ -6076,6 +6076,76 @@ groupe('campagne', () => {
     egal(j.G.factions.ia.pop, j.G.units.filter((u) => u.owner === 'ia' && !u.horsArmee).length, 'la population du Shah est faussée par la défection');
   });
 
+  // ══ CAMPAGNE DES CHINOIS (lot L8) ══════════════════════════
+  test("L'Art de la Guerre : chaque exercice se gagne avec SA troupe menée à l'ennemi — et se perdrait avec la mauvaise", () => {
+    // La bonne troupe, menée par un ordre réel : l'exercice tombe.
+    const j = mission(charger(), 'ch1');
+    for (const ex of ['d1', 'd2', 'd3']) {
+      jusquA(j, 10, () => j.SCN_API.tire('ex_' + ex));
+      jusquA(j, 1);
+      ok(j.SCN_API.tire('ex_' + ex), `l'exercice ${ex} ne s'ouvre pas`);
+      const troupe = j.G.units.filter((u) => u.tag === 't_' + ex).map((u) => u.id);
+      const cible = j.G.units.find((u) => u.tag === 'e_' + ex);
+      ok(troupe.length && cible, `exercice ${ex} : troupe ou adversaire absent`);
+      ordreDe(j, 'p1', j.ORD.AMOVE, { ids: troupe, x: cible.x, y: cible.y });
+      jusquA(j, 60, () => j.SCN_API.fait(ex));
+      egal(j.G.scn.obj[ex], 'fait', `la bonne troupe perd l'exercice ${ex}`);
+    }
+    egal(j.SCN_API.tirs('reprise_d1') + j.SCN_API.tirs('reprise_d2') + j.SCN_API.tirs('reprise_d3'), 0, 'une bonne troupe a dû être rendue');
+    // Inactif, rien ne se gagne tout seul : l'adversaire attend à son poste.
+    const k = mission(charger(), 'ch1');
+    jusquA(k, 90);
+    egal(k.G.scn.obj.d1, 'actif', "le premier exercice se gagne sans que le joueur bouge");
+    // La leçon est vraie : des Archers menés sur la charge des cavaliers la perdent.
+    const m = mission(charger(), 'ch1');
+    jusquA(m, 7);
+    const cav = m.G.units.find((u) => u.tag === 'e_d1');
+    for (const u of m.G.units.filter((u) => u.tag === 't_d1')) u.hp = 0;
+    const arcs = m.SCN_API.renfort('p1', [[m.UT.ARC, 8]], 'terrain1');
+    ordreDe(m, 'p1', m.ORD.AMOVE, { ids: arcs.map((u) => u.id), x: cav.x, y: cav.y });
+    jusquA(m, 40);
+    ok(arcs.filter((u) => u.hp > 0).length < m.G.units.filter((u) => u.tag === 'e_d1' && u.hp > 0).length + 2,
+      'des Archers battent la charge des cavaliers : l\'exercice n\'enseigne aucun contre');
+  });
+
+  test("La Muraille : M.coupe dit qu'aucun chemin ne passe plus — un portail OUVERT rouvre le passage, un fermé non", () => {
+    const j = mission(charger(), 'ch3');
+    egal(j.SCN_API.coupe('steppe', 'wu'), false, 'la trouée est fermée dès le départ');
+    const tr = j.zoneMission('trouee'), C = j.lire('COLS');
+    let porte = null;
+    for (let x = 0; x < C; x++) {
+      if (j.G.tiles[tr.ty][x] === j.T_WATER || j.G.bmap[tr.ty][x] !== 0) continue;
+      if (Math.abs(x - tr.tx) > 25) continue;
+      const b = batir(j, x === tr.tx ? j.BT.GATE : j.BT.WALL, x, tr.ty, 'p1');
+      if (x === tr.tx) porte = b;
+    }
+    ok(porte, 'le portail n\'a pas pu être posé');
+    const regler = (ouvert) => { porte.open = ouvert; j.G.bmap[porte.ty][porte.tx] = ouvert ? 0 : 3; };
+    regler(true);
+    egal(j.SCN_API.coupe('steppe', 'wu'), false, 'un portail OUVERT ne rouvre pas le passage');
+    regler(false);
+    egal(j.SCN_API.coupe('steppe', 'wu'), true, 'la palissade, portail fermé, ne ferme pas la trouée');
+    jusquA(j, 1);
+    egal(j.G.scn.obj.muraille, 'fait', 'la muraille fermée ne remplit pas son objectif');
+  });
+
+  test("La Route des Marchands : seul l'or des CARAVANES compte, pas celui des mines", () => {
+    const j = mission(charger(), 'ch4');
+    const marches = j.G.buildings.filter((b) => b.owner === 'p1' && b.type === j.BT.MARKET);
+    ok(marches.length === 1, 'le relais n\'a pas son Marché');
+    const p = caseLibre(j, Math.round(j.zoneMission('gusu').tx) + 5, j.zoneMission('gusu').ty, 2, 2);
+    const m2 = batir(j, j.BT.MARKET, p.tx, p.ty, 'p1');
+    j.G.factions.p1.stats.gathered.gold += 500;          // de l'or de mine : ne compte pas
+    ok(ordreDe(j, 'p1', j.ORD.ROUTE_COMMERCIALE, { bId: m2.id, toId: marches[0].id }).ok, 'la route commerciale est refusée');
+    jusquA(j, 1);
+    egal(j.SCN_API.statsEquipe('tradeGold'), 0, "de l'or de mine compte comme du commerce");
+    const tr = m2.tradeRoute;
+    tr.t = tr.dur - 0.05;
+    jusquA(j, 1);
+    ok(j.SCN_API.statsEquipe('tradeGold') > 0, "l'or d'une caravane arrivée n'est pas compté");
+    egal(j.SCN_API.statsEquipe('tradeGold'), j.gainCaravane(m2), "le commerce compté n'est pas l'or payé par la caravane");
+  });
+
   test('format : chaque mission et chaque campagne est bien formée', () => {
     const j = charger();
     const clesFac = new Set(['p1', 'p2', 'ia', 'ia2', 'pill']);

@@ -29,7 +29,7 @@ function initStats(){
     built:0, wallsBuilt:0, bldLost:0, bldDestroyed:0,
     gathered:{food:0,wood:0,stone:0,gold:0},
     peakPop:0, peakMil:0, peakFarms:0,
-    research:0, campsCleared:0, tradesDone:0,
+    research:0, campsCleared:0, tradesDone:0, tradeGold:0,
     wildlifeHunted:0, garrisonUses:0, hadEliteUnit:false,
   };
 }

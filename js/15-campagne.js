@@ -825,6 +825,7 @@ function passerBatiment(b,owner){
   placeBuilding(nb);                        // même emprise : la marque de bmap est reposée telle quelle
   return nb;
 }
+let _coupeVu=null, _coupeFile=null;   // tampons de M.coupe, réutilisés d'un appel à l'autre
 const SCN_API = {
   // ── lecture ──
   temps(){ return G.gameTime; },
@@ -876,6 +877,30 @@ const SCN_API = {
     let c=0;
     for(const e of entitesTag(tag)) if(dansZoneMonde(zn,e.x,e.y)&&++c>=(n||1)) return true;
     return false;
+  },
+  // Plus AUCUN chemin praticable entre deux zones : une muraille fermée.
+  // Parcours en largeur 4-connexe — comme la recherche de chemin, qui refuse
+  // les coupes d'angle (voir findPath) — sur les cases que tileBlocked laisse
+  // passer : un portail ouvert en est une, un fermé non ; un champ ou un
+  // arbre aussi. Toute la carte dans le pire cas : à n'employer que dans un
+  // objectif ou un déclencheur, évalués deux fois par seconde.
+  coupe(za,zb){
+    const a=zoneMission(za), b=zoneMission(zb); if(!a||!b) return false;
+    const n=COLS*ROWS;
+    if(!_coupeVu||_coupeVu.length!==n){ _coupeVu=new Uint8Array(n); _coupeFile=new Int32Array(n); }
+    const vu=_coupeVu, file=_coupeFile; vu.fill(0);
+    const d=casePraticable(a.tx,a.ty), rb=Math.max(1,b.r);
+    let tete=0, queue=0;
+    file[queue++]=d.tx+d.ty*COLS; vu[file[0]]=1;
+    while(tete<queue){
+      const c=file[tete++], x=c%COLS, y=(c/COLS)|0;
+      if((x-b.tx)*(x-b.tx)+(y-b.ty)*(y-b.ty)<=rb*rb) return false;
+      if(x>0&&!vu[c-1]&&G.bmap[y][x-1]!==3){ vu[c-1]=1; file[queue++]=c-1; }
+      if(x<COLS-1&&!vu[c+1]&&G.bmap[y][x+1]!==3){ vu[c+1]=1; file[queue++]=c+1; }
+      if(y>0&&!vu[c-COLS]&&G.bmap[y-1][x]!==3){ vu[c-COLS]=1; file[queue++]=c-COLS; }
+      if(y<ROWS-1&&!vu[c+COLS]&&G.bmap[y+1][x]!==3){ vu[c+COLS]=1; file[queue++]=c+COLS; }
+    }
+    return true;
   },
   // Combien d'entités vivantes de cette étiquette dans la zone (pour un compteur).
   tagCompteZone(tag,zone){

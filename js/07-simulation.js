@@ -1597,7 +1597,9 @@ function updateTradeRoutes(dt){
       if(pool){
         pool.gold+=gold;
         const fo=fac(b.owner);
-        if(fo){ fo.stats.gathered.gold+=gold; fo.stats.tradesDone++; }
+        // `tradeGold` : l'or du SEUL commerce (gathered.gold mêle mines et
+        // caravanes) — une mission de marchands le compte à part.
+        if(fo){ fo.stats.gathered.gold+=gold; fo.stats.tradesDone++; fo.stats.tradeGold=(fo.stats.tradeGold||0)+gold; }
         retour(b.owner,'caravane',{x:b.x,y:b.y,gold});
       }
     }

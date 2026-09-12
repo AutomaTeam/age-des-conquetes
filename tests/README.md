@@ -7,7 +7,7 @@ node tests/run.js
 Un groupe seul : `node tests/run.js reseau` — lui seul TOURNE, et un nom de
 groupe inconnu sort en erreur au lieu d'afficher un `0/0` vert.
 
-**310 tests, 18 groupes, ~75 s.** Les groupes `ia` et `delta` comptent pour
+**314 tests, 18 groupes, ~80 s.** Les groupes `ia` et `delta` comptent pour
 l'essentiel du temps : ils simulent de vraies parties, c'est le prix pour
 observer des comportements qui n'existent qu'apres plusieurs minutes.
 
@@ -178,6 +178,13 @@ qui **ne se voit pas** :
   (M.traquer — une troupe lâchée ne chasse d'elle-même que des bâtiments, et
   l'avant-garde n'en a pas) et le piège se referme dans la plaine ; une
   garnison qui change de camp (Kanglis) ne fausse la population de personne.
+  CAMPAGNE DES CHINOIS (lot L8) : chaque exercice de Sun Tzu se gagne avec
+  SA troupe menée à l'ennemi par un ordre réel, rien ne se gagne pour un
+  joueur inactif, et la leçon est VRAIE (des Archers menés sur la charge des
+  cavaliers la perdent — sinon l'exercice n'enseignerait aucun contre) ;
+  M.coupe dit qu'une muraille est fermée, et un portail ouvert la rouvre ;
+  seul l'or des caravanes compte au commerce (`tradeGold`), pas celui des
+  mines.
 - **`reseau`** — la sérialisation hôte → client, et le DURCISSEMENT du
   décodage : un message abîmé (clé du mauvais type, élément de lot tordu,
   descripteur bien formé sauf un champ) ne doit pas faire tomber la page du

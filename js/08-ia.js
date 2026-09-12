@@ -79,6 +79,10 @@ function aiAgeMax(a){ return (a&&a.ageMax!=null)?Math.min(a.ageMax,AGES.length-1
 // Une IA de mission passive ou retranchée n'engage pas d'assaut — sa défense
 // de base, elle, reste entière (voir majPhaseAssaut).
 function aiRetenue(a){ return !!a&&(a.role==='passif'||a.role==='forteresse'); }
+// Une IA retenue se DÉFEND, elle ne thésaurise pas : sans plafond, un rival
+// passif qu'on réveillait à la 15e minute sortait de sa base avec plus de
+// soixante-dix unités d'un coup (mesuré, mission « Les Reliques d'Aix »).
+function aiArmeeMax(a){ return a.armeeMax!=null?a.armeeMax:(a.role==='forteresse'?18:12); }
 
 // L'IA aligne les archétypes ennemis (Pillard, Archer Pillard, Cavalier Noir,
 // Géant, Seigneur de Guerre) plutôt que les unités du joueur : leurs sprites
@@ -1076,6 +1080,7 @@ function updateUneIA(dt,a){
     // Bâtiments militaires : on ne produit qu'une fois l'économie lancée,
     // pour ne pas étrangler les chantiers dès les premières minutes.
     if(vils.length<Math.min(6,a.vilTarget)) continue;
+    if(aiRetenue(a)&&army.length>=aiArmeeMax(a)) continue;   // garnison au complet (voir aiArmeeMax)
     // Le Moine ne sert QU'À ramasser les reliques (voir aiRelicHunt) et ne
     // combat jamais : au-delà d'un porteur par relique de la carte, chaque
     // Moine supplémentaire est une place de population et 45🍖+20💰 jetés.
